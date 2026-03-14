@@ -63,6 +63,30 @@
       </div>
     </header>
 
+    <!-- BLOQUEO DE DISPOSITIVO NO AUTORIZADO -->
+    <div v-if="dispositivoAutorizado === false" class="absolute inset-0 z-[100] bg-gray-900 flex flex-col items-center justify-center p-6 text-center text-white">
+      <div class="bg-gray-800 p-8 rounded-3xl shadow-2xl border border-red-500 w-full max-w-md relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
+        <svg class="w-24 h-24 text-red-500 mx-auto mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        <h2 class="text-3xl font-black mb-2 uppercase tracking-wide">Acceso Denegado</h2>
+        <p class="text-gray-400 font-bold mb-6">Este dispositivo no está autorizado para operar el sistema POS.</p>
+        <div class="bg-gray-900 p-4 rounded-xl border border-gray-700">
+           <p class="text-xs text-gray-500 font-bold uppercase tracking-wider mb-1">ID del Dispositivo (Proveer al Admin)</p>
+           <p class="font-mono text-emerald-400 text-sm break-all select-all">{{ deviceId }}</p>
+        </div>
+        <button @click="verificarDispositivoActivo" :disabled="verificandoDispositivo" class="mt-6 w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-600 transition-colors flex justify-center">
+            <svg v-if="verificandoDispositivo" class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            REINTENTAR CONEXIÓN
+        </button>
+      </div>
+    </div>
+
+    <!-- PANTALLA CARGANDO INICIAL -->
+    <div v-if="dispositivoAutorizado === null" class="absolute inset-0 z-[90] bg-posBg flex flex-col items-center justify-center p-6 text-center text-white">
+        <svg class="animate-spin w-16 h-16 text-emerald-500 mb-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <p class="font-bold text-gray-400 tracking-widest uppercase animate-pulse">Verificando Credenciales...</p>
+    </div>
+
     <!-- WIZARD INICIAL -->
     <div v-if="!config.completado" class="absolute inset-0 z-50 bg-posBg flex flex-col items-center justify-center p-6">
       <div class="w-full max-w-md bg-white p-8 rounded-3xl shadow-2xl border border-gray-100">
@@ -264,7 +288,7 @@
     </main>
 
     <!-- BOTTOM NAVIGATION -->
-    <nav v-if="config.completado" class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0">
+    <nav v-if="config.completado && dispositivoAutorizado === true" class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0">
         <!-- Tab POS (Destaque Central o Izquierdo) -->
         <button @click="cambiarModulo('POS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'POS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'">
             <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='POS'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
@@ -389,6 +413,11 @@
         const dbCargada = ref(false);
         const pendingSales = ref([]);
         
+        // --- SEGURIDAD: DISPOSITIVOS ---
+        const deviceId = ref('');
+        const dispositivoAutorizado = ref(null); // null = cargando, true/false
+        const verificandoDispositivo = ref(false);
+        
         // NAVIGATION
         const currentModule = ref('CAJA'); // CAJA | POS | TOOLS
 
@@ -505,6 +534,22 @@
 
         // --- INICIALIZACIÓN ---
         const cargarDatos = async () => {
+          // Generar o recuperar UUID
+          let storedId = localStorage.getItem('mosexpress_deviceId');
+          if (!storedId) {
+             try {
+                if (window.crypto && window.crypto.randomUUID) storedId = crypto.randomUUID();
+                else storedId = 'UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+             } catch(e) {
+                storedId = 'UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+             }
+             localStorage.setItem('mosexpress_deviceId', storedId);
+          }
+          deviceId.value = storedId;
+          
+          await verificarDispositivoActivo();
+          if (dispositivoAutorizado.value === false) return; // Detener carga si bloqueado
+
           const configLocal = localStorage.getItem('mosexpress_config');
           if(configLocal) config.value = JSON.parse(configLocal);
 
@@ -534,6 +579,33 @@
           if (pendingLocal) pendingSales.value = JSON.parse(pendingLocal);
 
           if (!offlineMode.value) await sincronizarDatos();
+        };
+
+        const verificarDispositivoActivo = async () => {
+           if(API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+               dispositivoAutorizado.value = true; // Salto si está en local MOCK default
+               return;
+           }
+           verificandoDispositivo.value = true;
+           try {
+             const resp = await fetch(`${API_URL}?accion=verificar_dispositivo&id=${deviceId.value}`);
+             if (!resp.ok) throw new Error("Error HTTP");
+             const jsonResp = await resp.json();
+             
+             if(jsonResp && typeof jsonResp.autorizado !== 'undefined') {
+                 dispositivoAutorizado.value = jsonResp.autorizado === true;
+             } else {
+                 dispositivoAutorizado.value = true; // Fallback si el script responde otra cosa temporalmente
+             }
+           } catch(e) {
+             console.error("Error validando dispositivo:", e);
+             if(offlineMode.value) dispositivoAutorizado.value = true;
+             else {
+                dispositivoAutorizado.value = false; // Bloquear si falla el API activamente por error de script
+                agregarToast("Error red", "No se pudo validar");
+             }
+           }
+           verificandoDispositivo.value = false;
         };
 
         // --- MOTOR DE BÚSQUEDA Y UX ---
@@ -711,11 +783,11 @@
            
            let correlativoReal = serieElegida + "-LOCAL";
 
-           const ventaBase = {
+            const ventaBase = {
               auth: {
                  vendedor: config.value.vendedor,
                  estacion: config.value.estacion.Estacion_Nombre,
-                 deviceId: 'N/A' // o un ID local
+                 deviceId: deviceId.value
               },
               pos_config: {
                  cajaId: idCajaActual.value,
@@ -798,15 +870,20 @@
         cargarDatos();
 
         return {
-          offlineMode, dbCargada, currentModule, uiState, cambiarModulo,
-          cajaAbierta, idCajaActual, montoApertura, montoAperturaMemoria, procesandoCaja, ventasHoy, abrirCaja, reimprimirTicket,
-          tabCajaActivo, ventasHistorialFiltradas,
-          config, configWizard, zonasUnicas, estacionesFiltradas, probandoImpresora, iniciarTurno,
-          carrito, bBuscador, scannerInput, productosFiltrados, procesarEscaneoOBusqueda, toggleCamara, camaraAbierta, agregarOVerDetalle,
-          getPosLeftClasses, getPosRightClasses, cambiarCantidad, eliminarItem,
-          popover, agregarItemDesdePopover, toasts,
-          granTotal, vuelto, modalPago, procesando, pago, buscandoCliente, abrirModalPago, setMonto, limpiarCliente, buscarClienteAPI, procesarPago,
-          bHerramientas, procesandoMembrete, imprimirMembrete
+          currentModule, config, configWizard, offlineMode,
+          uiState,
+          cajaAbierta, idCajaActual, montoAperturaMemoria, montoApertura, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
+          bBuscador, productosFiltrados, carrito, granTotal, scannerInput,
+          procesando, pago, modalPago, vuelto, procesarPago,
+          iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
+          procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
+          cambiarCantidad, eliminarItem, setMonto,
+          abrirModalPago, buscarClienteAPI, buscandoCliente,
+          toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
+          getPosLeftClasses, getPosRightClasses, camaraAbierta,
+          bHerramientas, imprimirMembrete, procesandoMembrete,
+          dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, limpiarCliente,
+          deviceId, dispositivoAutorizado, verificandoDispositivo, verificarDispositivoActivo
         };
       }
     });
