@@ -60,6 +60,10 @@
       
       <div class="flex items-center space-x-2 shrink-0 ml-2">
         <span v-if="offlineMode" class="bg-red-500 px-2 py-1 rounded text-[10px] font-bold shadow animate-pulse">OFFLINE</span>
+        <button v-if="pendingSales.length > 0" @click="sincronizarDatos" class="bg-amber-400 text-amber-900 px-2 py-1 rounded text-[10px] font-bold shadow flex items-center active:scale-95">
+           <svg class="w-3 h-3 mr-1" :class="{'animate-spin': isSyncing}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+           {{ pendingSales.length }} PENDIENTES
+        </button>
       </div>
     </header>
 
@@ -158,7 +162,11 @@
                                <div class="font-bold text-lg">{{ venta.correlativo }}</div>
                             </div>
                             <div class="flex items-center space-x-4">
-                               <div class="font-black text-xl">S/ {{ venta.total.toFixed(2) }}</div>
+                               <div class="font-black text-xl flex flex-col items-end">
+                                  <span>S/ {{ venta.total.toFixed(2) }}</span>
+                                  <span v-if="venta.syncStatus === 'pending'" class="text-[9px] text-amber-500 flex items-center mt-0.5 uppercase tracking-widest"><svg class="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> En Cola</span>
+                                  <span v-else class="text-[9px] text-blue-500 flex items-center mt-0.5 uppercase tracking-widest"><svg class="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Enviado</span>
+                               </div>
                                <svg class="w-5 h-5 text-gray-400 transform transition-transform" :class="{'rotate-180': venta.expanded}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                             </div>
                         </div>
@@ -421,6 +429,7 @@
         const db = ref({}); 
         const dbCargada = ref(false);
         const pendingSales = ref([]);
+        const isSyncing = ref(false);
         
         // --- SEGURIDAD: DISPOSITIVOS ---
         const deviceId = ref('');
@@ -492,7 +501,12 @@
 
         // --- LISTENERS ---
         const handleResize = () => { uiState.value.isMobile = window.innerWidth < 1024; };
-        const updateOnlineStatus = () => { offlineMode.value = !navigator.onLine; };
+        const updateOnlineStatus = () => { 
+            offlineMode.value = !navigator.onLine; 
+            if (!offlineMode.value && pendingSales.value.length > 0) {
+                setTimeout(sincronizarDatos, 2000); // Dar un respiro a la red antes de intentar sync 
+            }
+        };
         
         watch(carrito, (newVal) => {
            if(newVal.length > 0) {
@@ -515,6 +529,13 @@
                 scannerInput.value.focus();
             }
           }, 1500);
+
+          // Background Auto-Sync de la cola de pendientes
+          setInterval(() => {
+              if (pendingSales.value.length > 0 && navigator.onLine) {
+                 sincronizarDatos();
+              }
+          }, 300000); // Cada 5 minutos
         });
 
         onUnmounted(() => {
@@ -576,9 +597,14 @@
              }
           }
 
-          // Restore Ventas List (Mock Local)
+          // Restore Ventas List (Mock Local) y Limpiar si son de Días Anteriores
           const vLoc = localStorage.getItem('mosexpress_ventas_hoy');
-          if(vLoc) ventasHoy.value = JSON.parse(vLoc);
+          if(vLoc) {
+              const ventasGuardadas = JSON.parse(vLoc);
+              // Solo mostrar en la app las ventas de la caja de HOY
+              ventasHoy.value = ventasGuardadas.filter(v => new Date(v.timestamp).toDateString() === new Date().toDateString());
+              localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+          }
 
           const dbLocal = localStorage.getItem('mosexpress_db');
           if (dbLocal) { db.value = JSON.parse(dbLocal); dbCargada.value = true; mapearCatalogoLocal(); } 
@@ -634,14 +660,48 @@
                  prodsText.push({
                      idUnico: pres.Cod_Barras, sku: base.SKU_Base, codBarras: pres.Cod_Barras, nombreCorto: base.Nombre,
                      empaque: pres.Empaque, precio: parseFloat(pres.Precio_Venta), codSunat: base.Cod_SUNAT || '01010101',
-                     promoStr: pStr, imagen: `https://source.unsplash.com/random/150x150/?${term},supermarket`
+                     promoStr: pStr, imagen: `https://ui-avatars.com/api/?name=${term}&background=random&color=fff&size=150`
                  });
             });
             productosCatalogo.value = prodsText;
             productosFiltrados.value = prodsText;
         };
 
-        const sincronizarDatos = async () => { /* Sync intacto... */ };
+        const sincronizarDatos = async () => { 
+           if (offlineMode.value || pendingSales.value.length === 0 || isSyncing.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+           isSyncing.value = true;
+           let exitos = 0;
+           // Copiar array para procesar
+           const ventasAProcesar = [...pendingSales.value];
+           
+           for (let venta of ventasAProcesar) {
+               try {
+                   const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(venta.raw_data) });
+                   const res = await req.json();
+                   if (res.status === 'success') {
+                       // Quitar de pendientes locales
+                       pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                       // Actualizar estado visual en el historial
+                       const historiaIdx = ventasHoy.value.findIndex(v => v.id === venta.id);
+                       if(historiaIdx > -1) {
+                           ventasHoy.value[historiaIdx].syncStatus = 'synced';
+                           ventasHoy.value[historiaIdx].raw_data.status = 'synced';
+                           ventasHoy.value[historiaIdx].correlativo = res.correlativo; // Actualizar con correlativo real del GAS
+                       }
+                       exitos++;
+                   }
+               } catch(e) {
+                   console.log("Fallo sync individual:", e);
+               }
+           }
+           
+           if(exitos > 0) {
+               localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+               localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+               agregarToast('Sincronización', `${exitos} comprobante(s) subidos a la Nube`);
+           }
+           isSyncing.value = false;
+        };
 
         const generarBaseDatosMock = () => {
             return {
@@ -825,6 +885,7 @@
                  tipoDoc: pago.value.tipoDoc, metodo: pago.value.metodo, total: granTotal.value,
                  cliente: { doc: pago.value.docCliente, nombre: pago.value.nombreCliente, tipo: 'N/A' }
               },
+              status: 'pending', // INITIAL STATE
               items: carrito.value.map(c => ({ sku: c.sku, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }))
            };
 
@@ -832,17 +893,31 @@
                try {
                  const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) });
                  const res = await req.json();
-                 if (res.status === 'success') correlativoReal = res.correlativo;
-               } catch(e) { agregarToast('Modo Offline', 'Guardado en Cola MOCK'); }
+                 if (res.status === 'success') { correlativoReal = res.correlativo; syncStatus = 'synced'; ventaBase.status = 'synced'; }
+               } catch(e) { 
+                 agregarToast('Aviso de Red', 'Guardando comprobante en cola (Offline)'); 
+                 ventaBase.status = 'pending';
+                 pendingSales.value.push({ id: Date.now(), raw_data: ventaBase });
+                 localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+               }
+           } else {
+               ventaBase.status = 'pending';
+               pendingSales.value.push({ id: Date.now(), raw_data: ventaBase });
+               localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+               agregarToast('Offline', 'Comprobante guardado en MODO OFFLINE'); 
            }
            
            // Historial Local Front
-           let ht = { id: Date.now(), tipo: pago.value.tipoDoc, correlativo: correlativoReal, total: granTotal.value, timestamp: Date.now(), cliente_doc: pago.value.docCliente || '-', cliente_nombre: pago.value.nombreCliente || 'Genérico', items_count: carrito.value.length, expanded: false, raw_data: ventaBase };
+           let ht = { id: Date.now(), tipo: pago.value.tipoDoc, correlativo: correlativoReal, total: granTotal.value, timestamp: Date.now(), cliente_doc: pago.value.docCliente || '-', cliente_nombre: pago.value.nombreCliente || 'Genérico', items_count: carrito.value.length, expanded: false, raw_data: ventaBase, syncStatus: syncStatus };
            ventasHoy.value.unshift(ht);
            localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
 
-           // Imprimir
-           let txt = "\x1b\x61\x01=========================\n" + pago.value.tipoDoc + ": " + correlativoReal + "\nTOTAL: S/ " + granTotal.value.toFixed(2) + "\n=========================\n\x1d\x56\x41";
+           // Imprimir Modificado con Regla Offline-First SUNAT
+           let tituloTicket = pago.value.tipoDoc;
+           if (syncStatus === 'pending' && pago.value.tipoDoc !== 'NOTA_DE_VENTA') {
+               tituloTicket = "PREVENTA (PROVISIONAL)";
+           }
+           let txt = "\x1b\x61\x01=========================\n" + tituloTicket + ": " + correlativoReal + "\nTOTAL: S/ " + granTotal.value.toFixed(2) + "\n=========================\n\x1d\x56\x41";
            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", btoa(txt));
 
            agregarToast('¡Venta Exitosa!', correlativoReal);
@@ -905,7 +980,8 @@
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,
           dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, limpiarCliente,
-          deviceId, dispositivoAutorizado, verificandoDispositivo, verificarDispositivoActivo
+          deviceId, dispositivoAutorizado, verificandoDispositivo, verificarDispositivoActivo,
+          sincronizarDatos, isSyncing
         };
       }
     });
