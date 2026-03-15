@@ -257,9 +257,10 @@
                 </section>
                 
                 <!-- Toggle Button Mobile Flotante -->
-                <button v-show="carrito.length > 0 && uiState.isMobile" @click="uiState.mobileView = (uiState.mobileView === 'cart' ? 'catalog' : 'cart')" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-50 bg-gray-900 border-2 border-white text-white rounded-full px-6 py-3 font-bold shadow-2xl flex items-center">
-                    {{ uiState.mobileView === 'cart' ? 'Ver Catálogo' : 'Ver Carrito' }}
-                    <span class="ml-2 bg-posPrimary rounded-full w-6 h-6 flex items-center justify-center text-xs font-black">{{ carrito.length }}</span>
+                <button v-show="carrito.length > 0 && uiState.isMobile" @click="uiState.mobileView = (uiState.mobileView === 'cart' ? 'catalog' : 'cart')" class="absolute bottom-20 right-4 z-50 bg-gray-900 border-2 border-posPrimary text-white rounded-full w-14 h-14 shadow-2xl flex items-center justify-center active:scale-95 transition-transform" aria-label="Cambiar vista">
+                    <svg v-if="uiState.mobileView === 'cart'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                    <svg v-else class="w-6 h-6 z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    <span v-if="uiState.mobileView === 'catalog'" class="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 flex items-center justify-center text-[10px] border border-white font-black">{{ carrito.length }}</span>
                 </button>
             </div>
         </div>
@@ -346,14 +347,14 @@
     </div>
 
     <!-- MODAL DE PAGO E IMPRESIÓN -->
-    <div v-if="modalPago" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex flex-col justify-end backdrop-blur-sm transition-opacity pb-16">
-        <div class="bg-white rounded-t-[2.5rem] p-6 h-[85vh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+    <div v-if="modalPago" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex flex-col justify-end backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[92dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-5 shrink-0">
                <h2 class="text-3xl font-black text-gray-800 tracking-tight">CAJA COBRO</h2>
                <button @click="modalPago = false" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
             </div>
     
-            <div class="flex-1 overflow-y-auto space-y-5 px-1 scrollbar-hide pb-5">
+            <div class="flex-1 overflow-y-auto space-y-5 px-1 scrollbar-hide pb-8">
                <div>
                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Comprobante</label>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
@@ -377,7 +378,15 @@
                </div>
     
                <div>
-                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo (S/)</label>
+                  <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Método de Pago</label>
+                  <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl mb-4">
+                      <button @click="pago.metodo = 'EFECTIVO'" :class="pago.metodo === 'EFECTIVO' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">EFECTIVO</button>
+                      <button @click="pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal" :class="pago.metodo === 'VIRTUAL' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">VIRTUAL / YAPE</button>
+                  </div>
+               </div>
+
+               <div v-if="pago.metodo === 'EFECTIVO'">
+                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido (S/)</label>
                  <div class="grid grid-cols-5 gap-1.5 mb-2">
                    <button @click="setMonto(granTotal)" class="col-span-1 bg-emerald-100 text-emerald-800 rounded-lg font-black text-[10px] active:scale-95 py-2.5">EXAC.</button>
                    <button v-for="billete in [10,20,50,100]" :key="billete" @click="setMonto(billete)" class="bg-white border-2 border-gray-100 text-gray-800 rounded-lg font-black text-sm active:scale-95 py-2.5">{{ billete }}</button>
@@ -385,13 +394,13 @@
                  <input v-model.number="pago.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-4xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary focus:bg-white outline-none">
                </div>
                
-               <div class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
+               <div v-if="pago.metodo === 'EFECTIVO'" class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
                  <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
                  <span class="text-4xl font-black" :class="vuelto < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vuelto.toFixed(2) }}</span>
                </div>
             </div>
     
-            <button @click="procesarPago" :disabled="vuelto < 0 || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente)" class="mt-3 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide">
+            <button @click="procesarPago" :disabled="(pago.metodo === 'EFECTIVO' && vuelto < 0) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente)" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide">
                <svg v-if="procesando" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                <span>{{ procesando ? 'IMPRIMIENDO...' : 'IMPRIMIR TICKET' }}</span>
             </button>
@@ -464,7 +473,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', docCliente: '', nombreCliente: '', montoRecibido: 0 });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', montoRecibido: 0 });
         const buscandoCliente = ref(false);
 
         // --- COMPUTADOS ---
@@ -702,10 +711,23 @@
             camaraAbierta.value = !camaraAbierta.value;
             if(camaraAbierta.value) {
                 setTimeout(() => {
-                    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 150} });
-                    html5QrcodeScanner.render((txt) => { toggleCamara(); bBuscador.value = txt; procesarEscaneoOBusqueda(); }, () => {});
+                    html5QrcodeScanner = new Html5Qrcode("reader");
+                    html5QrcodeScanner.start(
+                        { facingMode: "environment" },
+                        { fps: 10, qrbox: { width: 250, height: 150 } },
+                        (txt) => { toggleCamara(); bBuscador.value = txt; procesarEscaneoOBusqueda(); },
+                        () => {}
+                    ).catch(err => {
+                        agregarToast('Cámara', 'Permiso denegado/Error');
+                        toggleCamara();
+                    });
                 }, 200);
-            } else { if(html5QrcodeScanner) { html5QrcodeScanner.clear(); html5QrcodeScanner = null; } }
+            } else { 
+                if(html5QrcodeScanner) { 
+                    try { html5QrcodeScanner.stop().then(() => html5QrcodeScanner.clear()); } catch(e) {}
+                    html5QrcodeScanner = null; 
+                } 
+            }
         };
 
         const agregarOVerDetalle = (prod) => { popover.value.data = prod; popover.value.visible = true; };
@@ -766,7 +788,7 @@
         };
 
         const limpiarCliente = () => { pago.value.docCliente = ''; pago.value.nombreCliente = ''; };
-        const abrirModalPago = () => { pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.montoRecibido = granTotal.value; limpiarCliente(); modalPago.value = true; };
+        const abrirModalPago = () => { pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; pago.value.montoRecibido = granTotal.value; limpiarCliente(); modalPago.value = true; };
         const setMonto = (m) => { pago.value.montoRecibido = parseFloat(m); };
         const buscarClienteAPI = () => { 
            buscandoCliente.value = true; setTimeout(() => { pago.value.nombreCliente = 'CLIENTE ' + pago.value.docCliente; buscandoCliente.value=false; }, 500); 
@@ -800,7 +822,7 @@
               },
               // Datos Venta extra
               header: {
-                 tipoDoc: pago.value.tipoDoc, total: granTotal.value,
+                 tipoDoc: pago.value.tipoDoc, metodo: pago.value.metodo, total: granTotal.value,
                  cliente: { doc: pago.value.docCliente, nombre: pago.value.nombreCliente, tipo: 'N/A' }
               },
               items: carrito.value.map(c => ({ sku: c.sku, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }))
@@ -827,7 +849,7 @@
            finalizarPostPago();
         };
 
-        const finalizarPostPago = () => { procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
+        const finalizarPostPago = () => { procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
 
         const reimprimirTicket = (ventaLocal) => {
             agregarToast('Re-imprimiendo', ventaLocal.correlativo);
