@@ -1,69 +1,66 @@
-# MOSexpress v2.0 - Sistema POS PWA Multi-Zona 🛒
+# MOSexpress v3.0 - Sistema POS PWA Multi-Zona 🛒
 
 Bienvenido al repositorio oficial de **MOSexpress**, un Sistema de Punto de Venta (POS) diseñado como una Aplicación Web Progresiva (PWA) optimizada para móviles, tablets y escritorio.
 
 ## 📌 ¿De qué trata este proyecto?
-MOSexpress fue diseñado bajo la arquitectura *Rompefilas v2.0* para solucionar los cuellos de botella en la atención de clientes. Es un sistema **100% Frontend** escrito en HTML, Tailwind CSS y Vue.js 3, que se conecta directamente a **Google Sheets** a través de Google Apps Script (GAS) convirtiéndolo en un robusto backend gratuito.
-
-El objetivo principal de este documento (el `README.md`) es **guiarte a ti (o a cualquier otro desarrollador)** sobre cómo funciona el proyecto, cómo instalarlo y cómo actualizarlo en el futuro. ¡Es el manual oficial de tu código!
+MOSexpress fue diseñado bajo la arquitectura *Rompefilas v3.0 PROFESIONAL* para solucionar cuellos de botella en la atención de clientes. Es un sistema **100% Frontend** (HTML, Tailwind CSS, Vue.js 3) conectado a **Google Sheets** a través de Google Apps Script (GAS).
 
 ---
 
-## ✨ Características Principales
+## 🏗️ Esquema de Base de Datos (Google Sheets)
 
-1. **Arquitectura Modular (Bottom Navigation)**: 
-   - **Módulo POS**: Catálogo y cobro con UX proactiva.
-   - **Módulo CAJA**: Control estricto de turnos, historial de ventas (Notas, Boletas, Facturas) y anulación/reimpresión de tickets.
-   - **Módulo HERRAMIENTAS**: Generador e impresión silenciosa de membretes y etiquetas de precios (80mm x 300mm).
-2. **Offline-First (PWA)**: Registra un `Service Worker` para que el catálogo de productos y la aplicación carguen de forma inmediata, incluso si el internet falla.  
-3. **Escáner Integrado**: Permite usar la cámara de cualquier celular (vía `html5-qrcode`) para escanear códigos de barras.
-4. **Middleware de Caja**: Bloqueo inteligente del POS. Nadie puede realizar una venta sin antes establecer un saldo inicial y registrar una "Caja Abierta" en Google Sheets.
-5. **PrintNode API**: Impresión RAW *silenciosa* (sin ventanas emergentes de impresoras) para emitir comprobantes profesionales a cualquier ticketera térmica local conectada a internet.
+Para que el sistema funcione correctamente, tu Google Sheets (conectado a `code.gs`) debe tener exactamente las siguientes pestañas con sus respectivas columnas:
 
----
-
-## 🛠️ Tecnologías Usadas
-
-- **Frontend**: 
-  - [Vue.js 3](https://vuejs.org/) (Reactividad y Estado)
-  - [Tailwind CSS](https://tailwindcss.com/) (Diseño responsivo y componentes de UI)
-  - HTML5 & JavaScript (Vanilla, todo contenido en *index.html*).
-- **Backend & Base de Datos**: 
-  - [Google Apps Script (GAS)](https://developers.google.com/apps-script)
-  - Google Sheets (Estructuras: PRODUCTOS, PROMOCIONES, CLIENTES, CAJAS, VENTAS_CABECERA, etc.)
-- **Hardware Integrations**:
-  - `html5-qrcode` para lectura óptica de barras y QRs.
-  - PrintNode (Comandos nativos ESC/POS e impresión local remota).
+1. **PRODUCTO_BASE**: `SKU_Base`, `Nombre`, `Categoria`, `Cod_Tributo`, `IGV_Porcentaje`, `Cod_SUNAT`.
+2. **PRESENTACIONES**: `Cod_Barras`, `SKU_Base`, `Empaque`, `Factor`, `Precio_Venta`.
+3. **EQUIVALENCIAS**: `Cod_Alias`, `Cod_Barras_Real`.
+4. **PROMOCIONES**: `SKU_Base`, `Tipo_Promo`, `Cant_Min`, `Valor_Promo`.
+5. **ZONAS_CONFIG**: `Zona_ID`, `Estacion_Nombre`, `PrintNode_ID`, `Serie_Nota`, `Serie_Boleta`, `Serie_Factura`.
+6. **DISPOSITIVOS**: `ID_Dispositivo`, `Nombre_Equipo`, `Estado (ACTIVO/INACTIVO)`.
+7. **CAJAS**: `ID_Caja`, `Vendedor`, `Estacion`, `Fecha_Apertura`, `Monto_Inicial`, `Estado (ABIERTA/CERRADA)`, `Monto_Final`.
+8. **VENTAS_CABECERA**: `ID_Venta`, `Fecha`, `Vendedor`, `Estacion`, `Cliente_Doc`, `Cliente_Nom`, `Total`, `Tipo_Doc_Metodo`, `Correlativo_CPE`, `ID_Caja`, `ID_Dispositivo`, `Status_Envio`.
+9. **VENTAS_DETALLE**: `ID_Venta`, `SKU`, `Nombre`, `Cantidad`, `Precio_Unit`, `Subtotal`.
 
 ---
 
-## 🚀 Despliegue en GitHub Pages (Guía Rápida)
+## ✨ Características y Lógica Core
 
-Ya que este proyecto no requiere un servidor NodeJS, el despliegue es completamente estático:
+1. **🔒 Módulo de Seguridad (Dispositivos)**: 
+   - Al iniciar, la App genera una Huella Digital (`crypto.randomUUID()`) almacenada en `localStorage` como `mosexpress_deviceId`.
+   - Si este ID no existe como `ACTIVO` en la tabla `DISPOSITIVOS`, la App bloquea completamente la interfaz de usuario.
+   
+2. **📡 Resiliencia y Sincronización (Offline-First)**:
+   - **Cola de Espera Local:** Toda venta procesada se almacena en el celular (`pendingSales` en localStorage) con estado `pending`.
+   - **Background Sync:** Una rutina iterativa (`syncPendientes()`) corre en background **cada 5 minutos** (o al detectar retorno de red) empujando las ventas no enviadas al servidor.
+   - **Tickets Provisionales:** Cero interrupciones. Si no hay red, la vendedora imprime una *PREVENTA PROVISIONAL* y sigue despachando.
 
-1. Modifica la variable `API_URL` dentro del bloque `<script>` en el `index.html` con tu endpoint publicado de Google Apps Script.
-2. Ingresa tu API Key en la variable `PRINTNODE_API_KEY`.
-3. Sube todos los archivos de esta carpeta a la rama `main` o `master` de tu repositorio público en GitHub.
-4. En Settings > Pages, activa la rama `main` y guarda.
-5. ¡Listo! Accede a `https://[tu-usuario].github.io/mosexpress` y la App solicitará los permisos PWA para instalarse en tu teléfono.
+3. **📱 Arquitectura Modular UX**:
+   - **Módulo CAJA:** Gestión de Turno (Apertura y Cierre con Tickets Z). Acordeones para revisar y reimprimir comprobantes.
+   - **Módulo POS:** Interfaz "Split Screen" (Dual panel). Catálogo Dinámico con promociones aplicadas en tiempo real.
+   - **Módulo HERRAMIENTAS:** Impresión ciega de membretes de anaquel de precios.
 
----
-
-## 📂 Estructura de Archivos
-
-Al consolidar la aplicación, nos hemos quedado con la estructura más limpia y profesional posible:
-
-- `index.html`: **El Corazón**. Contiene todo el esqueleto UI, la lógica, el enrutado, los estilos de Tailwind y los componentes de Vue.js. (Sustituye al antiguo `app.js`).
-- `manifest.json`: Identidad de la App para ser instalable (Iconos, colores de navegador, pantalla completa).
-- `sw.js`: Archivo Service Worker de caché sin conexión.
-- `code.gs`: **Backup del Backend**. Es una copia local del código que vive actualmente funcionando en tu servidor de Google Apps Script.
-- `README.md`: Este manual guía.
+4. **🖨️ Integración PrintNode**:
+   - Uso de la API pura de PrintNode con inyección de código binario plano RAW (`ESC/POS` como `\x1b\x61\x01`) para cortes, códigos CODE128 y texto de doble altura en impresoras térmicas remotas.
 
 ---
 
-## 💡 ¿Siempre debo actualizar este README?
+## 🚀 Despliegue en GitHub Pages
 
-**Sí, es una excelente práctica.** 
-Cada vez que agregues un módulo nuevo importante (por ejemplo: "Módulo de Devoluciones", "Integración con SUNAT para Facturación Electrónica en Producción", etc.), puedes venir a este archivo y añadir la documentación.
+Al carecer de NodeJS backend, el despliegue es 100% estático y gratuito:
 
-Eso te ayudará a que, si retomas el proyecto en 6 meses, o contratas a un equipo de desarrolladores para que lo extiendan, este README les diga exactamente qué hace la App y no tengan que empezar desde cero intentando adivinar el código.
+1. Configura `API_URL` en el `<script>` de `index.html` apuntando a la URL Executable del Script GAS.
+2. Ingresa la `PRINTNODE_API_KEY` válida.
+3. Haz Commit + Push al *branch main* de GitHub.
+4. Habilita Settings > Pages (Deploy from branch main).
+5. Comparte la URL web. La app requerirá autenticar tu **Dispositivo** al entrar por primera vez.
+
+---
+
+## 💼 Flujos Comerciales Relevantes Incorporados
+*   **Multimétodo de Pago**: Efectivo vs Virtual/Yape (con autocompletado de monto).
+*   **Calculadora Vuelto**: Input veloz de billetes (10, 20, 50, 100).
+*   **Ahorro Promo**: Etiqueta visual que detalla en línea cuánto ahorró el cliente de un producto en específico por una promo unitaria o grupal.
+*   **MiddleWare de Caja**: Impide venta si el empleado no inicia turno primero.
+*   **Cierre de Caja Operativo X/Z**: Cuadre de montos Virtual y Efectivo en físico para despilfarro 0%.
+
+`¡Tu PWA Oficial Rompefilas v3.0 ha llegado a Producción!`
