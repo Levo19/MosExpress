@@ -135,9 +135,17 @@
             </div>
 
             <div v-else class="max-w-4xl mx-auto">
-                <div class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-6 rounded-3xl shadow-lg mb-6 flex justify-between items-center">
-                    <div><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">CAJA ACTIVA</p><h2 class="text-2xl font-black mt-1">{{ idCajaActual }}</h2></div>
-                    <div class="text-right"><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">SALDO INICIAL</p><h2 class="text-3xl font-black mt-1">S/ {{ montoAperturaMemoria.toFixed(2) }}</h2></div>
+                <div class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-6 rounded-3xl shadow-lg mb-6 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div class="relative z-10 w-full flex justify-between sm:w-auto sm:flex-col sm:justify-start">
+                        <div><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">CAJA ACTIVA</p><h2 class="text-2xl font-black mt-1">{{ idCajaActual }}</h2></div>
+                    </div>
+                    <div class="text-right relative z-10 w-full sm:w-auto flex justify-between sm:flex-col sm:justify-start items-center sm:items-end">
+                       <div><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider sm:mb-1">SALDO INICIAL</p><h2 class="text-3xl font-black">S/ {{ montoAperturaMemoria.toFixed(2) }}</h2></div>
+                       <button @click="cerrarCaja" :disabled="procesandoCierre" class="mt-4 sm:mt-2 bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
+                           <svg v-if="procesandoCierre" class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                           CERRAR EL TURNO
+                       </button>
+                    </div>
                 </div>
 
                 <div class="flex items-center justify-between mb-3 border-b border-gray-200">
@@ -452,6 +460,7 @@
         const montoApertura = ref('');
         const montoAperturaMemoria = ref(0);
         const procesandoCaja = ref(false);
+        const procesandoCierre = ref(false);
         const ventasHoy = ref([]); // Lista MOCK local para historial
         const tabCajaActivo = ref('NOTAS'); // 'NOTAS', 'BOLETAS', 'FACTURAS'
         
@@ -760,6 +769,55 @@
             cambiarModulo('POS');
         };
 
+        const cerrarCaja = async () => {
+             let tEfectivo = 0, tVirtual = 0;
+             ventasHoy.value.forEach(v => {
+                 if (v.raw_data && v.raw_data.header) {
+                     if (v.raw_data.header.metodo === 'EFECTIVO') tEfectivo += v.total;
+                     if (v.raw_data.header.metodo === 'VIRTUAL') tVirtual += v.total;
+                 }
+             });
+             let montoFinal = montoAperturaMemoria.value + tEfectivo; 
+
+             if(!confirm(`¿Seguro que deseas Cerrar Turno?\n\nBase Local: S/ ${montoAperturaMemoria.value.toFixed(2)}\nTotal Ventas Efectivo: S/ ${tEfectivo.toFixed(2)}\nTotal Yape/Virtual: S/ ${tVirtual.toFixed(2)}\n\nEFECTIVO EN CAJÓN: S/ ${montoFinal.toFixed(2)}`)) return;
+
+             procesandoCierre.value = true;
+             
+             const payload = {
+                 tipoEvento: 'CIERRE_CAJA',
+                 cajaId: idCajaActual.value,
+                 montoFinal: montoFinal,
+                 ventasTotal: ventasHoy.value.length
+             };
+
+             if(!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                 try {
+                     await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                 } catch(e) { agregarToast("Aviso Red", "Cierre local (Cola)"); }
+             }
+
+             // Ticket PrintNode Despedida Z
+             let txt = "\x1b\x61\x01"; // Centrar
+             txt += "=========================\n-[ CIERRE DE CAJA X/Z ]-\n" + config.value.vendedor + "\n=========================\n";
+             txt += "SALDO BASE : S/ " + montoAperturaMemoria.value.toFixed(2) + "\n";
+             txt += "V. EFECTIVO: S/ " + tEfectivo.toFixed(2) + "\n";
+             txt += "V. TRANSFER: S/ " + tVirtual.toFixed(2) + "\n";
+             txt += "-------------------------\n";
+             txt += "EFECTIVO FINAL: S/ " + montoFinal.toFixed(2) + "\n";
+             txt += "=========================\n\x1d\x56\x41";
+             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Caja Z", btoa(txt));
+
+             cajaAbierta.value = false;
+             idCajaActual.value = '';
+             montoAperturaMemoria.value = 0;
+             localStorage.removeItem('mosexpress_caja_activa');
+             ventasHoy.value = []; 
+             localStorage.removeItem('mosexpress_ventas_hoy');
+             
+             procesandoCierre.value = false;
+             agregarToast("Éxito", "Turno Cerrado");
+        };
+
         // --- MÓDULO B: LOGICA POS ---
         const filtrarCatalogo = () => { 
            const q = bBuscador.value.toLowerCase().trim();
@@ -970,6 +1028,7 @@
           currentModule, config, configWizard, offlineMode,
           uiState,
           cajaAbierta, idCajaActual, montoAperturaMemoria, montoApertura, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
+          procesandoCierre, cerrarCaja,
           bBuscador, productosFiltrados, carrito, granTotal, scannerInput,
           procesando, pago, modalPago, vuelto, procesarPago,
           iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
