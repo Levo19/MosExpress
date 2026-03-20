@@ -996,7 +996,7 @@
         };
 
         const agregarCarritoObj = (prodObj) => {
-          const idx = carrito.value.findIndex(i => i.sku === prodObj.sku);
+          const idx = carrito.value.findIndex(i => i.codBarras === prodObj.codBarras);
           if (idx > -1) { carrito.value[idx].cantidad++; calcularImportes(carrito.value[idx]); } 
           else {
             const item = { sku: prodObj.sku, codBarras: prodObj.codBarras, nombre: prodObj.nombreCorto, codSunat: prodObj.codSunat, precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio, ahorroPromo: 0, imagen: prodObj.imagen };
