@@ -222,8 +222,8 @@
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
                             </div>
                             <div class="p-2.5 flex-1 flex flex-col justify-between bg-white">
-                               <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-2 h-7">{{ prod.nombreCorto }}</h3>
-                               <p class="text-posPrimary font-black text-sm mt-1">S/ {{ prod.precio.toFixed(2) }}</p>
+                               <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
+                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ prod.precio.toFixed(2) }} <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
                             </div>
                          </div>
                      </div>
@@ -394,6 +394,27 @@
        <div v-for="t in toasts" :key="t.id" class="toast-anim bg-gray-900 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center border-[3px] border-emerald-500 max-w-xs">
           <div class="flex flex-col"><span class="font-black text-base">{{ t.title }}</span><span v-if="t.msg" class="text-xs text-emerald-300 font-bold tracking-wider mt-0.5 line-clamp-1">{{ t.msg }}</span></div>
        </div>
+    </div>
+    <!-- MODAL PRESENTACIONES -->
+    <div v-if="modalPresentaciones" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh] shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]">
+           <div class="p-5 bg-emerald-500 text-white flex justify-between items-center shadow-md z-10 relative">
+               <h3 class="font-black text-lg leading-tight line-clamp-2 pr-2">{{ prodSeleccionado.nombreCorto }}</h3>
+               <button @click="modalPresentaciones = false" class="text-white bg-black bg-opacity-20 hover:bg-opacity-30 transition-colors rounded-full p-2 shrink-0"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+           </div>
+           <div class="p-4 space-y-3 overflow-y-auto bg-gray-50 flex-1">
+               <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">Elige una presentación:</p>
+               <div v-for="pres in prodSeleccionado.presentaciones" :key="pres.Cod_Barras" @click="elegirPresentacion(prodSeleccionado, pres)" class="bg-white border-2 border-gray-100 shadow-sm p-4 rounded-2xl flex justify-between items-center cursor-pointer hover:border-emerald-400 active:scale-95 transition-all">
+                   <div>
+                       <p class="font-black text-gray-800 text-lg uppercase">{{ pres.Empaque }} <span class="text-xs text-white bg-gray-800 px-1.5 py-0.5 rounded-md align-middle ml-1">x{{ pres.Factor }}</span></p>
+                       <p class="text-[10px] text-gray-400 font-mono font-bold mt-0.5">{{ pres.Cod_Barras }}</p>
+                   </div>
+                   <div class="text-emerald-500 font-black text-xl border-l border-gray-100 pl-4">
+                       S/ {{ parseFloat(pres.Precio_Venta).toFixed(2) }}
+                   </div>
+               </div>
+           </div>
+        </div>
     </div>
 
     <!-- MODAL DE PAGO E IMPRESIÓN -->
@@ -698,12 +719,12 @@
 
         // --- MOTOR DE BÚSQUEDA Y UX ---
         const mapearCatalogoLocal = () => {
-            if(!db.value.PRESENTACIONES) return;
+            if(!db.value.PRESENTACIONES || !db.value.PRODUCTO_BASE) return;
             let prodsText = [];
-            db.value.PRESENTACIONES.forEach(pres => {
-                 const base = db.value.PRODUCTO_BASE?.find(pb => pb.SKU_Base === pres.SKU_Base);
-                 if(!base) return;
-                 const promo = db.value.PROMOCIONES?.find(pr => pr.SKU_Base === pres.SKU_Base);
+            db.value.PRODUCTO_BASE.forEach(base => {
+                 const pres = db.value.PRESENTACIONES.filter(p => p.SKU_Base === base.SKU_Base);
+                 if(pres.length === 0) return;
+                 const promo = db.value.PROMOCIONES?.find(pr => pr.SKU_Base === base.SKU_Base);
                  let pStr = '';
                  if(promo) {
                      if(promo.Tipo_Promo === 'GRUPO') pStr = `Lleva ${promo.Cant_Min} por S/ ${(promo.Cant_Min * promo.Valor_Promo).toFixed(2)}`;
@@ -711,8 +732,9 @@
                  }
                  const term = encodeURIComponent(base.Nombre.split(' ')[0].toLowerCase());
                  prodsText.push({
-                     idUnico: pres.Cod_Barras, sku: base.SKU_Base, codBarras: pres.Cod_Barras, nombreCorto: base.Nombre,
-                     empaque: pres.Empaque, precio: parseFloat(pres.Precio_Venta), codSunat: base.Cod_SUNAT || '01010101',
+                     idUnico: base.SKU_Base, sku: base.SKU_Base, codBarras: pres[0].Cod_Barras, nombreCorto: base.Nombre,
+                     presentaciones: pres,
+                     empaque: pres[0].Empaque, precio: parseFloat(pres[0].Precio_Venta), codSunat: base.Cod_SUNAT || '01010101',
                      promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`
                  });
             });
@@ -915,7 +937,32 @@
             }
         };
 
-        const agregarOVerDetalle = (prod) => { popover.value.data = prod; popover.value.visible = true; };
+        const modalPresentaciones = ref(false);
+        const prodSeleccionado = ref(null);
+
+        const agregarOVerDetalle = (prod) => { 
+            if (prod.presentaciones && prod.presentaciones.length > 1) {
+                prodSeleccionado.value = prod;
+                modalPresentaciones.value = true;
+            } else {
+                agregarCarritoObj(prod);
+            }
+        };
+
+        const elegirPresentacion = (prodBase, pres) => {
+            const item = {
+                sku: prodBase.sku, 
+                codBarras: pres.Cod_Barras, 
+                nombreCorto: prodBase.nombreCorto + ' (' + pres.Empaque + ')', 
+                codSunat: prodBase.codSunat, 
+                precio: parseFloat(pres.Precio_Venta), 
+                imagen: prodBase.imagen,
+                promoStr: prodBase.promoStr
+            };
+            agregarCarritoObj(item);
+            modalPresentaciones.value = false;
+        };
+
         const agregarItemDesdePopover = () => { agregarCarritoObj(popover.value.data); popover.value.visible = false; bBuscador.value = ''; filtrarCatalogo(); };
 
         const procesarEscaneoOBusqueda = () => {
@@ -1108,7 +1155,8 @@
           dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, limpiarCliente,
           deviceId, dispositivoAutorizado, verificandoDispositivo, verificarDispositivoActivo,
           sincronizarDatos, isSyncing, pendingSales,
-          procesandoCatalogo, sincronizarCatalogoBase
+          procesandoCatalogo, sincronizarCatalogoBase,
+          modalPresentaciones, prodSeleccionado, elegirPresentacion
         };
       }
     });
