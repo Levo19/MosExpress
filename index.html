@@ -968,16 +968,31 @@
         const procesarEscaneoOBusqueda = () => {
           let code = bBuscador.value.trim().toUpperCase();
           if (!code) return;
-          const objByVal = productosCatalogo.value.find(p => p.codBarras === code);
-          if(objByVal) {
-              agregarCarritoObj(objByVal); bBuscador.value = ''; filtrarCatalogo(); return;
-          }
+          
+          // 1º Resolver Equivalencia si existe
           const eq = db.value.EQUIVALENCIAS?.find(e => String(e.Cod_Alias).toUpperCase() === code);
-          if (eq) {
-              const pbObj = productosCatalogo.value.find(p => p.codBarras === String(eq.Cod_Barras_Real));
-              if(pbObj) { agregarCarritoObj(pbObj); bBuscador.value = ''; filtrarCatalogo(); return; }
+          const searchCode = eq ? String(eq.Cod_Barras_Real).toUpperCase() : code;
+
+          // 2º Buscar directamente en PRESENTACIONES
+          const presMatch = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras).toUpperCase() === searchCode);
+          if (presMatch) {
+              const baseMatch = productosCatalogo.value.find(p => p.sku === presMatch.SKU_Base);
+              if (baseMatch) {
+                  // Agrega directamente al carrito usando la presentación específica escaneada (salta el Modal)
+                  elegirPresentacion(baseMatch, presMatch);
+                  bBuscador.value = ''; filtrarCatalogo(); return;
+              }
           }
-          agregarToast('NO ENCONTRADO', code); bBuscador.value = ''; filtrarCatalogo();
+          
+          // 3º Fallback de Búsqueda por Nombre de Producto Base
+          const pbObj = productosCatalogo.value.find(p => p.nombreCorto.toUpperCase().includes(code));
+          if (pbObj) {
+              // Si buscó por nombre y tiene varias presentaciones, sí le abrirá el Modal
+              agregarOVerDetalle(pbObj);
+              bBuscador.value = ''; filtrarCatalogo(); return;
+          }
+
+          agregarToast('NO ENCONTRADO', searchCode); bBuscador.value = ''; filtrarCatalogo();
         };
 
         const agregarCarritoObj = (prodObj) => {
