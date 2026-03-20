@@ -669,7 +669,7 @@
                  prodsText.push({
                      idUnico: pres.Cod_Barras, sku: base.SKU_Base, codBarras: pres.Cod_Barras, nombreCorto: base.Nombre,
                      empaque: pres.Empaque, precio: parseFloat(pres.Precio_Venta), codSunat: base.Cod_SUNAT || '01010101',
-                     promoStr: pStr, imagen: `https://ui-avatars.com/api/?name=${term}&background=random&color=fff&size=150`
+                     promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`
                  });
             });
             productosCatalogo.value = prodsText;
