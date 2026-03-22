@@ -825,13 +825,13 @@
              console.log("Mock Impresion (No Key):\n", atob(textoRaw));
              return {status: 'mock_success'};
           }
-          const resp = await fetch(`https://api.printnode.com/raw`, {
+          const resp = await fetch(`https://api.printnode.com/printjobs`, {
               method: 'POST',
               headers: { 'Authorization': 'Basic ' + btoa(PRINTNODE_API_KEY + ':'), 'Content-Type': 'application/json' },
               body: JSON.stringify({ printerId: printerId, title: titulo, contentType: 'raw_base64', content: textoRaw })
           });
           if(!resp.ok) throw new Error("Error API PrintNode: " + resp.status);
-          return resp.json();
+          return resp.text();
         };
 
         const iniciarTurno = () => {
