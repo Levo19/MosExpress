@@ -857,8 +857,21 @@
             }
 
             // Ticket PrintNode Bienvenida
-            let txt = "\x1b\x61\x01"; // Centrar
-            txt += "=========================\nTURNO INICIADO\n" + config.value.vendedor + "\n=========================\n\x1d\x56\x41";
+            let txt = "\x1b\x40\x1b\x61\x01"; // Init + Centrar
+            txt += "\x1b\x21\x30MOSexpress\n\n"; // Titulo Grande
+            txt += "\x1b\x21\x00"; // Normal
+            txt += "================================\n";
+            txt += "\x1b\x21\x10APERTURA DE CAJA\n"; // Doble alto
+            txt += "\x1b\x21\x00"; // Normal
+            txt += "================================\n\n";
+            txt += "\x1b\x61\x00"; // Alineacion Izquierda
+            txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+            txt += "CAJERO  : " + config.value.vendedor + "\n";
+            txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+            txt += "SALDO INICIAL: S/ " + parseFloat(montoApertura.value).toFixed(2) + "\n\n";
+            txt += "\x1b\x61\x01"; // Centrar
+            txt += "*** TURNO INICIADO ***\n";
+            txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02"; // Feed, Cortar, Pitar 3 veces
             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura ", btoa(txt));
 
             cajaAbierta.value = true; idCajaActual.value = cid; montoAperturaMemoria.value = montoApertura.value;
@@ -896,14 +909,25 @@
              }
 
              // Ticket PrintNode Despedida Z
-             let txt = "\x1b\x61\x01"; // Centrar
-             txt += "=========================\n-[ CIERRE DE CAJA X/Z ]-\n" + config.value.vendedor + "\n=========================\n";
-             txt += "SALDO BASE : S/ " + montoAperturaMemoria.value.toFixed(2) + "\n";
-             txt += "V. EFECTIVO: S/ " + tEfectivo.toFixed(2) + "\n";
-             txt += "V. TRANSFER: S/ " + tVirtual.toFixed(2) + "\n";
-             txt += "-------------------------\n";
+             let txt = "\x1b\x40\x1b\x61\x01"; // Init + Centrar
+             txt += "\x1b\x21\x30MOSexpress\n\n";
+             txt += "\x1b\x21\x00================================\n";
+             txt += "\x1b\x21\x10CIERRE DE TURNO (X/Z)\n"; // Doble alto
+             txt += "\x1b\x21\x00================================\n\n";
+             txt += "\x1b\x61\x00"; // Izquierda
+             txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+             txt += "CAJERO  : " + config.value.vendedor + "\n";
+             txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+             txt += "--------------------------------\n";
+             txt += "SALDO BASE    : S/ " + montoAperturaMemoria.value.toFixed(2) + "\n";
+             txt += "VENTS EFECTIVO: S/ " + tEfectivo.toFixed(2) + "\n";
+             txt += "VENTS TRANSFER: S/ " + tVirtual.toFixed(2) + "\n";
+             txt += "--------------------------------\n";
+             txt += "\x1b\x45\x01"; // Bold on
              txt += "EFECTIVO FINAL: S/ " + montoFinal.toFixed(2) + "\n";
-             txt += "=========================\n\x1d\x56\x41";
+             txt += "\x1b\x45\x00"; // Bold off
+             txt += "================================\n";
+             txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02";
              mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Caja Z", btoa(txt));
 
              cajaAbierta.value = false;
@@ -1122,7 +1146,43 @@
            if (syncStatus === 'pending' && pago.value.tipoDoc !== 'NOTA_DE_VENTA') {
                tituloTicket = "PREVENTA (PROVISIONAL)";
            }
-           let txt = "\x1b\x61\x01=========================\n" + tituloTicket + ": " + correlativoReal + "\nTOTAL: S/ " + granTotal.value.toFixed(2) + "\n=========================\n\x1d\x56\x41";
+           let txt = "\x1b\x40\x1b\x61\x01"; // Init + Centrar
+           txt += "\x1b\x21\x30MOSexpress\n"; // Titulo Empresa
+           txt += "\x1b\x21\x00\n";
+           txt += "\x1b\x21\x10" + tituloTicket + "\n";
+           txt += "\x1b\x21\x00Tk: " + correlativoReal + "\n";
+           txt += "================================\n";
+           txt += "\x1b\x61\x00"; // Alinear Izquierda
+           txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+           if(pago.value.nombreCliente) txt += "CLIENTE : " + pago.value.nombreCliente + "\n";
+           if(pago.value.docCliente) txt += "DOC     : " + pago.value.docCliente + "\n";
+           txt += "CAJERO  : " + config.value.vendedor + "\n";
+           txt += "================================\n";
+           txt += "CANT  DESCRIPCION       SUBTOTAL\n";
+           txt += "--------------------------------\n";
+           
+           carrito.value.forEach(item => {
+               let desc = item.nombre;
+               if (desc.length > 18) desc = desc.substring(0, 18);
+               else desc = desc.padEnd(18, ' ');
+               let qty = String(item.cantidad).padEnd(4, ' ');
+               let sub = parseFloat(item.subtotal).toFixed(2).padStart(8, ' ');
+               txt += qty + " " + desc + " " + sub + "\n";
+           });
+           
+           txt += "--------------------------------\n";
+           txt += "\x1b\x61\x02"; // Alinear Derecha
+           txt += "\x1b\x21\x10TOTAL: S/ " + granTotal.value.toFixed(2) + "\n\x1b\x21\x00"; 
+           txt += "METODO: " + pago.value.metodo + "\n";
+           if(pago.value.metodo === 'EFECTIVO' && pago.value.montoRecibido > 0) {
+               txt += "PAGO  : S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n";
+               txt += "VUELTO: S/ " + vuelto.value.toFixed(2) + "\n";
+           }
+           txt += "\n\x1b\x61\x01"; // Centrar
+           txt += "*** GRACIAS POR SU COMPRA ***\n";
+           if (syncStatus === 'pending') txt += "(Sujeto a Sincronizacion)\n";
+           
+           txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02"; // Feed, Cut, Beep
            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", btoa(txt));
 
            agregarToast('¡Venta Exitosa!', correlativoReal);
@@ -1133,7 +1193,31 @@
 
         const reimprimirTicket = (ventaLocal) => {
             agregarToast('Re-imprimiendo', ventaLocal.correlativo);
-            let txt = "\x1b\x61\x01=========================\n-[ RE-IMPRESION ]-\n" + ventaLocal.tipo + ": " + ventaLocal.correlativo + "\nTOTAL: S/ " + ventaLocal.total.toFixed(2) + "\n=========================\n\x1d\x56\x41";
+            let txt = "\x1b\x40\x1b\x61\x01";
+            txt += "\x1b\x21\x30MOSexpress\n\n";
+            txt += "\x1b\x21\x10*** RE-IMPRESION ***\n\x1b\x21\x00";
+            txt += "================================\n";
+            txt += "\x1b\x61\x00FECHA: " + new Date(ventaLocal.timestamp).toLocaleString() + "\n";
+            txt += "TICKET: " + ventaLocal.tipo + " " + ventaLocal.correlativo + "\n";
+            txt += "CLIENTE: " + ventaLocal.cliente_nombre + "\n";
+            txt += "================================\n";
+            txt += "CANT  DESCRIPCION       SUBTOTAL\n";
+            txt += "--------------------------------\n";
+            if (ventaLocal.raw_data && ventaLocal.raw_data.items) {
+               ventaLocal.raw_data.items.forEach(item => {
+                  let desc = item.nombre;
+                  if (desc.length > 18) desc = desc.substring(0, 18);
+                  else desc = desc.padEnd(18, ' ');
+                  let qty = String(item.cantidad).padEnd(4, ' ');
+                  let sub = parseFloat(item.subtotal).toFixed(2).padStart(8, ' ');
+                  txt += qty + " " + desc + " " + sub + "\n";
+               });
+            }
+            txt += "--------------------------------\n";
+            txt += "\x1b\x61\x02"; // Derecha
+            txt += "\x1b\x21\x10TOTAL: S/ " + parseFloat(ventaLocal.total).toFixed(2) + "\n\x1b\x21\x00";
+            txt += "\n\x1b\x61\x01*** COPIA DE COMPROBANTE ***\n";
+            txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02";
             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Reimpresion", btoa(txt));
         };
 
