@@ -96,6 +96,7 @@
       <div class="w-full max-w-md bg-white p-8 rounded-3xl shadow-2xl border border-gray-100">
         <h2 class="text-2xl font-black text-center mb-6">Setup Terminal</h2>
         <input v-model="configWizard.vendedor" type="text" placeholder="Tu Nombre" class="w-full p-4 mb-4 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold">
+        <div v-if="!dbCargada" class="text-sm text-gray-400 font-bold mb-4 text-center animate-pulse">Sincronizando configuraciones...</div>
         <select v-if="dbCargada" v-model="configWizard.zona" @change="configWizard.estacion = null" class="w-full p-4 mb-4 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold">
           <option :value="null" disabled>Selecciona la Zona...</option>
           <option v-for="z in zonasUnicas" :key="z" :value="z">{{ z }}</option>
@@ -104,7 +105,7 @@
           <option :value="null" disabled>Selecciona Estación...</option>
           <option v-for="est in estacionesFiltradas" :key="est.Estacion_Nombre" :value="est">{{ est.Estacion_Nombre }}</option>
         </select>
-        <button @click="iniciarTurno" :disabled="!configWizard.vendedor || !configWizard.estacion" class="w-full mt-6 bg-posPrimary text-white font-black py-4 rounded-xl shadow-lg active:scale-95">INICIAR PWA</button>
+        <button @click="iniciarTurno" :disabled="!configWizard.vendedor || !configWizard.estacion" class="w-full mt-6 bg-posPrimary text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-400 disabled:shadow-none transition-all">INICIAR PWA</button>
       </div>
     </div>
     
@@ -535,8 +536,15 @@
         const buscandoCliente = ref(false);
 
         // --- COMPUTADOS ---
-        const zonasUnicas = computed(() => db.value.ZONAS_CONFIG ? [...new Set(db.value.ZONAS_CONFIG.map(z => z.Zona_ID))] : []);
-        const estacionesFiltradas = computed(() => (db.value.ZONAS_CONFIG && configWizard.value.zona) ? db.value.ZONAS_CONFIG.filter(z => z.Zona_ID === configWizard.value.zona) : []);
+        const zonasUnicas = computed(() => {
+            if (db.value.ZONAS_CONFIG && db.value.ZONAS_CONFIG.length > 0) return [...new Set(db.value.ZONAS_CONFIG.map(z => z.Zona_ID))];
+            return ['ZONA_MOCK_FALLBACK']; // Fallback robusto
+        });
+        const estacionesFiltradas = computed(() => {
+            if (db.value.ZONAS_CONFIG && db.value.ZONAS_CONFIG.length > 0 && configWizard.value.zona) return db.value.ZONAS_CONFIG.filter(z => z.Zona_ID === configWizard.value.zona);
+            if (configWizard.value.zona === 'ZONA_MOCK_FALLBACK') return [{ Estacion_Nombre: 'Caja Default', PrintNode_ID: '123', Serie_Nota: 'NV01', Serie_Boleta: 'B001', Serie_Factura: 'F001' }];
+            return [];
+        });
         const granTotal = computed(() => carrito.value.reduce((acc, item) => acc + item.subtotal, 0));
         const vuelto = computed(() => pago.value.montoRecibido - granTotal.value);
         
@@ -633,34 +641,47 @@
           if(configLocal) config.value = JSON.parse(configLocal);
 
           // Chequear Caja Local
-          const cajaActiva = localStorage.getItem('mosexpress_caja_activa');
-          if(cajaActiva) {
-             const cr = JSON.parse(cajaActiva);
-             // Regla Negocio: Solo sirve si es de hoy (Mismo formato de Día Local)
-             if(new Date(cr.fecha).toDateString() === new Date().toDateString()) {
-                 cajaAbierta.value = true;
-                 idCajaActual.value = cr.idCaja;
-                 montoAperturaMemoria.value = cr.monto;
-             } else {
-                 localStorage.removeItem('mosexpress_caja_activa'); // Expiró ayer
-             }
-          }
+          try {
+              const cajaActiva = localStorage.getItem('mosexpress_caja_activa');
+              if(cajaActiva) {
+                 const cr = JSON.parse(cajaActiva);
+                 if(new Date(cr.fecha).toDateString() === new Date().toDateString()) {
+                     cajaAbierta.value = true;
+                     idCajaActual.value = cr.idCaja;
+                     montoAperturaMemoria.value = cr.monto;
+                 } else {
+                     localStorage.removeItem('mosexpress_caja_activa'); // Expiró ayer
+                 }
+              }
+          } catch(e) { localStorage.removeItem('mosexpress_caja_activa'); }
 
           // Restore Ventas List (Mock Local) y Limpiar si son de Días Anteriores
-          const vLoc = localStorage.getItem('mosexpress_ventas_hoy');
-          if(vLoc) {
-              const ventasGuardadas = JSON.parse(vLoc);
-              // Solo mostrar en la app las ventas de la caja de HOY
-              ventasHoy.value = ventasGuardadas.filter(v => new Date(v.timestamp).toDateString() === new Date().toDateString());
-              localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
-          }
+          try {
+              const vLoc = localStorage.getItem('mosexpress_ventas_hoy');
+              if(vLoc) {
+                  const ventasGuardadas = JSON.parse(vLoc);
+                  ventasHoy.value = ventasGuardadas.filter(v => new Date(v.timestamp).toDateString() === new Date().toDateString());
+                  localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+              }
+          } catch(e) { ventasHoy.value = []; localStorage.removeItem('mosexpress_ventas_hoy'); }
 
-          const dbLocal = localStorage.getItem('mosexpress_db');
-          if (dbLocal) { 
-              db.value = JSON.parse(dbLocal); 
-              dbCargada.value = true; 
-              mapearCatalogoLocal(); 
-          } else { 
+          try {
+              const dbLocal = localStorage.getItem('mosexpress_db');
+              if (dbLocal) { 
+                  db.value = JSON.parse(dbLocal); 
+                  dbCargada.value = true; 
+                  mapearCatalogoLocal(); 
+              } else { 
+                  db.value = generarBaseDatosMock(); 
+                  dbCargada.value = true; 
+                  mapearCatalogoLocal(); 
+                  if(!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                      sincronizarCatalogoBase();
+                  }
+              }
+          } catch(e) {
+              console.warn("Parse DB", e);
+              localStorage.removeItem('mosexpress_db');
               db.value = generarBaseDatosMock(); 
               dbCargada.value = true; 
               mapearCatalogoLocal(); 
