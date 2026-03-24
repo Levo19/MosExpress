@@ -871,7 +871,7 @@
             txt += "SALDO INICIAL: S/ " + parseFloat(montoApertura.value).toFixed(2) + "\n\n";
             txt += "\x1b\x61\x01"; // Centrar
             txt += "*** TURNO INICIADO ***\n";
-            txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02"; // Feed, Cortar, Pitar 3 veces
+            txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02"; // Feed extra, Full Cut (GS V, ESC m, ESC i), Pitar 5 veces
             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura ", btoa(txt));
 
             cajaAbierta.value = true; idCajaActual.value = cid; montoAperturaMemoria.value = montoApertura.value;
@@ -927,7 +927,7 @@
              txt += "EFECTIVO FINAL: S/ " + montoFinal.toFixed(2) + "\n";
              txt += "\x1b\x45\x00"; // Bold off
              txt += "================================================\n";
-             txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02";
+             txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
              mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Caja Z", btoa(txt));
 
              cajaAbierta.value = false;
@@ -1025,6 +1025,13 @@
               }
           }
           
+          // 2.5 Buscar directamente por SKU_Base
+          const skuMatch = productosCatalogo.value.find(p => String(p.sku).toUpperCase() === searchCode);
+          if (skuMatch) {
+              agregarOVerDetalle(skuMatch);
+              bBuscador.value = ''; filtrarCatalogo(); return;
+          }
+
           // 3º Fallback de Búsqueda por Nombre de Producto Base
           const pbObj = productosCatalogo.value.find(p => p.nombreCorto.toUpperCase().includes(code));
           if (pbObj) {
@@ -1182,7 +1189,7 @@
            txt += "*** GRACIAS POR SU COMPRA ***\n";
            if (syncStatus === 'pending') txt += "(Sujeto a Sincronizacion)\n";
            
-           txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02"; // Feed, Cut, Beep
+           txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02"; // Feed extra, Full Cut (GS V, ESC m, ESC i), Pitar 5 veces
            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", btoa(txt));
 
            agregarToast('¡Venta Exitosa!', correlativoReal);
@@ -1217,7 +1224,7 @@
             txt += "\x1b\x61\x02"; // Derecha
             txt += "\x1b\x21\x10TOTAL: S/ " + parseFloat(ventaLocal.total).toFixed(2) + "\n\x1b\x21\x00";
             txt += "\n\x1b\x61\x01*** COPIA DE COMPROBANTE ***\n";
-            txt += "\n\n\n\n\x1d\x56\x41\x00\x1b\x42\x03\x02";
+            txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Reimpresion", btoa(txt));
         };
 
@@ -1238,10 +1245,10 @@
                   "\x1b\x21\x30" +      // Fuente Doble Alto y Ancho
                   obj.nombreCorto + "\n\n" +
                   "\x1d\x6b\x04" +      // Imprimir Código de Barras (CODE128)
-                  obj.sku + "\x00" + 
+                  obj.codBarras + "\x00" + 
                   "\n\n" +
                   "\x1b\x21\x30 S/ " + obj.precio.toFixed(2) + "\n" +
-                  "\x1d\x56\x41"        // Corte de papel automático
+                  "\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69" // Corte automátco
                );
 
                try {
