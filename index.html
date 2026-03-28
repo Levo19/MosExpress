@@ -1035,8 +1035,11 @@
                   deviceId: deviceId.value
               })
           });
-          if (!resp.ok) throw new Error("Error impresión GAS: " + resp.status);
-          return resp.json();
+          if (!resp.ok) throw new Error("Error HTTP GAS: " + resp.status);
+          const res = await resp.json();
+          // GAS siempre devuelve HTTP 200 — hay que revisar el status del JSON
+          if (res.status === 'error') throw new Error(res.mensaje || 'Error PrintNode desconocido');
+          return res;
         };
 
         const iniciarTurno = () => {
@@ -1078,7 +1081,8 @@
             txt += "\x1b\x61\x01"; // Centrar
             txt += "*** TURNO INICIADO ***\n";
             txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02"; // Feed extra, Full Cut (GS V, ESC m, ESC i), Pitar 5 veces
-            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura ", btoa(txt));
+            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura ", btoa(txt))
+                .catch(e => agregarToast('Error Impresión', e.message));
 
             cajaAbierta.value = true; idCajaActual.value = cid; montoAperturaMemoria.value = montoApertura.value;
             localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto: montoAperturaMemoria.value, fecha: Date.now() }));
@@ -1135,7 +1139,8 @@
              txt += "\x1b\x45\x00"; // Bold off
              txt += "================================================\n";
              txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Caja Z", btoa(txt));
+             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Caja Z", btoa(txt))
+                .catch(e => agregarToast('Error Impresión', e.message));
 
              cajaAbierta.value = false;
              idCajaActual.value = '';
@@ -1514,7 +1519,8 @@
            if (syncStatus === 'pending') txt += "(Sujeto a Sincronizacion)\n";
            
            txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02"; // Feed extra, Full Cut (GS V, ESC m, ESC i), Pitar 5 veces
-           mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", btoa(txt));
+           mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", btoa(txt))
+               .catch(e => agregarToast('Error Impresión', e.message));
 
            agregarToast('¡Venta Exitosa!', correlativoReal);
            // Decrementar stock local por zona
@@ -1572,7 +1578,8 @@
             txt += "\x1b\x21\x10TOTAL: S/ " + parseFloat(ventaLocal.total).toFixed(2) + "\n\x1b\x21\x00";
             txt += "\n\x1b\x61\x01*** COPIA DE COMPROBANTE ***\n";
             txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Reimpresion", btoa(txt));
+            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Reimpresion", btoa(txt))
+                .catch(e => agregarToast('Error Impresión', e.message));
         };
 
         // --- MÓDULO C: LOGICA TOOLS (MEMBRETES RAW) ---
