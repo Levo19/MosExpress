@@ -11,8 +11,8 @@
       theme: { extend: { colors: { posPrimary: '#10b981', posSecondary: '#3b82f6', posBg: '#111827', posCard: '#1f2937' } } }
     }
   </script>
-  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -30,9 +30,41 @@
     .dark-mode .text-gray-500 { color: #9ca3af; }
     .dark-mode input, .dark-mode select { background-color: #374151; color: white; border-color: #4b5563; }
     .dark-mode .border-gray-200, .dark-mode .border-gray-100 { border-color: #374151; }
+    /* Safe area iOS PWA */
+    :root { --safe-b: env(safe-area-inset-bottom, 0px); }
+    nav.fixed.bottom-0 { padding-bottom: var(--safe-b); height: calc(4rem + var(--safe-b)); }
+    /* Botones táctiles mínimos */
+    button { min-height: 40px; touch-action: manipulation; }
+    button:disabled { opacity: 0.5 !important; cursor: not-allowed; }
+    /* Cards de producto: altura imagen consistente en todos los tamaños */
+    .prod-img { height: clamp(60px, 15vw, 100px); }
+    /* Texto mínimo legible en móvil */
+    @media (max-width: 360px) {
+      .text-\[11px\] { font-size: 10px; }
+      .text-sm { font-size: 13px; }
+    }
+    /* Panel derecho (carrito) siempre visible cuando está activo */
+    .panel-transition { transition: width 0.2s ease; }
+    /* Modal de pago no se sale del viewport en pantallas pequeñas */
+    @media (max-height: 600px) {
+      .modal-pago-inner { max-height: 98dvh !important; }
+    }
   </style>
   <script>
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.error(e));
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        // Cuando el SW detecta una nueva versión, recarga la página automáticamente
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+              // Nueva versión activa — recargar para que todos los dispositivos vean los cambios
+              window.location.reload();
+            }
+          });
+        });
+      }).catch(e => console.error(e));
+    }
   </script>
 </head>
 <body class="h-screen flex flex-col font-sans overflow-hidden select-none" :class="{'dark-mode': false}">
@@ -50,8 +82,11 @@
         
         <!-- BUSCADOR SOLO VISIBLE EN POS -->
         <div v-if="currentModule === 'POS'" class="flex-1 relative flex items-center">
-          <input type="text" ref="scannerInput" v-model="bBuscador" @keyup.enter="procesarEscaneoOBusqueda" @input="filtrarCatalogo" placeholder="Buscar o Escanear..." class="w-full text-base p-2.5 pl-10 pr-12 rounded-xl text-gray-800 focus:outline-none focus:ring-4 focus:ring-emerald-300 transition-shadow shadow-inner font-semibold bg-white">
+          <input type="text" ref="scannerInput" v-model="bBuscador" @keyup.enter="procesarEscaneoOBusqueda" @input="filtrarCatalogo" placeholder="Buscar o Escanear..." :inputmode="mostrarTeclado ? 'text' : 'none'" class="w-full text-base p-2.5 pl-10 pr-20 rounded-xl text-gray-800 focus:outline-none focus:ring-4 focus:ring-emerald-300 transition-shadow shadow-inner font-semibold bg-white">
           <svg class="w-5 h-5 text-gray-400 absolute left-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          <button @click="toggleTeclado" class="absolute right-11 p-2 rounded-lg transition-colors" :class="mostrarTeclado ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-400'" :title="mostrarTeclado ? 'Ocultar teclado' : 'Mostrar teclado'">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 11h.01M9 11h.01M12 11h.01M15 11h.01M18 11h.01M8 14h8"/></svg>
+          </button>
           <button @click="toggleCamara" class="absolute right-1 p-2 bg-emerald-100 text-posPrimary rounded-lg hover:bg-emerald-200 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
           </button>
@@ -59,6 +94,10 @@
       </div>
       
       <div class="flex items-center space-x-2 shrink-0 ml-2">
+        <button @click="toggleDarkMode" class="p-2 rounded-lg bg-black bg-opacity-20 hover:bg-opacity-30 text-white transition-colors" :title="darkMode ? 'Modo Claro' : 'Modo Oscuro'">
+          <svg v-if="darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+          <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+        </button>
         <span v-if="offlineMode" class="bg-red-500 px-2 py-1 rounded text-[10px] font-bold shadow animate-pulse">OFFLINE</span>
         <button v-if="pendingSales.length > 0" @click="sincronizarDatos" class="bg-amber-400 text-amber-900 px-2 py-1 rounded text-[10px] font-bold shadow flex items-center active:scale-95">
            <svg class="w-3 h-3 mr-1" :class="{'animate-spin': isSyncing}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -164,16 +203,23 @@
                         Aún no hay {{ tabCajaActivo.toLowerCase() }} registradas.
                     </div>
                     
-                    <div v-for="venta in ventasHistorialFiltradas" :key="venta.id" class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden text-gray-800">
-                        <div @click="venta.expanded = !venta.expanded" class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 active:bg-gray-100">
-                            <div class="flex items-center space-x-4">
-                               <div class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-lg font-bold text-xs uppercase">{{ venta.tipo }}</div>
-                               <div class="font-bold text-lg">{{ venta.correlativo }}</div>
+                    <div v-for="venta in ventasHistorialFiltradas" :key="venta.id"
+                         class="rounded-2xl border shadow-sm overflow-hidden text-gray-800 transition-all"
+                         :class="venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : 'bg-white border-gray-200'">
+
+                        <div @click="venta.expanded = !venta.expanded" class="p-4 flex justify-between items-center cursor-pointer hover:bg-black hover:bg-opacity-5 active:bg-opacity-10">
+                            <div class="flex items-center space-x-3 flex-wrap gap-y-1">
+                               <div class="px-3 py-1 rounded-lg font-bold text-xs uppercase"
+                                    :class="venta.anulada ? 'bg-red-200 text-red-800' : 'bg-emerald-100 text-emerald-800'">
+                                 {{ venta.anulada ? 'ANULADO' : venta.tipo }}
+                               </div>
+                               <div class="font-bold text-lg" :class="venta.anulada ? 'line-through text-gray-400' : ''">{{ venta.correlativo }}</div>
                             </div>
-                            <div class="flex items-center space-x-4">
+                            <div class="flex items-center space-x-3">
                                <div class="font-black text-xl flex flex-col items-end">
-                                  <span>S/ {{ venta.total.toFixed(2) }}</span>
-                                  <span v-if="venta.syncStatus === 'pending'" class="text-[9px] text-amber-500 flex items-center mt-0.5 uppercase tracking-widest"><svg class="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> En Cola</span>
+                                  <span :class="venta.anulada ? 'line-through text-gray-400' : ''">S/ {{ venta.total.toFixed(2) }}</span>
+                                  <span v-if="venta.anulada" class="text-[9px] text-red-500 uppercase tracking-widest font-black">No cuenta en cierre</span>
+                                  <span v-else-if="venta.syncStatus === 'pending'" class="text-[9px] text-amber-500 flex items-center mt-0.5 uppercase tracking-widest"><svg class="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> En Cola</span>
                                   <span v-else class="text-[9px] text-blue-500 flex items-center mt-0.5 uppercase tracking-widest"><svg class="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Enviado</span>
                                </div>
                                <svg class="w-5 h-5 text-gray-400 transform transition-transform" :class="{'rotate-180': venta.expanded}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
@@ -181,15 +227,35 @@
                         </div>
 
                         <!-- Detalles Expansion -->
-                        <div v-show="venta.expanded" class="p-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-[slideUp_0.2s]">
-                            <div class="text-xs text-gray-500 font-mono">
-                                <p>Cliente: {{ venta.cliente_doc }} - {{ venta.cliente_nombre }}</p>
-                                <p>Fecha: {{ new Date(venta.timestamp).toLocaleTimeString() }}</p>
-                                <p>Artículos: {{ venta.items_count }}</p>
+                        <div v-show="venta.expanded" class="border-t animate-[slideUp_0.2s]"
+                             :class="venta.anulada ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-gray-50'">
+                            <!-- Info general -->
+                            <div class="p-4 text-xs text-gray-500 font-mono space-y-0.5">
+                                <p><span class="font-bold text-gray-600">Cliente:</span> {{ venta.cliente_doc || '-' }} — {{ venta.cliente_nombre }}</p>
+                                <p><span class="font-bold text-gray-600">Hora:</span> {{ new Date(venta.timestamp).toLocaleTimeString() }}</p>
                             </div>
-                            <div class="flex space-x-2 w-full sm:w-auto">
-                                <button class="flex-1 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 font-bold py-2 px-4 rounded-xl shadow-sm text-sm active:scale-95">Anular</button>
-                                <button @click="reimprimirTicket(venta)" class="flex-1 bg-posSecondary text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center">Imprimir</button>
+                            <!-- Items del ticket -->
+                            <div v-if="venta.raw_data && venta.raw_data.items" class="px-4 pb-2">
+                                <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                                    <div v-for="item in venta.raw_data.items" :key="item.sku" class="flex justify-between items-center px-3 py-2 border-b border-gray-50 last:border-0 text-xs">
+                                        <span class="font-bold text-gray-700 flex-1 truncate pr-2">{{ item.nombre }}</span>
+                                        <span class="text-gray-400 shrink-0">x{{ item.cantidad }}</span>
+                                        <span class="font-black text-gray-800 ml-3 shrink-0">S/ {{ parseFloat(item.subtotal).toFixed(2) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Botones -->
+                            <div class="p-4 flex space-x-2">
+                                <button v-if="!venta.anulada" @click="anularVenta(venta)"
+                                        class="flex-1 bg-white border-2 border-red-300 text-red-600 font-bold py-2 px-4 rounded-xl text-sm active:scale-95 hover:bg-red-50 transition-colors">
+                                    Anular
+                                </button>
+                                <div v-else class="flex-1 flex items-center justify-center bg-red-100 text-red-500 font-black text-xs py-2 px-4 rounded-xl uppercase tracking-wider">
+                                    ✕ Anulado
+                                </div>
+                                <button @click="reimprimirTicket(venta)" class="flex-1 bg-posSecondary text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center">
+                                    Imprimir
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -208,23 +274,24 @@
             </div>
 
             <!-- LAYOUT POS (Doble Panel v2) -->
-            <div class="flex-1 flex w-full relative">
+            <div class="flex-1 flex w-full relative overflow-hidden">
                 
                 <!-- Panel Izquierdo: Grid Catalogo -->
-                <section class="panel-transition bg-white shadow-sm flex flex-col h-full border-r border-gray-200 h-full overflow-hidden" :class="getPosLeftClasses()">
-                  <main class="flex-1 overflow-y-auto p-3 scrollbar-hide">
+                <section class="panel-transition bg-white flex flex-col border-r border-gray-200 overflow-hidden self-stretch" :class="getPosLeftClasses()">
+                  <main class="flex-1 overflow-y-auto p-3 scrollbar-hide min-h-0">
                      <div class="grid gap-3" :class="uiState.splitScreen && !uiState.isMobile ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'">
                          <div v-if="!dbCargada" class="col-span-full py-10 text-center"><svg class="animate-spin w-8 h-8 mx-auto text-emerald-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                          
                          <!-- Productos Component -->
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)" class="bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative">
                             <div v-if="prod.promoStr" class="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-bl-lg z-10 shadow-sm uppercase">PROMO</div>
-                            <div class="h-20 w-full bg-gray-200">
+                            <div class="prod-img w-full bg-gray-200">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
                             </div>
                             <div class="p-2.5 flex-1 flex flex-col justify-between bg-white">
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
                                <p class="text-posPrimary font-black text-sm mt-2">S/ {{ prod.precio.toFixed(2) }} <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
+                               <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + ' uds' : 'Sin stock' }}</span>
                             </div>
                          </div>
                      </div>
@@ -232,17 +299,22 @@
                 </section>
 
                 <!-- Panel Derecho: Carrito -->
-                <section class="panel-transition bg-gray-50 h-full flex flex-col shadow-[-10px_0_20px_-5px_rgba(0,0,0,0.05)] z-20 overflow-hidden" :class="getPosRightClasses()">
+                <section class="panel-transition bg-gray-50 flex flex-col shadow-[-10px_0_20px_-5px_rgba(0,0,0,0.05)] z-20 overflow-hidden self-stretch" :class="getPosRightClasses()">
                    <div class="bg-white border-b border-gray-200 p-3 flex justify-between items-center shrink-0">
-                       <h2 class="font-black text-gray-800 uppercase flex items-center">
-                          <svg class="w-5 h-5 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                          Carrito <span class="bg-gray-200 text-gray-600 ml-2 px-2 py-0.5 rounded-full text-xs">{{ carrito.length }} items</span>
-                       </h2>
+                       <div class="flex items-center gap-2">
+                          <button v-if="uiState.isMobile" @click="uiState.mobileView = 'catalog'" class="p-2 rounded-lg bg-gray-100 text-gray-600 active:scale-95 shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+                          </button>
+                          <h2 class="font-black text-gray-800 uppercase flex items-center">
+                             <svg class="w-5 h-5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                             Carrito <span class="bg-gray-200 text-gray-600 ml-1.5 px-2 py-0.5 rounded-full text-xs">{{ carrito.length }}</span>
+                          </h2>
+                       </div>
                        <button v-if="carrito.length > 0" @click="carrito = []" class="text-xs text-red-500 font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 active:scale-95 transition-transform uppercase tracking-wider">Vaciar</button>
                    </div>
                    
                    <!-- Lista Productos en carro -->
-                   <main class="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-hide">
+                   <main class="flex-1 overflow-y-auto p-2 space-y-2 scrollbar-hide min-h-0">
                       <div v-if="carrito.length === 0" class="h-full flex flex-col items-center justify-center text-gray-300">
                         <svg class="w-16 h-16 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg>
                         <p class="text-sm font-semibold">Agregue productos</p>
@@ -265,7 +337,7 @@
                       </div>
                    </main>
                    
-                   <footer class="bg-white border-t p-4 pb-28 md:pb-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50">
+                   <footer class="bg-white border-t p-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50">
                        <button @click="abrirModalPago" :disabled="carrito.length === 0" class="w-full bg-emerald-500 text-white font-black text-lg py-4 rounded-xl shadow-lg shadow-emerald-200 disabled:bg-gray-300 disabled:shadow-none transition-transform active:scale-95 flex justify-between px-6 items-center">
                          <span>COBRAR</span>
                          <span class="text-2xl">S/ {{ granTotal.toFixed(2) }}</span>
@@ -274,10 +346,9 @@
                 </section>
                 
                 <!-- Toggle Button Mobile Flotante -->
-                <button v-show="carrito.length > 0 && uiState.isMobile" @click="uiState.mobileView = (uiState.mobileView === 'cart' ? 'catalog' : 'cart')" class="absolute bottom-28 right-4 z-[60] bg-gray-900 border-2 border-posPrimary text-white rounded-full w-14 h-14 shadow-2xl flex items-center justify-center active:scale-95 transition-transform" aria-label="Cambiar vista">
-                    <svg v-if="uiState.mobileView === 'cart'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-                    <svg v-else class="w-6 h-6 z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                    <span v-if="uiState.mobileView === 'catalog'" class="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 flex items-center justify-center text-[10px] border border-white font-black">{{ carrito.length }}</span>
+                <button v-show="carrito.length > 0 && uiState.isMobile && uiState.mobileView === 'catalog'" @click="uiState.mobileView = 'cart'" class="absolute bottom-28 right-4 z-[60] bg-gray-900 border-2 border-posPrimary text-white rounded-full w-14 h-14 shadow-2xl flex items-center justify-center active:scale-95 transition-transform" aria-label="Cambiar vista">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    <span class="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 flex items-center justify-center text-[10px] border border-white font-black">{{ carrito.length }}</span>
                 </button>
             </div>
         </div>
@@ -292,17 +363,24 @@
                  </div>
                  
                  <div class="relative w-full">
-                    <input type="text" v-model="bHerramientas" @keyup.enter="imprimirMembrete" placeholder="Escanear producto..." class="w-full p-5 pl-12 rounded-2xl border-2 border-emerald-500 focus:ring-4 ring-emerald-100 outline-none text-xl font-mono shadow-lg text-center tracking-widest bg-gray-50">
+                    <input type="text" v-model="bHerramientas" @keyup.enter="imprimirMembrete" placeholder="Escanear o escribir código..." class="w-full p-5 pl-12 pr-16 rounded-2xl border-2 border-emerald-500 focus:ring-4 ring-emerald-100 outline-none text-xl font-mono shadow-lg text-center tracking-widest bg-gray-50">
                     <svg class="w-7 h-7 text-emerald-400 absolute left-4 top-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                    <button @click="toggleCamaraHerramientas" class="absolute right-3 top-3 p-2 rounded-xl transition-colors" :class="camaraHerramientasAbierta ? 'bg-red-100 text-red-500' : 'bg-emerald-100 text-posPrimary hover:bg-emerald-200'">
+                       <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                 </div>
+                 <div v-show="camaraHerramientasAbierta" class="w-full rounded-2xl overflow-hidden shadow-lg">
+                    <div id="reader-herramientas" class="bg-black w-full"></div>
+                    <button @click="toggleCamaraHerramientas" class="w-full bg-red-500 text-white p-3 font-bold text-sm">✕ Cerrar Escáner</button>
                  </div>
 
                  <button @click="imprimirMembrete" :disabled="!bHerramientas || procesandoMembrete" class="w-full bg-gray-800 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-transform flex justify-center uppercase items-center tracking-widest disabled:bg-gray-400">
                     <svg v-if="procesandoMembrete" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     Generar 1 Copia RAW
                  </button>
-                 
+
                  <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
-                 
+
                  <div class="text-center">
                     <h2 class="text-2xl font-black text-gray-800">BASE DE DATOS</h2>
                     <p class="text-sm text-gray-500 font-bold mt-1">Descarga o actualiza el catálogo leyendo de Google Sheets.</p>
@@ -311,11 +389,6 @@
                     <svg v-if="procesandoCatalogo" class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     <svg v-else class="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                     Sincronizar Maestro
-                 </button>
-
-                 <button @click="imprimirMembrete" :disabled="!bHerramientas || procesandoMembrete" class="w-full bg-gray-800 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-transform flex justify-center uppercase items-center tracking-widest disabled:bg-gray-400">
-                    <svg v-if="procesandoMembrete" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Generar 1 Copia RAW
                  </button>
                  
 
@@ -405,7 +478,7 @@
 
     <!-- MODAL DE PAGO E IMPRESIÓN -->
     <div v-if="modalPago" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex flex-col justify-end backdrop-blur-sm transition-opacity">
-        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[92dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+        <div class="modal-pago-inner bg-white rounded-t-[2.5rem] p-6 max-h-[92dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-5 shrink-0">
                <h2 class="text-3xl font-black text-gray-800 tracking-tight">CAJA COBRO</h2>
                <button @click="modalPago = false" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
@@ -416,8 +489,8 @@
                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Comprobante</label>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
                       <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; limpiarCliente()" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
-                      <button @click="pago.tipoDoc = 'BOLETA'" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
-                      <button @click="pago.tipoDoc = 'FACTURA'" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
+                      <button @click="pago.tipoDoc = 'BOLETA'; limpiarCliente()" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
+                      <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente()" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
                   </div>
                </div>
     
@@ -425,23 +498,37 @@
                <div v-if="pago.tipoDoc !== 'NOTA_DE_VENTA'">
                  <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Cliente {{ pago.tipoDoc === 'FACTURA' ? '(RUC)' : '(DNI/RUC)' }}</label>
                  <div class="flex space-x-2">
-                   <input v-model="pago.docCliente" type="number" placeholder="Documento..." class="flex-1 p-3.5 border-2 border-gray-100 rounded-xl focus:border-posPrimary font-bold text-lg bg-gray-50 focus:bg-white tracking-widest outline-none">
-                   <button @click="buscarClienteAPI" class="bg-gray-800 text-emerald-400 px-5 rounded-xl font-bold active:scale-95 transition-transform flex items-center justify-center shadow-lg">
+                   <input v-model="pago.docCliente" type="number" :placeholder="pago.tipoDoc === 'FACTURA' ? 'RUC (11 dígitos)' : 'DNI (8 dígitos)'" class="flex-1 p-3.5 border-2 rounded-xl focus:border-posPrimary font-bold text-lg bg-gray-50 focus:bg-white tracking-widest outline-none transition-colors" :class="errorDocumento ? 'border-red-300 bg-red-50' : 'border-gray-100'">
+                   <button @click="buscarClienteAPI" :disabled="!!errorDocumento || !pago.docCliente" class="bg-gray-800 text-emerald-400 px-5 rounded-xl font-bold active:scale-95 transition-transform flex items-center justify-center shadow-lg disabled:opacity-40">
                      <svg v-if="buscandoCliente" class="animate-spin w-6 h-6" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                      <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                    </button>
                  </div>
+                 <p v-if="errorDocumento" class="mt-1 text-xs text-red-500 font-bold">{{ errorDocumento }}</p>
                  <div v-if="pago.nombreCliente" class="mt-2 text-xs font-black bg-emerald-50 text-emerald-800 p-2.5 rounded-lg border border-emerald-100 uppercase">{{ pago.nombreCliente }}</div>
+                 <!-- Búsqueda por nombre de cliente frecuente -->
+                 <div class="mt-3">
+                   <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">O buscar por nombre:</p>
+                   <input v-model="busquedaNombre" type="text" placeholder="Nombre cliente frecuente..." class="w-full p-3 border-2 border-gray-100 rounded-xl font-semibold text-sm bg-gray-50 focus:border-posPrimary outline-none transition-colors">
+                   <div v-if="sugerenciasCliente.length > 0" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                     <div v-for="c in sugerenciasCliente" :key="c.Documento" @click="elegirClienteFrecuente(c)" class="p-3 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-50 last:border-0 flex justify-between items-center">
+                       <span class="font-bold text-gray-800 text-sm">{{ c.Nombre }}</span>
+                       <span class="text-xs text-gray-400 font-mono ml-2 shrink-0">{{ c.Documento }}</span>
+                     </div>
+                   </div>
+                 </div>
                </div>
     
                <div>
                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Método de Pago</label>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl mb-4">
-                      <button @click="pago.metodo = 'EFECTIVO'" :class="pago.metodo === 'EFECTIVO' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">EFECTIVO</button>
-                      <button @click="pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal" :class="pago.metodo === 'VIRTUAL' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">VIRTUAL / YAPE</button>
+                      <button @click="pago.metodo = 'EFECTIVO'; pago.montoVirtual = 0" :class="pago.metodo === 'EFECTIVO' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">EFECTIVO</button>
+                      <button @click="pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal; pago.montoVirtual = 0" :class="pago.metodo === 'VIRTUAL' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">VIRTUAL</button>
+                      <button @click="pago.metodo = 'MIXTO'; pago.montoRecibido = 0; pago.montoVirtual = 0" :class="pago.metodo === 'MIXTO' ? 'bg-white text-posSecondary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">MIXTO</button>
                   </div>
                </div>
 
+               <!-- EFECTIVO: monto recibido + vuelto -->
                <div v-if="pago.metodo === 'EFECTIVO'">
                  <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido (S/)</label>
                  <div class="grid grid-cols-5 gap-1.5 mb-2">
@@ -450,14 +537,35 @@
                  </div>
                  <input v-model.number="pago.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-4xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary focus:bg-white outline-none">
                </div>
-               
                <div v-if="pago.metodo === 'EFECTIVO'" class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
                  <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
                  <span class="text-4xl font-black" :class="vuelto < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vuelto.toFixed(2) }}</span>
                </div>
+
+               <!-- MIXTO: virtual + efectivo -->
+               <div v-if="pago.metodo === 'MIXTO'" class="space-y-3">
+                 <div>
+                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Monto Virtual / Yape (S/)</label>
+                   <input v-model.number="pago.montoVirtual" type="number" step="0.01" placeholder="0.00" class="w-full p-4 text-center text-3xl font-black bg-blue-50 border-2 border-posSecondary rounded-2xl focus:bg-white outline-none">
+                   <p v-if="pago.montoVirtual > 0 && pago.montoVirtual < granTotal" class="text-xs text-gray-500 font-bold mt-1 text-right">Saldo en efectivo: S/ {{ (granTotal - pago.montoVirtual).toFixed(2) }}</p>
+                   <p v-if="pago.montoVirtual >= granTotal" class="text-xs text-amber-600 font-bold mt-1">El monto virtual cubre el total — usa VIRTUAL en su lugar</p>
+                 </div>
+                 <div>
+                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido (S/)</label>
+                   <div class="grid grid-cols-5 gap-1.5 mb-2">
+                     <button @click="pago.montoRecibido = Math.max(0, parseFloat((granTotal - (pago.montoVirtual||0)).toFixed(2)))" class="col-span-1 bg-emerald-100 text-emerald-800 rounded-lg font-black text-[10px] active:scale-95 py-2.5">EXAC.</button>
+                     <button v-for="billete in [10,20,50,100]" :key="billete" @click="setMonto(billete)" class="bg-white border-2 border-gray-100 text-gray-800 rounded-lg font-black text-sm active:scale-95 py-2.5">{{ billete }}</button>
+                   </div>
+                   <input v-model.number="pago.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-3xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary focus:bg-white outline-none">
+                 </div>
+                 <div class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
+                   <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
+                   <span class="text-4xl font-black" :class="vuelto < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vuelto.toFixed(2) }}</span>
+                 </div>
+               </div>
             </div>
     
-            <button @click="procesarPago" :disabled="(pago.metodo === 'EFECTIVO' && vuelto < 0) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente)" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide">
+            <button @click="procesarPago" :disabled="((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0) || (pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente) || !!errorDocumento" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide">
                <svg v-if="procesando" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                <span>{{ procesando ? 'IMPRIMIENDO...' : 'IMPRIMIR TICKET' }}</span>
             </button>
@@ -468,8 +576,9 @@
   <script>
     const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
 
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec'; 
-    const PRINTNODE_API_KEY = 'hmBLeZPyZCwBR2Kdqf1UWQ7yfGfy4mn6421KqZqI_j0'; 
+    const API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+    // NOTA: La clave de PrintNode fue movida al servidor (Google Apps Script).
+    // El navegador ya NO llama a PrintNode directamente. Ver funcion mandarImpresionPrintNode.
 
     const app = createApp({
       setup() {
@@ -524,6 +633,19 @@
         // --- CÁMARA ---
         const camaraAbierta = ref(false);
         let html5QrcodeScanner = null;
+        const camaraHerramientasAbierta = ref(false);
+        let html5QrHerramientas = null;
+
+        // --- TECLADO VIRTUAL ---
+        const mostrarTeclado = ref(false);
+
+        // --- DARK MODE ---
+        const darkMode = ref(false);
+        const toggleDarkMode = () => {
+            darkMode.value = !darkMode.value;
+            document.body.classList.toggle('dark-mode', darkMode.value);
+            localStorage.setItem('mosexpress_darkmode', darkMode.value ? '1' : '0');
+        };
 
         // --- SETUP WIZARD ---
         const config = ref({ completado: false, vendedor: '', zona: '', estacion: null });
@@ -532,7 +654,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', montoRecibido: 0 });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', montoRecibido: 0, montoVirtual: 0 });
         const buscandoCliente = ref(false);
 
         // --- COMPUTADOS ---
@@ -546,8 +668,19 @@
             return [];
         });
         const granTotal = computed(() => carrito.value.reduce((acc, item) => acc + item.subtotal, 0));
-        const vuelto = computed(() => pago.value.montoRecibido - granTotal.value);
-        
+        const vuelto = computed(() => {
+            if (pago.value.metodo === 'VIRTUAL') return 0;
+            return pago.value.montoRecibido + (pago.value.montoVirtual || 0) - granTotal.value;
+        });
+
+        const errorDocumento = computed(() => {
+            const doc = String(pago.value.docCliente || '').trim();
+            if (!doc) return '';
+            if (pago.value.tipoDoc === 'BOLETA' && !/^\d{8}$/.test(doc)) return 'DNI debe tener exactamente 8 dígitos';
+            if (pago.value.tipoDoc === 'FACTURA' && !/^\d{11}$/.test(doc)) return 'RUC debe tener exactamente 11 dígitos';
+            return '';
+        });
+
         // Filtro Historial de Caja
         const ventasHistorialFiltradas = computed(() => {
             return ventasHoy.value.filter(v => {
@@ -557,7 +690,9 @@
         });
 
         // --- LISTENERS ---
-        const handleResize = () => { uiState.value.isMobile = window.innerWidth < 1024; };
+        // < 900px = pantalla pequeña (celular, tablet 7" vertical): un panel a la vez
+        // ≥ 900px = pantalla grande (tablet 7"+ horizontal, PC): pantalla dividida
+        const handleResize = () => { uiState.value.isMobile = window.innerWidth < 900; };
         const updateOnlineStatus = () => { 
             offlineMode.value = !navigator.onLine; 
             if (!offlineMode.value && pendingSales.value.length > 0) {
@@ -573,33 +708,57 @@
               uiState.value.splitScreen = false;
               uiState.value.mobileView = 'catalog';
            }
+           // Persistir carrito para sobrevivir refreshes accidentales
+           try { localStorage.setItem('mosexpress_carrito', JSON.stringify(newVal)); } catch(e) {}
         }, { deep: true });
+
+        let _intervalFocus = null;
+        let _intervalSync = null;
+        let _intervalMidnight = null;
 
         onMounted(() => {
           window.addEventListener('resize', handleResize);
           window.addEventListener('online', updateOnlineStatus);
           window.addEventListener('offline', updateOnlineStatus);
           handleResize();
-          
-          setInterval(() => {
-            if(config.value.completado && currentModule.value === 'POS' && !modalPago.value && !camaraAbierta.value && !popover.value.visible && scannerInput.value && document.activeElement !== scannerInput.value) {
-                scannerInput.value.focus();
+
+          _intervalFocus = setInterval(() => {
+            if(config.value.completado && currentModule.value === 'POS' && !modalPago.value && !camaraAbierta.value && !popover.value.visible && scannerInput.value) {
+                if (mostrarTeclado.value) {
+                    if (document.activeElement !== scannerInput.value) scannerInput.value.focus();
+                } else {
+                    scannerInput.value.focus({ preventScroll: true });
+                }
             }
           }, 1500);
 
           // Background Auto-Sync de la cola de pendientes
-          setInterval(() => {
+          _intervalSync = setInterval(() => {
               if (pendingSales.value.length > 0 && navigator.onLine) {
                  sincronizarDatos();
               }
           }, 300000); // Cada 5 minutos
+
+          // Auto-sync del catálogo maestro una vez al día (entre 3:00-3:10 AM)
+          _intervalMidnight = setInterval(() => {
+              const now = new Date();
+              const hoy = now.toDateString();
+              const lastAutoSync = localStorage.getItem('mosexpress_last_autosync');
+              if (now.getHours() === 3 && now.getMinutes() < 10 && lastAutoSync !== hoy && !offlineMode.value) {
+                  localStorage.setItem('mosexpress_last_autosync', hoy);
+                  sincronizarCatalogoBase();
+              }
+          }, 5 * 60 * 1000); // Chequear cada 5 min
         });
 
         onUnmounted(() => {
           window.removeEventListener('resize', handleResize);
           window.removeEventListener('online', updateOnlineStatus);
           window.removeEventListener('offline', updateOnlineStatus);
-          if(html5QrcodeScanner) html5QrcodeScanner.clear();
+          clearInterval(_intervalFocus);
+          clearInterval(_intervalSync);
+          clearInterval(_intervalMidnight);
+          if(html5QrcodeScanner) html5QrcodeScanner.clear().catch(() => {});
         });
 
         const agregarToast = (title, msg = '') => {
@@ -620,9 +779,20 @@
         };
 
         // --- INICIALIZACIÓN ---
+        // Cookie fallback para el Device ID (resiste limpiezas de caché)
+        const _getDeviceCookie = () => {
+            const m = document.cookie.match(/(?:^|;)\s*mosexpress_did=([^;]+)/);
+            return m ? decodeURIComponent(m[1]) : null;
+        };
+        const _setDeviceCookie = (id) => {
+            const exp = new Date(); exp.setFullYear(exp.getFullYear() + 2);
+            document.cookie = `mosexpress_did=${encodeURIComponent(id)};expires=${exp.toUTCString()};path=/;SameSite=Strict`;
+        };
+
         const cargarDatos = async () => {
-          // Generar o recuperar UUID
-          let storedId = localStorage.getItem('mosexpress_deviceId');
+          // Generar o recuperar UUID — usa localStorage + cookie como doble respaldo
+          if (localStorage.getItem('mosexpress_darkmode') === '1') { darkMode.value = true; document.body.classList.add('dark-mode'); }
+          let storedId = localStorage.getItem('mosexpress_deviceId') || _getDeviceCookie();
           if (!storedId) {
              try {
                 if (window.crypto && window.crypto.randomUUID) storedId = crypto.randomUUID();
@@ -630,8 +800,10 @@
              } catch(e) {
                 storedId = 'UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
              }
-             localStorage.setItem('mosexpress_deviceId', storedId);
           }
+          // Sincronizar ambos almacenamientos para máxima persistencia
+          localStorage.setItem('mosexpress_deviceId', storedId);
+          _setDeviceCookie(storedId);
           deviceId.value = storedId;
           
           await verificarDispositivoActivo();
@@ -641,6 +813,15 @@
               const configLocal = localStorage.getItem('mosexpress_config');
               if(configLocal) config.value = JSON.parse(configLocal);
           } catch(e) { localStorage.removeItem('mosexpress_config'); }
+
+          // Restaurar carrito en curso (sobrevive refreshes accidentales)
+          try {
+              const carritoLocal = localStorage.getItem('mosexpress_carrito');
+              if(carritoLocal) {
+                  const items = JSON.parse(carritoLocal);
+                  if(Array.isArray(items) && items.length > 0) carrito.value = items;
+              }
+          } catch(e) { localStorage.removeItem('mosexpress_carrito'); }
 
           // Chequear Caja Local
           try {
@@ -716,11 +897,9 @@
              }
            } catch(e) {
              console.error("Error validando dispositivo:", e);
-             if(offlineMode.value) dispositivoAutorizado.value = true;
-             else {
-                dispositivoAutorizado.value = false; // Bloquear si falla el API activamente por error de script
-                agregarToast("Error red", "No se pudo validar");
-             }
+             // Error de red transitorio — permitir acceso con aviso (no bloquear por falla de conectividad)
+             dispositivoAutorizado.value = true;
+             if (!offlineMode.value) agregarToast("Aviso", "Verificación sin conexión — modo local");
            }
            verificandoDispositivo.value = false;
         };
@@ -729,6 +908,17 @@
         const mapearCatalogoLocal = () => {
             if(!db.value.PRESENTACIONES || !db.value.PRODUCTO_BASE) return;
             let prodsText = [];
+            const zona = config.value?.zona || '';
+            // Normaliza ambos lados: quita espacios y ceros iniciales antes de dígitos
+            // "zona01" → "zona1", "Zona1" → "zona1" → coinciden
+            const _norm = s => s.toLowerCase().replace(/\s+/g, '').replace(/0+(\d)/g, '$1');
+            const zonaNorm = _norm(zona);
+            const stockKey = zona ? (
+                Object.keys(db.value.PRODUCTO_BASE?.[0] || {}).find(k => {
+                    if (!k.toLowerCase().startsWith('stock_')) return false;
+                    return _norm(k.slice(6)) === zonaNorm; // slice(6) quita "Stock_"
+                }) || null
+            ) : null;
             db.value.PRODUCTO_BASE.forEach(base => {
                  try {
                      const pres = db.value.PRESENTACIONES.filter(p => p.SKU_Base === base.SKU_Base);
@@ -740,11 +930,13 @@
                          else pStr = `-${promo.Valor_Promo}% Dcto desde ${promo.Cant_Min} u.`;
                      }
                      const term = encodeURIComponent(String(base.Nombre || 'N/A').split(' ')[0].toLowerCase());
+                     const stockVal = (stockKey && base[stockKey] !== undefined && base[stockKey] !== '') ? (parseInt(base[stockKey]) || 0) : null;
                      prodsText.push({
                          idUnico: base.SKU_Base, sku: base.SKU_Base, codBarras: pres[0].Cod_Barras, nombreCorto: base.Nombre || 'Sin Nombre',
                          presentaciones: pres,
                          empaque: pres[0].Empaque, precio: parseFloat(pres[0].Precio_Venta) || 0, codSunat: base.Cod_SUNAT || '01010101',
-                         promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`
+                         promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`,
+                         stock: stockVal
                      });
                  } catch(e) { console.warn("Error mapeando item", base.SKU_Base, e); }
             });
@@ -775,35 +967,41 @@
             procesandoCatalogo.value = false;
         };
 
-        const sincronizarDatos = async () => { 
+        const sincronizarDatos = async () => {
            if (offlineMode.value || pendingSales.value.length === 0 || isSyncing.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
            isSyncing.value = true;
            let exitos = 0;
-           // Copiar array para procesar
            const ventasAProcesar = [...pendingSales.value];
-           
+
            for (let venta of ventasAProcesar) {
-               try {
-                   const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(venta.raw_data) });
-                   const res = await req.json();
-                   if (res.status === 'success') {
-                       // Quitar de pendientes locales
-                       pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
-                       // Actualizar estado visual en el historial
-                       const historiaIdx = ventasHoy.value.findIndex(v => v.id === venta.id);
-                       if(historiaIdx > -1) {
-                           ventasHoy.value[historiaIdx].syncStatus = 'synced';
-                           ventasHoy.value[historiaIdx].raw_data.status = 'synced';
-                           ventasHoy.value[historiaIdx].correlativo = res.correlativo; // Actualizar con correlativo real del GAS
+               let intentos = 0;
+               let exito = false;
+               while (intentos < 3 && !exito) {
+                   try {
+                       const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(venta.raw_data) });
+                       const res = await req.json();
+                       if (res.status === 'success') {
+                           pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                           const historiaIdx = ventasHoy.value.findIndex(v => v.id === venta.id);
+                           if (historiaIdx > -1) {
+                               ventasHoy.value[historiaIdx].syncStatus = 'synced';
+                               ventasHoy.value[historiaIdx].raw_data.status = 'synced';
+                               ventasHoy.value[historiaIdx].correlativo = res.correlativo;
+                           }
+                           exitos++;
+                           exito = true;
+                       } else {
+                           intentos++;
                        }
-                       exitos++;
+                   } catch(e) {
+                       intentos++;
+                       console.warn(`Sync intento ${intentos}/3 fallido para venta ${venta.id}:`, e.message);
+                       if (intentos < 3) await new Promise(r => setTimeout(r, Math.pow(2, intentos) * 1000));
                    }
-               } catch(e) {
-                   console.log("Fallo sync individual:", e);
                }
            }
-           
-           if(exitos > 0) {
+
+           if (exitos > 0) {
                localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
                localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                agregarToast('Sincronización', `${exitos} comprobante(s) subidos a la Nube`);
@@ -820,18 +1018,25 @@
             };
         };
 
+        // La impresion se rutea por GAS para que la clave de PrintNode no quede expuesta en el browser.
+        // El GAS debe tener implementado el handler: accion === 'imprimir'
         const mandarImpresionPrintNode = async (printerId, titulo, textoRaw) => {
-          if(PRINTNODE_API_KEY === 'TU_PRINTNODE_API_KEY_AQUI') {
-             console.log("Mock Impresion (No Key):\n", atob(textoRaw));
-             return {status: 'mock_success'};
+          if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+             console.log("Mock Impresion (modo dev):", titulo);
+             return { status: 'mock_success' };
           }
-          const resp = await fetch(`https://api.printnode.com/printjobs`, {
+          const resp = await fetch(API_URL, {
               method: 'POST',
-              headers: { 'Authorization': 'Basic ' + btoa(PRINTNODE_API_KEY + ':'), 'Content-Type': 'application/json' },
-              body: JSON.stringify({ printerId: printerId, title: titulo, contentType: 'raw_base64', content: textoRaw })
+              body: JSON.stringify({
+                  accion: 'imprimir',
+                  printerId: printerId,
+                  title: titulo,
+                  content: textoRaw,
+                  deviceId: deviceId.value
+              })
           });
-          if(!resp.ok) throw new Error("Error API PrintNode: " + resp.status);
-          return resp.text();
+          if (!resp.ok) throw new Error("Error impresión GAS: " + resp.status);
+          return resp.json();
         };
 
         const iniciarTurno = () => {
@@ -841,6 +1046,7 @@
 
         // --- MÓDULO A: LOGICA CAJA ---
         const abrirCaja = async () => {
+            if (!config.value.estacion) { agregarToast('Error', 'Configuración incompleta, reinicia la app'); return; }
             procesandoCaja.value = true;
             const payload = {
                 tipoEvento: 'APERTURA_CAJA',
@@ -884,6 +1090,7 @@
         const cerrarCaja = async () => {
              let tEfectivo = 0, tVirtual = 0;
              ventasHoy.value.forEach(v => {
+                 if (v.anulada) return; // Las anuladas no cuentan en el cierre
                  if (v.raw_data && v.raw_data.header) {
                      if (v.raw_data.header.metodo === 'EFECTIVO') tEfectivo += v.total;
                      if (v.raw_data.header.metodo === 'VIRTUAL') tVirtual += v.total;
@@ -949,10 +1156,24 @@
         };
 
         // --- MÓDULO B: LOGICA POS ---
-        const filtrarCatalogo = () => { 
-           const q = bBuscador.value.toLowerCase().trim();
-           if(!q) { productosFiltrados.value = productosCatalogo.value; return; }
-           productosFiltrados.value = productosCatalogo.value.filter(p => p.nombreCorto.toLowerCase().includes(q) || p.codBarras.includes(q) || p.empaque.toLowerCase().includes(q));
+        // Normaliza texto para búsqueda fuzzy: minúsculas, sin tildes, sin caracteres especiales
+        const _normTxt = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '');
+
+        const filtrarCatalogo = () => {
+           const raw = bBuscador.value.trim();
+           if(!raw) { productosFiltrados.value = productosCatalogo.value; return; }
+           // Si parece código de barras (solo números), filtro exacto
+           if (/^\d+$/.test(raw)) {
+               productosFiltrados.value = productosCatalogo.value.filter(p => p.codBarras.includes(raw));
+               return;
+           }
+           // Búsqueda inteligente: cada palabra debe aparecer en nombre o empaque
+           const palabras = _normTxt(raw).split(/\s+/).filter(p => p.length > 0);
+           const nombre_norm = (p) => _normTxt(p.nombreCorto) + ' ' + _normTxt(p.empaque);
+           productosFiltrados.value = productosCatalogo.value.filter(p => {
+               const base = nombre_norm(p);
+               return palabras.every(pal => base.includes(pal));
+           });
         };
 
         const toggleCamara = () => {
@@ -965,16 +1186,61 @@
                         { fps: 10, qrbox: { width: 250, height: 150 } },
                         (txt) => { toggleCamara(); bBuscador.value = txt; procesarEscaneoOBusqueda(); },
                         () => {}
-                    ).catch(err => {
-                        agregarToast('Cámara', 'Permiso denegado/Error');
-                        toggleCamara();
+                    ).catch(() => {
+                        agregarToast('Cámara', 'Permiso denegado o no disponible');
+                        camaraAbierta.value = false;
+                        if (html5QrcodeScanner) {
+                            try { html5QrcodeScanner.clear(); } catch(e) {}
+                            html5QrcodeScanner = null;
+                        }
                     });
                 }, 200);
-            } else { 
-                if(html5QrcodeScanner) { 
-                    try { html5QrcodeScanner.stop().then(() => html5QrcodeScanner.clear()); } catch(e) {}
-                    html5QrcodeScanner = null; 
-                } 
+            } else {
+                if(html5QrcodeScanner) {
+                    html5QrcodeScanner.stop()
+                        .then(() => { try { html5QrcodeScanner.clear(); } catch(e) {} html5QrcodeScanner = null; })
+                        .catch(() => { html5QrcodeScanner = null; });
+                }
+            }
+        };
+
+        const toggleCamaraHerramientas = () => {
+            camaraHerramientasAbierta.value = !camaraHerramientasAbierta.value;
+            if (camaraHerramientasAbierta.value) {
+                setTimeout(() => {
+                    html5QrHerramientas = new Html5Qrcode("reader-herramientas");
+                    html5QrHerramientas.start(
+                        { facingMode: "environment" },
+                        { fps: 10, qrbox: { width: 250, height: 150 } },
+                        (txt) => {
+                            bHerramientas.value = txt;
+                            toggleCamaraHerramientas();
+                            imprimirMembrete();
+                        },
+                        () => {}
+                    ).catch(() => {
+                        agregarToast('Cámara', 'Permiso denegado o no disponible');
+                        camaraHerramientasAbierta.value = false;
+                        if (html5QrHerramientas) {
+                            try { html5QrHerramientas.clear(); } catch(e) {}
+                            html5QrHerramientas = null;
+                        }
+                    });
+                }, 200);
+            } else {
+                if (html5QrHerramientas) {
+                    html5QrHerramientas.stop()
+                        .then(() => { try { html5QrHerramientas.clear(); } catch(e) {} html5QrHerramientas = null; })
+                        .catch(() => { html5QrHerramientas = null; });
+                }
+            }
+        };
+
+        const toggleTeclado = () => {
+            mostrarTeclado.value = !mostrarTeclado.value;
+            if (scannerInput.value) {
+                if (mostrarTeclado.value) scannerInput.value.focus();
+                else scannerInput.value.blur();
             }
         };
 
@@ -1044,30 +1310,50 @@
         };
 
         const agregarCarritoObj = (prodObj) => {
+          // Limpiar búsqueda al agregar cualquier producto (click o enter)
+          bBuscador.value = '';
+          filtrarCatalogo();
+          // Avisar si no hay stock (no bloquea la venta)
+          if (prodObj.stock !== null && prodObj.stock === 0) {
+              agregarToast('Sin Stock', prodObj.nombreCorto + ' — Sin existencias en esta zona');
+          }
           const idx = carrito.value.findIndex(i => i.codBarras === prodObj.codBarras);
-          if (idx > -1) { carrito.value[idx].cantidad++; calcularImportes(carrito.value[idx]); } 
+          if (idx > -1) { carrito.value[idx].cantidad++; calcularImportes(carrito.value[idx]); }
           else {
             const item = { sku: prodObj.sku, codBarras: prodObj.codBarras, nombre: prodObj.nombreCorto, codSunat: prodObj.codSunat, precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio, ahorroPromo: 0, imagen: prodObj.imagen };
             calcularImportes(item); carrito.value.unshift(item);
           }
           agregarToast('¡Añadido!', prodObj.nombreCorto);
-          setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
+          setTimeout(() => { if(scannerInput.value && !mostrarTeclado.value) scannerInput.value.focus({ preventScroll: true }); else if(scannerInput.value && mostrarTeclado.value) scannerInput.value.focus(); }, 100);
         };
 
-        const cambiarCantidad = (idx, delta) => { carrito.value[idx].cantidad += delta; if (carrito.value[idx].cantidad < 1) eliminarItem(idx); else calcularImportes(carrito.value[idx]); };
-        const eliminarItem = (idx) => { carrito.value.splice(idx, 1); setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
+        const cambiarCantidad = (idx, delta) => {
+          if (idx < 0 || idx >= carrito.value.length) return;
+          carrito.value[idx].cantidad += delta;
+          if (carrito.value[idx].cantidad < 1) eliminarItem(idx);
+          else calcularImportes(carrito.value[idx]);
+        };
+        const eliminarItem = (idx) => {
+          if (idx < 0 || idx >= carrito.value.length) return;
+          carrito.value.splice(idx, 1);
+          setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
+        };
         
         const calcularImportes = (item) => {
           let pNormal = item.cantidad * item.precioUnitario;
-          let ttl = pNormal; let ahorro = 0;
+          let ttl = pNormal;
           const promo = db.value.PROMOCIONES?.find(pr => pr.SKU_Base === item.sku);
-          if (promo && item.cantidad >= parseInt(promo.Cant_Min)) {
-             if (promo.Tipo_Promo === 'GRUPO') {
-                 let g = Math.floor(item.cantidad / parseInt(promo.Cant_Min));
-                 let s = item.cantidad % parseInt(promo.Cant_Min);
-                 ttl = (g * parseInt(promo.Cant_Min) * parseFloat(promo.Valor_Promo)) + (s * item.precioUnitario);
-             } else if (promo.Tipo_Promo === 'PORCENTAJE') {
-                 ttl = pNormal * (1 - (parseFloat(promo.Valor_Promo) / 100));
+          if (promo) {
+             const cantMin = parseInt(promo.Cant_Min) || 0;
+             const valorPromo = parseFloat(promo.Valor_Promo) || 0;
+             if (cantMin > 0 && valorPromo > 0 && item.cantidad >= cantMin) {
+                 if (promo.Tipo_Promo === 'GRUPO') {
+                     const g = Math.floor(item.cantidad / cantMin);
+                     const s = item.cantidad % cantMin;
+                     ttl = (g * cantMin * valorPromo) + (s * item.precioUnitario);
+                 } else if (promo.Tipo_Promo === 'PORCENTAJE') {
+                     ttl = pNormal * (1 - (valorPromo / 100));
+                 }
              }
           }
           item.subtotal = ttl; item.ahorroPromo = pNormal - ttl;
@@ -1082,11 +1368,41 @@
             return uiState.value.splitScreen ? 'w-1/2 lg:w-[40%]' : 'hidden';
         };
 
-        const limpiarCliente = () => { pago.value.docCliente = ''; pago.value.nombreCliente = ''; };
-        const abrirModalPago = () => { pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; pago.value.montoRecibido = granTotal.value; limpiarCliente(); modalPago.value = true; };
+        const busquedaNombre = ref('');
+        const sugerenciasCliente = computed(() => {
+            const q = busquedaNombre.value.trim().toLowerCase();
+            if (!q || q.length < 2) return [];
+            return (db.value.CLIENTES_FRECUENTES || [])
+                .filter(c => (c.Nombre || '').toLowerCase().includes(q))
+                .slice(0, 5);
+        });
+        const elegirClienteFrecuente = (c) => {
+            pago.value.docCliente = String(c.Documento || '');
+            pago.value.nombreCliente = c.Nombre || '';
+            busquedaNombre.value = '';
+            agregarToast('Cliente', c.Nombre);
+        };
+        const limpiarCliente = () => { pago.value.docCliente = ''; pago.value.nombreCliente = ''; busquedaNombre.value = ''; };
+        const abrirModalPago = () => { pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; pago.value.montoRecibido = granTotal.value; pago.value.montoVirtual = 0; limpiarCliente(); modalPago.value = true; };
         const setMonto = (m) => { pago.value.montoRecibido = parseFloat(m); };
-        const buscarClienteAPI = () => { 
-           buscandoCliente.value = true; setTimeout(() => { pago.value.nombreCliente = 'CLIENTE ' + pago.value.docCliente; buscandoCliente.value=false; }, 500); 
+        const buscarClienteAPI = () => {
+           if (errorDocumento.value) { agregarToast('Documento inválido', errorDocumento.value); return; }
+           if (!pago.value.docCliente) return;
+           buscandoCliente.value = true;
+           const doc = String(pago.value.docCliente).trim();
+           // 1º Buscar en clientes frecuentes guardados localmente
+           const clienteLocal = db.value.CLIENTES_FRECUENTES?.find(c => String(c.Documento).trim() === doc);
+           if (clienteLocal) {
+               pago.value.nombreCliente = clienteLocal.Nombre || ('CLIENTE ' + doc);
+               buscandoCliente.value = false;
+               agregarToast('Cliente encontrado', pago.value.nombreCliente);
+               return;
+           }
+           // 2º Fallback: usar el documento como identificador (sin API SUNAT)
+           setTimeout(() => {
+               pago.value.nombreCliente = 'CLIENTE ' + doc;
+               buscandoCliente.value = false;
+           }, 300);
         };
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
@@ -1118,7 +1434,7 @@
               },
               // Datos Venta extra
               header: {
-                 tipoDoc: pago.value.tipoDoc, metodo: pago.value.metodo, total: granTotal.value,
+                 tipoDoc: pago.value.tipoDoc, metodo: pago.value.metodo === 'MIXTO' ? `MIXTO (VIR:${parseFloat(pago.value.montoVirtual).toFixed(2)}/EFE:${parseFloat(granTotal.value - pago.value.montoVirtual).toFixed(2)})` : pago.value.metodo, total: granTotal.value,
                  cliente: { doc: pago.value.docCliente, nombre: pago.value.nombreCliente, tipo: 'N/A' }
               },
               status: 'pending', // INITIAL STATE
@@ -1180,10 +1496,18 @@
            txt += "------------------------------------------------\n";
            txt += "\x1b\x61\x02"; // Alinear Derecha
            txt += "\x1b\x21\x10TOTAL: S/ " + granTotal.value.toFixed(2) + "\n\x1b\x21\x00"; 
-           txt += "METODO: " + pago.value.metodo + "\n";
-           if(pago.value.metodo === 'EFECTIVO' && pago.value.montoRecibido > 0) {
-               txt += "PAGO  : S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n";
-               txt += "VUELTO: S/ " + vuelto.value.toFixed(2) + "\n";
+           if (pago.value.metodo === 'MIXTO') {
+               const efeNeto = parseFloat((granTotal.value - pago.value.montoVirtual).toFixed(2));
+               txt += "METODO: MIXTO\n";
+               txt += "VIRTUAL : S/ " + parseFloat(pago.value.montoVirtual).toFixed(2) + "\n";
+               txt += "EFECTIVO: S/ " + efeNeto.toFixed(2) + "\n";
+               if (vuelto.value > 0) { txt += "PAGO EFE: S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n"; txt += "VUELTO  : S/ " + vuelto.value.toFixed(2) + "\n"; }
+           } else {
+               txt += "METODO: " + pago.value.metodo + "\n";
+               if (pago.value.metodo === 'EFECTIVO' && pago.value.montoRecibido > 0) {
+                   txt += "PAGO  : S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n";
+                   txt += "VUELTO: S/ " + vuelto.value.toFixed(2) + "\n";
+               }
            }
            txt += "\n\x1b\x61\x01"; // Centrar
            txt += "*** GRACIAS POR SU COMPRA ***\n";
@@ -1193,10 +1517,33 @@
            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", btoa(txt));
 
            agregarToast('¡Venta Exitosa!', correlativoReal);
+           // Decrementar stock local por zona
+           carrito.value.forEach(item => {
+               const prod = productosCatalogo.value.find(p => p.codBarras === item.codBarras);
+               if (prod && prod.stock !== null) prod.stock = Math.max(0, prod.stock - item.cantidad);
+           });
            finalizarPostPago();
         };
 
-        const finalizarPostPago = () => { procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
+        const finalizarPostPago = () => { procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; pago.value.montoVirtual = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
+
+        const anularVenta = (venta) => {
+            if (!confirm(`¿Seguro que deseas ANULAR el comprobante ${venta.correlativo}?\n\nEsta acción no contará en el cierre de caja.`)) return;
+            const idx = ventasHoy.value.findIndex(v => v.id === venta.id);
+            if (idx === -1) return;
+            ventasHoy.value[idx].anulada = true;
+            ventasHoy.value[idx].syncStatus = 'anulado';
+            ventasHoy.value[idx].expanded = false;
+            // Quitar de pendientes si estaba en cola
+            pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+            localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+            localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+            agregarToast('Comprobante Anulado', venta.correlativo);
+            // Notificar al GAS en segundo plano (no bloquea la UI)
+            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION', ventaId: venta.id, correlativo: venta.correlativo, deviceId: deviceId.value }) }).catch(() => {});
+            }
+        };
 
         const reimprimirTicket = (ventaLocal) => {
             agregarToast('Re-imprimiendo', ventaLocal.correlativo);
@@ -1233,27 +1580,45 @@
            const cd = bHerramientas.value.trim().toUpperCase();
            if(!cd) return;
            procesandoMembrete.value = true;
-           
+
            const obj = productosCatalogo.value.find(p => p.codBarras === cd || p.sku === cd);
            if(!obj) {
                agregarToast('No Encontrado', 'Verifica el código');
            } else {
-               // Estructura RAW para 80mm x 300mm sugerido en prompt
+               // Membrete 80mm x 30mm — 6 renglones: 2 nombre | 2 código barras | 2 precio
+               const MAX_N = 24; // chars por línea en doble altura
+               const n1 = obj.nombreCorto.substring(0, MAX_N);
+               const n2 = obj.nombreCorto.length > MAX_N ? obj.nombreCorto.substring(MAX_N, MAX_N * 2) : '';
+               const bLen = String.fromCharCode(obj.codBarras.length); // longitud para CODE128 formato B
                let raw = btoa(
-                  "\x1b\x40" +          // Inicializar
-                  "\x1b\x61\x01" +      // Centrado
-                  "\x1b\x21\x30" +      // Fuente Doble Alto y Ancho
-                  obj.nombreCorto + "\n\n" +
-                  "\x1d\x6b\x04" +      // Imprimir Código de Barras (CODE128)
-                  obj.codBarras + "\x00" + 
-                  "\n\n" +
-                  "\x1b\x21\x30 S/ " + obj.precio.toFixed(2) + "\n" +
-                  "\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69" // Corte automátco
+                  "\x1b\x40" +           // Inicializar impresora
+                  "\x1b\x33\x10" +       // Espaciado mínimo entre líneas (16/180" ≈ 2mm)
+                  "\x1b\x61\x01" +       // Centrar
+                  "\x1b\x45\x01" +       // Negrita ON
+                  "\x1b\x21\x10" +       // Doble altura
+                  n1 + "\n" +
+                  (n2 ? n2 + "\n" : "") +
+                  "\x1b\x21\x00" +       // Normal
+                  "\x1b\x45\x00" +       // Negrita OFF
+                  "\x1d\x68\x30" +       // Alto de barras = 48 dots (~6mm)
+                  "\x1d\x77\x02" +       // Ancho módulo = 2 dots
+                  "\x1d\x48\x02" +       // HRI debajo del código de barras
+                  "\x1d\x66\x00" +       // Fuente HRI: Font A
+                  "\x1d\x6b\x49" +       // CODE128 (formato B longitud variable)
+                  bLen + obj.codBarras + // longitud + datos del código
+                  "\n" +
+                  "\x1b\x21\x30" +       // Doble ancho + altura para precio grande
+                  "\x1b\x45\x01" +       // Negrita ON
+                  "S/ " + obj.precio.toFixed(2) + "\n" +
+                  "\x1b\x21\x00" +       // Normal
+                  "\x1b\x45\x00" +       // Negrita OFF
+                  "\x07" +               // BEL — alerta sonora
+                  "\x1d\x56\x42\x00"    // Corte parcial
                );
 
                try {
                   await mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Membrete", raw);
-                  agregarToast('Exito', 'Membrete enviado a PrintNode');
+                  agregarToast('Éxito', 'Membrete enviado');
                   bHerramientas.value = '';
                } catch (e) { agregarToast('Error de Impresión', e.message); }
            }
@@ -1268,19 +1633,24 @@
           cajaAbierta, idCajaActual, montoAperturaMemoria, montoApertura, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
           procesandoCierre, cerrarCaja,
           bBuscador, productosFiltrados, carrito, granTotal, scannerInput,
-          procesando, pago, modalPago, vuelto, procesarPago,
+          procesando, pago, modalPago, vuelto, errorDocumento, procesarPago,
           iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
           abrirModalPago, buscarClienteAPI, buscandoCliente,
+          busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,
+          camaraHerramientasAbierta, toggleCamaraHerramientas,
           dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, limpiarCliente,
           deviceId, dispositivoAutorizado, verificandoDispositivo, verificarDispositivoActivo,
           sincronizarDatos, isSyncing, pendingSales,
           procesandoCatalogo, sincronizarCatalogoBase,
-          modalPresentaciones, prodSeleccionado, elegirPresentacion
+          modalPresentaciones, prodSeleccionado, elegirPresentacion,
+          mostrarTeclado, toggleTeclado,
+          darkMode, toggleDarkMode,
+          anularVenta
         };
       }
     });

@@ -1,16 +1,18 @@
-const CACHE_NAME = 'mosexpress-cache-v7';
+const CACHE_NAME = 'mosexpress-cache-v15';
 const urlsToCache = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  'https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js',
+  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
+      .then(async cache => {
         console.log('Opened cache');
-        return cache.addAll(urlsToCache);
+        try { await cache.addAll(urlsToCache); } catch(e) { console.warn('SW cache install parcial:', e); }
       })
   );
   self.skipWaiting();
@@ -38,26 +40,30 @@ self.addEventListener('fetch', event => {
 
         return fetch(fetchRequest).then(
           function(response) {
-            // Check if we received a valid response
-            if(!response || response.status !== 200 || response.type !== 'basic') {
+            if(!response || response.status !== 200) {
+              return response;
+            }
+            // Cachear respuestas básicas y CORS válidas
+            if(response.type !== 'basic' && response.type !== 'cors') {
               return response;
             }
 
-            // Clone the response because it's a stream as well
             var responseToCache = response.clone();
 
-            caches.open(CACHE_NAME)
-              .then(function(cache) {
-                // Si la URL empieza con HTTP (no extensión de chrome), guardar.
+            // Usar waitUntil para garantizar que el cache se guarda antes de que el SW se duerma
+            event.waitUntil(
+              caches.open(CACHE_NAME).then(function(cache) {
                 if (event.request.url.startsWith('http')) {
-                    cache.put(event.request, responseToCache);
+                    return cache.put(event.request, responseToCache);
                 }
-              });
+              })
+            );
 
             return response;
           }
         ).catch(function(error) {
             console.error('Fetch event failed:', error);
+            return Response.error();
         });
       })
   );

@@ -1,0 +1,12 @@
+# Archivos con credenciales o configuración local
+config.local.js
+.env
+.env.local
+
+# Sistemas operativos
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+*.swp
