@@ -21,6 +21,10 @@ function doGet(e) {
     return verificarDispositivo(e.parameter.id);
   }
 
+  if (accion === 'ventas_hoy_zona') {
+    return ventasHoyZona(e.parameter.prefijos);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({ error: "Acción no válida" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -36,6 +40,18 @@ function doPost(e) {
 
     if (data.tipoEvento === 'CIERRE_CAJA') {
       return procesarCierreCaja(data);
+    }
+
+    if (data.tipoEvento === 'COBRAR_VENTA') {
+      return cobrarVentaExistente(data);
+    }
+
+    if (data.tipoEvento === 'ANULACION_MASIVA') {
+      return anulacionMasiva(data);
+    }
+
+    if (data.tipoEvento === 'ANULACION') {
+      return anularVentaIndividual(data);
     }
 
     // NUEVO: proxy de impresión — la clave de PrintNode vive aquí, no en el browser
@@ -134,10 +150,14 @@ function procesarVenta(data) {
   var correlativoNumero = obtenerSiguienteCorrelativo(sheetCabecera, pos.serieActual);
   var correlativoFinal = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
 
+  // Esquema VENTAS_CABECERA (13 columnas):
+  // ID_Venta | Fecha | Vendedor | Estacion | Cliente_Doc | Cliente_Nombre | Total
+  // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio
   sheetCabecera.appendRow([
     idVenta, fechaActual, auth.vendedor, auth.estacion,
     header.cliente.doc, header.cliente.nombre, header.total,
-    header.tipoDoc + " (" + (header.metodo || 'EFECTIVO') + ")",
+    header.tipoDoc,                    // col 8: Tipo_Doc  (limpio)
+    header.metodo || 'EFECTIVO',       // col 9: FormaPago (EFECTIVO/VIRTUAL/MIXTO/POR_COBRAR)
     correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO"
   ]);
 
@@ -234,7 +254,7 @@ function obtenerSiguienteCorrelativo(sheet, serie) {
   var maxCorrelativo = 0;
 
   for (var i = 1; i < data.length; i++) {
-    var valorSerie = String(data[i][8]); // Columna I: correlativo
+    var valorSerie = String(data[i][9]); // Columna J: correlativo (col 10, índice 9)
     if (valorSerie.indexOf(prefijo) === 0) {
       var parte = valorSerie.substring(prefijo.length); // todo lo que viene después del prefijo
       var num = parseInt(parte, 10);
@@ -254,6 +274,109 @@ function verificarYAgregaCliente(doc, nombre, tipoDoc) {
     if (String(data[i].Documento) === String(doc)) return; // ya existe
   }
   sheet.appendRow([doc, nombre, tipoDoc, new Date()]);
+}
+
+// Anula en masa todos los tickets POR_COBRAR que no fueron cobrados al cierre del turno
+function anulacionMasiva(data) {
+  if (!data.ids || !data.ids.length) return generarRespuestaError("No se enviaron IDs a anular.");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("VENTAS_CABECERA");
+  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada.");
+
+  var filas = sheet.getDataRange().getValues();
+  var anulados = 0;
+
+  for (var i = 1; i < filas.length; i++) {
+    if (data.ids.indexOf(String(filas[i][0])) !== -1) {
+      sheet.getRange(i + 1, 9).setValue('ANULADO'); // col 9: FormaPago = ANULADO
+      anulados++;
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success", anulados: anulados
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Devuelve todas las ventas de hoy que pertenecen a la zona del cajero
+// prefijosStr: "NV-001,B-001,F-001" (series de la zona separadas por coma)
+function ventasHoyZona(prefijosStr) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("VENTAS_CABECERA");
+  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
+
+  var prefijos = prefijosStr ? prefijosStr.split(',').map(function(p) { return p.trim(); }) : [];
+  var data = sheet.getDataRange().getValues();
+  var hoy = new Date().toDateString();
+  var result = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var fechaFila = new Date(data[i][1]).toDateString();
+    if (fechaFila !== hoy) continue;
+
+    var correlativo = String(data[i][9]); // col 10 (índice 9)
+    if (prefijos.length > 0) {
+      var enZona = prefijos.some(function(p) { return correlativo.indexOf(p) === 0; });
+      if (!enZona) continue;
+    }
+
+    result.push({
+      id_venta:       data[i][0],
+      fecha:          data[i][1],
+      vendedor:       data[i][2],
+      estacion:       data[i][3],
+      cliente_doc:    String(data[i][4] || ''),
+      cliente_nombre: String(data[i][5] || ''),
+      total:          parseFloat(data[i][6]) || 0,
+      tipo_doc:       String(data[i][7] || ''),   // col 8: Tipo_Doc limpio
+      forma_pago:     String(data[i][8] || ''),   // col 9: FormaPago
+      correlativo:    correlativo,
+      id_caja:        String(data[i][10] || ''),
+      id_dispositivo: String(data[i][11] || ''),
+      status:         String(data[i][12] || '')   // col 13: Estado_Envio
+    });
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success", ventas: result
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Actualiza el método de pago y estado de una venta existente (flujo COBRAR cajero)
+function cobrarVentaExistente(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("VENTAS_CABECERA");
+  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
+
+  var filas = sheet.getDataRange().getValues();
+  for (var i = 1; i < filas.length; i++) {
+    if (String(filas[i][0]) === String(data.idVenta)) {
+      sheet.getRange(i + 1, 9).setValue(data.metodo); // col 9: FormaPago = método real
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success", mensaje: "Venta cobrada correctamente"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return generarRespuestaError("Venta con ID " + data.idVenta + " no encontrada.");
+}
+
+// Anula un ticket individual enviado desde el frontend (tipoEvento='ANULACION')
+function anularVentaIndividual(data) {
+  if (!data.ventaId) return generarRespuestaError("No se proporcionó ventaId.");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("VENTAS_CABECERA");
+  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada.");
+
+  var filas = sheet.getDataRange().getValues();
+  for (var i = 1; i < filas.length; i++) {
+    if (String(filas[i][0]) === String(data.ventaId)) {
+      sheet.getRange(i + 1, 9).setValue('ANULADO'); // col 9: FormaPago = ANULADO
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success", mensaje: "Venta anulada correctamente"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return generarRespuestaError("Venta con ID " + data.ventaId + " no encontrada.");
 }
 
 function generarRespuestaError(msg) {

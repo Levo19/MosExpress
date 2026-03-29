@@ -45,6 +45,9 @@
     }
     /* Panel derecho (carrito) siempre visible cuando está activo */
     .panel-transition { transition: width 0.2s ease; }
+    /* Ticket nuevo detectado en segundo plano */
+    @keyframes pulseNuevo { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); } 70% { box-shadow: 0 0 0 14px rgba(16,185,129,0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
+    .ticket-nuevo { animation: pulseNuevo 1s ease-out infinite; border-color: #10b981 !important; }
     /* Modal de pago no se sale del viewport en pantallas pequeñas */
     @media (max-height: 600px) {
       .modal-pago-inner { max-height: 98dvh !important; }
@@ -144,7 +147,10 @@
           <option :value="null" disabled>Selecciona Estación...</option>
           <option v-for="est in estacionesFiltradas" :key="est.Estacion_Nombre" :value="est">{{ est.Estacion_Nombre }}</option>
         </select>
-        <button @click="iniciarTurno" :disabled="!configWizard.vendedor || !configWizard.estacion" class="w-full mt-6 bg-posPrimary text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-400 disabled:shadow-none transition-all">INICIAR PWA</button>
+        <button @click="configWizard.esCajero = !configWizard.esCajero" :disabled="!configWizard.estacion" class="w-full mt-4 py-4 rounded-xl font-black text-sm border-2 transition-all" :class="configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg' : 'bg-gray-100 text-gray-400 border-gray-200 disabled:opacity-40'">
+          {{ configWizard.esCajero ? '✓ SOY CAJERO — Modo Caja Activo' : 'SOY CAJERO (toca para activar)' }}
+        </button>
+        <button @click="iniciarTurno" :disabled="!configWizard.vendedor || !configWizard.estacion" class="w-full mt-4 bg-posPrimary text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-400 disabled:shadow-none transition-all">INICIAR PWA</button>
       </div>
     </div>
     
@@ -160,7 +166,7 @@
         <!-- MÓDULO A: CAJA -->
         <div v-show="currentModule === 'CAJA'" class="w-full h-full overflow-y-auto p-4 space-y-4">
             
-            <div v-if="!cajaAbierta" class="h-full flex flex-col items-center justify-center p-6 text-center max-w-sm mx-auto">
+            <div v-if="config.esCajero && !cajaAbierta" class="h-full flex flex-col items-center justify-center p-6 text-center max-w-sm mx-auto">
                 <div class="bg-white p-6 rounded-3xl shadow-lg w-full border border-gray-200">
                     <svg class="w-20 h-20 mx-auto text-emerald-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     <h2 class="text-2xl font-black text-gray-800 mb-2">APERTURA DE CAJA</h2>
@@ -175,21 +181,45 @@
             </div>
 
             <div v-else class="max-w-4xl mx-auto">
-                <div class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-6 rounded-3xl shadow-lg mb-6 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <!-- Header Cajero: con saldo y cierre de turno -->
+                <div v-if="config.esCajero" class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-6 rounded-3xl shadow-lg mb-6 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div class="relative z-10 w-full flex justify-between sm:w-auto sm:flex-col sm:justify-start">
                         <div><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">CAJA ACTIVA</p><h2 class="text-2xl font-black mt-1">{{ idCajaActual }}</h2></div>
                     </div>
                     <div class="text-right relative z-10 w-full sm:w-auto flex justify-between sm:flex-col sm:justify-start items-center sm:items-end">
                        <div><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider sm:mb-1">SALDO INICIAL</p><h2 class="text-3xl font-black">S/ {{ montoAperturaMemoria.toFixed(2) }}</h2></div>
-                       <button @click="cerrarCaja" :disabled="procesandoCierre" class="mt-4 sm:mt-2 bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
-                           <svg v-if="procesandoCierre" class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                           CERRAR EL TURNO
-                       </button>
+                       <div class="flex items-center gap-2">
+                           <button @click="abrirModoCajero" class="mt-4 sm:mt-2 bg-white text-emerald-700 font-black text-xs px-4 py-2 rounded-xl shadow-lg active:scale-95 transition-transform flex items-center gap-1.5 shrink-0 border-2 border-emerald-300">
+                               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                               MODO CAJERO
+                           </button>
+                           <button @click="cerrarCaja" :disabled="procesandoCierre" class="mt-4 sm:mt-2 bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
+                               <svg v-if="procesandoCierre" class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                               CERRAR EL TURNO
+                           </button>
+                       </div>
                     </div>
                 </div>
+                <!-- Header Vendedor: solo nombre, estación y cerrar sesión -->
+                <div v-else class="bg-gray-800 text-white p-5 rounded-3xl shadow-lg mb-6 flex justify-between items-center gap-4">
+                    <div>
+                        <p class="text-gray-400 font-bold uppercase text-xs tracking-wider">SESIÓN ACTIVA</p>
+                        <h2 class="text-xl font-black mt-0.5">{{ config.vendedor }}</h2>
+                        <p class="text-gray-400 text-xs font-bold mt-0.5">{{ config.estacion ? config.estacion.Estacion_Nombre : '' }}</p>
+                    </div>
+                    <button @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                        CERRAR SESIÓN
+                    </button>
+                </div>
 
-                <div class="flex items-center justify-between mb-3 border-b border-gray-200">
-                    <h3 class="font-black text-gray-800 text-lg">Historial Hoy</h3>
+                <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-black text-gray-800 text-lg">{{ config.esCajero ? 'Zona — Hoy' : 'Mis Ventas Hoy' }}</h3>
+                        <button v-if="config.esCajero" @click="cargarVentasZona" :disabled="cargandoZona" class="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors disabled:opacity-40" title="Actualizar">
+                            <svg class="w-4 h-4" :class="{'animate-spin': cargandoZona}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        </button>
+                    </div>
                     <div class="flex space-x-1">
                         <button @click="tabCajaActivo = 'NOTAS'" :class="tabCajaActivo === 'NOTAS' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'" class="px-3 py-1.5 rounded-t-lg font-bold text-xs uppercase transition-colors">Notas</button>
                         <button @click="tabCajaActivo = 'BOLETAS'" :class="tabCajaActivo === 'BOLETAS' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'" class="px-3 py-1.5 rounded-t-lg font-bold text-xs uppercase transition-colors">Boletas</button>
@@ -205,30 +235,40 @@
                     
                     <div v-for="venta in ventasHistorialFiltradas" :key="venta.id"
                          class="rounded-2xl border shadow-sm overflow-hidden text-gray-800 transition-all"
-                         :class="venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : 'bg-white border-gray-200'">
+                         :class="[venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : venta.cobrado ? 'bg-emerald-50 border-emerald-200' : (venta.raw_data?.header?.metodo === 'POR_COBRAR' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'), venta.isNew ? 'ticket-nuevo' : '']">
 
                         <div @click="venta.expanded = !venta.expanded" class="p-4 flex justify-between items-center cursor-pointer hover:bg-black hover:bg-opacity-5 active:bg-opacity-10">
-                            <div class="flex items-center space-x-3 flex-wrap gap-y-1">
-                               <div class="px-3 py-1 rounded-lg font-bold text-xs uppercase"
-                                    :class="venta.anulada ? 'bg-red-200 text-red-800' : 'bg-emerald-100 text-emerald-800'">
-                                 {{ venta.anulada ? 'ANULADO' : venta.tipo }}
-                               </div>
-                               <div class="font-bold text-lg" :class="venta.anulada ? 'line-through text-gray-400' : ''">{{ venta.correlativo }}</div>
+                            <div class="flex flex-col gap-1 min-w-0">
+                                <!-- Correlativo -->
+                                <div class="font-bold text-base leading-none" :class="venta.anulada ? 'line-through text-gray-400' : ''">{{ venta.correlativo }}</div>
+                                <!-- Tres pills: Comprobante | FormaPago | Estado -->
+                                <div class="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    <!-- Comprobante -->
+                                    <span class="px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wide"
+                                          :class="venta.tipo === 'BOLETA' ? 'bg-blue-100 text-blue-700' : venta.tipo === 'FACTURA' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'">
+                                      {{ venta.tipo === 'NOTA_DE_VENTA' ? 'N.V.' : venta.tipo === 'BOLETA' ? 'BOL.' : venta.tipo === 'FACTURA' ? 'FAC.' : venta.tipo }}
+                                    </span>
+                                    <!-- FormaPago -->
+                                    <span class="px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wide"
+                                          :class="venta.anulada ? 'bg-red-100 text-red-600' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'POR_COBRAR' ? 'bg-amber-100 text-amber-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'EFECTIVO' ? 'bg-emerald-100 text-emerald-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'VIRTUAL' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'">
+                                      {{ venta.anulada ? 'ANULADO' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo || 'POR_COBRAR').replace('POR_COBRAR', 'POR COBRAR') }}
+                                    </span>
+                                    <!-- Estado Envío (SUNAT) -->
+                                    <span class="px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wide"
+                                          :class="venta.anulada ? 'bg-red-100 text-red-600' : venta.syncStatus === 'pending' ? 'bg-amber-100 text-amber-600' : 'bg-sky-100 text-sky-600'">
+                                      {{ venta.anulada ? 'ANULADO' : venta.syncStatus === 'pending' ? 'EN COLA' : 'EMITIDO' }}
+                                    </span>
+                                </div>
                             </div>
-                            <div class="flex items-center space-x-3">
-                               <div class="font-black text-xl flex flex-col items-end">
-                                  <span :class="venta.anulada ? 'line-through text-gray-400' : ''">S/ {{ venta.total.toFixed(2) }}</span>
-                                  <span v-if="venta.anulada" class="text-[9px] text-red-500 uppercase tracking-widest font-black">No cuenta en cierre</span>
-                                  <span v-else-if="venta.syncStatus === 'pending'" class="text-[9px] text-amber-500 flex items-center mt-0.5 uppercase tracking-widest"><svg class="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> En Cola</span>
-                                  <span v-else class="text-[9px] text-blue-500 flex items-center mt-0.5 uppercase tracking-widest"><svg class="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Enviado</span>
-                               </div>
+                            <div class="flex items-center space-x-2 shrink-0 ml-3">
+                               <div class="font-black text-xl" :class="venta.anulada ? 'line-through text-gray-400' : ''">S/ {{ venta.total.toFixed(2) }}</div>
                                <svg class="w-5 h-5 text-gray-400 transform transition-transform" :class="{'rotate-180': venta.expanded}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                             </div>
                         </div>
 
                         <!-- Detalles Expansion -->
                         <div v-show="venta.expanded" class="border-t animate-[slideUp_0.2s]"
-                             :class="venta.anulada ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-gray-50'">
+                             :class="venta.anulada ? 'border-red-100 bg-red-50' : venta.cobrado ? 'border-emerald-100 bg-emerald-50' : 'border-gray-100 bg-gray-50'">
                             <!-- Info general -->
                             <div class="p-4 text-xs text-gray-500 font-mono space-y-0.5">
                                 <p><span class="font-bold text-gray-600">Cliente:</span> {{ venta.cliente_doc || '-' }} — {{ venta.cliente_nombre }}</p>
@@ -245,15 +285,22 @@
                                 </div>
                             </div>
                             <!-- Botones -->
-                            <div class="p-4 flex space-x-2">
-                                <button v-if="!venta.anulada" @click="anularVenta(venta)"
-                                        class="flex-1 bg-white border-2 border-red-300 text-red-600 font-bold py-2 px-4 rounded-xl text-sm active:scale-95 hover:bg-red-50 transition-colors">
-                                    Anular
-                                </button>
-                                <div v-else class="flex-1 flex items-center justify-center bg-red-100 text-red-500 font-black text-xs py-2 px-4 rounded-xl uppercase tracking-wider">
-                                    ✕ Anulado
-                                </div>
-                                <button @click="reimprimirTicket(venta)" class="flex-1 bg-posSecondary text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center">
+                            <div class="p-4 flex space-x-2 flex-wrap gap-2">
+                                <template v-if="config.esCajero">
+                                    <button @click="!venta.cobrado && !venta.anulada && abrirCobroPendiente(venta)"
+                                            :disabled="venta.cobrado || venta.anulada"
+                                            class="flex-1 min-w-[80px] font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors"
+                                            :class="venta.cobrado ? 'bg-emerald-100 text-emerald-700' : venta.anulada ? 'bg-gray-100 text-gray-400' : 'bg-posPrimary text-white shadow-md'">
+                                        {{ venta.cobrado ? '✓ Cobrado' : 'Cobrar' }}
+                                    </button>
+                                    <button @click="!venta.anulada && anularVenta(venta)"
+                                            :disabled="venta.anulada"
+                                            class="flex-1 min-w-[80px] font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors"
+                                            :class="venta.anulada ? 'bg-red-100 text-red-400 border-2 border-red-200' : 'bg-white border-2 border-red-300 text-red-600 hover:bg-red-50'">
+                                        {{ venta.anulada ? '✕ Anulado' : 'Anular' }}
+                                    </button>
+                                </template>
+                                <button @click="reimprimirTicket(venta)" class="flex-1 min-w-[80px] bg-posSecondary text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center">
                                     Imprimir
                                 </button>
                             </div>
@@ -266,7 +313,7 @@
         <!-- MÓDULO B: POS -->
         <div v-show="currentModule === 'POS'" class="w-full h-full flex flex-col relative">
             
-            <div v-if="!cajaAbierta" class="absolute inset-0 z-[60] bg-white bg-opacity-90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+            <div v-if="config.esCajero && !cajaAbierta" class="absolute inset-0 z-[60] bg-white bg-opacity-90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
                 <svg class="w-24 h-24 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                 <h2 class="text-3xl font-black text-gray-800 uppercase">POS Bloqueado</h2>
                 <p class="mt-2 text-gray-500 font-bold max-w-sm">No puedes realizar ventas sin abrir la caja primero.</p>
@@ -406,14 +453,14 @@
             <div v-if="currentModule === 'POS'" class="absolute -top-[1px] w-12 h-[3px] bg-posPrimary rounded-b-full"></div>
         </button>
         
-        <!-- Tab Caja -->
+        <!-- Tab Caja / Mis Ventas -->
         <button @click="cambiarModulo('CAJA')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'CAJA' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'">
             <div class="relative">
                <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='CAJA'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
                <span v-if="cajaAbierta" class="absolute -top-1 -right-2 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-white"></span>
                <span v-else class="absolute -top-1 -right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>
             </div>
-            CAJA TURNO
+            {{ config.esCajero ? 'CAJA TURNO' : 'MIS VENTAS' }}
             <div v-if="currentModule === 'CAJA'" class="absolute -top-[1px] w-12 h-[3px] bg-posPrimary rounded-b-full"></div>
         </button>
         
@@ -480,7 +527,7 @@
     <div v-if="modalPago" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex flex-col justify-end backdrop-blur-sm transition-opacity">
         <div class="modal-pago-inner bg-white rounded-t-[2.5rem] p-6 max-h-[92dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-5 shrink-0">
-               <h2 class="text-3xl font-black text-gray-800 tracking-tight">CAJA COBRO</h2>
+               <h2 class="text-3xl font-black text-gray-800 tracking-tight">{{ config.esCajero ? 'COBRO' : 'REGISTRAR VENTA' }}</h2>
                <button @click="modalPago = false" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
             </div>
     
@@ -519,7 +566,7 @@
                  </div>
                </div>
     
-               <div>
+               <div v-if="config.esCajero">
                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Método de Pago</label>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl mb-4">
                       <button @click="pago.metodo = 'EFECTIVO'; pago.montoVirtual = 0" :class="pago.metodo === 'EFECTIVO' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">EFECTIVO</button>
@@ -529,7 +576,7 @@
                </div>
 
                <!-- EFECTIVO: monto recibido + vuelto -->
-               <div v-if="pago.metodo === 'EFECTIVO'">
+               <div v-if="config.esCajero && pago.metodo === 'EFECTIVO'">
                  <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido (S/)</label>
                  <div class="grid grid-cols-5 gap-1.5 mb-2">
                    <button @click="setMonto(granTotal)" class="col-span-1 bg-emerald-100 text-emerald-800 rounded-lg font-black text-[10px] active:scale-95 py-2.5">EXAC.</button>
@@ -537,13 +584,13 @@
                  </div>
                  <input v-model.number="pago.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-4xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary focus:bg-white outline-none">
                </div>
-               <div v-if="pago.metodo === 'EFECTIVO'" class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
+               <div v-if="config.esCajero && pago.metodo === 'EFECTIVO'" class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
                  <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
                  <span class="text-4xl font-black" :class="vuelto < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vuelto.toFixed(2) }}</span>
                </div>
 
                <!-- MIXTO: virtual + efectivo -->
-               <div v-if="pago.metodo === 'MIXTO'" class="space-y-3">
+               <div v-if="config.esCajero && pago.metodo === 'MIXTO'" class="space-y-3">
                  <div>
                    <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Monto Virtual / Yape (S/)</label>
                    <input v-model.number="pago.montoVirtual" type="number" step="0.01" placeholder="0.00" class="w-full p-4 text-center text-3xl font-black bg-blue-50 border-2 border-posSecondary rounded-2xl focus:bg-white outline-none">
@@ -571,10 +618,210 @@
             </button>
         </div>
     </div>
+    <!-- ============================================================ -->
+    <!-- MODO CAJERO: interfaz fullscreen de cobro rápido por QR     -->
+    <!-- ============================================================ -->
+    <div v-if="modoCajero" class="fixed inset-0 z-[200] bg-gray-950 overflow-hidden select-none">
+
+        <!-- Input invisible para bluetooth (siempre enfocado al escanear) -->
+        <input ref="cajeroInput" v-model="cajeroBusqueda" @keyup.enter="buscarTicketCajero"
+               type="text" inputmode="none" autocomplete="off"
+               style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none">
+
+        <!-- ESTADO: ESCANEANDO (sin ticket cargado) -->
+        <div v-if="!cajeroTicketActual" class="absolute inset-0 flex flex-col">
+            <!-- Cámara QR ocupa todo el espacio -->
+            <div id="cajero-qr-reader" class="flex-1 bg-black w-full" style="min-height:0"></div>
+            <!-- Overlay inferior con hint -->
+            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent p-6 text-center pointer-events-none">
+                <p class="text-emerald-400 font-black text-lg tracking-widest uppercase mb-1">Modo Cajero</p>
+                <p class="text-gray-400 text-sm">Apunta la cámara al QR del ticket impreso</p>
+            </div>
+            <!-- Botón X esquina superior derecha -->
+            <button @click="cerrarModoCajero" class="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-gray-900/80 text-gray-300 hover:text-white font-black text-lg backdrop-blur z-10">✕</button>
+            <!-- Indicador vendedor esquina superior izquierda -->
+            <div class="absolute top-4 left-4 flex items-center gap-2 bg-gray-900/80 px-3 py-1.5 rounded-full backdrop-blur z-10">
+                <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                <span class="text-emerald-400 text-xs font-bold">{{ config.vendedor }}</span>
+            </div>
+        </div>
+
+        <!-- ESTADO: TICKET CARGADO (layout 2 columnas horizontal) -->
+        <div v-else class="absolute inset-0 flex flex-row">
+
+            <!-- Columna izquierda: info del ticket + método de pago -->
+            <div class="w-[45%] min-w-[260px] flex flex-col bg-gray-900 border-r border-gray-800 overflow-y-auto p-5 gap-4">
+
+                <!-- Header con X -->
+                <div class="flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                        <span class="text-emerald-400 text-xs font-black uppercase tracking-widest">Modo Cajero</span>
+                    </div>
+                    <button @click="cerrarModoCajero" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:text-white font-black text-sm">✕</button>
+                </div>
+
+                <!-- Info ticket -->
+                <div class="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs font-black px-2 py-0.5 rounded-full uppercase"
+                              :class="cajeroTicketActual.tipo === 'FACTURA' ? 'bg-purple-900 text-purple-300' : cajeroTicketActual.tipo === 'BOLETA' ? 'bg-blue-900 text-blue-300' : 'bg-gray-700 text-gray-300'">
+                            {{ cajeroTicketActual.tipo === 'FACTURA' ? 'FAC.' : cajeroTicketActual.tipo === 'BOLETA' ? 'BOL.' : 'N.V.' }}
+                        </span>
+                        <p class="text-white font-black text-base">{{ cajeroTicketActual.correlativo }}</p>
+                    </div>
+                    <p class="text-gray-300 text-sm font-bold truncate">{{ cajeroTicketActual.cliente_nombre || 'Sin cliente' }}</p>
+                    <p class="text-gray-500 text-xs mt-1">Vendedor: {{ cajeroTicketActual.raw_data?.auth?.vendedor }}</p>
+                </div>
+
+                <!-- Total destacado -->
+                <div class="bg-emerald-900/40 border border-emerald-700/50 rounded-2xl p-4 text-center">
+                    <p class="text-emerald-500 text-xs font-bold uppercase tracking-wider mb-1">Total a cobrar</p>
+                    <p class="text-emerald-300 font-black text-5xl leading-none">S/ {{ cajeroTicketActual.total.toFixed(2) }}</p>
+                </div>
+
+                <!-- Método de pago -->
+                <div>
+                    <p class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Forma de pago</p>
+                    <div class="flex gap-2 bg-gray-800 p-1 rounded-xl">
+                        <button @click="pagoCobroPendiente.metodo = 'EFECTIVO'; pagoCobroPendiente.montoVirtual = 0; pagoCobroPendiente.montoRecibido = cajeroTicketActual.total"
+                                :class="pagoCobroPendiente.metodo === 'EFECTIVO' ? 'bg-emerald-500 text-white shadow' : 'text-gray-400 hover:text-gray-200'"
+                                class="flex-1 py-3 rounded-lg font-black text-xs transition-all">EFECTIVO</button>
+                        <button @click="pagoCobroPendiente.metodo = 'VIRTUAL'; pagoCobroPendiente.montoRecibido = cajeroTicketActual.total; pagoCobroPendiente.montoVirtual = 0"
+                                :class="pagoCobroPendiente.metodo === 'VIRTUAL' ? 'bg-sky-500 text-white shadow' : 'text-gray-400 hover:text-gray-200'"
+                                class="flex-1 py-3 rounded-lg font-black text-xs transition-all">VIRTUAL</button>
+                        <button @click="pagoCobroPendiente.metodo = 'MIXTO'; pagoCobroPendiente.montoRecibido = 0; pagoCobroPendiente.montoVirtual = 0"
+                                :class="pagoCobroPendiente.metodo === 'MIXTO' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-gray-200'"
+                                class="flex-1 py-3 rounded-lg font-black text-xs transition-all">MIXTO</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Columna derecha: inputs de cobro + botón COBRAR -->
+            <div class="flex-1 flex flex-col bg-gray-950 p-5 gap-4 overflow-y-auto">
+
+                <!-- Efectivo -->
+                <template v-if="pagoCobroPendiente.metodo === 'EFECTIVO'">
+                    <div class="flex-1 flex flex-col gap-3 justify-center">
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Efectivo recibido (S/)</label>
+                        <input v-model.number="pagoCobroPendiente.montoRecibido" type="number" step="0.10"
+                               class="w-full bg-gray-800 text-white font-black text-4xl px-5 py-4 rounded-2xl border-2 border-gray-700 focus:outline-none focus:border-emerald-500 text-center">
+                        <!-- Billetes rápidos -->
+                        <div class="grid grid-cols-4 gap-2">
+                            <button v-for="b in [10,20,50,100]" :key="b" @click="pagoCobroPendiente.montoRecibido = b"
+                                    class="bg-gray-800 hover:bg-gray-700 text-white font-black text-sm py-3 rounded-xl transition-colors active:scale-95">
+                                S/ {{ b }}
+                            </button>
+                        </div>
+                        <!-- Vuelto -->
+                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-4">
+                            <span class="text-gray-400 font-bold uppercase tracking-wider text-sm">Vuelto</span>
+                            <span class="font-black text-3xl" :class="vueltoCobro >= 0 ? 'text-emerald-400' : 'text-red-400'">S/ {{ vueltoCobro.toFixed(2) }}</span>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Virtual -->
+                <template v-if="pagoCobroPendiente.metodo === 'VIRTUAL'">
+                    <div class="flex-1 flex flex-col items-center justify-center gap-4">
+                        <svg class="w-16 h-16 text-sky-400 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                        <p class="text-sky-300 font-black text-xl">Yape / Plin / Transferencia</p>
+                        <p class="text-gray-400 text-sm text-center">Confirma que el pago digital<br>de <span class="text-white font-black">S/ {{ cajeroTicketActual.total.toFixed(2) }}</span> fue recibido</p>
+                    </div>
+                </template>
+
+                <!-- Mixto -->
+                <template v-if="pagoCobroPendiente.metodo === 'MIXTO'">
+                    <div class="flex-1 flex flex-col gap-3 justify-center">
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Yape / Plin (S/)</label>
+                        <input v-model.number="pagoCobroPendiente.montoVirtual" type="number" step="0.10"
+                               class="w-full bg-gray-800 text-white font-black text-4xl px-5 py-4 rounded-2xl border-2 border-gray-700 focus:outline-none focus:border-sky-500 text-center">
+                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-4">
+                            <span class="text-gray-400 font-bold text-sm uppercase">Efectivo complemento</span>
+                            <span class="text-white font-black text-2xl">S/ {{ Math.max(0, cajeroTicketActual.total - (pagoCobroPendiente.montoVirtual||0)).toFixed(2) }}</span>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Botón COBRAR (siempre abajo) -->
+                <button @click="procesarCobroPendiente"
+                        :disabled="procesandoCobro || (pagoCobroPendiente.metodo === 'EFECTIVO' && vueltoCobro < 0) || (pagoCobroPendiente.metodo === 'MIXTO' && (!pagoCobroPendiente.montoVirtual || pagoCobroPendiente.montoVirtual >= cajeroTicketActual.total))"
+                        class="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-2xl py-6 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3 shrink-0">
+                    <svg v-if="procesandoCobro" class="animate-spin w-7 h-7" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    {{ procesandoCobro ? 'PROCESANDO...' : 'COBRAR · S/ ' + cajeroTicketActual.total.toFixed(2) }}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL COBRO (cajero cobra ticket emitido por vendedor) -->
+    <div v-if="modalCobro && ventaCobrar" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[85dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <div>
+                    <h2 class="text-2xl font-black text-gray-800">COBRAR TICKET</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ventaCobrar.correlativo }} · {{ ventaCobrar.raw_data?.auth?.vendedor }}</p>
+                </div>
+                <button @click="modalCobro = false" class="p-3 bg-gray-100 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="flex-1 overflow-y-auto space-y-4 scrollbar-hide pb-4">
+                <!-- Total -->
+                <div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 flex justify-between items-center">
+                    <span class="font-bold text-gray-500 text-sm uppercase tracking-wider">Total a Cobrar</span>
+                    <span class="text-4xl font-black text-emerald-700">S/ {{ ventaCobrar.total.toFixed(2) }}</span>
+                </div>
+                <!-- Método -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Método de Pago</label>
+                    <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
+                        <button @click="pagoCobroPendiente.metodo = 'EFECTIVO'; pagoCobroPendiente.montoVirtual = 0" :class="pagoCobroPendiente.metodo === 'EFECTIVO' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3 rounded-lg font-black text-xs transition-all">EFECTIVO</button>
+                        <button @click="pagoCobroPendiente.metodo = 'VIRTUAL'; pagoCobroPendiente.montoRecibido = ventaCobrar.total" :class="pagoCobroPendiente.metodo === 'VIRTUAL' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3 rounded-lg font-black text-xs transition-all">VIRTUAL</button>
+                        <button @click="pagoCobroPendiente.metodo = 'MIXTO'; pagoCobroPendiente.montoRecibido = 0; pagoCobroPendiente.montoVirtual = 0" :class="pagoCobroPendiente.metodo === 'MIXTO' ? 'bg-white text-posSecondary shadow' : 'text-gray-500'" class="flex-1 py-3 rounded-lg font-black text-xs transition-all">MIXTO</button>
+                    </div>
+                </div>
+                <!-- Efectivo -->
+                <div v-if="pagoCobroPendiente.metodo === 'EFECTIVO'">
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido</label>
+                    <div class="grid grid-cols-5 gap-1.5 mb-2">
+                        <button @click="pagoCobroPendiente.montoRecibido = ventaCobrar.total" class="col-span-1 bg-emerald-100 text-emerald-800 rounded-lg font-black text-[10px] active:scale-95 py-2.5">EXAC.</button>
+                        <button v-for="b in [10,20,50,100]" :key="b" @click="pagoCobroPendiente.montoRecibido = b" class="bg-white border-2 border-gray-100 text-gray-800 rounded-lg font-black text-sm active:scale-95 py-2.5">{{ b }}</button>
+                    </div>
+                    <input v-model.number="pagoCobroPendiente.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-4xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary outline-none">
+                    <div class="mt-3 p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center">
+                        <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
+                        <span class="text-4xl font-black" :class="vueltoCobro < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vueltoCobro.toFixed(2) }}</span>
+                    </div>
+                </div>
+                <!-- Mixto -->
+                <div v-if="pagoCobroPendiente.metodo === 'MIXTO'" class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Monto Virtual / Yape</label>
+                        <input v-model.number="pagoCobroPendiente.montoVirtual" type="number" step="0.01" placeholder="0.00" class="w-full p-4 text-center text-3xl font-black bg-blue-50 border-2 border-posSecondary rounded-2xl outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido</label>
+                        <div class="grid grid-cols-5 gap-1.5 mb-2">
+                            <button @click="pagoCobroPendiente.montoRecibido = Math.max(0, parseFloat((ventaCobrar.total - (pagoCobroPendiente.montoVirtual||0)).toFixed(2)))" class="col-span-1 bg-emerald-100 text-emerald-800 rounded-lg font-black text-[10px] active:scale-95 py-2.5">EXAC.</button>
+                            <button v-for="b in [10,20,50,100]" :key="b" @click="pagoCobroPendiente.montoRecibido = b" class="bg-white border-2 border-gray-100 text-gray-800 rounded-lg font-black text-sm active:scale-95 py-2.5">{{ b }}</button>
+                        </div>
+                        <input v-model.number="pagoCobroPendiente.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-3xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary outline-none">
+                    </div>
+                    <div class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center">
+                        <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
+                        <span class="text-4xl font-black" :class="vueltoCobro < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vueltoCobro.toFixed(2) }}</span>
+                    </div>
+                </div>
+            </div>
+            <button @click="procesarCobroPendiente" :disabled="procesandoCobro || ((pagoCobroPendiente.metodo === 'EFECTIVO' || pagoCobroPendiente.metodo === 'MIXTO') && vueltoCobro < 0) || (pagoCobroPendiente.metodo === 'MIXTO' && (!pagoCobroPendiente.montoVirtual || pagoCobroPendiente.montoVirtual >= ventaCobrar.total))" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none disabled:bg-opacity-50 transition-transform active:scale-95 flex justify-center items-center shrink-0">
+                <svg v-if="procesandoCobro" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                {{ procesandoCobro ? 'PROCESANDO...' : 'CONFIRMAR COBRO' }}
+            </button>
+        </div>
+    </div>
   </div>
 
   <script>
-    const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
+    const { createApp, ref, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
 
     const API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
     // NOTA: La clave de PrintNode fue movida al servidor (Google Apps Script).
@@ -611,8 +858,17 @@
         const montoAperturaMemoria = ref(0);
         const procesandoCaja = ref(false);
         const procesandoCierre = ref(false);
-        const ventasHoy = ref([]); // Lista MOCK local para historial
+        const sessionStartTime = ref(null); // Hora de apertura de caja del cajero
+        const cobradosEnSesion = ref([]); // Tickets cobrados durante este turno del cajero
+        const ventasHoy = ref([]); // Tickets del vendedor en este dispositivo (hoy)
+        const ventasZona = ref([]); // Tickets de toda la zona (solo cajero, fetch GAS)
+        const cargandoZona = ref(false);
         const tabCajaActivo = ref('NOTAS'); // 'NOTAS', 'BOLETAS', 'FACTURAS'
+        // Estado para flujo COBRAR (cajero cobra ticket emitido por vendedor)
+        const modalCobro = ref(false);
+        const ventaCobrar = ref(null);
+        const pagoCobroPendiente = ref({ metodo: 'EFECTIVO', montoRecibido: 0, montoVirtual: 0 });
+        const procesandoCobro = ref(false);
         
         // --- MÓDULO B: POS ---
         const bBuscador = ref('');
@@ -648,8 +904,8 @@
         };
 
         // --- SETUP WIZARD ---
-        const config = ref({ completado: false, vendedor: '', zona: '', estacion: null });
-        const configWizard = ref({ vendedor: '', zona: null, estacion: null });
+        const config = ref({ completado: false, vendedor: '', zona: '', estacion: null, esCajero: false });
+        const configWizard = ref({ vendedor: '', zona: null, estacion: null, esCajero: false });
 
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
@@ -683,10 +939,18 @@
 
         // Filtro Historial de Caja
         const ventasHistorialFiltradas = computed(() => {
-            return ventasHoy.value.filter(v => {
-                if (tabCajaActivo.value === 'NOTAS') return v.tipo === 'NOTA_DE_VENTA';
-                return v.tipo === tabCajaActivo.value;
-            });
+            const TIPO_MAP = { 'NOTAS': 'NOTA_DE_VENTA', 'BOLETAS': 'BOLETA', 'FACTURAS': 'FACTURA' };
+            const tipoFiltro = TIPO_MAP[tabCajaActivo.value] || tabCajaActivo.value;
+            // Cajero: tickets de toda la zona (GAS). Vendedor: sus tickets locales del dispositivo.
+            const fuente = config.value.esCajero ? ventasZona.value : ventasHoy.value;
+            return fuente.filter(v => v.tipo === tipoFiltro);
+        });
+
+        const vueltoCobro = computed(() => {
+            if (!ventaCobrar.value) return 0;
+            const total = ventaCobrar.value.total || 0;
+            if (pagoCobroPendiente.value.metodo === 'VIRTUAL') return 0;
+            return parseFloat((pagoCobroPendiente.value.montoRecibido + (pagoCobroPendiente.value.montoVirtual || 0) - total).toFixed(2));
         });
 
         // --- LISTENERS ---
@@ -758,6 +1022,8 @@
           clearInterval(_intervalFocus);
           clearInterval(_intervalSync);
           clearInterval(_intervalMidnight);
+          detenerPollingZona();
+          detenerCamaraCajero();
           if(html5QrcodeScanner) html5QrcodeScanner.clear().catch(() => {});
         });
 
@@ -769,12 +1035,13 @@
 
         // --- NAVEGACIÓN MODULAR Y MIDDLEWARE DE CAJA ---
         const cambiarModulo = (mod) => {
-            if (mod === 'POS' && !cajaAbierta.value) {
+            if (mod === 'POS' && config.value.esCajero && !cajaAbierta.value) {
                  agregarToast('Caja Cerrada', 'Debes aperturar caja primero');
-                 currentModule.value = 'POS'; // Dejar que vea el layout de bloqueo
+                 currentModule.value = 'POS';
             } else {
                  currentModule.value = mod;
-                 if(mod === 'POS') setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
+                 if (mod === 'POS') setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
+                 if (mod === 'CAJA' && config.value.esCajero && ventasZona.value.length === 0) cargarVentasZona();
             }
         };
 
@@ -837,6 +1104,20 @@
                  }
               }
           } catch(e) { localStorage.removeItem('mosexpress_caja_activa'); }
+
+          // Restaurar datos de sesión cajero
+          try {
+              const st = localStorage.getItem('mosexpress_session_start');
+              if (st) sessionStartTime.value = st;
+              const cs = localStorage.getItem('mosexpress_cobrados_sesion');
+              if (cs) cobradosEnSesion.value = JSON.parse(cs);
+          } catch(e) {}
+
+          // Si no es cajero, nunca requiere apertura de caja
+          if (config.value.completado && !config.value.esCajero) {
+              cajaAbierta.value = true;
+              currentModule.value = 'POS';
+          }
 
           // Restore Ventas List (Mock Local) y Limpiar si son de Días Anteriores
           try {
@@ -1018,6 +1299,212 @@
             };
         };
 
+        // Convierte texto ESC/POS a base64 sin fallar con tildes (normaliza a ASCII)
+        const b64ESC = str => {
+            const s = str.normalize('NFD').split('').filter(c => c.charCodeAt(0) <= 0xFF && (c.charCodeAt(0) < 0x0300 || c.charCodeAt(0) > 0x036F)).join('');
+            return btoa(s);
+        };
+
+        // Genera bloque ESC/POS para imprimir un QR Code con el texto dado
+        const qrESCPOS = (text) => {
+            const len = text.length + 3;
+            const pL = len & 0xFF;
+            const pH = (len >> 8) & 0xFF;
+            return (
+                '\x1b\x61\x01' +                                                          // centrar
+                '\x1d\x28\x6b\x04\x00\x31\x41\x32\x00' +                                 // modelo QR 2
+                '\x1d\x28\x6b\x03\x00\x31\x43\x06' +                                     // tamaño módulo 6
+                '\x1d\x28\x6b\x03\x00\x31\x45\x31' +                                     // corrección M
+                '\x1d\x28\x6b' + String.fromCharCode(pL) + String.fromCharCode(pH) +
+                '\x31\x50\x30' + text +                                                   // datos
+                '\x1d\x28\x6b\x03\x00\x31\x51\x30' +                                     // imprimir
+                '\n'
+            );
+        };
+
+        // Sonido de caja registradora cuando llega un ticket nuevo
+        const playCoinSound = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [
+                    { t: 0.00, f: 1200, v: 0.35, d: 0.10 },
+                    { t: 0.08, f: 1500, v: 0.30, d: 0.10 },
+                    { t: 0.16, f: 1800, v: 0.30, d: 0.12 },
+                    { t: 0.26, f: 950,  v: 0.45, d: 0.22 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    osc.frequency.exponentialRampToValueAtTime(f * 0.55, ctx.currentTime + t + d);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t);
+                    osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // --- MODO CAJERO ---
+        const modoCajero      = ref(false);
+        const cajeroBusqueda  = ref('');
+        const cajeroTicketActual = ref(null);
+        const cajeroCamara    = ref(false);
+        const cajeroScannerInst = ref(null);
+        const cajeroInput     = ref(null); // template ref
+
+        const resetearCajero = () => {
+            cajeroTicketActual.value = null;
+            cajeroBusqueda.value = '';
+            nextTick(() => {
+                if (cajeroInput.value) cajeroInput.value.focus();
+                if (cajeroScannerInst.value && cajeroCamara.value) {
+                    try { cajeroScannerInst.value.resume(); } catch(e) {}
+                }
+            });
+        };
+
+        const buscarTicketCajero = () => {
+            const q = cajeroBusqueda.value.trim();
+            if (!q) return;
+            const ticket = ventasZona.value.find(v =>
+                v.correlativo.trim().toLowerCase() === q.toLowerCase() ||
+                v.correlativo.trim().toLowerCase().includes(q.toLowerCase())
+            );
+            if (!ticket) {
+                agregarToast('No encontrado', q);
+                cajeroBusqueda.value = '';
+                nextTick(() => { if (cajeroInput.value) cajeroInput.value.focus(); });
+                return;
+            }
+            if (ticket.cobrado) {
+                agregarToast('Ya cobrado', ticket.correlativo);
+                leerMontoEnVoz(0); // silencio
+                // voz especial
+                try { const u = new SpeechSynthesisUtterance('Ticket ya cobrado'); u.lang='es-PE'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch(e) {}
+                cajeroBusqueda.value = '';
+                nextTick(() => { if (cajeroInput.value) cajeroInput.value.focus(); });
+                return;
+            }
+            if (ticket.anulada) {
+                agregarToast('Anulado', ticket.correlativo);
+                try { const u = new SpeechSynthesisUtterance('Ticket anulado'); u.lang='es-PE'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch(e) {}
+                cajeroBusqueda.value = '';
+                nextTick(() => { if (cajeroInput.value) cajeroInput.value.focus(); });
+                return;
+            }
+            cajeroTicketActual.value = ticket;
+            abrirCobroPendiente(ticket);
+            leerMontoEnVoz(ticket.total);
+            if (cajeroScannerInst.value) { try { cajeroScannerInst.value.pause(true); } catch(e) {} }
+        };
+
+        const iniciarCamaraCajero = () => {
+            if (cajeroCamara.value || typeof Html5Qrcode === 'undefined') return;
+            cajeroCamara.value = true;
+            nextTick(() => {
+                const scanner = new Html5Qrcode('cajero-qr-reader');
+                cajeroScannerInst.value = scanner;
+                scanner.start(
+                    { facingMode: 'environment' },
+                    { fps: 12, qrbox: { width: 220, height: 220 } },
+                    (decoded) => { cajeroBusqueda.value = decoded; buscarTicketCajero(); },
+                    () => {}
+                ).catch(() => { cajeroCamara.value = false; cajeroScannerInst.value = null; });
+            });
+        };
+
+        const detenerCamaraCajero = () => {
+            if (cajeroScannerInst.value) { cajeroScannerInst.value.stop().catch(() => {}); cajeroScannerInst.value = null; }
+            cajeroCamara.value = false;
+        };
+
+        const abrirModoCajero = () => {
+            modoCajero.value = true;
+            cajeroBusqueda.value = '';
+            cajeroTicketActual.value = null;
+            nextTick(() => {
+                if (cajeroInput.value) cajeroInput.value.focus();
+                iniciarCamaraCajero();
+            });
+        };
+
+        const cerrarModoCajero = () => {
+            detenerCamaraCajero();
+            modoCajero.value = false;
+            cajeroTicketActual.value = null;
+            cajeroBusqueda.value = '';
+            modalCobro.value = false;
+        };
+
+        // --- POLLING DE ZONA EN SEGUNDO PLANO ---
+        const pollingTimer = ref(null);
+
+        const actualizarVentasZonaSilencioso = async () => {
+            if (!config.value.estacion || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            const est = config.value.estacion;
+            const prefijos = [est.Serie_Nota, est.Serie_Boleta, est.Serie_Factura].filter(Boolean).join(',');
+            try {
+                const res = await fetch(`${API_URL}?accion=ventas_hoy_zona&prefijos=${encodeURIComponent(prefijos)}`);
+                const data = await res.json();
+                if (data.status !== 'success') return;
+
+                const idsActuales = new Set(ventasZona.value.map(v => v.id));
+                const nuevas = [];
+
+                data.ventas.forEach(v => {
+                    const norm = {
+                        id: v.id_venta,
+                        tipo: v.tipo_doc || '',
+                        correlativo: v.correlativo,
+                        total: parseFloat(v.total) || 0,
+                        timestamp: new Date(v.fecha).getTime(),
+                        cliente_doc: v.cliente_doc || '',
+                        cliente_nombre: v.cliente_nombre || 'Generico',
+                        expanded: false,
+                        isNew: false,
+                        raw_data: { auth: { vendedor: v.vendedor }, header: { metodo: v.forma_pago || '', tipoDoc: v.tipo_doc || '' }, items: [] },
+                        syncStatus: v.status === 'COMPLETADO' ? 'synced' : 'pending',
+                        cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && !!v.forma_pago,
+                        anulada: v.forma_pago === 'ANULADO',
+                        id_venta_gas: v.id_venta
+                    };
+                    if (!idsActuales.has(norm.id)) {
+                        norm.isNew = true;
+                        nuevas.push(norm);
+                    } else {
+                        const idx = ventasZona.value.findIndex(e => e.id === norm.id);
+                        if (idx !== -1 && !ventasZona.value[idx].cobradoMetodo) {
+                            ventasZona.value[idx].cobrado = norm.cobrado;
+                            ventasZona.value[idx].anulada = norm.anulada;
+                            ventasZona.value[idx].raw_data.header.metodo = norm.raw_data.header.metodo;
+                        }
+                    }
+                });
+
+                if (nuevas.length > 0) {
+                    ventasZona.value.unshift(...nuevas);
+                    playCoinSound();
+                    setTimeout(() => {
+                        nuevas.forEach(nv => {
+                            const idx = ventasZona.value.findIndex(v => v.id === nv.id);
+                            if (idx !== -1) ventasZona.value[idx].isNew = false;
+                        });
+                    }, 4000);
+                }
+            } catch(e) { /* error silencioso en segundo plano */ }
+        };
+
+        const iniciarPollingZona = () => {
+            if (pollingTimer.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            pollingTimer.value = setInterval(actualizarVentasZonaSilencioso, 7000);
+        };
+
+        const detenerPollingZona = () => {
+            if (pollingTimer.value) { clearInterval(pollingTimer.value); pollingTimer.value = null; }
+        };
+
         // La impresion se rutea por GAS para que la clave de PrintNode no quede expuesta en el browser.
         // El GAS debe tener implementado el handler: accion === 'imprimir'
         const mandarImpresionPrintNode = async (printerId, titulo, textoRaw) => {
@@ -1043,8 +1530,14 @@
         };
 
         const iniciarTurno = () => {
-            config.value = { completado: true, vendedor: configWizard.value.vendedor, zona: configWizard.value.zona, estacion: configWizard.value.estacion };
+            config.value = { completado: true, vendedor: configWizard.value.vendedor, zona: configWizard.value.zona, estacion: configWizard.value.estacion, esCajero: configWizard.value.esCajero };
             localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
+            if (!config.value.esCajero) {
+                cajaAbierta.value = true;
+                cambiarModulo('POS');
+            } else {
+                cambiarModulo('CAJA');
+            }
         };
 
         // --- MÓDULO A: LOGICA CAJA ---
@@ -1081,83 +1574,270 @@
             txt += "\x1b\x61\x01"; // Centrar
             txt += "*** TURNO INICIADO ***\n";
             txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02"; // Feed extra, Full Cut (GS V, ESC m, ESC i), Pitar 5 veces
-            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura ", btoa(txt))
+            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura ", b64ESC(txt))
                 .catch(e => agregarToast('Error Impresión', e.message));
 
             cajaAbierta.value = true; idCajaActual.value = cid; montoAperturaMemoria.value = montoApertura.value;
+            sessionStartTime.value = new Date().toISOString();
+            cobradosEnSesion.value = [];
+            localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
+            localStorage.removeItem('mosexpress_cobrados_sesion');
             localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto: montoAperturaMemoria.value, fecha: Date.now() }));
             procesandoCaja.value = false;
             agregarToast("Éxito", "Caja Aperturada");
+            iniciarPollingZona(); // Arrancar polling de zona en segundo plano
             cambiarModulo('POS');
         };
 
         const cerrarCaja = async () => {
-             let tEfectivo = 0, tVirtual = 0;
+             // --- Totales desde cobradosEnSesion (tickets de vendedores cobrados por este cajero) ---
+             let tEfectivoCobros = 0, tVirtualCobros = 0;
+             cobradosEnSesion.value.forEach(c => { tEfectivoCobros += c.efectivo || 0; tVirtualCobros += c.virtual || 0; });
+
+             // --- Ventas directas del cajero (si también vendió) ---
+             let tEfectivoPropios = 0, tVirtualPropios = 0;
              ventasHoy.value.forEach(v => {
-                 if (v.anulada) return; // Las anuladas no cuentan en el cierre
-                 if (v.raw_data && v.raw_data.header) {
-                     if (v.raw_data.header.metodo === 'EFECTIVO') tEfectivo += v.total;
-                     if (v.raw_data.header.metodo === 'VIRTUAL') tVirtual += v.total;
-                 }
+                 if (v.anulada) return;
+                 if (v.raw_data?.header?.metodo === 'EFECTIVO') tEfectivoPropios += v.total;
+                 if (v.raw_data?.header?.metodo === 'VIRTUAL')  tVirtualPropios  += v.total;
              });
-             let montoFinal = montoAperturaMemoria.value + tEfectivo; 
+
+             const tEfectivo = tEfectivoCobros + tEfectivoPropios;
+             const tVirtual  = tVirtualCobros  + tVirtualPropios;
+             const montoFinal = montoAperturaMemoria.value + tEfectivo;
+
+             // --- Tickets POR_COBRAR que no se cobraron → anular en GAS ---
+             const idsAnular = ventasZona.value
+                 .filter(v => !v.cobrado && !v.anulada)
+                 .map(v => v.id_venta_gas);
+
+             // --- Desglose por vendedor ---
+             const porVendedor = {};
+             cobradosEnSesion.value.forEach(c => {
+                 if (!porVendedor[c.vendedor]) porVendedor[c.vendedor] = { tickets: 0, total: 0 };
+                 porVendedor[c.vendedor].tickets++;
+                 porVendedor[c.vendedor].total += c.total;
+             });
+
+             // --- Primer y último correlativo cobrado ---
+             const primerCobro = cobradosEnSesion.value.length ? cobradosEnSesion.value[0].correlativo : '-';
+             const ultimoCobro = cobradosEnSesion.value.length ? cobradosEnSesion.value[cobradosEnSesion.value.length - 1].correlativo : '-';
+             const horaApertura = sessionStartTime.value ? new Date(sessionStartTime.value).toLocaleString() : '-';
+
+             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtual.toFixed(2)}\nNo cobrados a anular: ${idsAnular.length}`;
+             if(!confirm(`¿Cerrar Turno?\n\n${resumen}`)) return;
+
 
              if(!confirm(`¿Seguro que deseas Cerrar Turno?\n\nBase Local: S/ ${montoAperturaMemoria.value.toFixed(2)}\nTotal Ventas Efectivo: S/ ${tEfectivo.toFixed(2)}\nTotal Yape/Virtual: S/ ${tVirtual.toFixed(2)}\n\nEFECTIVO EN CAJÓN: S/ ${montoFinal.toFixed(2)}`)) return;
 
              procesandoCierre.value = true;
-             
-             const payload = {
-                 tipoEvento: 'CIERRE_CAJA',
-                 cajaId: idCajaActual.value,
-                 montoFinal: montoFinal,
-                 ventasTotal: ventasHoy.value.length
-             };
 
-             if(!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+             // 1. Anulación masiva de POR_COBRAR no cobrados
+             if (idsAnular.length > 0 && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                  try {
-                     await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                     await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION_MASIVA', ids: idsAnular }) });
+                 } catch(e) { agregarToast("Aviso Red", "Anulaciones en cola"); }
+             }
+
+             // 2. Registrar cierre en GAS
+             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                 try {
+                     await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: idCajaActual.value, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) });
                  } catch(e) { agregarToast("Aviso Red", "Cierre local (Cola)"); }
              }
 
-             // Ticket PrintNode Despedida Z
-             let txt = "\x1b\x40\x1b\x61\x01"; // Init + Centrar
-             txt += "\x1b\x21\x30MOSexpress\n\n";
+             // 3. Ticket Z completo
+             let txt = "\x1b\x40\x1b\x61\x01";
+             txt += "\x1b\x21\x30MOSexpress\n";
              txt += "\x1b\x21\x00================================================\n";
-             txt += "\x1b\x21\x10CIERRE DE TURNO (X/Z)\n"; // Doble alto
-             txt += "\x1b\x21\x00================================================\n\n";
-             txt += "\x1b\x61\x00"; // Izquierda
-             txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+             txt += "\x1b\x21\x10CIERRE DE TURNO (Z)\n";
+             txt += "\x1b\x21\x00================================================\n";
+             txt += "\x1b\x61\x00";
              txt += "CAJERO  : " + config.value.vendedor + "\n";
              txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+             txt += "APERTURA: " + horaApertura + "\n";
+             txt += "CIERRE  : " + new Date().toLocaleString() + "\n";
+             txt += "1er COBRO: " + primerCobro + "\n";
+             txt += "ULT COBRO: " + ultimoCobro + "\n";
+             txt += "================================================\n";
+             txt += "      RESUMEN DE COBROS DEL TURNO\n";
              txt += "------------------------------------------------\n";
              txt += "SALDO BASE    : S/ " + montoAperturaMemoria.value.toFixed(2) + "\n";
-             txt += "VENTS EFECTIVO: S/ " + tEfectivo.toFixed(2) + "\n";
-             txt += "VENTS TRANSFER: S/ " + tVirtual.toFixed(2) + "\n";
+             txt += "COBROS EFECT  : S/ " + tEfectivoCobros.toFixed(2) + "\n";
+             txt += "COBROS VIRTUAL: S/ " + tVirtualCobros.toFixed(2) + "\n";
+             if (tEfectivoPropios > 0 || tVirtualPropios > 0) {
+                 txt += "VENTAS PROPIAS: S/ " + (tEfectivoPropios + tVirtualPropios).toFixed(2) + "\n";
+             }
              txt += "------------------------------------------------\n";
-             txt += "\x1b\x45\x01"; // Bold on
-             txt += "EFECTIVO FINAL: S/ " + montoFinal.toFixed(2) + "\n";
-             txt += "\x1b\x45\x00"; // Bold off
+             txt += "\x1b\x45\x01";
+             txt += "TOTAL EFECTIVO: S/ " + tEfectivo.toFixed(2) + "\n";
+             txt += "TOTAL VIRTUAL : S/ " + tVirtual.toFixed(2) + "\n";
+             txt += "CAJA FINAL    : S/ " + montoFinal.toFixed(2) + "\n";
+             txt += "\x1b\x45\x00";
              txt += "================================================\n";
+             txt += "      DETALLE POR VENDEDOR\n";
+             txt += "------------------------------------------------\n";
+             Object.entries(porVendedor).forEach(([vend, datos]) => {
+                 txt += "VENDEDOR: " + vend + "\n";
+                 txt += "  Tickets : " + datos.tickets + "   Total: S/ " + datos.total.toFixed(2) + "\n";
+             });
+             if (Object.keys(porVendedor).length === 0) txt += "Sin cobros de vendedores\n";
+             txt += "================================================\n";
+             txt += "NO COBRADOS ANULADOS: " + idsAnular.length + "\n";
+             txt += "================================================\n";
+             txt += "\x1b\x61\x01*** FIN DE TURNO ***\n";
              txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Caja Z", btoa(txt))
+             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Z", b64ESC(txt))
                 .catch(e => agregarToast('Error Impresión', e.message));
 
+             // 4. Detener polling y limpiar estado local
+             detenerPollingZona();
              cajaAbierta.value = false;
              idCajaActual.value = '';
              montoAperturaMemoria.value = 0;
+             cobradosEnSesion.value = [];
+             sessionStartTime.value = null;
+             ventasZona.value = [];
              localStorage.removeItem('mosexpress_caja_activa');
-             ventasHoy.value = []; 
+             localStorage.removeItem('mosexpress_cobrados_sesion');
+             localStorage.removeItem('mosexpress_session_start');
+             ventasHoy.value = [];
              localStorage.removeItem('mosexpress_ventas_hoy');
-             
-             // Desloguear la terminal completamente
+
+             // 5. Desloguear terminal
              config.value.completado = false;
              config.value.vendedor = '';
              config.value.estacion = null;
              localStorage.removeItem('mosexpress_config');
-             configWizard.value = { zona: '', estacion: '', vendedor: '' };
-             
+             configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false };
+
              procesandoCierre.value = false;
-             agregarToast("Éxito", "Turno Cerrado Correctamente");
+             agregarToast("Turno cerrado", "Hasta luego");
+        };
+
+        // --- CAJERO: carga tickets de zona desde GAS ---
+        const cargarVentasZona = async () => {
+            if (!config.value.estacion) return;
+            cargandoZona.value = true;
+            const est = config.value.estacion;
+            const prefijos = [est.Serie_Nota, est.Serie_Boleta, est.Serie_Factura].filter(Boolean).join(',');
+            try {
+                const res = await fetch(`${API_URL}?accion=ventas_hoy_zona&prefijos=${encodeURIComponent(prefijos)}`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    ventasZona.value = data.ventas.map(v => {
+                        return {
+                            id: v.id_venta,
+                            tipo: v.tipo_doc || '',
+                            correlativo: v.correlativo,
+                            total: parseFloat(v.total) || 0,
+                            timestamp: new Date(v.fecha).getTime(),
+                            cliente_doc: v.cliente_doc || '',
+                            cliente_nombre: v.cliente_nombre || 'Genérico',
+                            expanded: false,
+                            raw_data: { auth: { vendedor: v.vendedor }, header: { metodo: v.forma_pago || '', tipoDoc: v.tipo_doc || '' }, items: [] },
+                            syncStatus: v.status === 'COMPLETADO' ? 'synced' : 'pending',
+                            cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && !!v.forma_pago,
+                            anulada: v.forma_pago === 'ANULADO',
+                            id_venta_gas: v.id_venta
+                        };
+                    });
+                    agregarToast('Zona actualizada', `${ventasZona.value.length} tickets cargados`);
+                }
+            } catch(e) {
+                agregarToast('Error', 'No se pudo cargar tickets de zona');
+            }
+            cargandoZona.value = false;
+        };
+
+        // --- CAJERO: abrir modal de cobro para un ticket de vendedor ---
+        const abrirCobroPendiente = (venta) => {
+            ventaCobrar.value = venta;
+            pagoCobroPendiente.value = { metodo: 'EFECTIVO', montoRecibido: parseFloat(venta.total.toFixed(2)), montoVirtual: 0 };
+            modalCobro.value = true;
+        };
+
+        const procesarCobroPendiente = async () => {
+            if (!ventaCobrar.value) return;
+            procesandoCobro.value = true;
+            const venta = ventaCobrar.value;
+            const pCobro = pagoCobroPendiente.value;
+            let metodoFinal = pCobro.metodo;
+            if (pCobro.metodo === 'MIXTO') {
+                const efeNeto = parseFloat((venta.total - (pCobro.montoVirtual || 0)).toFixed(2));
+                metodoFinal = `MIXTO (VIR:${parseFloat(pCobro.montoVirtual).toFixed(2)}/EFE:${efeNeto.toFixed(2)})`;
+            }
+            // Actualizar GAS
+            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                try {
+                    await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) });
+                } catch(e) { agregarToast('Aviso', 'Cobro registrado localmente'); }
+            }
+            // Marcar localmente como cobrado y guardar método real
+            const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+            if (idx !== -1) {
+                ventasZona.value[idx].cobrado = true;
+                ventasZona.value[idx].cobradoMetodo = metodoFinal;
+            }
+            // Imprimir recibo de cobro solo si NO estamos en Modo Cajero
+            // (en Modo Cajero el ticket ya fue impreso por el vendedor — solo se registra el pago)
+            if (!modoCajero.value) {
+                let txt = "\x1b\x40\x1b\x61\x01";
+                txt += "\x1b\x21\x30MOSexpress\n";
+                txt += "\x1b\x21\x00\n";
+                txt += "\x1b\x21\x10COBRO\n";
+                txt += "\x1b\x21\x00Tk: " + venta.correlativo + "\n";
+                txt += "================================================\n";
+                txt += "\x1b\x61\x00";
+                txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+                if (venta.cliente_nombre && venta.cliente_nombre !== 'Genérico') txt += "CLIENTE : " + venta.cliente_nombre + "\n";
+                txt += "CAJERO  : " + config.value.vendedor + "\n";
+                txt += "VENDEDOR: " + (venta.raw_data?.auth?.vendedor || '-') + "\n";
+                txt += "================================================\n";
+                txt += "\x1b\x61\x02";
+                txt += "\x1b\x21\x10TOTAL: S/ " + venta.total.toFixed(2) + "\n\x1b\x21\x00";
+                txt += "METODO: " + metodoFinal + "\n";
+                if (pCobro.metodo === 'EFECTIVO' && pCobro.montoRecibido > 0) {
+                    txt += "PAGO  : S/ " + parseFloat(pCobro.montoRecibido).toFixed(2) + "\n";
+                    txt += "VUELTO: S/ " + vueltoCobro.value.toFixed(2) + "\n";
+                }
+                txt += "\n\x1b\x61\x01*** GRACIAS ***\n";
+                txt += qrESCPOS(venta.correlativo);
+                txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
+                mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cobro", b64ESC(txt))
+                    .catch(e => agregarToast('Error Impresión', e.message));
+            }
+            // Registrar cobro en sesión para el Z report
+            const efeNeto = pCobro.metodo === 'VIRTUAL' ? 0 : pCobro.metodo === 'MIXTO' ? parseFloat((venta.total - (pCobro.montoVirtual||0)).toFixed(2)) : venta.total;
+            const virNeto = pCobro.metodo === 'EFECTIVO' ? 0 : pCobro.metodo === 'MIXTO' ? parseFloat((pCobro.montoVirtual||0).toFixed(2)) : venta.total;
+            cobradosEnSesion.value.push({
+                correlativo: venta.correlativo,
+                vendedor: venta.raw_data?.auth?.vendedor || '-',
+                total: venta.total,
+                metodo: metodoFinal,
+                efectivo: efeNeto,
+                virtual: virNeto,
+                timestamp: Date.now()
+            });
+            localStorage.setItem('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value));
+            agregarToast('Cobro registrado', venta.correlativo);
+            procesandoCobro.value = false;
+            modalCobro.value = false;
+            ventaCobrar.value = null;
+            if (modoCajero.value) resetearCajero();
+        };
+
+        // Cierre de sesión para vendedores (sin caja)
+        const cerrarSesion = () => {
+             if (!confirm(`¿Cerrar sesión de ${config.value.vendedor}?`)) return;
+             ventasHoy.value = [];
+             localStorage.removeItem('mosexpress_ventas_hoy');
+             config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+             localStorage.removeItem('mosexpress_config');
+             configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false };
+             cajaAbierta.value = false;
+             currentModule.value = 'CAJA';
+             agregarToast("Sesión cerrada", "Hasta luego");
         };
 
         // --- MÓDULO B: LOGICA POS ---
@@ -1388,7 +2068,56 @@
             agregarToast('Cliente', c.Nombre);
         };
         const limpiarCliente = () => { pago.value.docCliente = ''; pago.value.nombreCliente = ''; busquedaNombre.value = ''; };
-        const abrirModalPago = () => { pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; pago.value.montoRecibido = granTotal.value; pago.value.montoVirtual = 0; limpiarCliente(); modalPago.value = true; };
+        // Convierte un número entero a texto en español (para TTS del monto)
+        const numALetras = (n) => {
+            if (n === 0) return 'cero';
+            const un = ['','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve',
+                        'diez','once','doce','trece','catorce','quince',
+                        'dieciséis','diecisiete','dieciocho','diecinueve',
+                        'veinte','veintiuno','veintidós','veintitrés','veinticuatro',
+                        'veinticinco','veintiséis','veintisiete','veintiocho','veintinueve'];
+            const dec = ['','','veinte','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
+            const cen = ['','ciento','doscientos','trescientos','cuatrocientos','quinientos',
+                         'seiscientos','setecientos','ochocientos','novecientos'];
+            let r = '';
+            if (n >= 1000) {
+                r += (Math.floor(n/1000) === 1 ? 'mil' : numALetras(Math.floor(n/1000)) + ' mil');
+                n %= 1000; if (n > 0) r += ' ';
+            }
+            if (n >= 100) {
+                if (n === 100) return r + 'cien';
+                r += cen[Math.floor(n/100)]; n %= 100; if (n > 0) r += ' ';
+            }
+            if (n > 0) {
+                if (n <= 29) { r += un[n]; }
+                else { r += dec[Math.floor(n/10)]; if (n%10 > 0) r += ' y ' + un[n%10]; }
+            }
+            return r;
+        };
+
+        const leerMontoEnVoz = (monto) => {
+            if (!window.speechSynthesis) return;
+            const soles = Math.floor(monto);
+            const centavos = Math.round((monto - soles) * 100);
+            let texto = numALetras(soles);
+            if (centavos > 0) texto += ' con ' + numALetras(centavos);
+            const utt = new SpeechSynthesisUtterance(texto);
+            utt.lang = 'es-PE';
+            utt.rate = 0.92;
+            utt.pitch = 1.05;
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utt);
+        };
+
+        const abrirModalPago = () => {
+            leerMontoEnVoz(granTotal.value);
+            pago.value.tipoDoc = 'NOTA_DE_VENTA';
+            pago.value.metodo = config.value.esCajero ? 'EFECTIVO' : 'POR_COBRAR';
+            pago.value.montoRecibido = granTotal.value;
+            pago.value.montoVirtual = 0;
+            limpiarCliente();
+            modalPago.value = true;
+        };
         const setMonto = (m) => { pago.value.montoRecibido = parseFloat(m); };
         const buscarClienteAPI = () => {
            if (errorDocumento.value) { agregarToast('Documento inválido', errorDocumento.value); return; }
@@ -1411,18 +2140,18 @@
         };
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
-        const procesarPago = async () => {
+        const procesarPago = () => {
            if (vuelto.value < 0) return;
            procesando.value = true;
 
            let serieElegida = config.value.estacion.Serie_Nota;
            if(pago.value.tipoDoc === 'BOLETA') serieElegida = config.value.estacion.Serie_Boleta;
            if(pago.value.tipoDoc === 'FACTURA') serieElegida = config.value.estacion.Serie_Factura;
-           
-           let correlativoReal = serieElegida + "-LOCAL";
-           let syncStatus = 'pending';
 
-            const ventaBase = {
+           const localId = Date.now();
+           const correlativoLocal = serieElegida + "-LOCAL";
+
+           const ventaBase = {
               auth: {
                  vendedor: config.value.vendedor,
                  estacion: config.value.estacion.Estacion_Nombre,
@@ -1434,120 +2163,129 @@
                  printerId: config.value.estacion.PrintNode_ID
               },
               data_sync: {
-                 last_sync: Date.now(),
+                 last_sync: localId,
                  tables_required: ["productos", "promociones", "clientes", "zonas", "cajas"]
               },
-              // Datos Venta extra
               header: {
                  tipoDoc: pago.value.tipoDoc, metodo: pago.value.metodo === 'MIXTO' ? `MIXTO (VIR:${parseFloat(pago.value.montoVirtual).toFixed(2)}/EFE:${parseFloat(granTotal.value - pago.value.montoVirtual).toFixed(2)})` : pago.value.metodo, total: granTotal.value,
                  cliente: { doc: pago.value.docCliente, nombre: pago.value.nombreCliente, tipo: 'N/A' }
               },
-              status: 'pending', // INITIAL STATE
+              status: 'pending',
               items: carrito.value.map(c => ({ sku: c.sku, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }))
            };
 
-           if(!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-               try {
-                 const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) });
-                 const res = await req.json();
-                 if (res.status === 'success') { correlativoReal = res.correlativo; syncStatus = 'synced'; ventaBase.status = 'synced'; }
-               } catch(e) { 
-                 agregarToast('Aviso de Red', 'Guardando comprobante en cola (Offline)'); 
-                 ventaBase.status = 'pending';
-                 pendingSales.value.push({ id: Date.now(), raw_data: ventaBase });
-                 localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
-               }
-           } else {
-               ventaBase.status = 'pending';
-               pendingSales.value.push({ id: Date.now(), raw_data: ventaBase });
-               localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
-               agregarToast('Offline', 'Comprobante guardado en MODO OFFLINE'); 
-           }
-           
-           // Historial Local Front
-           let ht = { id: Date.now(), tipo: pago.value.tipoDoc, correlativo: correlativoReal, total: granTotal.value, timestamp: Date.now(), cliente_doc: pago.value.docCliente || '-', cliente_nombre: pago.value.nombreCliente || 'Genérico', items_count: carrito.value.length, expanded: false, raw_data: ventaBase, syncStatus: syncStatus };
+           // 1. Guardar en historial local INMEDIATAMENTE (optimista)
+           const ht = { id: localId, tipo: pago.value.tipoDoc, correlativo: correlativoLocal, total: granTotal.value, timestamp: localId, cliente_doc: pago.value.docCliente || '-', cliente_nombre: pago.value.nombreCliente || 'Genérico', items_count: carrito.value.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
            ventasHoy.value.unshift(ht);
            localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
 
-           // Imprimir Modificado con Regla Offline-First SUNAT
-           let tituloTicket = pago.value.tipoDoc;
-           if (syncStatus === 'pending' && pago.value.tipoDoc !== 'NOTA_DE_VENTA') {
-               tituloTicket = "PREVENTA (PROVISIONAL)";
-           }
-           let txt = "\x1b\x40\x1b\x61\x01"; // Init + Centrar
-           txt += "\x1b\x21\x30MOSexpress\n"; // Titulo Empresa
+           // 2. Imprimir INMEDIATAMENTE con correlativo provisional
+           const tituloTicket = (pago.value.tipoDoc !== 'NOTA_DE_VENTA') ? "PREVENTA (PROVISIONAL)" : pago.value.tipoDoc;
+           let txt = "\x1b\x40\x1b\x61\x01";
+           txt += "\x1b\x21\x30MOSexpress\n";
            txt += "\x1b\x21\x00\n";
            txt += "\x1b\x21\x10" + tituloTicket + "\n";
-           txt += "\x1b\x21\x00Tk: " + correlativoReal + "\n";
+           txt += "\x1b\x21\x00Tk: " + correlativoLocal + "\n";
            txt += "================================================\n";
-           txt += "\x1b\x61\x00"; // Alinear Izquierda
+           txt += "\x1b\x61\x00";
            txt += "FECHA   : " + new Date().toLocaleString() + "\n";
            if(pago.value.nombreCliente) txt += "CLIENTE : " + pago.value.nombreCliente + "\n";
            if(pago.value.docCliente) txt += "DOC     : " + pago.value.docCliente + "\n";
-           txt += "CAJERO  : " + config.value.vendedor + "\n";
+           txt += (config.value.esCajero ? "CAJERO  " : "VENDEDOR") + ": " + config.value.vendedor + "\n";
            txt += "================================================\n";
            txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
            txt += "------------------------------------------------\n";
-           
            carrito.value.forEach(item => {
                let desc = item.nombre;
                if (desc.length > 31) desc = desc.substring(0, 31);
                else desc = desc.padEnd(31, ' ');
-               let qty = String(item.cantidad).padEnd(5, ' ');
-               let sub = parseFloat(item.subtotal).toFixed(2).padStart(10, ' ');
-               txt += qty + " " + desc + " " + sub + "\n";
+               txt += String(item.cantidad).padEnd(5, ' ') + " " + desc + " " + parseFloat(item.subtotal).toFixed(2).padStart(10, ' ') + "\n";
            });
-           
            txt += "------------------------------------------------\n";
-           txt += "\x1b\x61\x02"; // Alinear Derecha
-           txt += "\x1b\x21\x10TOTAL: S/ " + granTotal.value.toFixed(2) + "\n\x1b\x21\x00"; 
-           if (pago.value.metodo === 'MIXTO') {
-               const efeNeto = parseFloat((granTotal.value - pago.value.montoVirtual).toFixed(2));
-               txt += "METODO: MIXTO\n";
-               txt += "VIRTUAL : S/ " + parseFloat(pago.value.montoVirtual).toFixed(2) + "\n";
-               txt += "EFECTIVO: S/ " + efeNeto.toFixed(2) + "\n";
-               if (vuelto.value > 0) { txt += "PAGO EFE: S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n"; txt += "VUELTO  : S/ " + vuelto.value.toFixed(2) + "\n"; }
-           } else {
-               txt += "METODO: " + pago.value.metodo + "\n";
-               if (pago.value.metodo === 'EFECTIVO' && pago.value.montoRecibido > 0) {
-                   txt += "PAGO  : S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n";
-                   txt += "VUELTO: S/ " + vuelto.value.toFixed(2) + "\n";
+           txt += "\x1b\x61\x02";
+           txt += "\x1b\x21\x10TOTAL: S/ " + granTotal.value.toFixed(2) + "\n\x1b\x21\x00";
+           if (config.value.esCajero) {
+               if (pago.value.metodo === 'MIXTO') {
+                   const efeNeto = parseFloat((granTotal.value - pago.value.montoVirtual).toFixed(2));
+                   txt += "METODO: MIXTO\n";
+                   txt += "VIRTUAL : S/ " + parseFloat(pago.value.montoVirtual).toFixed(2) + "\n";
+                   txt += "EFECTIVO: S/ " + efeNeto.toFixed(2) + "\n";
+                   if (vuelto.value > 0) { txt += "PAGO EFE: S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n"; txt += "VUELTO  : S/ " + vuelto.value.toFixed(2) + "\n"; }
+               } else {
+                   txt += "METODO: " + pago.value.metodo + "\n";
+                   if (pago.value.metodo === 'EFECTIVO' && pago.value.montoRecibido > 0) {
+                       txt += "PAGO  : S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n";
+                       txt += "VUELTO: S/ " + vuelto.value.toFixed(2) + "\n";
+                   }
                }
            }
-           txt += "\n\x1b\x61\x01"; // Centrar
-           txt += "*** GRACIAS POR SU COMPRA ***\n";
-           if (syncStatus === 'pending') txt += "(Sujeto a Sincronizacion)\n";
-           
-           txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02"; // Feed extra, Full Cut (GS V, ESC m, ESC i), Pitar 5 veces
-           mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", btoa(txt))
+           txt += "\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n(Sujeto a Sincronizacion)\n";
+           txt += qrESCPOS(correlativoLocal);
+           txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
+           mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", b64ESC(txt))
                .catch(e => agregarToast('Error Impresión', e.message));
 
-           agregarToast('¡Venta Exitosa!', correlativoReal);
-           // Decrementar stock local por zona
+           // 3. Decrementar stock local y cerrar modal INMEDIATAMENTE
            carrito.value.forEach(item => {
                const prod = productosCatalogo.value.find(p => p.codBarras === item.codBarras);
                if (prod && prod.stock !== null) prod.stock = Math.max(0, prod.stock - item.cantidad);
            });
+           agregarToast('¡Venta Registrada!', 'Sincronizando...');
            finalizarPostPago();
+
+           // 4. Sync con GAS en segundo plano (fire & forget)
+           if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+               fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) })
+                   .then(r => r.json())
+                   .then(res => {
+                       if (res.status === 'success') {
+                           const idx = ventasHoy.value.findIndex(v => v.id === localId);
+                           if (idx !== -1) {
+                               ventasHoy.value[idx].correlativo = res.correlativo;
+                               ventasHoy.value[idx].syncStatus = 'synced';
+                               ventasHoy.value[idx].raw_data.status = 'synced';
+                               localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                           }
+                           agregarToast('¡Sincronizado!', res.correlativo);
+                       } else {
+                           throw new Error(res.mensaje || 'Error GAS');
+                       }
+                   })
+                   .catch(() => {
+                       pendingSales.value.push({ id: localId, raw_data: ventaBase });
+                       localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+                       agregarToast('En Cola', 'Se sincronizará automáticamente');
+                   });
+           } else {
+               pendingSales.value.push({ id: localId, raw_data: ventaBase });
+               localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+               agregarToast('Offline', 'Comprobante guardado en MODO OFFLINE');
+           }
         };
 
         const finalizarPostPago = () => { procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; pago.value.montoVirtual = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
 
         const anularVenta = (venta) => {
             if (!confirm(`¿Seguro que deseas ANULAR el comprobante ${venta.correlativo}?\n\nEsta acción no contará en el cierre de caja.`)) return;
-            const idx = ventasHoy.value.findIndex(v => v.id === venta.id);
-            if (idx === -1) return;
-            ventasHoy.value[idx].anulada = true;
-            ventasHoy.value[idx].syncStatus = 'anulado';
-            ventasHoy.value[idx].expanded = false;
-            // Quitar de pendientes si estaba en cola
-            pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
-            localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
-            localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+            // Cajero: ticket viene de ventasZona. Vendedor: ticket viene de ventasHoy.
+            if (config.value.esCajero) {
+                const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+                if (idx === -1) return;
+                ventasZona.value[idx].anulada = true;
+                ventasZona.value[idx].expanded = false;
+            } else {
+                const idx = ventasHoy.value.findIndex(v => v.id === venta.id);
+                if (idx === -1) return;
+                ventasHoy.value[idx].anulada = true;
+                ventasHoy.value[idx].syncStatus = 'anulado';
+                ventasHoy.value[idx].expanded = false;
+                pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+                localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+            }
             agregarToast('Comprobante Anulado', venta.correlativo);
-            // Notificar al GAS en segundo plano (no bloquea la UI)
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION', ventaId: venta.id, correlativo: venta.correlativo, deviceId: deviceId.value }) }).catch(() => {});
+                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION', ventaId: venta.id_venta_gas || venta.id, correlativo: venta.correlativo, deviceId: deviceId.value }) }).catch(() => {});
             }
         };
 
@@ -1577,8 +2315,9 @@
             txt += "\x1b\x61\x02"; // Derecha
             txt += "\x1b\x21\x10TOTAL: S/ " + parseFloat(ventaLocal.total).toFixed(2) + "\n\x1b\x21\x00";
             txt += "\n\x1b\x61\x01*** COPIA DE COMPROBANTE ***\n";
+            txt += qrESCPOS(ventaLocal.correlativo);
             txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Reimpresion", btoa(txt))
+            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Reimpresion", b64ESC(txt))
                 .catch(e => agregarToast('Error Impresión', e.message));
         };
 
@@ -1638,13 +2377,17 @@
           currentModule, config, configWizard, offlineMode,
           uiState,
           cajaAbierta, idCajaActual, montoAperturaMemoria, montoApertura, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
-          procesandoCierre, cerrarCaja,
+          ventasZona, cargandoZona, cargarVentasZona, cobradosEnSesion, sessionStartTime, playCoinSound,
+          modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
+          abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
+          modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
+          procesandoCierre, cerrarCaja, cerrarSesion,
           bBuscador, productosFiltrados, carrito, granTotal, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago,
           iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
-          abrirModalPago, buscarClienteAPI, buscandoCliente,
+          abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
