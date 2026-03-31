@@ -180,6 +180,11 @@ function procesarImpresion(data) {
   if (!printNodeKey) return generarRespuestaError("PRINTNODE_API_KEY no configurada en Propiedades del script.");
   if (!data.printerId || !data.content) return generarRespuestaError("Faltan datos de impresión (printerId o content).");
 
+  var printerId = parseInt(data.printerId, 10);
+  if (isNaN(printerId) || printerId <= 0) {
+    return generarRespuestaError("printerId inválido: '" + data.printerId + "'. Verifica el campo PrintNode_ID en la hoja ZONAS_CONFIG.");
+  }
+
   var options = {
     method: 'post',
     headers: {
@@ -187,10 +192,11 @@ function procesarImpresion(data) {
     },
     contentType: 'application/json',
     payload: JSON.stringify({
-      printerId: parseInt(data.printerId, 10),
+      printerId: printerId,
       title: data.title || 'MOSexpress',
       contentType: 'raw_base64',
-      content: data.content
+      content: data.content,
+      source: 'MOSexpress'
     }),
     muteHttpExceptions: true
   };
@@ -199,7 +205,7 @@ function procesarImpresion(data) {
     var resp = UrlFetchApp.fetch('https://api.printnode.com/printjobs', options);
     var code = resp.getResponseCode();
     if (code !== 201) {
-      return generarRespuestaError("PrintNode respondió " + code + ": " + resp.getContentText());
+      return generarRespuestaError("PrintNode respondió " + code + " (printerId=" + printerId + "): " + resp.getContentText());
     }
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",

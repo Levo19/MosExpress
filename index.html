@@ -1535,6 +1535,23 @@
             if (!config.value.esCajero) {
                 cajaAbierta.value = true;
                 cambiarModulo('POS');
+                // Ticket de confirmación de conexión para el vendedor
+                let txtV = "\x1b\x40\x1b\x61\x01";
+                txtV += "\x1b\x21\x30MOSexpress\n\n";
+                txtV += "\x1b\x21\x00";
+                txtV += "================================================\n";
+                txtV += "\x1b\x21\x10VENDEDOR LISTO\n";
+                txtV += "\x1b\x21\x00";
+                txtV += "================================================\n\n";
+                txtV += "\x1b\x61\x00";
+                txtV += "FECHA   : " + new Date().toLocaleString() + "\n";
+                txtV += "VENDEDOR: " + config.value.vendedor + "\n";
+                txtV += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+                txtV += "IMPRESORA: " + config.value.estacion.PrintNode_ID + "\n\n";
+                txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n";
+                txtV += "\n\n\n\n\n\x1d\x56\x00";
+                mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Bienvenida Vendedor", b64ESC(txtV))
+                    .catch(e => agregarToast('Error Impresión', e.message));
             } else {
                 cambiarModulo('CAJA');
             }
