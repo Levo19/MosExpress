@@ -25,6 +25,10 @@ function doGet(e) {
     return ventasHoyZona(e.parameter.prefijos);
   }
 
+  if (accion === 'detalle_venta') {
+    return detalleVenta(e.parameter.id_venta);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({ error: "Acción no válida" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -150,15 +154,17 @@ function procesarVenta(data) {
   var correlativoNumero = obtenerSiguienteCorrelativo(sheetCabecera, pos.serieActual);
   var correlativoFinal = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
 
-  // Esquema VENTAS_CABECERA (13 columnas):
+  // Esquema VENTAS_CABECERA (14 columnas):
   // ID_Venta | Fecha | Vendedor | Estacion | Cliente_Doc | Cliente_Nombre | Total
-  // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio
+  // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio | Ref_Local
+  var refLocal = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
   sheetCabecera.appendRow([
     idVenta, fechaActual, auth.vendedor, auth.estacion,
     header.cliente.doc, header.cliente.nombre, header.total,
     header.tipoDoc,                    // col 8: Tipo_Doc  (limpio)
     header.metodo || 'EFECTIVO',       // col 9: FormaPago (EFECTIVO/VIRTUAL/MIXTO/POR_COBRAR)
-    correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO"
+    correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO",
+    refLocal                           // col 14: Ref_Local (ID del dispositivo para cross-ref QR)
   ]);
 
   items.forEach(function(item) {
@@ -339,12 +345,38 @@ function ventasHoyZona(prefijosStr) {
       correlativo:    correlativo,
       id_caja:        String(data[i][10] || ''),
       id_dispositivo: String(data[i][11] || ''),
-      status:         String(data[i][12] || '')   // col 13: Estado_Envio
+      status:         String(data[i][12] || ''),  // col 13: Estado_Envio
+      ref_local:      String(data[i][13] || '')   // col 14: Ref_Local (cross-ref QR)
     });
   }
 
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", ventas: result
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Devuelve los items de una venta específica desde VENTAS_DETALLE
+function detalleVenta(idVenta) {
+  if (!idVenta) return generarRespuestaError("id_venta requerido");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("VENTAS_DETALLE");
+  if (!sheet) return generarRespuestaError("VENTAS_DETALLE no encontrada");
+
+  var data = sheet.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(idVenta)) {
+      items.push({
+        sku:      String(data[i][1] || ''),
+        nombre:   String(data[i][2] || ''),
+        cantidad: parseFloat(data[i][3]) || 0,
+        precio:   parseFloat(data[i][4]) || 0,
+        subtotal: parseFloat(data[i][5]) || 0
+      });
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success", items: items
   })).setMimeType(ContentService.MimeType.JSON);
 }
 

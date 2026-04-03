@@ -48,6 +48,8 @@
     /* Ticket nuevo detectado en segundo plano */
     @keyframes pulseNuevo { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); } 70% { box-shadow: 0 0 0 14px rgba(16,185,129,0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
     .ticket-nuevo { animation: pulseNuevo 1s ease-out infinite; border-color: #10b981 !important; }
+    @keyframes frameFlash { 0%, 100% { box-shadow: inset 0 0 0 0px rgba(16,185,129,0); } 50% { box-shadow: inset 0 0 0 6px rgba(16,185,129,0.85); } }
+    .frame-nuevo { animation: frameFlash 0.5s ease-in-out 4; }
     /* Modal de pago no se sale del viewport en pantallas pequeñas */
     @media (max-height: 600px) {
       .modal-pago-inner { max-height: 98dvh !important; }
@@ -133,8 +135,43 @@
         <p class="font-bold text-gray-400 tracking-widest uppercase animate-pulse">Verificando Credenciales...</p>
     </div>
 
+    <!-- AVISO SESIÓN ANTERIOR SIN CERRAR -->
+    <div v-if="mostrarModalSesionAnterior && !config.completado" class="absolute inset-0 z-[55] bg-gray-950 flex flex-col items-center justify-center p-6">
+      <div class="w-full max-w-md bg-gray-800 p-8 rounded-3xl shadow-2xl border-2 border-amber-500">
+        <div class="text-center mb-5">
+          <svg class="w-16 h-16 text-amber-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          <h2 class="text-xl font-black text-white">Sesión sin cerrar</h2>
+          <p class="text-gray-400 text-sm mt-1">Se detectó una jornada anterior que no fue cerrada</p>
+        </div>
+        <div class="bg-gray-900 rounded-2xl p-4 mb-5 text-sm space-y-2">
+          <div class="flex justify-between">
+            <span class="text-gray-400">Vendedor</span>
+            <span class="text-white font-bold">{{ sesionAnteriorInfo?.vendedor }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">Fecha</span>
+            <span class="text-amber-300 font-mono">{{ sesionAnteriorInfo?.fecha }}</span>
+          </div>
+          <div v-if="sesionAnteriorInfo?.caja" class="flex justify-between">
+            <span class="text-gray-400">ID Caja</span>
+            <span class="text-gray-300 font-mono text-xs">{{ sesionAnteriorInfo?.caja?.idCaja }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">Estación</span>
+            <span class="text-gray-300">{{ sesionAnteriorInfo?.estacion?.Estacion_Nombre || '-' }}</span>
+          </div>
+        </div>
+        <button v-if="sesionAnteriorInfo?.estacion?.PrintNode_ID" @click="imprimirAvisoCierrePendiente" class="w-full mb-3 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold py-3 rounded-xl transition-all">
+          Imprimir aviso de sesión no cerrada
+        </button>
+        <button @click="mostrarModalSesionAnterior = false" class="w-full bg-posPrimary hover:bg-emerald-600 active:scale-95 text-white font-black py-3 rounded-xl transition-all">
+          Continuar — nuevo turno
+        </button>
+      </div>
+    </div>
+
     <!-- WIZARD INICIAL -->
-    <div v-if="!config.completado" class="absolute inset-0 z-50 bg-posBg flex flex-col items-center justify-center p-6">
+    <div v-if="!config.completado && !mostrarModalSesionAnterior" class="absolute inset-0 z-50 bg-posBg flex flex-col items-center justify-center p-6">
       <div class="w-full max-w-md bg-white p-8 rounded-3xl shadow-2xl border border-gray-100">
         <h2 class="text-2xl font-black text-center mb-6">Setup Terminal</h2>
         <input v-model="configWizard.vendedor" type="text" placeholder="Tu Nombre" class="w-full p-4 mb-4 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold">
@@ -164,7 +201,7 @@
     <main v-if="config.completado" class="flex-1 overflow-hidden relative pb-16 bg-gray-50 flex">
         
         <!-- MÓDULO A: CAJA -->
-        <div v-show="currentModule === 'CAJA'" class="w-full h-full overflow-y-auto p-4 space-y-4">
+        <div v-show="currentModule === 'CAJA'" class="w-full h-full overflow-y-auto p-4 space-y-4" :class="{'frame-nuevo': flashNuevosTickets}">
             
             <div v-if="config.esCajero && !cajaAbierta" class="h-full flex flex-col items-center justify-center p-6 text-center max-w-sm mx-auto">
                 <div class="bg-white p-6 rounded-3xl shadow-lg w-full border border-gray-200">
@@ -237,7 +274,7 @@
                          class="rounded-2xl border shadow-sm overflow-hidden text-gray-800 transition-all"
                          :class="[venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : venta.cobrado ? 'bg-emerald-50 border-emerald-200' : (venta.raw_data?.header?.metodo === 'POR_COBRAR' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'), venta.isNew ? 'ticket-nuevo' : '']">
 
-                        <div @click="venta.expanded = !venta.expanded" class="p-4 flex justify-between items-center cursor-pointer hover:bg-black hover:bg-opacity-5 active:bg-opacity-10">
+                        <div @click="expandirTicket(venta)" class="p-4 flex justify-between items-center cursor-pointer hover:bg-black hover:bg-opacity-5 active:bg-opacity-10">
                             <div class="flex flex-col gap-1 min-w-0">
                                 <!-- Correlativo -->
                                 <div class="font-bold text-base leading-none" :class="venta.anulada ? 'line-through text-gray-400' : ''">{{ venta.correlativo }}</div>
@@ -275,14 +312,19 @@
                                 <p><span class="font-bold text-gray-600">Hora:</span> {{ new Date(venta.timestamp).toLocaleTimeString() }}</p>
                             </div>
                             <!-- Items del ticket -->
-                            <div v-if="venta.raw_data && venta.raw_data.items" class="px-4 pb-2">
-                                <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                            <div class="px-4 pb-2">
+                                <div v-if="venta.loadingItems" class="flex items-center justify-center gap-2 py-3 text-xs text-gray-400">
+                                    <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                                    Cargando detalle...
+                                </div>
+                                <div v-else-if="venta.raw_data && venta.raw_data.items && venta.raw_data.items.length > 0" class="bg-white rounded-xl border border-gray-100 overflow-hidden">
                                     <div v-for="item in venta.raw_data.items" :key="item.sku" class="flex justify-between items-center px-3 py-2 border-b border-gray-50 last:border-0 text-xs">
                                         <span class="font-bold text-gray-700 flex-1 truncate pr-2">{{ item.nombre }}</span>
                                         <span class="text-gray-400 shrink-0">x{{ item.cantidad }}</span>
                                         <span class="font-black text-gray-800 ml-3 shrink-0">S/ {{ parseFloat(item.subtotal).toFixed(2) }}</span>
                                     </div>
                                 </div>
+                                <div v-else class="text-xs text-gray-400 italic text-center py-2">Sin detalle de productos</div>
                             </div>
                             <!-- Botones -->
                             <div class="p-4 flex space-x-2 flex-wrap gap-2">
@@ -906,6 +948,8 @@
         // --- SETUP WIZARD ---
         const config = ref({ completado: false, vendedor: '', zona: '', estacion: null, esCajero: false });
         const configWizard = ref({ vendedor: '', zona: null, estacion: null, esCajero: false });
+        const sesionAnteriorInfo = ref(null);
+        const mostrarModalSesionAnterior = ref(false);
 
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
@@ -1081,6 +1125,31 @@
               if(configLocal) config.value = JSON.parse(configLocal);
           } catch(e) { localStorage.removeItem('mosexpress_config'); }
 
+          // Detectar nueva jornada con sesión sin cerrar
+          const _hoyJornada = new Date().toDateString();
+          const _fechaSesionGuardada = localStorage.getItem('mosexpress_session_date');
+          if (config.value.completado && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
+              // Capturar info de la caja antes de limpiarla
+              let _cajaAyer = null;
+              try {
+                  const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
+                  if (_cajaSaved) _cajaAyer = JSON.parse(_cajaSaved);
+              } catch(e) {}
+              sesionAnteriorInfo.value = {
+                  vendedor: config.value.vendedor,
+                  estacion: config.value.estacion,
+                  esCajero: config.value.esCajero,
+                  fecha: _fechaSesionGuardada,
+                  caja: _cajaAyer
+              };
+              mostrarModalSesionAnterior.value = true;
+              // Forzar nuevo login — limpiar sesión anterior
+              config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+              localStorage.removeItem('mosexpress_config');
+              localStorage.removeItem('mosexpress_session_date');
+              localStorage.removeItem('mosexpress_caja_activa');
+          }
+
           // Restaurar carrito en curso (sobrevive refreshes accidentales)
           try {
               const carritoLocal = localStorage.getItem('mosexpress_carrito');
@@ -1165,16 +1234,30 @@
                dispositivoAutorizado.value = true; // Salto si está en local MOCK default
                return;
            }
+           // Cache: si el dispositivo fue verificado hoy, no volver a llamar al servidor
+           const _hoyAuth = new Date().toDateString();
+           const _authDate = localStorage.getItem('mosexpress_device_auth_date');
+           const _authId = localStorage.getItem('mosexpress_device_auth_id');
+           if (_authDate === _hoyAuth && _authId === deviceId.value) {
+               dispositivoAutorizado.value = true;
+               return;
+           }
            verificandoDispositivo.value = true;
            try {
              const resp = await fetch(`${API_URL}?accion=verificar_dispositivo&id=${deviceId.value}`);
              if (!resp.ok) throw new Error("Error HTTP");
              const jsonResp = await resp.json();
-             
+
              if(jsonResp && typeof jsonResp.autorizado !== 'undefined') {
                  dispositivoAutorizado.value = jsonResp.autorizado === true;
+                 if (dispositivoAutorizado.value) {
+                     localStorage.setItem('mosexpress_device_auth_date', _hoyAuth);
+                     localStorage.setItem('mosexpress_device_auth_id', deviceId.value);
+                 }
              } else {
                  dispositivoAutorizado.value = true; // Fallback si el script responde otra cosa temporalmente
+                 localStorage.setItem('mosexpress_device_auth_date', _hoyAuth);
+                 localStorage.setItem('mosexpress_device_auth_id', deviceId.value);
              }
            } catch(e) {
              console.error("Error validando dispositivo:", e);
@@ -1368,9 +1451,11 @@
         const buscarTicketCajero = () => {
             const q = cajeroBusqueda.value.trim();
             if (!q) return;
+            const qLow = q.toLowerCase();
             const ticket = ventasZona.value.find(v =>
-                v.correlativo.trim().toLowerCase() === q.toLowerCase() ||
-                v.correlativo.trim().toLowerCase().includes(q.toLowerCase())
+                v.correlativo.trim().toLowerCase() === qLow ||
+                v.correlativo.trim().toLowerCase().includes(qLow) ||
+                (v.ref_local && v.ref_local === q)  // fallback para ventas impresas offline
             );
             if (!ticket) {
                 agregarToast('No encontrado', q);
@@ -1411,7 +1496,7 @@
                     { fps: 12, qrbox: { width: 220, height: 220 } },
                     (decoded) => { cajeroBusqueda.value = decoded; buscarTicketCajero(); },
                     () => {}
-                ).catch(() => { cajeroCamara.value = false; cajeroScannerInst.value = null; });
+                ).catch((e) => { cajeroCamara.value = false; cajeroScannerInst.value = null; agregarToast('Error Cámara', 'Revisar permisos de cámara'); });
             });
         };
 
@@ -1440,6 +1525,7 @@
 
         // --- POLLING DE ZONA EN SEGUNDO PLANO ---
         const pollingTimer = ref(null);
+        const flashNuevosTickets = ref(false);
 
         const actualizarVentasZonaSilencioso = async () => {
             if (!config.value.estacion || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
@@ -1468,7 +1554,8 @@
                         syncStatus: v.status === 'COMPLETADO' ? 'synced' : 'pending',
                         cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && !!v.forma_pago,
                         anulada: v.forma_pago === 'ANULADO',
-                        id_venta_gas: v.id_venta
+                        id_venta_gas: v.id_venta,
+                        ref_local: v.ref_local || ''
                     };
                     if (!idsActuales.has(norm.id)) {
                         norm.isNew = true;
@@ -1486,7 +1573,11 @@
                 if (nuevas.length > 0) {
                     ventasZona.value.unshift(...nuevas);
                     playCoinSound();
+                    // Flash del marco completo
+                    flashNuevosTickets.value = false;
+                    nextTick(() => { flashNuevosTickets.value = true; });
                     setTimeout(() => {
+                        flashNuevosTickets.value = false;
                         nuevas.forEach(nv => {
                             const idx = ventasZona.value.findIndex(v => v.id === nv.id);
                             if (idx !== -1) ventasZona.value[idx].isNew = false;
@@ -1498,7 +1589,7 @@
 
         const iniciarPollingZona = () => {
             if (pollingTimer.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
-            pollingTimer.value = setInterval(actualizarVentasZonaSilencioso, 7000);
+            pollingTimer.value = setInterval(actualizarVentasZonaSilencioso, 3000);
         };
 
         const detenerPollingZona = () => {
@@ -1529,9 +1620,37 @@
           return res;
         };
 
+        const imprimirAvisoCierrePendiente = () => {
+            if (!sesionAnteriorInfo.value?.estacion?.PrintNode_ID) return;
+            const info = sesionAnteriorInfo.value;
+            const ahora = new Date().toLocaleString('es-PE', { hour12: false });
+            let txt = "\x1b\x40\x1b\x61\x01";
+            txt += "\x1b\x21\x30MOSexpress\n\n";
+            txt += "\x1b\x21\x00";
+            txt += "================================================\n";
+            txt += "\x1b\x21\x10!! SESION SIN CERRAR !!\n";
+            txt += "\x1b\x21\x00";
+            txt += "================================================\n\n";
+            txt += "\x1b\x61\x00";
+            txt += "Fecha sesion : " + info.fecha + "\n";
+            txt += "Vendedor     : " + info.vendedor + "\n";
+            if (info.caja) txt += "ID Caja      : " + info.caja.idCaja + "\n";
+            txt += "Estacion     : " + (info.estacion?.Estacion_Nombre || '-') + "\n";
+            txt += "\n";
+            txt += "Impreso      : " + ahora + "\n";
+            txt += "\n================================================\n";
+            txt += "\x1b\x61\x01La sesion anterior no fue cerrada\n";
+            txt += "correctamente. Verificar con el\n";
+            txt += "administrador si es necesario.\n";
+            txt += "\n\n\n\n\n\x1d\x56\x00";
+            mandarImpresionPrintNode(info.estacion.PrintNode_ID, "Aviso Sesión Pendiente", b64ESC(txt))
+                .catch(e => agregarToast('Error Impresión', e.message));
+        };
+
         const iniciarTurno = () => {
             config.value = { completado: true, vendedor: configWizard.value.vendedor, zona: configWizard.value.zona, estacion: configWizard.value.estacion, esCajero: configWizard.value.esCajero };
             localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
+            localStorage.setItem('mosexpress_session_date', new Date().toDateString());
             if (!config.value.esCajero) {
                 cajaAbierta.value = true;
                 cambiarModulo('POS');
@@ -1740,7 +1859,10 @@
             const prefijos = [est.Serie_Nota, est.Serie_Boleta, est.Serie_Factura].filter(Boolean).join(',');
             try {
                 const res = await fetch(`${API_URL}?accion=ventas_hoy_zona&prefijos=${encodeURIComponent(prefijos)}`);
-                const data = await res.json();
+                const rawText = await res.text();
+                let data;
+                try { data = JSON.parse(rawText); } catch(pe) { throw new Error('Respuesta no JSON: ' + rawText.substring(0, 120)); }
+                if (!data || !Array.isArray(data.ventas)) throw new Error('Respuesta inesperada del servidor: ' + rawText.substring(0, 120));
                 if (data.status === 'success') {
                     ventasZona.value = data.ventas.map(v => {
                         return {
@@ -1756,13 +1878,15 @@
                             syncStatus: v.status === 'COMPLETADO' ? 'synced' : 'pending',
                             cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && !!v.forma_pago,
                             anulada: v.forma_pago === 'ANULADO',
-                            id_venta_gas: v.id_venta
+                            id_venta_gas: v.id_venta,
+                            ref_local: v.ref_local || ''
                         };
-                    });
+                    }).sort((a, b) => b.timestamp - a.timestamp); // más recientes primero
                     agregarToast('Zona actualizada', `${ventasZona.value.length} tickets cargados`);
                 }
             } catch(e) {
-                agregarToast('Error', 'No se pudo cargar tickets de zona');
+                console.error('cargarVentasZona error:', e);
+                agregarToast('Error zona', e.message || 'Sin conexión con el servidor');
             }
             cargandoZona.value = false;
         };
@@ -2157,7 +2281,7 @@
         };
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
-        const procesarPago = () => {
+        const procesarPago = async () => {
            if (vuelto.value < 0) return;
            procesando.value = true;
 
@@ -2168,115 +2292,154 @@
            const localId = Date.now();
            const correlativoLocal = serieElegida + "-LOCAL";
 
+           // Capturar todo antes de limpiar el carrito
+           const itemsParaImprimir = carrito.value.map(c => ({ sku: c.sku, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }));
+           const totalVenta = granTotal.value;
+           const vueltoVenta = vuelto.value;
+           const tipoDocVenta = pago.value.tipoDoc;
+           const metodoVenta = pago.value.metodo;
+           const montoRecibidoVenta = parseFloat(pago.value.montoRecibido);
+           const montoVirtualVenta = parseFloat(pago.value.montoVirtual || 0);
+           const nombreClienteVenta = pago.value.nombreCliente;
+           const docClienteVenta = pago.value.docCliente;
+           const metodoLabel = metodoVenta === 'MIXTO'
+               ? `MIXTO (VIR:${montoVirtualVenta.toFixed(2)}/EFE:${(totalVenta - montoVirtualVenta).toFixed(2)})`
+               : metodoVenta;
+
            const ventaBase = {
-              auth: {
-                 vendedor: config.value.vendedor,
-                 estacion: config.value.estacion.Estacion_Nombre,
-                 deviceId: deviceId.value
-              },
-              pos_config: {
-                 cajaId: idCajaActual.value,
-                 serieActual: serieElegida,
-                 printerId: config.value.estacion.PrintNode_ID
-              },
-              data_sync: {
-                 last_sync: localId,
-                 tables_required: ["productos", "promociones", "clientes", "zonas", "cajas"]
-              },
-              header: {
-                 tipoDoc: pago.value.tipoDoc, metodo: pago.value.metodo === 'MIXTO' ? `MIXTO (VIR:${parseFloat(pago.value.montoVirtual).toFixed(2)}/EFE:${parseFloat(granTotal.value - pago.value.montoVirtual).toFixed(2)})` : pago.value.metodo, total: granTotal.value,
-                 cliente: { doc: pago.value.docCliente, nombre: pago.value.nombreCliente, tipo: 'N/A' }
-              },
+              auth: { vendedor: config.value.vendedor, estacion: config.value.estacion.Estacion_Nombre, deviceId: deviceId.value },
+              pos_config: { cajaId: idCajaActual.value, serieActual: serieElegida, printerId: config.value.estacion.PrintNode_ID },
+              data_sync: { last_sync: localId, tables_required: ["productos", "promociones", "clientes", "zonas", "cajas"] },
+              header: { tipoDoc: tipoDocVenta, metodo: metodoLabel, total: totalVenta, cliente: { doc: docClienteVenta, nombre: nombreClienteVenta, tipo: 'N/A' } },
               status: 'pending',
-              items: carrito.value.map(c => ({ sku: c.sku, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }))
+              items: itemsParaImprimir
            };
 
-           // 1. Guardar en historial local INMEDIATAMENTE (optimista)
-           const ht = { id: localId, tipo: pago.value.tipoDoc, correlativo: correlativoLocal, total: granTotal.value, timestamp: localId, cliente_doc: pago.value.docCliente || '-', cliente_nombre: pago.value.nombreCliente || 'Genérico', items_count: carrito.value.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
+           // 1. Guardar en historial local inmediatamente (para mostrar en UI)
+           const ht = { id: localId, tipo: tipoDocVenta, correlativo: correlativoLocal, total: totalVenta, timestamp: localId, cliente_doc: docClienteVenta || '-', cliente_nombre: nombreClienteVenta || 'Genérico', items_count: itemsParaImprimir.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
            ventasHoy.value.unshift(ht);
            localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
 
-           // 2. Imprimir INMEDIATAMENTE con correlativo provisional
-           const tituloTicket = (pago.value.tipoDoc !== 'NOTA_DE_VENTA') ? "PREVENTA (PROVISIONAL)" : pago.value.tipoDoc;
-           let txt = "\x1b\x40\x1b\x61\x01";
-           txt += "\x1b\x21\x30MOSexpress\n";
-           txt += "\x1b\x21\x00\n";
-           txt += "\x1b\x21\x10" + tituloTicket + "\n";
-           txt += "\x1b\x21\x00Tk: " + correlativoLocal + "\n";
-           txt += "================================================\n";
-           txt += "\x1b\x61\x00";
-           txt += "FECHA   : " + new Date().toLocaleString() + "\n";
-           if(pago.value.nombreCliente) txt += "CLIENTE : " + pago.value.nombreCliente + "\n";
-           if(pago.value.docCliente) txt += "DOC     : " + pago.value.docCliente + "\n";
-           txt += (config.value.esCajero ? "CAJERO  " : "VENDEDOR") + ": " + config.value.vendedor + "\n";
-           txt += "================================================\n";
-           txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
-           txt += "------------------------------------------------\n";
-           carrito.value.forEach(item => {
-               let desc = item.nombre;
-               if (desc.length > 31) desc = desc.substring(0, 31);
-               else desc = desc.padEnd(31, ' ');
-               txt += String(item.cantidad).padEnd(5, ' ') + " " + desc + " " + parseFloat(item.subtotal).toFixed(2).padStart(10, ' ') + "\n";
-           });
-           txt += "------------------------------------------------\n";
-           txt += "\x1b\x61\x02";
-           txt += "\x1b\x21\x10TOTAL: S/ " + granTotal.value.toFixed(2) + "\n\x1b\x21\x00";
-           if (config.value.esCajero) {
-               if (pago.value.metodo === 'MIXTO') {
-                   const efeNeto = parseFloat((granTotal.value - pago.value.montoVirtual).toFixed(2));
-                   txt += "METODO: MIXTO\n";
-                   txt += "VIRTUAL : S/ " + parseFloat(pago.value.montoVirtual).toFixed(2) + "\n";
-                   txt += "EFECTIVO: S/ " + efeNeto.toFixed(2) + "\n";
-                   if (vuelto.value > 0) { txt += "PAGO EFE: S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n"; txt += "VUELTO  : S/ " + vuelto.value.toFixed(2) + "\n"; }
-               } else {
-                   txt += "METODO: " + pago.value.metodo + "\n";
-                   if (pago.value.metodo === 'EFECTIVO' && pago.value.montoRecibido > 0) {
-                       txt += "PAGO  : S/ " + parseFloat(pago.value.montoRecibido).toFixed(2) + "\n";
-                       txt += "VUELTO: S/ " + vuelto.value.toFixed(2) + "\n";
-                   }
-               }
-           }
-           txt += "\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n(Sujeto a Sincronizacion)\n";
-           txt += qrESCPOS(correlativoLocal);
-           txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-           mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Venta", b64ESC(txt))
-               .catch(e => agregarToast('Error Impresión', e.message));
-
-           // 3. Decrementar stock local y cerrar modal INMEDIATAMENTE
-           carrito.value.forEach(item => {
-               const prod = productosCatalogo.value.find(p => p.codBarras === item.codBarras);
+           // 2. Decrementar stock local
+           itemsParaImprimir.forEach(item => {
+               const prod = productosCatalogo.value.find(p => p.sku === item.sku);
                if (prod && prod.stock !== null) prod.stock = Math.max(0, prod.stock - item.cantidad);
            });
-           agregarToast('¡Venta Registrada!', 'Sincronizando...');
+
+           // 3. Cerrar modal y limpiar carrito inmediatamente — no esperar impresión
            finalizarPostPago();
 
-           // 4. Sync con GAS en segundo plano (fire & forget)
+           // Helper: construir y enviar ticket ESC/POS con el correlativo final
+           const imprimirTicketVenta = (correlativo, esSincronizado) => {
+               const titulo = tipoDocVenta !== 'NOTA_DE_VENTA' ? tipoDocVenta : 'NOTA_DE_VENTA';
+               let txt = "\x1b\x40\x1b\x61\x01";
+               txt += "\x1b\x21\x30MOSexpress\n";
+               txt += "\x1b\x21\x00\n";
+               txt += "\x1b\x21\x10" + titulo + "\n";
+               txt += "\x1b\x21\x00Tk: " + correlativo + "\n";
+               txt += "================================================\n";
+               txt += "\x1b\x61\x00";
+               txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+               if (nombreClienteVenta) txt += "CLIENTE : " + nombreClienteVenta + "\n";
+               if (docClienteVenta) txt += "DOC     : " + docClienteVenta + "\n";
+               txt += (config.value.esCajero ? "CAJERO  " : "VENDEDOR") + ": " + config.value.vendedor + "\n";
+               txt += "================================================\n";
+               txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
+               txt += "------------------------------------------------\n";
+               itemsParaImprimir.forEach(item => {
+                   let desc = item.nombre;
+                   if (desc.length > 31) desc = desc.substring(0, 31);
+                   else desc = desc.padEnd(31, ' ');
+                   txt += String(item.cantidad).padEnd(5, ' ') + " " + desc + " " + parseFloat(item.subtotal).toFixed(2).padStart(10, ' ') + "\n";
+               });
+               txt += "------------------------------------------------\n";
+               txt += "\x1b\x61\x02";
+               txt += "\x1b\x21\x10TOTAL: S/ " + totalVenta.toFixed(2) + "\n\x1b\x21\x00";
+               if (metodoVenta === 'MIXTO') {
+                   txt += "METODO: MIXTO\n";
+                   txt += "VIRTUAL : S/ " + montoVirtualVenta.toFixed(2) + "\n";
+                   txt += "EFECTIVO: S/ " + (totalVenta - montoVirtualVenta).toFixed(2) + "\n";
+                   if (vueltoVenta > 0) { txt += "PAGO EFE: S/ " + montoRecibidoVenta.toFixed(2) + "\n"; txt += "VUELTO  : S/ " + vueltoVenta.toFixed(2) + "\n"; }
+               } else {
+                   txt += "METODO: " + metodoVenta + "\n";
+                   if (metodoVenta === 'EFECTIVO' && montoRecibidoVenta > 0) {
+                       txt += "PAGO  : S/ " + montoRecibidoVenta.toFixed(2) + "\n";
+                       txt += "VUELTO: S/ " + vueltoVenta.toFixed(2) + "\n";
+                   }
+               }
+               txt += "\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n";
+               if (!esSincronizado) txt += "(Sin conexion - N° sujeto a cambio)\n";
+               txt += qrESCPOS(correlativo);
+               txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
+               mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, titulo, b64ESC(txt))
+                   .catch(e => agregarToast('Error Impresión', e.message));
+           };
+
+           // 4. Sync con GAS — ESPERAR respuesta antes de imprimir
            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-               fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) })
-                   .then(r => r.json())
-                   .then(res => {
-                       if (res.status === 'success') {
-                           const idx = ventasHoy.value.findIndex(v => v.id === localId);
-                           if (idx !== -1) {
-                               ventasHoy.value[idx].correlativo = res.correlativo;
-                               ventasHoy.value[idx].syncStatus = 'synced';
-                               ventasHoy.value[idx].raw_data.status = 'synced';
-                               localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
-                           }
-                           agregarToast('¡Sincronizado!', res.correlativo);
-                       } else {
-                           throw new Error(res.mensaje || 'Error GAS');
-                       }
-                   })
-                   .catch(() => {
-                       pendingSales.value.push({ id: localId, raw_data: ventaBase });
-                       localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
-                       agregarToast('En Cola', 'Se sincronizará automáticamente');
-                   });
+               try {
+                   const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) });
+                   const res = await r.json();
+                   if (res.status !== 'success') throw new Error(res.mensaje || 'Error GAS');
+
+                   // Actualizar correlativo real en historial local
+                   const idx = ventasHoy.value.findIndex(v => v.id === localId);
+                   if (idx !== -1) {
+                       ventasHoy.value[idx].correlativo = res.correlativo;
+                       ventasHoy.value[idx].id_venta_gas = res.idVenta;
+                       ventasHoy.value[idx].syncStatus = 'synced';
+                       ventasHoy.value[idx].raw_data.status = 'synced';
+                       ventasHoy.value[idx].isNew = true;
+                       localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                   }
+                   // Efecto visual en modo vendedor
+                   playCoinSound();
+                   flashNuevosTickets.value = false;
+                   nextTick(() => { flashNuevosTickets.value = true; });
+                   setTimeout(() => {
+                       flashNuevosTickets.value = false;
+                       if (idx !== -1) ventasHoy.value[idx].isNew = false;
+                   }, 4000);
+                   agregarToast('¡Venta Registrada!', res.correlativo);
+                   imprimirTicketVenta(res.correlativo, true);
+
+                   // Insertar en ventasZona instantáneamente (sin esperar polling)
+                   const ticketNuevo = {
+                       id: res.idVenta, tipo: tipoDocVenta, correlativo: res.correlativo,
+                       total: totalVenta, timestamp: localId,
+                       cliente_doc: docClienteVenta || '', cliente_nombre: nombreClienteVenta || 'Genérico',
+                       expanded: false, isNew: true,
+                       raw_data: { auth: { vendedor: config.value.vendedor }, header: { metodo: metodoLabel, tipoDoc: tipoDocVenta }, items: itemsParaImprimir },
+                       syncStatus: 'synced',
+                       cobrado: metodoVenta !== 'POR_COBRAR' && metodoVenta !== 'EFECTIVO_PENDIENTE',
+                       anulada: false, id_venta_gas: res.idVenta, ref_local: String(localId)
+                   };
+                   // Evitar duplicado si el polling ya lo trajo
+                   if (!ventasZona.value.find(v => v.id === res.idVenta)) {
+                       ventasZona.value.unshift(ticketNuevo);
+                       playCoinSound();
+                       flashNuevosTickets.value = false;
+                       nextTick(() => { flashNuevosTickets.value = true; });
+                       setTimeout(() => {
+                           flashNuevosTickets.value = false;
+                           const zi = ventasZona.value.findIndex(v => v.id === res.idVenta);
+                           if (zi !== -1) ventasZona.value[zi].isNew = false;
+                       }, 4000);
+                   }
+
+               } catch(e) {
+                   // Falla de red: guardar en cola y imprimir con correlativo provisional
+                   pendingSales.value.push({ id: localId, raw_data: ventaBase });
+                   localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+                   agregarToast('Sin conexión', 'Guardado. Se sincronizará automáticamente.');
+                   imprimirTicketVenta(correlativoLocal, false);
+               }
            } else {
+               // Offline desde el inicio
                pendingSales.value.push({ id: localId, raw_data: ventaBase });
                localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
-               agregarToast('Offline', 'Comprobante guardado en MODO OFFLINE');
+               agregarToast('Offline', 'Guardado en modo offline');
+               imprimirTicketVenta(correlativoLocal, false);
            }
         };
 
@@ -2306,8 +2469,42 @@
             }
         };
 
-        const reimprimirTicket = (ventaLocal) => {
-            agregarToast('Re-imprimiendo', ventaLocal.correlativo);
+        const expandirTicket = async (venta) => {
+            venta.expanded = !venta.expanded;
+            // Solo cargar si: se está abriendo, sin items, tiene id GAS, no está ya cargando
+            if (!venta.expanded) return;
+            if (venta.loadingItems) return;
+            if (venta.raw_data?.items?.length > 0) return;
+            if (!venta.id_venta_gas || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            venta.loadingItems = true;
+            try {
+                const resp = await fetch(`${API_URL}?accion=detalle_venta&id_venta=${encodeURIComponent(venta.id_venta_gas)}`);
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    if (!venta.raw_data) venta.raw_data = {};
+                    venta.raw_data.items = data.items || [];
+                }
+            } catch(e) { /* silencioso, se muestra "Sin detalle" */ }
+            venta.loadingItems = false;
+        };
+
+        const reimprimirTicket = async (ventaLocal) => {
+            agregarToast('Preparando reimpresión...', ventaLocal.correlativo);
+
+            // Obtener items: primero del objeto local, si vacíos buscar en GAS
+            let items = (ventaLocal.raw_data && ventaLocal.raw_data.items) ? ventaLocal.raw_data.items : [];
+            if (items.length === 0 && ventaLocal.id_venta_gas && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                try {
+                    const resp = await fetch(`${API_URL}?accion=detalle_venta&id_venta=${encodeURIComponent(ventaLocal.id_venta_gas)}`);
+                    const data = await resp.json();
+                    if (data.status === 'success' && data.items.length > 0) {
+                        items = data.items;
+                        // Cachear para reimpresioes futuras sin red
+                        if (ventaLocal.raw_data) ventaLocal.raw_data.items = items;
+                    }
+                } catch(e) { /* continuar sin detalle si falla red */ }
+            }
+
             let txt = "\x1b\x40\x1b\x61\x01";
             txt += "\x1b\x21\x30MOSexpress\n\n";
             txt += "\x1b\x21\x10*** RE-IMPRESION ***\n\x1b\x21\x00";
@@ -2318,8 +2515,8 @@
             txt += "================================================\n";
             txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
             txt += "------------------------------------------------\n";
-            if (ventaLocal.raw_data && ventaLocal.raw_data.items) {
-               ventaLocal.raw_data.items.forEach(item => {
+            if (items.length > 0) {
+               items.forEach(item => {
                   let desc = item.nombre;
                   if (desc.length > 31) desc = desc.substring(0, 31);
                   else desc = desc.padEnd(31, ' ');
@@ -2327,9 +2524,11 @@
                   let sub = parseFloat(item.subtotal).toFixed(2).padStart(10, ' ');
                   txt += qty + " " + desc + " " + sub + "\n";
                });
+            } else {
+               txt += "  (detalle no disponible - sin conexion)\n";
             }
             txt += "------------------------------------------------\n";
-            txt += "\x1b\x61\x02"; // Derecha
+            txt += "\x1b\x61\x02";
             txt += "\x1b\x21\x10TOTAL: S/ " + parseFloat(ventaLocal.total).toFixed(2) + "\n\x1b\x21\x00";
             txt += "\n\x1b\x61\x01*** COPIA DE COMPROBANTE ***\n";
             txt += qrESCPOS(ventaLocal.correlativo);
@@ -2410,8 +2609,10 @@
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,
           camaraHerramientasAbierta, toggleCamaraHerramientas,
-          dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, limpiarCliente,
+          dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente,
           deviceId, dispositivoAutorizado, verificandoDispositivo, verificarDispositivoActivo,
+          sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
+          flashNuevosTickets,
           sincronizarDatos, isSyncing, pendingSales,
           procesandoCatalogo, sincronizarCatalogoBase,
           modalPresentaciones, prodSeleccionado, elegirPresentacion,
