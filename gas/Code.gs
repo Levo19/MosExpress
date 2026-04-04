@@ -29,6 +29,26 @@ function doGet(e) {
     return detalleVenta(e.parameter.id_venta);
   }
 
+  if (accion === 'stock_zonas') {
+    return getStockZonas();
+  }
+
+  if (accion === 'cajero_activo') {
+    return cajeroActivo(e.parameter.zona);
+  }
+
+  if (accion === 'listar_guias') {
+    return listarGuias(e.parameter.zona);
+  }
+
+  if (accion === 'detalle_guia') {
+    return detalleGuia(e.parameter.id_guia);
+  }
+
+  if (accion === 'traslados_entrantes') {
+    return trasladosEntrantes(e.parameter.zona, e.parameter.desde);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({ error: "Acción no válida" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -63,6 +83,14 @@ function doPost(e) {
       return procesarImpresion(data);
     }
 
+    if (data.tipoEvento === 'REGISTRAR_GUIA') {
+      return registrarGuia(data);
+    }
+
+    if (data.tipoEvento === 'REGISTRAR_AUDITORIA') {
+      return registrarAuditoria(data);
+    }
+
     // Default: registrar venta
     var response = procesarVenta(data);
     return ContentService.createTextOutput(JSON.stringify({
@@ -84,28 +112,29 @@ function procesarAperturaCaja(data) {
   var sheetCajas = ss.getSheetByName("CAJAS");
   if (!sheetCajas) return generarRespuestaError("Pestaña CAJAS no encontrada.");
 
+  // Verificar cajero único por zona — solo un cajero activo a la vez por zona
+  if (data.zona) {
+    var filasCheck = sheetCajas.getDataRange().getValues();
+    for (var c = 1; c < filasCheck.length; c++) {
+      if (String(filasCheck[c][5]) === 'ABIERTA' && String(filasCheck[c][8] || '') === String(data.zona)) {
+        return generarRespuestaError(
+          "Ya hay un turno activo en " + data.zona + " (cajero: " + filasCheck[c][1] + "). Cierra ese turno primero."
+        );
+      }
+    }
+  }
+
   var fechaActual = new Date();
   var idCaja = "CAJA-" + fechaActual.getTime();
 
-  // Columnas: ID_Caja | Vendedor | Estacion | Fecha_Apertura | Monto_Inicial | Estado | Monto_Final
-  sheetCajas.appendRow([
-    idCaja,
-    data.vendedor,
-    data.estacion,
-    fechaActual,
-    data.montoInicial,
-    "ABIERTA",
-    ""
-  ]);
+  // Columnas: ID_Caja | Vendedor | Estacion | Fecha_Apertura | Monto_Inicial | Estado | Monto_Final | Fecha_Cierre | Zona_ID
+  sheetCajas.appendRow([idCaja, data.vendedor, data.estacion, fechaActual, data.montoInicial, "ABIERTA", "", "", data.zona || '']);
 
   return ContentService.createTextOutput(JSON.stringify({
-    status: "success",
-    idCaja: idCaja,
-    mensaje: "Caja aperturada exitosamente"
+    status: "success", idCaja: idCaja, mensaje: "Caja aperturada exitosamente"
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
-// CORRECCIÓN: esta función estaba llamada pero nunca definida — causaba error silencioso en cada cierre de turno
 function procesarCierreCaja(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCajas = ss.getSheetByName("CAJAS");
@@ -113,26 +142,73 @@ function procesarCierreCaja(data) {
 
   var filas = sheetCajas.getDataRange().getValues();
   var cajaEncontrada = false;
+  var cajaVendedor = '';
+  var cajaZona = '';
 
   for (var i = 1; i < filas.length; i++) {
-    if (filas[i][0] === data.cajaId) {
-      // Columna F (índice 5) = Estado, Columna G (índice 6) = Monto_Final
+    if (String(filas[i][0]) === String(data.cajaId)) {
       sheetCajas.getRange(i + 1, 6).setValue("CERRADA");
       sheetCajas.getRange(i + 1, 7).setValue(data.montoFinal);
-      sheetCajas.getRange(i + 1, 8).setValue(new Date()); // Fecha_Cierre
+      sheetCajas.getRange(i + 1, 8).setValue(new Date()); // Fecha_Cierre col 8
+      cajaVendedor = String(filas[i][1]);
+      cajaZona = String(filas[i][8] || ''); // col 9 = Zona_ID
       cajaEncontrada = true;
       break;
     }
   }
 
-  if (!cajaEncontrada) {
-    return generarRespuestaError("Caja con ID " + data.cajaId + " no encontrada.");
+  if (!cajaEncontrada) return generarRespuestaError("Caja con ID " + data.cajaId + " no encontrada.");
+
+  // Auto-generar SALIDA_VENTAS en segundo plano (no bloquea la respuesta si falla)
+  if (cajaZona) {
+    try { generarGuiaSalidaVentas(ss, data.cajaId, cajaVendedor, cajaZona); }
+    catch(e) { Logger.log("Error guia ventas: " + e.toString()); }
   }
 
   return ContentService.createTextOutput(JSON.stringify({
-    status: "success",
-    mensaje: "Caja cerrada correctamente"
+    status: "success", mensaje: "Caja cerrada correctamente"
   })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Agrega registros a GUIAS y descuenta STOCK_ZONAS con todas las ventas del turno
+function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
+  var sheetVC    = ss.getSheetByName("VENTAS_CABECERA");
+  var sheetVD    = ss.getSheetByName("VENTAS_DETALLE");
+  var sheetGC    = ss.getSheetByName("GUIAS_CABECERA");
+  var sheetGD    = ss.getSheetByName("GUIAS_DETALLE");
+  var sheetStock = ss.getSheetByName("STOCK_ZONAS");
+  if (!sheetVC || !sheetVD || !sheetGC || !sheetGD || !sheetStock) return;
+
+  // 1. Recopilar IDs de ventas no anuladas de esta caja
+  var ventas = sheetVC.getDataRange().getValues();
+  var idsVenta = [];
+  for (var i = 1; i < ventas.length; i++) {
+    if (String(ventas[i][10]) === String(cajaId) && String(ventas[i][8]) !== 'ANULADO') {
+      idsVenta.push(String(ventas[i][0]));
+    }
+  }
+  if (!idsVenta.length) return;
+
+  // 2. Sumar cantidades por cod_barras
+  var detalle = sheetVD.getDataRange().getValues();
+  var totales = {};
+  for (var j = 1; j < detalle.length; j++) {
+    if (idsVenta.indexOf(String(detalle[j][0])) === -1) continue;
+    var cod = String(detalle[j][1]);
+    totales[cod] = (totales[cod] || 0) + (parseFloat(detalle[j][3]) || 0);
+  }
+
+  var cods = Object.keys(totales);
+  if (!cods.length) return;
+
+  // 3. Registrar guía y descontar stock
+  var idGuia = "G-VENTAS-" + new Date().getTime();
+  // GUIAS_CABECERA: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
+  sheetGC.appendRow([idGuia, new Date(), vendedor, zona, 'SALIDA_VENTAS', 'Auto cierre de caja · ' + cajaId, '', 'CONFIRMADO']);
+  cods.forEach(function(cod) {
+    sheetGD.appendRow([idGuia, cod, totales[cod]]);
+    actualizarStockFila(sheetStock, cod, zona, -totales[cod]);
+  });
 }
 
 function procesarVenta(data) {
@@ -228,7 +304,7 @@ function procesarImpresion(data) {
 // y exponía todo el historial de ventas a cualquier dispositivo autorizado
 function descargarCatalogo() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetsNames = ["PRODUCTO_BASE", "PRESENTACIONES", "EQUIVALENCIAS", "PROMOCIONES", "ZONAS_CONFIG", "CLIENTES_FRECUENTES"];
+  var sheetsNames = ["PRODUCTO_BASE", "PRESENTACIONES", "EQUIVALENCIAS", "PROMOCIONES", "ZONAS_CONFIG", "CLIENTES_FRECUENTES", "STOCK_ZONAS"];
   var catalogo = {};
 
   sheetsNames.forEach(function(name) {
@@ -420,6 +496,186 @@ function anularVentaIndividual(data) {
 function generarRespuestaError(msg) {
   return ContentService.createTextOutput(JSON.stringify({
     status: "error", mensaje: msg
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ------ STOCK: GUÍAS Y AUDITORÍA ------ //
+
+function cajeroActivo(zona) {
+  if (!zona) return generarRespuestaError("zona requerida");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("CAJAS");
+  if (!sheet) return generarRespuestaError("CAJAS no encontrada");
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    // Col 6 (índice 5) = Estado, Col 9 (índice 8) = Zona_ID
+    if (String(data[i][5]) === 'ABIERTA' && String(data[i][8] || '') === zona) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success', activo: true,
+        vendedor: String(data[i][1]), idCaja: String(data[i][0]), desde: data[i][3]
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', activo: false }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function listarGuias(zona) {
+  if (!zona) return generarRespuestaError("zona requerida");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("GUIAS_CABECERA");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: 'success', guias: [] })).setMimeType(ContentService.MimeType.JSON);
+  var data = sheet.getDataRange().getValues();
+  var result = [];
+  for (var i = 1; i < data.length; i++) {
+    // Incluir guías donde Zona_ID === zona O Zona_Destino === zona (traslados entrantes)
+    if (String(data[i][3]) === zona || String(data[i][6] || '') === zona) {
+      result.push({
+        id_guia:      String(data[i][0]),
+        fecha:        data[i][1],
+        vendedor:     String(data[i][2]),
+        zona:         String(data[i][3]),
+        tipo:         String(data[i][4]),
+        observacion:  String(data[i][5] || ''),
+        zona_destino: String(data[i][6] || ''),
+        estado:       String(data[i][7] || '')
+      });
+    }
+  }
+  result.sort(function(a, b) { return new Date(b.fecha) - new Date(a.fecha); });
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', guias: result }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function detalleGuia(idGuia) {
+  if (!idGuia) return generarRespuestaError("id_guia requerido");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("GUIAS_DETALLE");
+  if (!sheet) return generarRespuestaError("GUIAS_DETALLE no encontrada");
+  var data = sheet.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(idGuia)) {
+      items.push({ cod_barras: String(data[i][1]), cantidad: parseFloat(data[i][2]) || 0 });
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', items: items }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function trasladosEntrantes(zona, desde) {
+  if (!zona) return generarRespuestaError("zona requerida");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("GUIAS_CABECERA");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: 'success', traslados: [] })).setMimeType(ContentService.MimeType.JSON);
+  var data = sheet.getDataRange().getValues();
+  // Default: últimas 24 horas si no se pasa timestamp
+  var desdeDate = desde ? new Date(parseInt(desde)) : new Date(Date.now() - 86400000);
+  var result = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][4]) !== 'ENTRADA_TRASLADO') continue;
+    if (String(data[i][3]) !== zona) continue;
+    var fechaGuia = new Date(data[i][1]);
+    if (fechaGuia > desdeDate) {
+      result.push({
+        id_guia:   String(data[i][0]),
+        fecha:     data[i][1],
+        origen:    String(data[i][6] || ''),
+        observacion: String(data[i][5] || '')
+      });
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', traslados: result }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getStockZonas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("STOCK_ZONAS");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: 'success', stock: [] })).setMimeType(ContentService.MimeType.JSON);
+  var data = obtenerDatosHojaComoJSON(sheet);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', stock: data })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Actualiza (o crea) la fila de stock para un código+zona. Devuelve la cantidad resultante.
+function actualizarStockFila(sheet, codBarras, zonaId, delta) {
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(codBarras) && String(data[i][1]) === String(zonaId)) {
+      var nuevaCant = (parseFloat(data[i][2]) || 0) + delta;
+      sheet.getRange(i + 1, 3).setValue(nuevaCant);
+      return nuevaCant;
+    }
+  }
+  // No existe — crear fila nueva
+  var cantInicial = Math.max(0, delta);
+  sheet.appendRow([codBarras, zonaId, cantInicial]);
+  return cantInicial;
+}
+
+function registrarGuia(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetCab   = ss.getSheetByName("GUIAS_CABECERA");
+  var sheetDet   = ss.getSheetByName("GUIAS_DETALLE");
+  var sheetStock = ss.getSheetByName("STOCK_ZONAS");
+  if (!sheetCab)   return generarRespuestaError("Pestaña GUIAS_CABECERA no encontrada.");
+  if (!sheetDet)   return generarRespuestaError("Pestaña GUIAS_DETALLE no encontrada.");
+  if (!sheetStock) return generarRespuestaError("Pestaña STOCK_ZONAS no encontrada.");
+
+  // Tipos: SALIDA_JEFA | SALIDA_MOVIMIENTO | SALIDA_VENTAS
+  //        ENTRADA_ALMACEN | ENTRADA_TRASLADO | ENTRADA_LIBRE
+  var tipo        = data.tipo;
+  var esSalida    = (tipo.indexOf('SALIDA') === 0);
+  var signo       = esSalida ? -1 : 1;
+  var zonaDestino = String(data.zona_destino || '');
+
+  var idGuia = "G-" + new Date().getTime();
+  // GUIAS_CABECERA: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
+  sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo, data.observacion || '', zonaDestino, 'CONFIRMADO']);
+
+  var stockResult = [];
+  (data.items || []).forEach(function(item) {
+    sheetDet.appendRow([idGuia, item.cod_barras, item.cantidad]);
+    var nuevaCant = actualizarStockFila(sheetStock, item.cod_barras, data.zona, signo * item.cantidad);
+    stockResult.push({ cod_barras: item.cod_barras, cantidad: nuevaCant });
+  });
+
+  // SALIDA_MOVIMIENTO → ENTRADA_TRASLADO automática en zona destino
+  var idGuiaEntrada = null;
+  if (tipo === 'SALIDA_MOVIMIENTO' && zonaDestino) {
+    idGuiaEntrada = "G-TRA-" + (new Date().getTime() + 1);
+    sheetCab.appendRow([idGuiaEntrada, new Date(), data.vendedor, zonaDestino, 'ENTRADA_TRASLADO',
+      'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia, data.zona, 'CONFIRMADO']);
+    (data.items || []).forEach(function(item) {
+      sheetDet.appendRow([idGuiaEntrada, item.cod_barras, item.cantidad]);
+      actualizarStockFila(sheetStock, item.cod_barras, zonaDestino, item.cantidad);
+    });
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', idGuia: idGuia, idGuiaEntrada: idGuiaEntrada, stock: stockResult
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function registrarAuditoria(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetAudit = ss.getSheetByName("AUDITORIAS");
+  var sheetStock = ss.getSheetByName("STOCK_ZONAS");
+  if (!sheetAudit) return generarRespuestaError("Pestaña AUDITORIAS no encontrada.");
+  if (!sheetStock) return generarRespuestaError("Pestaña STOCK_ZONAS no encontrada.");
+
+  var idAudit = "A-" + new Date().getTime();
+  // Columnas AUDITORIAS: ID_Auditoria | Fecha | Vendedor | Zona_ID | Cod_Barras | Cant_Sistema | Cant_Real | Diferencia
+  (data.items || []).forEach(function(item) {
+    var cantReal = parseFloat(item.cantReal) || 0;
+    var diff     = cantReal - (parseFloat(item.cantSistema) || 0);
+    sheetAudit.appendRow([idAudit, new Date(), data.vendedor, data.zona, item.cod_barras, item.cantSistema, cantReal, diff]);
+    // Actualizar stock a la cantidad real contada (diff puede ser + o -)
+    actualizarStockFila(sheetStock, item.cod_barras, data.zona, diff);
+  });
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', idAuditoria: idAudit
   })).setMimeType(ContentService.MimeType.JSON);
 }
 

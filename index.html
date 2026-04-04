@@ -362,6 +362,14 @@
                 <button @click="cambiarModulo('CAJA')" class="mt-6 bg-posPrimary text-white font-black px-8 py-4 rounded-xl shadow-lg active:scale-95">IR A LA CAJA</button>
             </div>
 
+            <!-- Aviso: vendedor sin cajero activo en zona -->
+            <div v-if="!config.esCajero && cajeroActivoEnZona === false" class="absolute inset-0 z-[60] bg-amber-50 bg-opacity-95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+                <svg class="w-20 h-20 text-amber-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                <h2 class="text-2xl font-black text-amber-800 uppercase">Sin cajero activo</h2>
+                <p class="mt-2 text-amber-700 font-bold max-w-xs text-sm">No hay cajero abierto en <strong>{{ config.zona }}</strong>. Las ventas están suspendidas hasta que el cajero inicie su turno.</p>
+                <button @click="verificarCajeroActivo" class="mt-5 bg-amber-500 text-white font-black px-6 py-3 rounded-xl shadow active:scale-95 text-sm">Verificar nuevamente</button>
+            </div>
+
             <!-- LAYOUT POS (Doble Panel v2) -->
             <div class="flex-1 flex w-full relative overflow-hidden">
                 
@@ -445,6 +453,17 @@
         <!-- MÓDULO C: HERRAMIENTAS -->
         <div v-show="currentModule === 'TOOLS'" class="w-full h-full overflow-y-auto p-4 flex flex-col items-center">
             <div class="max-w-md w-full my-auto space-y-6">
+
+                 <!-- Alerta auditoría pendiente -->
+                 <div v-if="auditPendiente" @click="abrirAuditoria" class="w-full bg-amber-500 text-white rounded-2xl px-4 py-3 flex items-center gap-3 cursor-pointer active:scale-95 transition-transform shadow-lg">
+                    <span class="text-2xl shrink-0">⚠️</span>
+                    <div>
+                        <p class="font-black text-sm uppercase tracking-wider">Auditoría diaria pendiente</p>
+                        <p class="text-xs opacity-90 mt-0.5">Debes revisar 30 productos hoy. Toca para iniciar.</p>
+                    </div>
+                    <svg class="w-5 h-5 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                 </div>
+
                  <div class="text-center">
                     <svg class="w-16 h-16 text-emerald-500 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
                     <h2 class="text-2xl font-black text-gray-800">MEMBRETES DE PRECIO</h2>
@@ -467,6 +486,23 @@
                     <svg v-if="procesandoMembrete" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     Generar 1 Copia RAW
                  </button>
+
+                 <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
+
+                 <div class="text-center">
+                    <h2 class="text-2xl font-black text-gray-800">INVENTARIO</h2>
+                    <p class="text-sm text-gray-500 font-bold mt-1">Registra movimientos de stock por zona o realiza una auditoría de conteo.</p>
+                 </div>
+                 <div class="grid grid-cols-2 gap-3">
+                    <button @click="abrirGuias" class="bg-amber-500 text-white font-black py-6 rounded-2xl shadow-xl active:scale-95 transition-transform flex flex-col items-center gap-2">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        <span class="text-sm uppercase tracking-wider">Guías</span>
+                    </button>
+                    <button @click="abrirAuditoria" class="bg-purple-600 text-white font-black py-6 rounded-2xl shadow-xl active:scale-95 transition-transform flex flex-col items-center gap-2">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                        <span class="text-sm uppercase tracking-wider">Auditoría</span>
+                    </button>
+                 </div>
 
                  <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
 
@@ -508,7 +544,10 @@
         
         <!-- Tab Tools -->
         <button @click="cambiarModulo('TOOLS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'TOOLS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'">
-            <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='TOOLS'}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <div class="relative">
+                <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='TOOLS'}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <span v-if="auditPendiente && config.completado" class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+            </div>
             AJUSTES
             <div v-if="currentModule === 'TOOLS'" class="absolute -top-[1px] w-12 h-[3px] bg-posPrimary rounded-b-full"></div>
         </button>
@@ -860,6 +899,300 @@
             </button>
         </div>
     </div>
+
+    <!-- ===== MODAL FULLSCREEN: GUÍAS DE STOCK ===== -->
+    <div v-if="modoGuias" class="fixed inset-0 bg-gray-900 z-[70] flex flex-col overflow-hidden">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-4 py-3 bg-amber-500 shrink-0">
+            <div>
+                <p class="text-white font-black text-base uppercase tracking-widest leading-none">Guías · {{ guiaZona }}</p>
+                <p class="text-amber-100 text-xs mt-0.5">{{ guiaSubtipo ? guiaSubtipo.replace('_',' ') : 'Selecciona una acción' }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button v-if="guiaFlujo === 'form'" @click="guiaFlujo = 'tipo'" class="bg-white/20 text-white font-black text-xs px-3 py-1.5 rounded-lg">← Volver</button>
+                <button @click="cerrarGuias" class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
+            </div>
+        </div>
+
+        <!-- Tabs navegación -->
+        <div class="flex bg-gray-800 border-b border-gray-700 shrink-0">
+            <button @click="guiaTab = 'stock'; guiaFlujo = 'tipo'" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors" :class="guiaTab==='stock' ? 'bg-amber-500 text-white' : 'text-gray-400'">Stock</button>
+            <button @click="guiaTab = 'salida'; guiaFlujo = 'tipo'" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors" :class="guiaTab==='salida' ? 'bg-red-500 text-white' : 'text-gray-400'">↓ Salida</button>
+            <button @click="guiaTab = 'entrada'; guiaFlujo = 'tipo'" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors" :class="guiaTab==='entrada' ? 'bg-emerald-500 text-white' : 'text-gray-400'">↑ Entrada</button>
+            <button @click="guiaTab = 'historial'; listarGuiasHistorial()" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors relative" :class="guiaTab==='historial' ? 'bg-blue-500 text-white' : 'text-gray-400'">
+                Historial
+                <span v-if="trasladosPendientes.length" class="absolute top-1 right-1 w-2 h-2 bg-amber-400 rounded-full"></span>
+            </button>
+        </div>
+
+        <!-- TAB: Stock Actual -->
+        <div v-if="guiaTab === 'stock'" class="flex-1 overflow-y-auto p-4 space-y-2">
+            <div v-for="row in stockZonas.filter(r => r.Zona_ID === guiaZona)" :key="row.Cod_Barras"
+                 class="flex items-center justify-between bg-gray-800 rounded-xl px-4 py-3">
+                <div>
+                    <p class="text-white font-bold text-sm">{{ (db.PRESENTACIONES?.find(p=>String(p.Cod_Barras)===String(row.Cod_Barras)) ? ((db.PRODUCTO_BASE?.find(b=>b.SKU_Base===db.PRESENTACIONES.find(p=>String(p.Cod_Barras)===String(row.Cod_Barras)).SKU_Base)?.Nombre||row.Cod_Barras)+' · '+(db.PRESENTACIONES?.find(p=>String(p.Cod_Barras)===String(row.Cod_Barras))?.Empaque||'')) : row.Cod_Barras) }}</p>
+                    <p class="text-gray-500 text-xs font-mono mt-0.5">{{ row.Cod_Barras }}</p>
+                </div>
+                <span class="font-black text-2xl" :class="parseFloat(row.Cantidad)<=0 ? 'text-red-400' : parseFloat(row.Cantidad)<=5 ? 'text-amber-400' : 'text-emerald-400'">{{ row.Cantidad }}</span>
+            </div>
+            <p v-if="!stockZonas.filter(r => r.Zona_ID === guiaZona).length" class="text-gray-500 text-center py-10 text-sm">Sin stock registrado en <strong class="text-gray-300">{{ guiaZona }}</strong>.</p>
+        </div>
+
+        <!-- TAB: SALIDA — selector de subtipo / formulario -->
+        <div v-if="guiaTab === 'salida'" class="flex-1 overflow-y-auto">
+            <!-- Paso 1: elegir tipo de salida -->
+            <div v-if="guiaFlujo === 'tipo'" class="p-4 space-y-3">
+                <p class="text-gray-400 text-xs uppercase tracking-wider font-bold mb-4">¿Por qué sale la mercadería?</p>
+                <!-- Pedido de jefa -->
+                <button @click="seleccionarSubtipoGuia('SALIDA_JEFA')" class="w-full bg-gray-800 hover:bg-gray-700 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-gray-700">
+                    <div class="w-12 h-12 bg-amber-500/20 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg></div>
+                    <div><p class="text-white font-black">Pedido de jefa</p><p class="text-gray-400 text-xs mt-0.5">La jefa solicita productos directamente</p></div>
+                    <svg class="w-5 h-5 text-gray-500 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+                <!-- Movimiento a otra zona -->
+                <button @click="seleccionarSubtipoGuia('SALIDA_MOVIMIENTO')" class="w-full bg-gray-800 hover:bg-gray-700 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-gray-700">
+                    <div class="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></div>
+                    <div><p class="text-white font-black">Movimiento a otra zona</p><p class="text-gray-400 text-xs mt-0.5">Enviar mercadería a otra zona (genera entrada automática)</p></div>
+                    <svg class="w-5 h-5 text-gray-500 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+                <!-- Salida por ventas (informativa) -->
+                <div class="w-full bg-gray-800/50 rounded-2xl p-4 flex items-center gap-4 border border-dashed border-gray-700 opacity-60">
+                    <div class="w-12 h-12 bg-gray-700 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg></div>
+                    <div><p class="text-gray-300 font-black">Salida por ventas</p><p class="text-gray-500 text-xs mt-0.5">Se genera automáticamente al cerrar turno</p></div>
+                    <span class="text-[10px] font-black bg-gray-700 text-gray-400 px-2 py-1 rounded ml-auto">AUTO</span>
+                </div>
+            </div>
+
+            <!-- Paso 2: formulario de salida -->
+            <div v-if="guiaFlujo === 'form'" class="flex flex-col h-full p-4 gap-4">
+                <!-- Zona destino (solo para movimiento) -->
+                <div v-if="guiaSubtipo === 'SALIDA_MOVIMIENTO'">
+                    <label class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1 block">Zona destino</label>
+                    <select v-model="guiaZonaDestino" class="w-full bg-gray-800 text-white font-bold px-3 py-3 rounded-xl border border-blue-500/50 outline-none">
+                        <option value="">— Seleccionar zona —</option>
+                        <option v-for="z in zonasUnicas.filter(z => z !== guiaZona)" :key="z" :value="z">{{ z }}</option>
+                    </select>
+                </div>
+                <!-- Observación (pre-llenada para JEFA) -->
+                <input v-model="guiaObs" type="text" :placeholder="guiaSubtipo==='SALIDA_JEFA' ? 'Pedido de jefa' : 'Observación (opcional)...'" class="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-amber-500 text-sm">
+                <!-- Escaneo/búsqueda -->
+                <div class="flex gap-2">
+                    <input v-model="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-amber-500 text-lg tracking-widest">
+                    <button @click="guiaBuscarItem" class="bg-amber-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
+                    <button @click="toggleCamaraGuia" class="w-11 rounded-xl flex items-center justify-center transition-colors" :class="camaraGuiaAbierta ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+                <div v-show="camaraGuiaAbierta" class="rounded-xl overflow-hidden"><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
+                <!-- Lista items -->
+                <div class="flex-1 space-y-2 overflow-y-auto">
+                    <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
+                        <div class="flex-1 min-w-0"><p class="text-white font-bold text-sm truncate">{{ item.nombre }}</p><p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p></div>
+                        <div class="flex items-center gap-1.5">
+                            <button @click="item.cantidad = Math.max(1, item.cantidad - 1)" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                            <span class="text-white font-black text-base w-8 text-center">{{ item.cantidad }}</span>
+                            <button @click="item.cantidad++" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                            <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
+                        </div>
+                    </div>
+                    <p v-if="!guiaItems.length" class="text-gray-600 text-center py-6 text-sm">Sin productos aún. Escanea o escribe un código.</p>
+                </div>
+                <button @click="confirmarGuia" :disabled="procesandoGuia || !guiaItems.length || (guiaSubtipo==='SALIDA_MOVIMIENTO' && !guiaZonaDestino)"
+                        class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500 disabled:bg-red-900/40 text-white active:scale-95 shrink-0">
+                    <svg v-if="procesandoGuia" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    {{ procesandoGuia ? 'Registrando...' : '↓ Confirmar Salida (' + guiaItems.length + ' items)' }}
+                </button>
+            </div>
+        </div>
+
+        <!-- TAB: ENTRADA — selector de subtipo / formulario -->
+        <div v-if="guiaTab === 'entrada'" class="flex-1 overflow-y-auto">
+            <!-- Paso 1: elegir tipo de entrada -->
+            <div v-if="guiaFlujo === 'tipo'" class="p-4 space-y-3">
+                <p class="text-gray-400 text-xs uppercase tracking-wider font-bold mb-4">¿De dónde viene la mercadería?</p>
+                <!-- Despacho de almacén -->
+                <button @click="seleccionarSubtipoGuia('ENTRADA_ALMACEN')" class="w-full bg-gray-800 hover:bg-gray-700 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-gray-700">
+                    <div class="w-12 h-12 bg-emerald-500/20 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg></div>
+                    <div><p class="text-white font-black">Despacho de almacén</p><p class="text-gray-400 text-xs mt-0.5">Mercadería oficial del almacén central</p></div>
+                    <svg class="w-5 h-5 text-gray-500 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+                <!-- Traslado interno (informativo) -->
+                <div class="w-full bg-gray-800 rounded-2xl p-4 border border-gray-700">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></div>
+                        <div class="flex-1">
+                            <p class="text-white font-black">Traslado interno</p>
+                            <p class="text-gray-400 text-xs mt-0.5">Se registra automáticamente cuando otra zona te envía mercadería</p>
+                        </div>
+                        <span v-if="trasladosPendientes.length" class="bg-amber-500 text-white font-black text-xs px-2 py-1 rounded-full">{{ trasladosPendientes.length }}</span>
+                        <span v-else class="text-[10px] font-black bg-gray-700 text-gray-400 px-2 py-1 rounded">AUTO</span>
+                    </div>
+                    <!-- Lista de traslados recibidos -->
+                    <div v-if="trasladosPendientes.length" class="mt-3 space-y-2">
+                        <div v-for="t in trasladosPendientes" :key="t.id_guia" class="bg-gray-900/60 rounded-xl px-3 py-2 flex items-center justify-between">
+                            <div><p class="text-blue-300 font-bold text-xs">{{ t.id_guia }}</p><p class="text-gray-400 text-xs">Desde {{ t.origen }}</p></div>
+                            <button @click="trasladosPendientes.splice(trasladosPendientes.indexOf(t),1)" class="text-gray-500 text-xs font-bold px-2 py-1 rounded bg-gray-800">Visto ✓</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Ingreso libre -->
+                <button @click="seleccionarSubtipoGuia('ENTRADA_LIBRE')" class="w-full bg-gray-800 hover:bg-gray-700 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-gray-700">
+                    <div class="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg></div>
+                    <div><p class="text-white font-black">Ingreso libre</p><p class="text-gray-400 text-xs mt-0.5">Mercadería conseguida directamente (sin guía de almacén)</p></div>
+                    <svg class="w-5 h-5 text-gray-500 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+            </div>
+
+            <!-- Paso 2: formulario de entrada (Almacén o Libre) -->
+            <div v-if="guiaFlujo === 'form'" class="flex flex-col h-full p-4 gap-4">
+                <div v-if="guiaSubtipo === 'ENTRADA_ALMACEN'" class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl px-4 py-3 text-xs text-emerald-300 font-bold">
+                    Despacho de almacén · Registra los productos recibidos según la guía física
+                </div>
+                <input v-model="guiaObs" type="text" placeholder="N° de guía física / observación..." class="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-sm">
+                <div class="flex gap-2">
+                    <input v-model="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-lg tracking-widest">
+                    <button @click="guiaBuscarItem" class="bg-emerald-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
+                    <button @click="toggleCamaraGuia" class="w-11 rounded-xl flex items-center justify-center" :class="camaraGuiaAbierta ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+                <div v-show="camaraGuiaAbierta && guiaTab==='entrada'" class="rounded-xl overflow-hidden"><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
+                <div class="flex-1 space-y-2 overflow-y-auto">
+                    <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
+                        <div class="flex-1 min-w-0"><p class="text-white font-bold text-sm truncate">{{ item.nombre }}</p><p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p></div>
+                        <div class="flex items-center gap-1.5">
+                            <button @click="item.cantidad = Math.max(1, item.cantidad - 1)" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                            <span class="text-white font-black text-base w-8 text-center">{{ item.cantidad }}</span>
+                            <button @click="item.cantidad++" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                            <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
+                        </div>
+                    </div>
+                    <p v-if="!guiaItems.length" class="text-gray-600 text-center py-6 text-sm">Escanea o escribe un código para agregar productos.</p>
+                </div>
+                <button @click="confirmarGuia" :disabled="procesandoGuia || !guiaItems.length"
+                        class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 disabled:bg-emerald-900/40 text-white active:scale-95 shrink-0">
+                    <svg v-if="procesandoGuia" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    {{ procesandoGuia ? 'Registrando...' : '↑ Confirmar Entrada (' + guiaItems.length + ' items)' }}
+                </button>
+            </div>
+        </div>
+
+        <!-- TAB: HISTORIAL -->
+        <div v-if="guiaTab === 'historial'" class="flex-1 overflow-y-auto p-4">
+            <div v-if="guiaHistorialCargando" class="flex justify-center py-12"><svg class="animate-spin w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
+            <div v-else-if="!guiaHistorial.length" class="text-center py-12 text-gray-500 text-sm">Sin guías registradas para {{ guiaZona }}</div>
+            <div v-else class="space-y-2">
+                <div v-for="g in guiaHistorial" :key="g.id_guia" class="bg-gray-800 rounded-2xl overflow-hidden border border-gray-700">
+                    <!-- Cabecera guía -->
+                    <button @click="expandirGuia(g)" class="w-full flex items-center gap-3 p-3 text-left">
+                        <div class="w-2 h-10 rounded-full shrink-0" :class="g.tipo.startsWith('SALIDA') ? 'bg-red-500' : 'bg-emerald-500'"></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-black px-2 py-0.5 rounded uppercase"
+                                    :class="g.tipo==='SALIDA_JEFA' ? 'bg-amber-900/50 text-amber-300' : g.tipo==='SALIDA_MOVIMIENTO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='SALIDA_VENTAS' ? 'bg-gray-700 text-gray-400' : g.tipo==='ENTRADA_TRASLADO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='ENTRADA_ALMACEN' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-purple-900/50 text-purple-300'">
+                                    {{ g.tipo.replace('_',' ') }}
+                                </span>
+                                <span v-if="g.zona_destino" class="text-gray-500 text-xs">→ {{ g.zona_destino }}</span>
+                            </div>
+                            <p class="text-gray-400 text-xs mt-0.5">{{ g.id_guia }} · {{ g.vendedor }}</p>
+                            <p v-if="g.observacion" class="text-gray-500 text-xs truncate">{{ g.observacion }}</p>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <p class="text-gray-400 text-xs">{{ g.fecha ? new Date(g.fecha).toLocaleDateString('es-PE') : '' }}</p>
+                        </div>
+                    </button>
+                    <!-- Items expandidos -->
+                    <div v-if="guiaDetallando?.id_guia === g.id_guia" class="border-t border-gray-700 px-4 py-3">
+                        <div v-if="!guiaDetalle.length" class="text-gray-500 text-xs text-center py-2">Cargando...</div>
+                        <div v-for="it in guiaDetalle" :key="it.cod_barras" class="flex justify-between py-1 text-sm">
+                            <span class="text-gray-300">{{ (db.PRESENTACIONES?.find(p=>String(p.Cod_Barras)===it.cod_barras) ? db.PRODUCTO_BASE?.find(b=>b.SKU_Base===db.PRESENTACIONES.find(p=>String(p.Cod_Barras)===it.cod_barras).SKU_Base)?.Nombre||it.cod_barras : it.cod_barras) }}</span>
+                            <span class="font-black" :class="g.tipo.startsWith('SALIDA') ? 'text-red-400' : 'text-emerald-400'">{{ g.tipo.startsWith('SALIDA') ? '-' : '+' }}{{ it.cantidad }}</span>
+                        </div>
+                        <button @click="imprimirGuia(g)" class="mt-3 w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                            Imprimir 80mm
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL FULLSCREEN: AUDITORÍA DE STOCK ===== -->
+    <div v-if="modoAuditoria" class="fixed inset-0 bg-gray-900 z-[70] flex flex-col overflow-hidden">
+        <!-- Header: zona automática, no hay selector -->
+        <div class="flex items-center justify-between p-4 bg-purple-600 shrink-0">
+            <div class="flex items-center gap-3">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                <div>
+                    <p class="text-white font-black text-base uppercase tracking-widest leading-none">Auditoría · {{ auditZona }}</p>
+                    <p class="text-purple-200 text-xs mt-0.5">{{ auditItems.length }} / 30 productos · {{ new Date().toLocaleDateString('es-PE') }}</p>
+                </div>
+            </div>
+            <button @click="cerrarAuditoria" class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
+        </div>
+
+        <!-- Barra de búsqueda/escaneo manual -->
+        <div class="p-3 bg-gray-800 border-b border-gray-700 shrink-0">
+            <div class="flex gap-2">
+                <input v-model="auditBusq" @keyup.enter="auditAgregarItem(null)" type="text" placeholder="Escanear o escribir código para agregar..." class="flex-1 bg-gray-700 text-white font-mono px-4 py-2.5 rounded-xl border border-gray-600 outline-none focus:border-purple-400 text-sm tracking-widest">
+                <button @click="auditAgregarItem(null)" class="bg-purple-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
+                <button @click="toggleCamaraAudit" class="w-11 h-11 rounded-xl flex items-center justify-center transition-colors" :class="camaraAuditAbierta ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </button>
+            </div>
+            <!-- Visor de cámara -->
+            <div v-show="camaraAuditAbierta" class="mt-2 rounded-xl overflow-hidden">
+                <div id="reader-audit" class="bg-black w-full"></div>
+                <button @click="toggleCamaraAudit" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button>
+            </div>
+        </div>
+
+        <!-- Lista de ítems a auditar -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-3">
+            <div v-if="!auditItems.length" class="text-center py-12">
+                <p class="text-gray-500 text-sm">No hay stock registrado en <strong class="text-gray-300">{{ auditZona }}</strong>.</p>
+                <p class="text-gray-600 text-xs mt-2">Puedes agregar productos manualmente con el campo de arriba.</p>
+            </div>
+
+            <div v-for="(item, idx) in auditItems" :key="item.cod_barras"
+                 class="bg-gray-800 rounded-2xl p-4 border"
+                 :class="item.esNuevo ? 'border-blue-500/60' : (parseFloat(item.cantReal) !== item.cantSistema ? 'border-amber-500/60' : 'border-gray-700')">
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex-1 min-w-0 pr-3">
+                        <div class="flex items-center gap-2">
+                            <span v-if="item.esNuevo" class="text-[10px] font-black bg-blue-500 text-white px-1.5 py-0.5 rounded uppercase">NUEVO</span>
+                        </div>
+                        <p class="text-white font-bold text-sm mt-0.5">{{ item.nombre }}</p>
+                        <p class="text-gray-500 text-xs font-mono mt-0.5">{{ item.cod_barras }}</p>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <p class="text-gray-400 text-xs">Sistema</p>
+                        <p class="text-gray-300 font-black text-xl">{{ item.cantSistema }}</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Cantidad contada</label>
+                    <input v-model.number="item.cantReal" type="number" min="0" step="1"
+                           class="w-full bg-gray-700 text-white font-black text-2xl px-4 py-3 rounded-xl border border-gray-600 focus:border-purple-400 outline-none text-center"
+                           :class="parseFloat(item.cantReal) !== item.cantSistema ? 'border-amber-500 bg-amber-900/20' : ''">
+                    <p v-if="parseFloat(item.cantReal) !== item.cantSistema" class="text-amber-400 text-xs font-bold mt-1 text-center">
+                        Diferencia: {{ (parseFloat(item.cantReal)||0) - item.cantSistema > 0 ? '+' : '' }}{{ ((parseFloat(item.cantReal)||0) - item.cantSistema) }}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botón confirmar auditoría -->
+        <div v-if="auditItems.length" class="p-4 bg-gray-900 border-t border-gray-700 shrink-0">
+            <button @click="confirmarAuditoria" :disabled="procesandoAudit"
+                    class="w-full bg-purple-500 hover:bg-purple-400 disabled:bg-purple-900/40 text-white font-black py-5 rounded-2xl uppercase tracking-widest active:scale-95 flex items-center justify-center gap-2">
+                <svg v-if="procesandoAudit" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                {{ procesandoAudit ? 'Registrando...' : 'Confirmar Auditoría (' + auditItems.length + ')' }}
+            </button>
+        </div>
+    </div>
+
   </div>
 
   <script>
@@ -922,6 +1255,37 @@
         // --- MÓDULO C: TOOLS ---
         const bHerramientas = ref('');
         const procesandoMembrete = ref(false);
+        // Stock / Guías / Auditoría
+        const modoGuias = ref(false);
+        const modoAuditoria = ref(false);
+        // Guías: flujo por pasos — 'inicio' | 'salida' | 'entrada' | 'formulario' | 'historial'
+        const guiaTab = ref('stock'); // 'stock' | 'salida' | 'entrada' | 'historial'
+        const guiaFlujo = ref('tipo'); // dentro de salida/entrada: 'tipo' | 'form'
+        const guiaSubtipo = ref(''); // SALIDA_JEFA | SALIDA_MOVIMIENTO | ENTRADA_ALMACEN | ENTRADA_LIBRE
+        const stockZonas = ref([]);
+        const guiaZona = ref('');
+        const guiaTipo = ref('SALIDA');
+        const guiaZonaDestino = ref('');
+        const guiaItems = ref([]);
+        const guiaBusq = ref('');
+        const guiaObs = ref('');
+        const procesandoGuia = ref(false);
+        const guiaHistorial = ref([]);
+        const guiaHistorialCargando = ref(false);
+        const guiaDetallando = ref(null); // guía expandida en historial
+        const guiaDetalle = ref([]); // items del guiaDetallando
+        const guiaCamara = ref(false);
+        let html5QrGuia = null;
+        // Cajero activo en zona (para bloquear ventas sin cajero)
+        const cajeroActivoEnZona = ref(null); // null=cargando | false=sin cajero | {vendedor,idCaja,desde}
+        // Traslados entrantes pendientes de visualizar
+        const trasladosPendientes = ref([]);
+        const trasladosUltimoCheck = ref(Date.now() - 3600000); // 1h atrás en primer check
+        const auditZona = ref('');
+        const auditItems = ref([]);
+        const auditBusq = ref('');
+        const procesandoAudit = ref(false);
+        const auditHoyDate = ref(localStorage.getItem('mosexpress_audit_date') || '');
 
         // --- NOTIFICACIONES Y POPOVERS ---
         const toasts = ref([]);
@@ -933,6 +1297,10 @@
         let html5QrcodeScanner = null;
         const camaraHerramientasAbierta = ref(false);
         let html5QrHerramientas = null;
+        const camaraAuditAbierta = ref(false);
+        let html5QrAudit = null;
+        const camaraGuiaAbierta = ref(false);
+        let html5QrGuiaScanner = null;
 
         // --- TECLADO VIRTUAL ---
         const mostrarTeclado = ref(false);
@@ -980,6 +1348,15 @@
             if (pago.value.tipoDoc === 'FACTURA' && !/^\d{11}$/.test(doc)) return 'RUC debe tener exactamente 11 dígitos';
             return '';
         });
+
+        // Stock map: "Cod_Barras_ZonaID" → cantidad (para lookup rápido)
+        const stockMap = computed(() => {
+            const m = {};
+            stockZonas.value.forEach(r => { m[r.Cod_Barras + '_' + r.Zona_ID] = parseFloat(r.Cantidad) || 0; });
+            return m;
+        });
+        const zonasUnicasStock = computed(() => [...new Set(stockZonas.value.map(r => r.Zona_ID))]);
+        const auditPendiente = computed(() => auditHoyDate.value !== new Date().toDateString());
 
         // Filtro Historial de Caja
         const ventasHistorialFiltradas = computed(() => {
@@ -1227,6 +1604,12 @@
           if (pendingLocal) pendingSales.value = JSON.parse(pendingLocal);
 
           if (!offlineMode.value) await sincronizarDatos();
+
+          // Verificar cajero activo en zona al arrancar (si el usuario ya está configurado)
+          if (config.value.completado && config.value.zona) {
+              verificarCajeroActivo();
+              verificarTrasladosEntrantes();
+          }
         };
 
         const verificarDispositivoActivo = async () => {
@@ -1587,9 +1970,18 @@
             } catch(e) { /* error silencioso en segundo plano */ }
         };
 
+        let _pollingCajeroCount = 0;
         const iniciarPollingZona = () => {
             if (pollingTimer.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
-            pollingTimer.value = setInterval(actualizarVentasZonaSilencioso, 3000);
+            pollingTimer.value = setInterval(async () => {
+                actualizarVentasZonaSilencioso();
+                // Cada ~30 s (10 ciclos × 3 s): verificar cajero activo + traslados
+                _pollingCajeroCount++;
+                if (_pollingCajeroCount % 10 === 0) {
+                    verificarCajeroActivo();
+                    verificarTrasladosEntrantes();
+                }
+            }, 3000);
         };
 
         const detenerPollingZona = () => {
@@ -1674,6 +2066,8 @@
             } else {
                 cambiarModulo('CAJA');
             }
+            // Verificar si ya hay cajero activo en la zona al iniciar sesión
+            verificarCajeroActivo();
         };
 
         // --- MÓDULO A: LOGICA CAJA ---
@@ -1682,7 +2076,8 @@
             procesandoCaja.value = true;
             const payload = {
                 tipoEvento: 'APERTURA_CAJA',
-                vendedor: config.value.vendedor, estacion: config.value.estacion.Estacion_Nombre, montoInicial: montoApertura.value
+                vendedor: config.value.vendedor, estacion: config.value.estacion.Estacion_Nombre,
+                montoInicial: montoApertura.value, zona: config.value.zona
             };
 
             let cid = "CAJA-LOCAL-" + Date.now();
@@ -2283,6 +2678,11 @@
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
         const procesarPago = async () => {
            if (vuelto.value < 0) return;
+           // Vendedores no pueden vender sin cajero activo en la zona
+           if (!config.value.esCajero && cajeroActivoEnZona.value === false) {
+               agregarToast('Sin cajero activo', 'No hay cajero abierto en ' + config.value.zona + '. Comunícate con el cajero de tu zona.');
+               return;
+           }
            procesando.value = true;
 
            let serieElegida = config.value.estacion.Serie_Nota;
@@ -2587,6 +2987,334 @@
            procesandoMembrete.value = false;
         };
 
+        // ------ CAJERO ÚNICO POR ZONA ------ //
+
+        const verificarCajeroActivo = async () => {
+            if (!config.value.zona || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            try {
+                const r = await fetch(`${API_URL}?accion=cajero_activo&zona=${encodeURIComponent(config.value.zona)}`);
+                const d = await r.json();
+                if (d.status === 'success') {
+                    cajeroActivoEnZona.value = d.activo ? { vendedor: d.vendedor, idCaja: d.idCaja, desde: d.desde } : false;
+                }
+            } catch(e) { cajeroActivoEnZona.value = null; }
+        };
+
+        const verificarTrasladosEntrantes = async () => {
+            if (!config.value.zona || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            try {
+                const r = await fetch(`${API_URL}?accion=traslados_entrantes&zona=${encodeURIComponent(config.value.zona)}&desde=${trasladosUltimoCheck.value}`);
+                const d = await r.json();
+                if (d.status === 'success' && d.traslados.length > 0) {
+                    d.traslados.forEach(t => {
+                        if (!trasladosPendientes.value.find(p => p.id_guia === t.id_guia)) {
+                            trasladosPendientes.value.unshift(t);
+                            agregarToast('Traslado recibido', `Mercadería de ${t.origen} — ${t.id_guia}`);
+                        }
+                    });
+                }
+                trasladosUltimoCheck.value = Date.now();
+            } catch(e) {}
+        };
+
+        // ------ STOCK: GUÍAS Y AUDITORÍA ------ //
+
+        const cargarStockZonas = async () => {
+            const cached = localStorage.getItem('mosexpress_stock_zonas');
+            if (cached) { try { stockZonas.value = JSON.parse(cached); } catch(e) {} }
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            try {
+                const r = await fetch(`${API_URL}?accion=stock_zonas`);
+                const d = await r.json();
+                if (d.status === 'success') {
+                    stockZonas.value = d.stock;
+                    localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(d.stock));
+                }
+            } catch(e) { console.warn('Error cargando stock zonas', e); }
+        };
+
+        const _resetGuiaForm = () => {
+            guiaItems.value = [];
+            guiaBusq.value = '';
+            guiaObs.value = '';
+            guiaSubtipo.value = '';
+            guiaZonaDestino.value = '';
+            guiaFlujo.value = 'tipo';
+            if (camaraGuiaAbierta.value) toggleCamaraGuia();
+        };
+
+        const abrirGuias = async () => {
+            modoGuias.value = true;
+            guiaTab.value = 'stock';
+            guiaZona.value = config.value.zona || (zonasUnicas.value[0] || '');
+            _resetGuiaForm();
+            await cargarStockZonas();
+        };
+
+        const cerrarGuias = () => {
+            modoGuias.value = false;
+            if (camaraGuiaAbierta.value) toggleCamaraGuia();
+        };
+
+        const seleccionarSubtipoGuia = (subtipo) => {
+            guiaSubtipo.value = subtipo;
+            // Pre-llenar observación para tipos con observación fija
+            if (subtipo === 'SALIDA_JEFA') guiaObs.value = 'Pedido de jefa';
+            else guiaObs.value = '';
+            guiaItems.value = [];
+            guiaFlujo.value = 'form';
+        };
+
+        const toggleCamaraGuia = () => {
+            camaraGuiaAbierta.value = !camaraGuiaAbierta.value;
+            if (camaraGuiaAbierta.value) {
+                setTimeout(() => {
+                    html5QrGuiaScanner = new Html5Qrcode("reader-guia");
+                    html5QrGuiaScanner.start(
+                        { facingMode: "environment" },
+                        { fps: 10, qrbox: { width: 250, height: 150 } },
+                        (txt) => {
+                            camaraGuiaAbierta.value = false;
+                            if (html5QrGuiaScanner) { html5QrGuiaScanner.stop().then(() => { try { html5QrGuiaScanner.clear(); } catch(e) {} html5QrGuiaScanner = null; }).catch(() => { html5QrGuiaScanner = null; }); }
+                            guiaBusq.value = txt;
+                            guiaBuscarItem();
+                        },
+                        () => {}
+                    ).catch(() => {
+                        agregarToast('Cámara', 'Permiso denegado o no disponible');
+                        camaraGuiaAbierta.value = false;
+                        if (html5QrGuiaScanner) { try { html5QrGuiaScanner.clear(); } catch(e) {} html5QrGuiaScanner = null; }
+                    });
+                }, 200);
+            } else {
+                if (html5QrGuiaScanner) { html5QrGuiaScanner.stop().then(() => { try { html5QrGuiaScanner.clear(); } catch(e) {} html5QrGuiaScanner = null; }).catch(() => { html5QrGuiaScanner = null; }); }
+            }
+        };
+
+        const abrirAuditoria = async () => {
+            modoAuditoria.value = true;
+            auditItems.value = [];
+            auditBusq.value = '';
+            auditZona.value = config.value.zona || (zonasUnicas.value[0] || '');
+            await cargarStockZonas();
+            iniciarAuditoria();
+        };
+
+        const cerrarAuditoria = () => {
+            modoAuditoria.value = false;
+            if (camaraAuditAbierta.value) toggleCamaraAudit();
+        };
+
+        const guiaBuscarItem = () => {
+            const q = guiaBusq.value.trim();
+            if (!q) return;
+            const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
+            if (!pres) { agregarToast('No encontrado', 'Código no está en el catálogo'); return; }
+            const base = db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base);
+            const nombre = (base ? base.Nombre : pres.SKU_Base) + ' · ' + pres.Empaque;
+            const idx = guiaItems.value.findIndex(i => i.cod_barras === q);
+            if (idx >= 0) {
+                guiaItems.value[idx].cantidad++;
+            } else {
+                const stockActual = stockMap.value[q + '_' + guiaZona.value] ?? null;
+                guiaItems.value.push({ cod_barras: q, nombre, cantidad: 1, stockActual });
+            }
+            guiaBusq.value = '';
+        };
+
+        const quitarItemGuia = (idx) => { guiaItems.value.splice(idx, 1); };
+
+        const confirmarGuia = async () => {
+            if (!guiaItems.value.length || !guiaZona.value) return;
+            if (guiaSubtipo.value === 'SALIDA_MOVIMIENTO' && !guiaZonaDestino.value) {
+                agregarToast('Error', 'Selecciona la zona destino del movimiento');
+                return;
+            }
+            procesandoGuia.value = true;
+            try {
+                const payload = {
+                    tipoEvento: 'REGISTRAR_GUIA',
+                    vendedor: config.value.vendedor,
+                    zona: guiaZona.value,
+                    tipo: guiaSubtipo.value,
+                    zona_destino: guiaZonaDestino.value,
+                    observacion: guiaObs.value,
+                    items: guiaItems.value.map(i => ({ cod_barras: i.cod_barras, cantidad: i.cantidad }))
+                };
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                const d = await r.json();
+                if (d.status === 'success') {
+                    d.stock.forEach(s => {
+                        const si = stockZonas.value.findIndex(row => row.Cod_Barras === s.cod_barras && row.Zona_ID === guiaZona.value);
+                        if (si >= 0) stockZonas.value[si].Cantidad = s.cantidad;
+                        else stockZonas.value.push({ Cod_Barras: s.cod_barras, Zona_ID: guiaZona.value, Cantidad: s.cantidad });
+                    });
+                    localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
+                    const msg = d.idGuiaEntrada ? `Guía ${d.idGuia} + traslado a ${guiaZonaDestino.value} registrados` : `Guía ${d.idGuia} registrada`;
+                    agregarToast('Éxito', msg);
+                    _resetGuiaForm();
+                    guiaTab.value = 'stock';
+                } else { agregarToast('Error', d.mensaje || 'Error al registrar guía'); }
+            } catch(e) { agregarToast('Error', 'No se pudo conectar con el servidor'); }
+            procesandoGuia.value = false;
+        };
+
+        const listarGuiasHistorial = async () => {
+            guiaHistorialCargando.value = true;
+            try {
+                const r = await fetch(`${API_URL}?accion=listar_guias&zona=${encodeURIComponent(guiaZona.value)}`);
+                const d = await r.json();
+                if (d.status === 'success') guiaHistorial.value = d.guias;
+                else agregarToast('Error', d.mensaje || 'Error al cargar historial');
+            } catch(e) { agregarToast('Error', 'Sin conexión'); }
+            guiaHistorialCargando.value = false;
+        };
+
+        const expandirGuia = async (guia) => {
+            if (guiaDetallando.value?.id_guia === guia.id_guia) { guiaDetallando.value = null; guiaDetalle.value = []; return; }
+            guiaDetallando.value = guia;
+            guiaDetalle.value = [];
+            try {
+                const r = await fetch(`${API_URL}?accion=detalle_guia&id_guia=${encodeURIComponent(guia.id_guia)}`);
+                const d = await r.json();
+                if (d.status === 'success') guiaDetalle.value = d.items;
+            } catch(e) {}
+        };
+
+        const imprimirGuia = async (guia) => {
+            if (!config.value.estacion?.PrintNode_ID) { agregarToast('Error', 'Sin impresora configurada'); return; }
+            let items = guiaDetalle.value;
+            if (!items.length || guiaDetallando.value?.id_guia !== guia.id_guia) {
+                try {
+                    const r = await fetch(`${API_URL}?accion=detalle_guia&id_guia=${encodeURIComponent(guia.id_guia)}`);
+                    const d = await r.json();
+                    items = d.status === 'success' ? d.items : [];
+                } catch(e) {}
+            }
+            const esSalida = guia.tipo.indexOf('SALIDA') === 0;
+            const tipoLabel = {
+                SALIDA_JEFA: 'SALIDA - PEDIDO JEFA', SALIDA_MOVIMIENTO: 'SALIDA - MOVIMIENTO',
+                SALIDA_VENTAS: 'SALIDA - VENTAS TURNO', ENTRADA_ALMACEN: 'ENTRADA - ALMACEN',
+                ENTRADA_TRASLADO: 'ENTRADA - TRASLADO', ENTRADA_LIBRE: 'ENTRADA - LIBRE'
+            }[guia.tipo] || guia.tipo;
+            const fechaStr = guia.fecha ? new Date(guia.fecha).toLocaleString('es-PE') : '';
+
+            let txt = "\x1b\x40\x1b\x61\x01"; // Init + centrar
+            txt += "\x1b\x21\x30MOSexpress\n"; // Titulo grande
+            txt += "\x1b\x21\x00================================================\n";
+            txt += "\x1b\x21\x10" + tipoLabel + "\n";
+            txt += "\x1b\x21\x00================================================\n";
+            txt += "\x1b\x61\x00"; // Izquierda
+            txt += "GUIA    : " + guia.id_guia + "\n";
+            txt += "FECHA   : " + fechaStr + "\n";
+            txt += "ZONA    : " + guia.zona + (guia.zona_destino ? ' → ' + guia.zona_destino : '') + "\n";
+            txt += "REGISTRA: " + guia.vendedor + "\n";
+            if (guia.observacion) txt += "OBS     : " + guia.observacion + "\n";
+            txt += "------------------------------------------------\n";
+            txt += "PRODUCTO                    CANT\n";
+            txt += "------------------------------------------------\n";
+            items.forEach(function(it) {
+                const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === it.cod_barras);
+                const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
+                const nom = base ? (base.Nombre + ' ' + pres.Empaque).substring(0, 26) : it.cod_barras.substring(0, 26);
+                txt += nom.padEnd(28) + String(it.cantidad).padStart(4) + "\n";
+            });
+            txt += "================================================\n";
+            txt += "\x1b\x61\x01*** " + (esSalida ? 'SALIDA' : 'ENTRADA') + " DE MERCADERÍA ***\n";
+            txt += "\n\n\n\x1d\x56\x42\x00"; // Corte parcial
+            try {
+                await mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, 'Guia ' + guia.id_guia, b64ESC(txt));
+                agregarToast('Impresión', 'Guía enviada a impresora');
+            } catch(e) { agregarToast('Error', e.message); }
+        };
+
+        const iniciarAuditoria = () => {
+            if (!auditZona.value) return;
+            // Toma 30 ítems al azar de la zona (incluye cantidades cero para detectar faltantes)
+            const enZona = stockZonas.value.filter(r => r.Zona_ID === auditZona.value);
+            const muestra = [...enZona].sort(() => Math.random() - 0.5).slice(0, 30);
+            auditItems.value = muestra.map(r => {
+                const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === String(r.Cod_Barras));
+                const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
+                const nombre = base ? (base.Nombre + ' · ' + pres.Empaque) : r.Cod_Barras;
+                return { cod_barras: String(r.Cod_Barras), nombre, cantSistema: parseFloat(r.Cantidad) || 0, cantReal: parseFloat(r.Cantidad) || 0, esNuevo: false };
+            });
+            if (!auditItems.value.length) agregarToast('Aviso', 'No hay stock registrado en ' + auditZona.value);
+        };
+
+        const auditAgregarItem = (cod) => {
+            const q = (cod || auditBusq.value).trim();
+            if (!q) return;
+            if (auditItems.value.find(i => i.cod_barras === q)) {
+                agregarToast('Aviso', 'Este producto ya está en la lista');
+                auditBusq.value = '';
+                return;
+            }
+            const stockRow = stockZonas.value.find(r => String(r.Cod_Barras) === q && r.Zona_ID === auditZona.value);
+            const cantSistema = stockRow ? parseFloat(stockRow.Cantidad) || 0 : 0;
+            const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
+            const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
+            const nombre = base ? (base.Nombre + ' · ' + pres.Empaque) : (pres ? pres.SKU_Base : q);
+            if (!pres) agregarToast('Aviso', 'Código no en catálogo — se registrará de todas formas');
+            auditItems.value.push({ cod_barras: q, nombre, cantSistema, cantReal: 0, esNuevo: !stockRow });
+            auditBusq.value = '';
+        };
+
+        const toggleCamaraAudit = () => {
+            camaraAuditAbierta.value = !camaraAuditAbierta.value;
+            if (camaraAuditAbierta.value) {
+                setTimeout(() => {
+                    html5QrAudit = new Html5Qrcode("reader-audit");
+                    html5QrAudit.start(
+                        { facingMode: "environment" },
+                        { fps: 10, qrbox: { width: 250, height: 150 } },
+                        (txt) => {
+                            camaraAuditAbierta.value = false;
+                            if (html5QrAudit) { html5QrAudit.stop().then(() => { try { html5QrAudit.clear(); } catch(e) {} html5QrAudit = null; }).catch(() => { html5QrAudit = null; }); }
+                            auditAgregarItem(txt);
+                        },
+                        () => {}
+                    ).catch(() => {
+                        agregarToast('Cámara', 'Permiso denegado o no disponible');
+                        camaraAuditAbierta.value = false;
+                        if (html5QrAudit) { try { html5QrAudit.clear(); } catch(e) {} html5QrAudit = null; }
+                    });
+                }, 200);
+            } else {
+                if (html5QrAudit) { html5QrAudit.stop().then(() => { try { html5QrAudit.clear(); } catch(e) {} html5QrAudit = null; }).catch(() => { html5QrAudit = null; }); }
+            }
+        };
+
+        const confirmarAuditoria = async () => {
+            if (!auditItems.value.length || !auditZona.value) return;
+            procesandoAudit.value = true;
+            try {
+                const payload = {
+                    tipoEvento: 'REGISTRAR_AUDITORIA',
+                    vendedor: config.value.vendedor,
+                    zona: auditZona.value,
+                    items: auditItems.value.map(i => ({ cod_barras: i.cod_barras, cantSistema: i.cantSistema, cantReal: parseFloat(i.cantReal) || 0 }))
+                };
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                const d = await r.json();
+                if (d.status === 'success') {
+                    auditItems.value.forEach(i => {
+                        const si = stockZonas.value.findIndex(row => String(row.Cod_Barras) === i.cod_barras && row.Zona_ID === auditZona.value);
+                        const cantFinal = parseFloat(i.cantReal) || 0;
+                        if (si >= 0) stockZonas.value[si].Cantidad = cantFinal;
+                        else stockZonas.value.push({ Cod_Barras: i.cod_barras, Zona_ID: auditZona.value, Cantidad: cantFinal });
+                    });
+                    localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
+                    const hoy = new Date().toDateString();
+                    auditHoyDate.value = hoy;
+                    localStorage.setItem('mosexpress_audit_date', hoy);
+                    agregarToast('Éxito', 'Auditoría ' + d.idAuditoria + ' registrada');
+                    auditItems.value = [];
+                } else { agregarToast('Error', d.mensaje || 'Error al registrar auditoría'); }
+            } catch(e) { agregarToast('Error', 'No se pudo conectar con el servidor'); }
+            procesandoAudit.value = false;
+        };
+
         cargarDatos();
 
         return {
@@ -2618,7 +3346,18 @@
           modalPresentaciones, prodSeleccionado, elegirPresentacion,
           mostrarTeclado, toggleTeclado,
           darkMode, toggleDarkMode,
-          anularVenta
+          anularVenta,
+          modoGuias, modoAuditoria, stockZonas, guiaZona,
+          guiaTab, guiaFlujo, guiaSubtipo, guiaZonaDestino,
+          guiaItems, guiaBusq, guiaObs, procesandoGuia,
+          guiaHistorial, guiaHistorialCargando, guiaDetallando, guiaDetalle, camaraGuiaAbierta,
+          abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
+          guiaBuscarItem, quitarItemGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
+          auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente,
+          camaraAuditAbierta, toggleCamaraAudit, auditAgregarItem,
+          stockMap, zonasUnicasStock,
+          abrirAuditoria, cerrarAuditoria, iniciarAuditoria, confirmarAuditoria,
+          cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo
         };
       }
     });
