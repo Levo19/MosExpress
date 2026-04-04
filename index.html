@@ -930,7 +930,7 @@
             <div v-for="row in stockZonas.filter(r => r.Zona_ID === guiaZona)" :key="row.Cod_Barras"
                  class="flex items-center justify-between bg-gray-800 rounded-xl px-4 py-3">
                 <div>
-                    <p class="text-white font-bold text-sm">{{ (db.PRESENTACIONES?.find(p=>String(p.Cod_Barras)===String(row.Cod_Barras)) ? ((db.PRODUCTO_BASE?.find(b=>b.SKU_Base===db.PRESENTACIONES.find(p=>String(p.Cod_Barras)===String(row.Cod_Barras)).SKU_Base)?.Nombre||row.Cod_Barras)+' · '+(db.PRESENTACIONES?.find(p=>String(p.Cod_Barras)===String(row.Cod_Barras))?.Empaque||'')) : row.Cod_Barras) }}</p>
+                    <p class="text-white font-bold text-sm">{{ getNombrePres(row.Cod_Barras) }}</p>
                     <p class="text-gray-500 text-xs font-mono mt-0.5">{{ row.Cod_Barras }}</p>
                 </div>
                 <span class="font-black text-2xl" :class="parseFloat(row.Cantidad)<=0 ? 'text-red-400' : parseFloat(row.Cantidad)<=5 ? 'text-amber-400' : 'text-emerald-400'">{{ row.Cantidad }}</span>
@@ -1105,7 +1105,7 @@
                     <div v-if="guiaDetallando?.id_guia === g.id_guia" class="border-t border-gray-700 px-4 py-3">
                         <div v-if="!guiaDetalle.length" class="text-gray-500 text-xs text-center py-2">Cargando...</div>
                         <div v-for="it in guiaDetalle" :key="it.cod_barras" class="flex justify-between py-1 text-sm">
-                            <span class="text-gray-300">{{ (db.PRESENTACIONES?.find(p=>String(p.Cod_Barras)===it.cod_barras) ? db.PRODUCTO_BASE?.find(b=>b.SKU_Base===db.PRESENTACIONES.find(p=>String(p.Cod_Barras)===it.cod_barras).SKU_Base)?.Nombre||it.cod_barras : it.cod_barras) }}</span>
+                            <span class="text-gray-300">{{ getNombrePres(it.cod_barras) }}</span>
                             <span class="font-black" :class="g.tipo.startsWith('SALIDA') ? 'text-red-400' : 'text-emerald-400'">{{ g.tipo.startsWith('SALIDA') ? '-' : '+' }}{{ it.cantidad }}</span>
                         </div>
                         <button @click="imprimirGuia(g)" class="mt-3 w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
@@ -3019,6 +3019,14 @@
 
         // ------ STOCK: GUÍAS Y AUDITORÍA ------ //
 
+        const getNombrePres = (codBarras) => {
+            if (!db.value || !db.value.PRESENTACIONES || !db.value.PRODUCTO_BASE) return String(codBarras || '');
+            const pres = db.value.PRESENTACIONES.find(p => String(p.Cod_Barras) === String(codBarras));
+            if (!pres) return String(codBarras || '');
+            const base = db.value.PRODUCTO_BASE.find(b => b.SKU_Base === pres.SKU_Base);
+            return (base?.Nombre || String(codBarras)) + (pres.Empaque ? ' · ' + pres.Empaque : '');
+        };
+
         const cargarStockZonas = async () => {
             const cached = localStorage.getItem('mosexpress_stock_zonas');
             if (cached) { try { stockZonas.value = JSON.parse(cached); } catch(e) {} }
@@ -3357,7 +3365,8 @@
           camaraAuditAbierta, toggleCamaraAudit, auditAgregarItem,
           stockMap, zonasUnicasStock,
           abrirAuditoria, cerrarAuditoria, iniciarAuditoria, confirmarAuditoria,
-          cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo
+          cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
+          getNombrePres
         };
       }
     });
