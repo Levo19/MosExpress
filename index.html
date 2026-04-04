@@ -622,29 +622,73 @@
                   </div>
                </div>
     
-               <!-- Buscador DNI RUC Integrado SUNAT Mock -->
+               <!-- ── CLIENTE: buscador unificado ── -->
                <div v-if="pago.tipoDoc !== 'NOTA_DE_VENTA'">
-                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Cliente {{ pago.tipoDoc === 'FACTURA' ? '(RUC)' : '(DNI/RUC)' }}</label>
-                 <div class="flex space-x-2">
-                   <input v-model="pago.docCliente" type="number" :placeholder="pago.tipoDoc === 'FACTURA' ? 'RUC (11 dígitos)' : 'DNI (8 dígitos)'" class="flex-1 p-3.5 border-2 rounded-xl focus:border-posPrimary font-bold text-lg bg-gray-50 focus:bg-white tracking-widest outline-none transition-colors" :class="errorDocumento ? 'border-red-300 bg-red-50' : 'border-gray-100'">
-                   <button @click="buscarClienteAPI" :disabled="!!errorDocumento || !pago.docCliente" class="bg-gray-800 text-emerald-400 px-5 rounded-xl font-bold active:scale-95 transition-transform flex items-center justify-center shadow-lg disabled:opacity-40">
-                     <svg v-if="buscandoCliente" class="animate-spin w-6 h-6" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                     <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Cliente {{ pago.tipoDoc === 'FACTURA' ? '(RUC)' : '(DNI / RUC)' }}</label>
+
+                 <!-- Estado A: cliente confirmado → chip verde -->
+                 <div v-if="pago.nombreCliente" class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                   <div class="flex-1 min-w-0">
+                     <p class="font-black text-emerald-800 text-sm uppercase truncate">{{ pago.nombreCliente }}</p>
+                     <p class="text-emerald-600 text-xs font-mono mt-0.5">{{ pago.docCliente }}</p>
+                   </div>
+                   <button @click="limpiarCliente" class="shrink-0 p-1.5 text-gray-400 hover:text-red-500 rounded-lg transition-colors">
+                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
                    </button>
                  </div>
-                 <p v-if="errorDocumento" class="mt-1 text-xs text-red-500 font-bold">{{ errorDocumento }}</p>
-                 <div v-if="pago.nombreCliente" class="mt-2 text-xs font-black bg-emerald-50 text-emerald-800 p-2.5 rounded-lg border border-emerald-100 uppercase">{{ pago.nombreCliente }}</div>
-                 <!-- Búsqueda por nombre de cliente frecuente -->
-                 <div class="mt-3">
-                   <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">O buscar por nombre:</p>
-                   <input v-model="busquedaNombre" type="text" placeholder="Nombre cliente frecuente..." class="w-full p-3 border-2 border-gray-100 rounded-xl font-semibold text-sm bg-gray-50 focus:border-posPrimary outline-none transition-colors">
+
+                 <!-- Estado B: buscando (input + lupa) -->
+                 <div v-if="!pago.nombreCliente && !clienteModoManual">
+                   <div class="flex gap-2">
+                     <input v-model="busquedaNombre" @input="clienteModoManual=false" type="text" inputmode="text" autocomplete="off"
+                            :placeholder="pago.tipoDoc === 'FACTURA' ? 'RUC o razón social...' : 'Nombre, DNI (8) o RUC (11)...'"
+                            class="flex-1 p-3.5 border-2 rounded-xl font-semibold text-sm bg-gray-50 focus:border-posPrimary outline-none transition-colors"
+                            :class="busquedaNombre ? 'border-gray-300' : 'border-gray-100'">
+                     <!-- Lupa: gris cuando no hay doc válido, verde oscuro cuando sí -->
+                     <button @click="buscarClienteAPI"
+                             :disabled="!clienteBusqEsDocumento || !!sugerenciasCliente.length || buscandoCliente"
+                             class="w-14 rounded-xl font-bold flex items-center justify-center transition-all active:scale-95"
+                             :class="clienteBusqEsDocumento && !sugerenciasCliente.length ? 'bg-gray-800 text-emerald-400 shadow-md' : 'bg-gray-100 text-gray-300'">
+                       <svg v-if="buscandoCliente" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                       <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                     </button>
+                   </div>
+                   <!-- Hint doc detectado -->
+                   <p v-if="clienteBusqEsDocumento && !sugerenciasCliente.length" class="mt-1 text-[10px] text-gray-400 font-semibold">
+                     {{ busquedaNombre.length === 8 ? 'DNI · consulta RENIEC' : 'RUC · consulta SUNAT' }} — toca la lupa
+                   </p>
+                   <!-- Dropdown sugerencias locales -->
                    <div v-if="sugerenciasCliente.length > 0" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-                     <div v-for="c in sugerenciasCliente" :key="c.Documento" @click="elegirClienteFrecuente(c)" class="p-3 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-50 last:border-0 flex justify-between items-center">
-                       <span class="font-bold text-gray-800 text-sm">{{ c.Nombre }}</span>
-                       <span class="text-xs text-gray-400 font-mono ml-2 shrink-0">{{ c.Documento }}</span>
+                     <div v-for="c in sugerenciasCliente" :key="c.Documento" @click="elegirClienteFrecuente(c)"
+                          class="p-3 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-50 last:border-0 flex justify-between items-center gap-2">
+                       <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre }}</span>
+                       <span class="text-xs text-gray-500 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full">{{ c.Documento }}</span>
                      </div>
                    </div>
                  </div>
+
+                 <!-- Estado C: API no encontró nada → nombre manual -->
+                 <div v-if="clienteModoManual && !pago.nombreCliente" class="space-y-2">
+                   <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                     <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                     <div>
+                       <p class="text-xs text-amber-800 font-bold">No encontrado en RENIEC / SUNAT</p>
+                       <p class="text-[10px] text-amber-600 mt-0.5">Doc: <span class="font-mono font-bold">{{ pago.docCliente }}</span> · Escribe el nombre manualmente</p>
+                     </div>
+                   </div>
+                   <div class="flex gap-2">
+                     <input v-model="clienteNombreManual" type="text" placeholder="Nombre completo / Razón social..."
+                            @keyup.enter="confirmarNombreManual" autocomplete="off"
+                            class="flex-1 p-3.5 border-2 border-amber-300 focus:border-amber-500 rounded-xl font-semibold text-sm bg-amber-50 outline-none transition-colors">
+                     <button @click="confirmarNombreManual" :disabled="!clienteNombreManual.trim()"
+                             class="bg-gray-800 text-white px-5 rounded-xl font-black text-sm active:scale-95 transition-transform disabled:opacity-40">
+                       OK
+                     </button>
+                   </div>
+                   <button @click="limpiarCliente" class="text-xs text-gray-400 hover:text-gray-600 underline">Cancelar</button>
+                 </div>
+
+                 <p v-if="errorDocumento" class="mt-1.5 text-xs text-red-500 font-bold">{{ errorDocumento }}</p>
                </div>
     
                <div v-if="config.esCajero">
@@ -1324,6 +1368,8 @@
         const procesando = ref(false);
         const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', montoRecibido: 0, montoVirtual: 0 });
         const buscandoCliente = ref(false);
+        const clienteModoManual = ref(false);
+        const clienteNombreManual = ref('');
 
         // --- COMPUTADOS ---
         const zonasUnicas = computed(() => {
@@ -2591,19 +2637,29 @@
 
         const busquedaNombre = ref('');
         const sugerenciasCliente = computed(() => {
-            const q = busquedaNombre.value.trim().toLowerCase();
+            const q = busquedaNombre.value.trim();
             if (!q || q.length < 2) return [];
+            const esNum = /^\d+$/.test(q);
             return (db.value.CLIENTES_FRECUENTES || [])
-                .filter(c => (c.Nombre || '').toLowerCase().includes(q))
-                .slice(0, 5);
+                .filter(c => esNum
+                    ? String(c.Documento || '').includes(q)
+                    : (c.Nombre || '').toLowerCase().includes(q.toLowerCase()))
+                .slice(0, 6);
         });
+        const clienteBusqEsDocumento = computed(() => /^\d{8}$/.test(busquedaNombre.value.trim()) || /^\d{11}$/.test(busquedaNombre.value.trim()));
         const elegirClienteFrecuente = (c) => {
             pago.value.docCliente = String(c.Documento || '');
             pago.value.nombreCliente = c.Nombre || '';
             busquedaNombre.value = '';
             agregarToast('Cliente', c.Nombre);
         };
-        const limpiarCliente = () => { pago.value.docCliente = ''; pago.value.nombreCliente = ''; busquedaNombre.value = ''; };
+        const limpiarCliente = () => {
+            pago.value.docCliente = '';
+            pago.value.nombreCliente = '';
+            busquedaNombre.value = '';
+            clienteModoManual.value = false;
+            clienteNombreManual.value = '';
+        };
         // Convierte un número entero a texto en español (para TTS del monto)
         const numALetras = (n) => {
             if (n === 0) return 'cero';
@@ -2655,24 +2711,43 @@
             modalPago.value = true;
         };
         const setMonto = (m) => { pago.value.montoRecibido = parseFloat(m); };
-        const buscarClienteAPI = () => {
-           if (errorDocumento.value) { agregarToast('Documento inválido', errorDocumento.value); return; }
-           if (!pago.value.docCliente) return;
+        const buscarClienteAPI = async () => {
+           if (!clienteBusqEsDocumento.value) return;
+           const doc = busquedaNombre.value.trim();
            buscandoCliente.value = true;
-           const doc = String(pago.value.docCliente).trim();
-           // 1º Buscar en clientes frecuentes guardados localmente
-           const clienteLocal = db.value.CLIENTES_FRECUENTES?.find(c => String(c.Documento).trim() === doc);
-           if (clienteLocal) {
-               pago.value.nombreCliente = clienteLocal.Nombre || ('CLIENTE ' + doc);
+           clienteModoManual.value = false;
+           clienteNombreManual.value = '';
+           try {
+               if (offlineMode.value) throw new Error('Sin conexión');
+               const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}`);
+               const d = await r.json();
+               if (d.status === 'success') {
+                   // Encontrado: auto-rellenar directamente
+                   pago.value.docCliente = d.documento;
+                   pago.value.nombreCliente = d.nombre;
+                   busquedaNombre.value = '';
+                   agregarToast('Cliente', d.nombre + (d.fuente === 'api' ? ' · ' + d.tipo : ''));
+               } else {
+                   // No encontrado: abrir campo manual
+                   pago.value.docCliente = doc;
+                   clienteModoManual.value = true;
+               }
+           } catch(e) {
+               // Error de red: abrir campo manual igual
+               pago.value.docCliente = doc;
+               clienteModoManual.value = true;
+           } finally {
                buscandoCliente.value = false;
-               agregarToast('Cliente encontrado', pago.value.nombreCliente);
-               return;
            }
-           // 2º Fallback: usar el documento como identificador (sin API SUNAT)
-           setTimeout(() => {
-               pago.value.nombreCliente = 'CLIENTE ' + doc;
-               buscandoCliente.value = false;
-           }, 300);
+        };
+        const confirmarNombreManual = () => {
+           const nombre = clienteNombreManual.value.trim().toUpperCase();
+           if (!nombre) return;
+           pago.value.nombreCliente = nombre;
+           busquedaNombre.value = '';
+           clienteModoManual.value = false;
+           clienteNombreManual.value = '';
+           agregarToast('Cliente', nombre);
         };
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
@@ -3341,6 +3416,7 @@
           cambiarCantidad, eliminarItem, setMonto,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
+          clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,

@@ -49,6 +49,10 @@ function doGet(e) {
     return trasladosEntrantes(e.parameter.zona, e.parameter.desde);
   }
 
+  if (accion === 'consultar_cliente') {
+    return consultarCliente(e.parameter.doc);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({ error: "Acción no válida" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -705,4 +709,84 @@ function verificarDispositivo(deviceId) {
     status: "success",
     autorizado: autorizado
   })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ============================================================
+// CONSULTA DNI/RUC — vía APISPeru
+// Requiere propiedad de script: APISPERU_TOKEN
+// Registro en: https://apisperu.com/servicios/dniruc/
+// ============================================================
+function consultarCliente(doc) {
+  if (!doc) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Documento requerido' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  doc = String(doc).trim();
+
+  // 1. Buscar primero en la tabla local CLIENTES_FRECUENTES
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('CLIENTES_FRECUENTES');
+  if (sheet) {
+    var rows = sheet.getDataRange().getValues();
+    var headers = rows[0].map(function(h) { return String(h).trim(); });
+    var docIdx = headers.indexOf('Documento');
+    var nomIdx = headers.indexOf('Nombre');
+    if (docIdx >= 0 && nomIdx >= 0) {
+      for (var i = 1; i < rows.length; i++) {
+        if (String(rows[i][docIdx]).trim() === doc) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'success',
+            nombre: String(rows[i][nomIdx]),
+            documento: doc,
+            tipo: doc.length === 11 ? 'RUC' : 'DNI',
+            fuente: 'local'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    }
+  }
+
+  // 2. Consultar APISPeru
+  var token = PropertiesService.getScriptProperties().getProperty('APISPERU_TOKEN');
+  if (!token) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      message: 'Token no configurado. Agregar APISPERU_TOKEN en Propiedades del script.'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  try {
+    var tipo = doc.length === 11 ? 'ruc' : 'dni';
+    var url = 'https://dniruc.apisperu.com/api/v1/' + tipo + '/' + doc + '?token=' + token;
+    var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    var json = JSON.parse(response.getContentText());
+
+    var nombre = '';
+    if (tipo === 'dni') {
+      nombre = [json.nombres, json.apellidoPaterno, json.apellidoMaterno].filter(Boolean).join(' ').trim();
+    } else {
+      nombre = (json.razonSocial || '').trim();
+    }
+
+    if (!nombre) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'not_found',
+        message: 'No se encontró información para ' + doc
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      nombre: nombre,
+      documento: doc,
+      tipo: tipo === 'ruc' ? 'RUC' : 'DNI',
+      fuente: 'api'
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (e) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      message: 'Error consultando API: ' + e.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
