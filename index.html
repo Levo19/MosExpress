@@ -284,13 +284,27 @@
                     <div class="flex gap-2 relative z-10">
                         <button @click="abrirModoCajero" class="flex-1 bg-white text-emerald-700 font-black text-xs py-3 rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-1.5 border-2 border-white/80">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                            MODO CAJERO
+                            CAJERO
+                        </button>
+                        <button @click="modalExtra = true" class="flex-1 bg-amber-400 hover:bg-amber-300 text-amber-900 font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            EXTRA
                         </button>
                         <button @click="cerrarCaja" :disabled="procesandoCierre" class="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                             <svg v-if="procesandoCierre" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                             <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                            {{ procesandoCierre ? 'CERRANDO...' : 'CERRAR TURNO' }}
+                            {{ procesandoCierre ? 'CERRANDO...' : 'CERRAR' }}
                         </button>
+                    </div>
+                    <!-- Mini-lista de extras del turno -->
+                    <div v-if="extrasMovimientos.length > 0" class="mt-3 bg-black/20 rounded-2xl p-3 relative z-10">
+                        <p class="text-emerald-200 text-[10px] font-black uppercase tracking-widest mb-2">Extras del turno</p>
+                        <div v-for="(ex, i) in extrasMovimientos" :key="i" class="flex justify-between items-center text-xs mb-1">
+                            <span class="text-white font-semibold truncate flex-1">{{ ex.concepto }}</span>
+                            <span class="font-black ml-2 shrink-0" :class="ex.tipo === 'INGRESO' ? 'text-emerald-300' : 'text-red-300'">
+                                {{ ex.tipo === 'INGRESO' ? '+' : '-' }} S/ {{ parseFloat(ex.monto).toFixed(2) }}
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <!-- Header Vendedor: solo nombre, estación y cerrar sesión -->
@@ -328,7 +342,7 @@
                     
                     <div v-for="venta in ventasHistorialFiltradas" :key="venta.id"
                          class="rounded-2xl border shadow-sm overflow-hidden text-gray-800 transition-all"
-                         :class="[venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : venta.cobrado ? 'bg-emerald-50 border-emerald-200' : (venta.raw_data?.header?.metodo === 'POR_COBRAR' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'), venta.isNew ? 'ticket-nuevo' : '']">
+                         :class="[venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : venta.cobrado ? 'bg-emerald-50 border-emerald-200' : venta.credito ? 'bg-orange-50 border-orange-300' : (venta.raw_data?.header?.metodo === 'POR_COBRAR' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'), venta.isNew ? 'ticket-nuevo' : '']">
 
                         <div @click="expandirTicket(venta)" class="p-4 flex justify-between items-center cursor-pointer hover:bg-black hover:bg-opacity-5 active:bg-opacity-10">
                             <div class="flex flex-col gap-1 min-w-0">
@@ -343,8 +357,8 @@
                                     </span>
                                     <!-- FormaPago -->
                                     <span class="px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wide"
-                                          :class="venta.anulada ? 'bg-red-100 text-red-600' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'POR_COBRAR' ? 'bg-amber-100 text-amber-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'EFECTIVO' ? 'bg-emerald-100 text-emerald-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'VIRTUAL' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'">
-                                      {{ venta.anulada ? 'ANULADO' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo || 'POR_COBRAR').replace('POR_COBRAR', 'POR COBRAR') }}
+                                          :class="venta.anulada ? 'bg-red-100 text-red-600' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'CREDITO' ? 'bg-orange-100 text-orange-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'POR_COBRAR' ? 'bg-amber-100 text-amber-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'EFECTIVO' ? 'bg-emerald-100 text-emerald-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'VIRTUAL' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'">
+                                      {{ venta.anulada ? 'ANULADO' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo || 'POR_COBRAR').replace('POR_COBRAR', 'POR COBRAR').replace('CREDITO', 'CRÉDITO') }}
                                     </span>
                                     <!-- Estado Envío (SUNAT) -->
                                     <span class="px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wide"
@@ -366,6 +380,7 @@
                             <div class="p-4 text-xs text-gray-500 font-mono space-y-0.5">
                                 <p><span class="font-bold text-gray-600">Cliente:</span> {{ venta.cliente_doc || '-' }} — {{ venta.cliente_nombre }}</p>
                                 <p><span class="font-bold text-gray-600">Hora:</span> {{ new Date(venta.timestamp).toLocaleTimeString() }}</p>
+                                <p v-if="venta.obs" class="text-orange-700 font-semibold"><span class="font-bold text-orange-800">Crédito a:</span> {{ venta.obs }}</p>
                             </div>
                             <!-- Items del ticket -->
                             <div class="px-4 pb-2">
@@ -389,7 +404,12 @@
                                             :disabled="venta.cobrado || venta.anulada"
                                             class="flex-1 min-w-[80px] font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors"
                                             :class="venta.cobrado ? 'bg-emerald-100 text-emerald-700' : venta.anulada ? 'bg-gray-100 text-gray-400' : 'bg-posPrimary text-white shadow-md'">
-                                        {{ venta.cobrado ? '✓ Cobrado' : 'Cobrar' }}
+                                        {{ venta.cobrado ? '✓ Cobrado' : venta.credito ? 'Cobrar crédito' : 'Cobrar' }}
+                                    </button>
+                                    <button v-if="!venta.cobrado && !venta.anulada && !venta.credito"
+                                            @click="abrirModalCredito(venta)"
+                                            class="flex-1 min-w-[80px] bg-orange-500 text-white font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors shadow-md">
+                                        Crédito
                                     </button>
                                     <button @click="!venta.anulada && anularVenta(venta)"
                                             :disabled="venta.anulada"
@@ -1053,6 +1073,92 @@
         </div>
     </div>
 
+    <!-- ===== MODAL: CRÉDITO (cajero marca ticket como crédito) ===== -->
+    <div v-if="modalCredito && ticketParaCredito" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">Marcar como CRÉDITO</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaCredito.correlativo }} · S/ {{ ticketParaCredito.total.toFixed(2) }}</p>
+                </div>
+                <button @click="modalCredito = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-4">
+                <p class="text-orange-700 text-xs font-bold">El ticket quedará marcado como <strong>CRÉDITO</strong>. No será anulado al cerrar el turno. El cajero podrá cobrarlo después.</p>
+            </div>
+            <label class="block text-xs font-black text-gray-600 uppercase tracking-wider mb-1.5">¿A quién se da el crédito? <span class="text-red-500">*</span></label>
+            <input v-model="obsCredito" type="text" placeholder="Ej: Juan Pérez — paga el lunes" maxlength="120"
+                   class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-gray-800 font-semibold focus:border-orange-400 outline-none text-sm mb-4">
+            <button @click="confirmarCredito"
+                    :disabled="!obsCredito.trim()"
+                    class="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
+                CONFIRMAR CRÉDITO
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: EXTRA DE CAJA (ingreso/egreso extra) ===== -->
+    <div v-if="modalExtra" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-black text-gray-800">Movimiento Extra</h2>
+                <button @click="modalExtra = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <!-- Tipo: INGRESO / EGRESO -->
+            <div class="flex gap-3 mb-4">
+                <button @click="nuevoExtra.tipo = 'INGRESO'"
+                        class="flex-1 py-4 rounded-2xl font-black text-sm border-2 transition-all"
+                        :class="nuevoExtra.tipo === 'INGRESO' ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg' : 'bg-gray-50 text-gray-500 border-gray-200'">
+                    + INGRESO
+                </button>
+                <button @click="nuevoExtra.tipo = 'EGRESO'"
+                        class="flex-1 py-4 rounded-2xl font-black text-sm border-2 transition-all"
+                        :class="nuevoExtra.tipo === 'EGRESO' ? 'bg-red-500 text-white border-red-500 shadow-lg' : 'bg-gray-50 text-gray-500 border-gray-200'">
+                    - EGRESO
+                </button>
+            </div>
+            <!-- Conceptos rápidos -->
+            <p class="text-xs font-black text-gray-500 uppercase tracking-wider mb-2">Concepto rápido</p>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+                <template v-if="nuevoExtra.tipo === 'EGRESO'">
+                    <button v-for="c in ['Retiro jefe','Pago proveedor','Gasto operativo','Fondo cambio']" :key="c"
+                            @click="nuevoExtra.concepto = c"
+                            class="py-2.5 px-3 rounded-xl text-xs font-bold border-2 transition-all active:scale-95"
+                            :class="nuevoExtra.concepto === c ? 'bg-red-100 text-red-700 border-red-300' : 'bg-gray-50 text-gray-600 border-gray-100'">
+                        {{ c }}
+                    </button>
+                </template>
+                <template v-else>
+                    <button v-for="c in ['Abono deuda','Adelanto cliente','Retorno efectivo','Otro ingreso']" :key="c"
+                            @click="nuevoExtra.concepto = c"
+                            class="py-2.5 px-3 rounded-xl text-xs font-bold border-2 transition-all active:scale-95"
+                            :class="nuevoExtra.concepto === c ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : 'bg-gray-50 text-gray-600 border-gray-100'">
+                        {{ c }}
+                    </button>
+                </template>
+            </div>
+            <input v-model="nuevoExtra.concepto" type="text" placeholder="O escribe el concepto aquí..." maxlength="80"
+                   class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-gray-800 font-semibold focus:border-amber-400 outline-none text-sm mb-3">
+            <!-- Monto -->
+            <label class="block text-xs font-black text-gray-600 uppercase tracking-wider mb-1.5">Monto S/ <span class="text-red-500">*</span></label>
+            <input v-model="nuevoExtra.monto" type="number" step="0.10" min="0" placeholder="0.00"
+                   class="w-full border-2 border-gray-200 rounded-xl px-4 py-4 text-gray-800 font-black text-3xl text-center focus:border-amber-400 outline-none mb-3">
+            <!-- Observación opcional -->
+            <label class="block text-xs font-black text-gray-600 uppercase tracking-wider mb-1.5">Detalle / Observación (opcional)</label>
+            <textarea v-model="nuevoExtra.obs" rows="2" placeholder="Ej: El jefe retiró S/200 para pago de alquiler"
+                      class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-gray-800 font-semibold focus:border-amber-400 outline-none text-sm resize-none mb-4"></textarea>
+            <button @click="registrarExtra" :disabled="procesandoExtra || !nuevoExtra.concepto.trim() || !nuevoExtra.monto"
+                    class="w-full font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all disabled:bg-gray-200 disabled:text-gray-400"
+                    :class="nuevoExtra.tipo === 'EGRESO' ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-emerald-500 text-white hover:bg-emerald-600'">
+                {{ procesandoExtra ? 'REGISTRANDO...' : (nuevoExtra.tipo === 'EGRESO' ? '- REGISTRAR EGRESO' : '+ REGISTRAR INGRESO') }}
+            </button>
+        </div>
+    </div>
+
     <!-- ===== MODAL FULLSCREEN: GUÍAS DE STOCK ===== -->
     <div v-if="modoGuias" class="fixed inset-0 bg-gray-900 z-[70] flex flex-col overflow-hidden">
         <!-- Header -->
@@ -1397,7 +1503,16 @@
         const ventaCobrar = ref(null);
         const pagoCobroPendiente = ref({ metodo: 'EFECTIVO', montoRecibido: 0, montoVirtual: 0 });
         const procesandoCobro = ref(false);
-        
+        // Estado CREDITO (cajero marca ticket como crédito + observación)
+        const modalCredito = ref(false);
+        const ticketParaCredito = ref(null);
+        const obsCredito = ref('');
+        // Estado EXTRAS de caja (movimientos que afectan el saldo: ingresos/egresos extra)
+        const extrasMovimientos = ref([]);
+        const modalExtra = ref(false);
+        const procesandoExtra = ref(false);
+        const nuevoExtra = ref({ tipo: 'EGRESO', monto: '', concepto: '', obs: '' });
+
         // --- MÓDULO B: POS ---
         const bBuscador = ref('');
         const scannerInput = ref(null);
@@ -1718,6 +1833,8 @@
               if (st) sessionStartTime.value = st;
               const cs = localStorage.getItem('mosexpress_cobrados_sesion');
               if (cs) cobradosEnSesion.value = JSON.parse(cs);
+              const es = localStorage.getItem('mosexpress_extras_sesion');
+              if (es) extrasMovimientos.value = JSON.parse(es);
           } catch(e) {}
 
           // Si no es cajero, nunca requiere apertura de caja
@@ -2123,8 +2240,10 @@
                         isNew: false,
                         raw_data: { auth: { vendedor: v.vendedor }, header: { metodo: v.forma_pago || '', tipoDoc: v.tipo_doc || '' }, items: [] },
                         syncStatus: v.status === 'COMPLETADO' ? 'synced' : 'pending',
-                        cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && !!v.forma_pago,
+                        cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && v.forma_pago !== 'CREDITO' && !!v.forma_pago,
                         anulada: v.forma_pago === 'ANULADO',
+                        credito: v.forma_pago === 'CREDITO',
+                        obs: String(v.obs || ''),
                         id_venta_gas: v.id_venta,
                         ref_local: v.ref_local || ''
                     };
@@ -2136,6 +2255,8 @@
                         if (idx !== -1 && !ventasZona.value[idx].cobradoMetodo) {
                             ventasZona.value[idx].cobrado = norm.cobrado;
                             ventasZona.value[idx].anulada = norm.anulada;
+                            ventasZona.value[idx].credito = norm.credito;
+                            ventasZona.value[idx].obs = norm.obs;
                             ventasZona.value[idx].raw_data.header.metodo = norm.raw_data.header.metodo;
                         }
                     }
@@ -2143,8 +2264,8 @@
 
                 if (nuevas.length > 0) {
                     ventasZona.value.unshift(...nuevas);
-                    // Solo sonar si hay tickets pendientes de cobro (no cobrados)
-                    if (nuevas.some(t => !t.cobrado && !t.anulada)) playCoinSound();
+                    // Solo sonar si hay tickets POR_COBRAR nuevos (no crédito, no cobrado)
+                    if (nuevas.some(t => !t.cobrado && !t.anulada && !t.credito)) playCoinSound();
                     // Flash del marco completo
                     flashNuevosTickets.value = false;
                     nextTick(() => { flashNuevosTickets.value = true; });
@@ -2300,8 +2421,10 @@
             cajaAbierta.value = true; idCajaActual.value = cid; montoAperturaMemoria.value = montoApertura.value;
             sessionStartTime.value = new Date().toISOString();
             cobradosEnSesion.value = [];
+            extrasMovimientos.value = [];
             localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
             localStorage.removeItem('mosexpress_cobrados_sesion');
+            localStorage.removeItem('mosexpress_extras_sesion');
             localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto: montoAperturaMemoria.value, fecha: Date.now() }));
             procesandoCaja.value = false;
             agregarToast("Éxito", "Caja Aperturada");
@@ -2324,12 +2447,18 @@
 
              const tEfectivo = tEfectivoCobros + tEfectivoPropios;
              const tVirtual  = tVirtualCobros  + tVirtualPropios;
-             const montoFinal = montoAperturaMemoria.value + tEfectivo;
 
-             // --- Tickets POR_COBRAR que no se cobraron → anular en GAS ---
+             // --- Extras del turno (ingresos suman, egresos restan) ---
+             const tExtrasIngreso = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO' ? parseFloat(e.monto) : 0), 0);
+             const tExtrasEgreso  = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO'  ? parseFloat(e.monto) : 0), 0);
+             const montoFinal = montoAperturaMemoria.value + tEfectivo + tExtrasIngreso - tExtrasEgreso;
+
+             // --- Tickets POR_COBRAR sin cobrar → anular (los CREDITO NO se anulan) ---
              const idsAnular = ventasZona.value
-                 .filter(v => !v.cobrado && !v.anulada)
+                 .filter(v => !v.cobrado && !v.anulada && !v.credito)
                  .map(v => v.id_venta_gas);
+             const ticketsCredito = ventasZona.value.filter(v => v.credito);
+             const tCreditoTotal  = ticketsCredito.reduce((s, v) => s + v.total, 0);
 
              // --- Desglose por vendedor ---
              const porVendedor = {};
@@ -2344,11 +2473,11 @@
              const ultimoCobro = cobradosEnSesion.value.length ? cobradosEnSesion.value[cobradosEnSesion.value.length - 1].correlativo : '-';
              const horaApertura = sessionStartTime.value ? new Date(sessionStartTime.value).toLocaleString() : '-';
 
-             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtual.toFixed(2)}\nNo cobrados a anular: ${idsAnular.length}`;
+             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtual.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nNo cobrados a anular: ${idsAnular.length}\nEn crédito (no se anulan): ${ticketsCredito.length}`;
              if(!confirm(`¿Cerrar Turno?\n\n${resumen}`)) return;
 
 
-             if(!confirm(`¿Seguro que deseas Cerrar Turno?\n\nBase Local: S/ ${montoAperturaMemoria.value.toFixed(2)}\nTotal Ventas Efectivo: S/ ${tEfectivo.toFixed(2)}\nTotal Yape/Virtual: S/ ${tVirtual.toFixed(2)}\n\nEFECTIVO EN CAJÓN: S/ ${montoFinal.toFixed(2)}`)) return;
+             if(!confirm(`¿Seguro? Se imprimirá el Ticket Z.\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtual.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)`)) return;
 
              procesandoCierre.value = true;
 
@@ -2366,46 +2495,195 @@
                  } catch(e) { agregarToast("Aviso Red", "Cierre local (Cola)"); }
              }
 
-             // 3. Ticket Z completo
-             let txt = "\x1b\x40\x1b\x61\x01";
-             txt += "\x1b\x21\x30MOSexpress\n";
-             txt += "\x1b\x21\x00================================================\n";
-             txt += "\x1b\x21\x10CIERRE DE TURNO (Z)\n";
-             txt += "\x1b\x21\x00================================================\n";
+             // 3. Datos del turno para el Ticket Z
+             const startTs    = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
+             const tksTurno   = ventasZona.value.filter(v => v.timestamp >= startTs);
+             const anulados   = tksTurno.filter(v => v.anulada);
+             const tAnulTotal = anulados.reduce((s,v) => s+v.total, 0);
+             // Correlativos por tipo (solo no anulados)
+             const corrPorTipo = {};
+             tksTurno.filter(v => !v.anulada).forEach(v => {
+                 if (!v.tipo || !v.correlativo) return;
+                 if (!corrPorTipo[v.tipo]) corrPorTipo[v.tipo] = [];
+                 corrPorTipo[v.tipo].push(v.correlativo);
+             });
+             // Performance por vendedor
+             const pMap = {};
+             cobradosEnSesion.value.forEach(c => {
+                 const n = c.vendedor || 'Vendedor';
+                 if (!pMap[n]) pMap[n] = { tks:0, efe:0, vir:0, total:0, esCaj:false };
+                 pMap[n].tks++; pMap[n].efe += c.efectivo||0; pMap[n].vir += c.virtual||0; pMap[n].total += c.total||0;
+             });
+             const cajN = config.value.vendedor;
+             if (tEfectivoPropios > 0 || tVirtualPropios > 0) {
+                 const propTks = ventasHoy.value.filter(v => !v.anulada &&
+                     v.raw_data?.header?.metodo !== 'POR_COBRAR' &&
+                     !String(v.raw_data?.header?.metodo||'').includes('POR COBRAR')).length;
+                 if (!pMap[cajN]) pMap[cajN] = { tks:0, efe:0, vir:0, total:0, esCaj:true };
+                 pMap[cajN].esCaj = true;
+                 pMap[cajN].tks   += propTks;
+                 pMap[cajN].efe   += tEfectivoPropios;
+                 pMap[cajN].vir   += tVirtualPropios;
+                 pMap[cajN].total += tEfectivoPropios + tVirtualPropios;
+             } else if (pMap[cajN]) { pMap[cajN].esCaj = true; }
+             const pTotal = Object.values(pMap).reduce((s,p) => s+p.total, 0);
+             // ── Helpers de formato (80mm = 48 chars ancho) ──────
+             const W    = 48;
+             const SEP  = '='.repeat(W) + '\n';
+             const SEPd = '-'.repeat(W) + '\n';
+             // Encabezado de sección centrado entre separadores
+             const sHdr = (t) => { const s=' '+t+' '; const l=Math.floor((W-s.length)/2); const r=W-s.length-l; return '='.repeat(l)+s+'='.repeat(r)+'\n'; };
+             // Monto con signo: " S/123.45" o "-S/123.45", ancho w
+             const amtN  = (n,w) => { const v=parseFloat(n)||0; const s=(v<0?'-':' ')+'S/'+Math.abs(v).toFixed(2); return s.padStart(w,' '); };
+             // Monto positivo: "S/123.45" padStart(w)
+             const amtP  = (n,w) => ('S/'+(parseFloat(n)||0).toFixed(2)).padStart(w,' ');
+             // Texto left-padded
+             const lPad  = (s,w) => String(s||'').substring(0,w).padEnd(w,' ');
+             // Fila tabla resumen: label(14)+efe(17)+virt(17) = 48
+             const sRow  = (lbl,efe,vir) => lPad(lbl,14)+amtN(efe,17)+amtN(vir,17)+'\n';
+             // Fila tabla performance: name(15)+tks(5)sp+efe(13)sp+vir(13) = 48
+             const pRow  = (nm,tk,efe,vir) => lPad(nm,15)+String(tk).padStart(5)+' '+amtP(efe,13)+' '+amtP(vir,12)+'\n';
+             // Barra visual de porcentaje [####----] XX%
+             const mkBar = (pct) => { const f=Math.round(pct*26/100); return '  ['+'#'.repeat(f)+'-'.repeat(26-f)+'] '+String(Math.round(pct)).padStart(3)+'%\n'; };
+
+             // 4. Ticket Z — 8 partes
+             let txt = "\x1b\x40";
+
+             // ══ PARTE 1: CABECERA ════════════════════════════
+             txt += "\x1b\x61\x01";
+             txt += "\x1b\x21\x30MOSexpress\x1b\x21\x00\n";
+             txt += "\x1b\x45\x01\x1b\x21\x10CIERRE DE TURNO (Z)\x1b\x21\x00\x1b\x45\x00\n";
+             txt += SEP;
              txt += "\x1b\x61\x00";
              txt += "CAJERO  : " + config.value.vendedor + "\n";
              txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
              txt += "APERTURA: " + horaApertura + "\n";
              txt += "CIERRE  : " + new Date().toLocaleString() + "\n";
-             txt += "1er COBRO: " + primerCobro + "\n";
-             txt += "ULT COBRO: " + ultimoCobro + "\n";
-             txt += "================================================\n";
-             txt += "      RESUMEN DE COBROS DEL TURNO\n";
-             txt += "------------------------------------------------\n";
-             txt += "SALDO BASE    : S/ " + montoAperturaMemoria.value.toFixed(2) + "\n";
-             txt += "COBROS EFECT  : S/ " + tEfectivoCobros.toFixed(2) + "\n";
-             txt += "COBROS VIRTUAL: S/ " + tVirtualCobros.toFixed(2) + "\n";
-             if (tEfectivoPropios > 0 || tVirtualPropios > 0) {
-                 txt += "VENTAS PROPIAS: S/ " + (tEfectivoPropios + tVirtualPropios).toFixed(2) + "\n";
+             txt += SEPd;
+             const vdList = [...new Set(cobradosEnSesion.value.map(c=>c.vendedor).filter(Boolean))];
+             if (vdList.length > 0) {
+                 txt += "VENDEDORES A CARGO:\n";
+                 vdList.forEach(v => { txt += "  + " + v + "\n"; });
              }
-             txt += "------------------------------------------------\n";
+             txt += "TICKETS COBRADOS : " + cobradosEnSesion.value.length + "\n";
+             txt += "ANULADOS         : " + anulados.length + "\n";
+             txt += "CREDITOS(c/p)    : " + ticketsCredito.length + "\n";
+
+             // ══ PARTE 2: MONTO A RECIBIR (para la jefa) ══════
+             txt += SEP;
+             txt += "\x1b\x61\x01";
+             txt += "\n\x1b\x45\x01-- SE DEBE RECIBIR --\x1b\x45\x00\n\n";
+             txt += "\x1b\x21\x30S/ " + montoFinal.toFixed(2) + "\x1b\x21\x00\n\n";
+             txt += "EFECTIVO EN CAJON\n";
+             txt += "\x1b\x61\x00";
+             if (tVirtual > 0) {
+                 txt += SEPd;
+                 txt += "\x1b\x61\x01VIRTUAL RECIBIDO:\n";
+                 txt += "\x1b\x21\x10S/ " + tVirtual.toFixed(2) + "\x1b\x21\x00\n";
+                 txt += "\x1b\x61\x00";
+             }
+
+             // ══ PARTE 3: TABLA RESUMEN ════════════════════════
+             txt += sHdr('RESUMEN DEL TURNO');
+             txt += lPad('CONCEPTO',14)+'  EFECTIVO         VIRTUAL\n';
+             txt += SEPd;
+             txt += sRow('Base inicial',    montoAperturaMemoria.value,  0);
+             txt += sRow('Ventas cobradas', tEfectivo,                   tVirtual);
+             if (tCreditoTotal > 0)
+                 txt += sRow('Creditos (c/p)', -tCreditoTotal,           0);
+             if (tExtrasIngreso > 0 || tExtrasEgreso > 0)
+                 txt += sRow('Extras neto',    tExtrasIngreso-tExtrasEgreso, 0);
+             txt += SEPd;
              txt += "\x1b\x45\x01";
-             txt += "TOTAL EFECTIVO: S/ " + tEfectivo.toFixed(2) + "\n";
-             txt += "TOTAL VIRTUAL : S/ " + tVirtual.toFixed(2) + "\n";
-             txt += "CAJA FINAL    : S/ " + montoFinal.toFixed(2) + "\n";
+             txt += sRow('EFECTIVO FINAL',  montoFinal,                  tVirtual);
              txt += "\x1b\x45\x00";
-             txt += "================================================\n";
-             txt += "      DETALLE POR VENDEDOR\n";
-             txt += "------------------------------------------------\n";
-             Object.entries(porVendedor).forEach(([vend, datos]) => {
-                 txt += "VENDEDOR: " + vend + "\n";
-                 txt += "  Tickets : " + datos.tickets + "   Total: S/ " + datos.total.toFixed(2) + "\n";
-             });
-             if (Object.keys(porVendedor).length === 0) txt += "Sin cobros de vendedores\n";
-             txt += "================================================\n";
-             txt += "NO COBRADOS ANULADOS: " + idsAnular.length + "\n";
-             txt += "================================================\n";
-             txt += "\x1b\x61\x01*** FIN DE TURNO ***\n";
+             if (tCreditoTotal > 0) txt += "  (c/p)=credito pendiente, no en caja\n";
+
+             // ══ PARTE 4: CORRELATIVOS DEL TURNO ══════════════
+             txt += sHdr('CORRELATIVOS DEL TURNO');
+             const TLBL = { NOTA_DE_VENTA:'Notas V.', BOLETA:'Boletas ', FACTURA:'Facturas' };
+             if (Object.keys(corrPorTipo).length === 0) {
+                 txt += "  Sin comprobantes emitidos en este turno\n";
+             } else {
+                 Object.entries(corrPorTipo).forEach(([tipo, corrs]) => {
+                     const sorted = [...corrs].sort();
+                     const label  = (TLBL[tipo]||tipo).padEnd(9);
+                     txt += label + ": " + sorted[0] + "\n";
+                     if (sorted.length > 1) txt += "           a: " + sorted[sorted.length-1] + "\n";
+                     txt += "  Total: " + corrs.length + " comprobante" + (corrs.length!==1?'s':'') + "\n";
+                 });
+             }
+
+             // ══ PARTE 5: ANULADOS ════════════════════════════
+             txt += sHdr('ANULADOS (' + anulados.length + ')');
+             if (anulados.length > 0) {
+                 txt += lPad('CORRELATIVO',22) + 'MONTO'.padStart(10) + '\n' + SEPd;
+                 anulados.forEach(v => {
+                     txt += lPad(v.correlativo,22) + amtN(-v.total,10) + "  ANULADO\n";
+                 });
+                 txt += SEPd;
+                 txt += "TOTAL ANULADO".padEnd(22) + amtN(-tAnulTotal,10) + "\n";
+             } else {
+                 txt += "  Sin anulados en este turno\n";
+             }
+
+             // ══ PARTE 6: CREDITOS PENDIENTES ══════════════════
+             txt += sHdr('CREDITOS PENDIENTES (' + ticketsCredito.length + ')');
+             if (ticketsCredito.length > 0) {
+                 txt += lPad('CORRELATIVO',18) + 'MONTO'.padStart(12) + '\n' + SEPd;
+                 ticketsCredito.forEach(v => {
+                     txt += lPad(v.correlativo,18) + amtP(v.total,12) + "\n";
+                     if (v.obs) txt += "  A: " + v.obs.substring(0,43) + "\n";
+                 });
+                 txt += SEPd;
+                 txt += "TOTAL CREDITO".padEnd(18) + amtP(tCreditoTotal,12) + "\n";
+                 txt += "  ** No incluido en caja — deuda pendiente\n";
+             } else {
+                 txt += "  Sin creditos otorgados en este turno\n";
+             }
+
+             // ══ PARTE 7: EXTRAS DEL TURNO ════════════════════
+             txt += sHdr('EXTRAS DEL TURNO (' + extrasMovimientos.value.length + ')');
+             if (extrasMovimientos.value.length > 0) {
+                 extrasMovimientos.value.forEach(ex => {
+                     const signo = ex.tipo==='INGRESO' ? '+' : '-';
+                     const mEx   = ex.tipo==='INGRESO' ? parseFloat(ex.monto) : -parseFloat(ex.monto);
+                     txt += signo + " " + lPad(ex.concepto,22) + amtN(mEx,12) + "\n";
+                     if (ex.obs) txt += "    " + ex.obs.substring(0,44) + "\n";
+                 });
+                 txt += SEPd;
+                 if (tExtrasIngreso>0) txt += "+ INGRESOS       " + amtP(tExtrasIngreso,14) + "\n";
+                 if (tExtrasEgreso >0) txt += "- EGRESOS        " + amtN(-tExtrasEgreso,14) + "\n";
+                 txt += "\x1b\x45\x01";
+                 txt += "  NETO EXTRAS    " + amtN(tExtrasIngreso-tExtrasEgreso,14) + "\n";
+                 txt += "\x1b\x45\x00";
+             } else {
+                 txt += "  Sin movimientos extra en este turno\n";
+             }
+
+             // ══ PARTE 8: DESEMPENO POR VENDEDOR ══════════════
+             txt += sHdr('DESEMPENO DEL TURNO');
+             if (Object.keys(pMap).length > 0) {
+                 txt += lPad('VENDEDOR',15) + 'TICK.' + ' ' + 'EFECTIVO '.padStart(13) + ' ' + 'VIRTUAL'.padStart(12) + '\n';
+                 txt += SEPd;
+                 // Ordenar por total descendente
+                 Object.entries(pMap).sort((a,b) => b[1].total - a[1].total).forEach(([nombre, p]) => {
+                     const label = (p.esCaj ? nombre+'(caj)' : nombre).substring(0,15).padEnd(15);
+                     txt += label + String(p.tks).padStart(5) + ' ' + amtP(p.efe,13) + ' ' + amtP(p.vir,12) + '\n';
+                     if (pTotal > 0) txt += mkBar(Math.round(p.total*100/pTotal));
+                 });
+                 txt += SEPd;
+                 txt += "\x1b\x45\x01";
+                 txt += pRow('TOTAL TURNO', cobradosEnSesion.value.length + (tEfectivoPropios>0||tVirtualPropios>0 ? Object.keys(pMap).filter(k => pMap[k].esCaj).reduce((s,k)=>s+pMap[k].tks,0) : 0), pTotal===0?tEfectivo:(Object.values(pMap).reduce((s,p)=>s+p.efe,0)), pTotal===0?tVirtual:(Object.values(pMap).reduce((s,p)=>s+p.vir,0)));
+                 txt += "\x1b\x45\x00";
+             } else {
+                 txt += "  Sin datos de vendedores en este turno\n";
+             }
+
+             // ══ PIE ══════════════════════════════════════════
+             txt += SEP;
+             txt += "\x1b\x61\x01";
+             txt += "\x1b\x45\x01*** FIN DE TURNO ***\x1b\x45\x00\n";
              txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
              mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Z", b64ESC(txt))
                 .catch(e => agregarToast('Error Impresión', e.message));
@@ -2416,7 +2694,9 @@
              idCajaActual.value = '';
              montoAperturaMemoria.value = 0;
              cobradosEnSesion.value = [];
+             extrasMovimientos.value = [];
              sessionStartTime.value = null;
+             localStorage.removeItem('mosexpress_extras_sesion');
              ventasZona.value = [];
              localStorage.removeItem('mosexpress_caja_activa');
              localStorage.removeItem('mosexpress_cobrados_sesion');
@@ -2436,6 +2716,69 @@
         };
 
         // --- CAJERO: carga tickets de zona desde GAS ---
+        // --- CAJERO: Marcar ticket como CRÉDITO ---
+        const abrirModalCredito = (venta) => {
+            ticketParaCredito.value = venta;
+            obsCredito.value = venta.obs || '';
+            modalCredito.value = true;
+        };
+
+        const confirmarCredito = async () => {
+            if (!obsCredito.value.trim()) { agregarToast('Requerido', 'Indica a quién se da el crédito'); return; }
+            if (!ticketParaCredito.value?.id_venta_gas) { agregarToast('Error', 'Ticket aún no sincronizado'); return; }
+            try {
+                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                    await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                        tipoEvento: 'CREDITAR_VENTA',
+                        idVenta: ticketParaCredito.value.id_venta_gas,
+                        obs: obsCredito.value.trim()
+                    })});
+                }
+            } catch(e) { /* offline: actualizar solo local */ }
+            const idx = ventasZona.value.findIndex(v => v.id === ticketParaCredito.value.id);
+            if (idx !== -1) {
+                ventasZona.value[idx].credito = true;
+                ventasZona.value[idx].obs = obsCredito.value.trim();
+                ventasZona.value[idx].raw_data.header.metodo = 'CREDITO';
+            }
+            modalCredito.value = false;
+            ticketParaCredito.value = null;
+            obsCredito.value = '';
+            agregarToast('Crédito registrado', 'El ticket fue marcado como CRÉDITO');
+        };
+
+        // --- CAJERO: Registrar movimiento EXTRA de caja ---
+        const registrarExtra = async () => {
+            const m = parseFloat(nuevoExtra.value.monto);
+            if (!m || m <= 0) { agregarToast('Error', 'Ingresa un monto válido'); return; }
+            if (!nuevoExtra.value.concepto.trim()) { agregarToast('Error', 'Ingresa el concepto'); return; }
+            procesandoExtra.value = true;
+            const extra = {
+                tipo: nuevoExtra.value.tipo,
+                monto: m,
+                concepto: nuevoExtra.value.concepto.trim(),
+                obs: nuevoExtra.value.obs.trim(),
+                timestamp: Date.now()
+            };
+            try {
+                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                    await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                        tipoEvento: 'EXTRA_CAJA',
+                        cajaId: idCajaActual.value,
+                        tipo: extra.tipo, monto: extra.monto,
+                        concepto: extra.concepto, obs: extra.obs,
+                        registradoPor: config.value.vendedor
+                    })});
+                }
+            } catch(e) { /* guardar local igualmente */ }
+            extrasMovimientos.value.push(extra);
+            localStorage.setItem('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value));
+            nuevoExtra.value = { tipo: 'EGRESO', monto: '', concepto: '', obs: '' };
+            modalExtra.value = false;
+            procesandoExtra.value = false;
+            agregarToast('Extra registrado', (extra.tipo === 'EGRESO' ? '- ' : '+ ') + 'S/ ' + extra.monto.toFixed(2) + ' — ' + extra.concepto);
+        };
+
         const cargarVentasZona = async () => {
             if (!config.value.estacion) return;
             cargandoZona.value = true;
@@ -2460,8 +2803,10 @@
                             expanded: false,
                             raw_data: { auth: { vendedor: v.vendedor }, header: { metodo: v.forma_pago || '', tipoDoc: v.tipo_doc || '' }, items: [] },
                             syncStatus: v.status === 'COMPLETADO' ? 'synced' : 'pending',
-                            cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && !!v.forma_pago,
+                            cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && v.forma_pago !== 'CREDITO' && !!v.forma_pago,
                             anulada: v.forma_pago === 'ANULADO',
+                            credito: v.forma_pago === 'CREDITO',
+                            obs: String(v.obs || ''),
                             id_venta_gas: v.id_venta,
                             ref_local: v.ref_local || ''
                         };
@@ -3591,7 +3936,9 @@
           stockMap, zonasUnicasStock,
           abrirAuditoria, cerrarAuditoria, iniciarAuditoria, confirmarAuditoria,
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
-          getNombrePres
+          getNombrePres,
+          modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
+          extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra
         };
       }
     });

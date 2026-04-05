@@ -53,6 +53,10 @@ function doGet(e) {
     return consultarCliente(e.parameter.doc);
   }
 
+  if (accion === 'extras_caja') {
+    return getExtrasCaja(e.parameter.cajaId);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({ error: "Acción no válida" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -76,6 +80,14 @@ function doPost(e) {
 
     if (data.tipoEvento === 'ANULACION_MASIVA') {
       return anulacionMasiva(data);
+    }
+
+    if (data.tipoEvento === 'CREDITAR_VENTA') {
+      return creditarVenta(data);
+    }
+
+    if (data.tipoEvento === 'EXTRA_CAJA') {
+      return registrarExtraCaja(data);
     }
 
     if (data.tipoEvento === 'ANULACION') {
@@ -236,17 +248,18 @@ function procesarVenta(data) {
   var correlativoNumero = obtenerSiguienteCorrelativo(sheetCabecera, pos.serieActual);
   var correlativoFinal = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
 
-  // Esquema VENTAS_CABECERA (14 columnas):
+  // Esquema VENTAS_CABECERA (15 columnas):
   // ID_Venta | Fecha | Vendedor | Estacion | Cliente_Doc | Cliente_Nombre | Total
-  // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio | Ref_Local
+  // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio | Ref_Local | Obs
   var refLocal = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
   sheetCabecera.appendRow([
     idVenta, fechaActual, auth.vendedor, auth.estacion,
     header.cliente.doc, header.cliente.nombre, header.total,
     header.tipoDoc,                    // col 8: Tipo_Doc  (limpio)
-    header.metodo || 'EFECTIVO',       // col 9: FormaPago (EFECTIVO/VIRTUAL/MIXTO/POR_COBRAR)
+    header.metodo || 'EFECTIVO',       // col 9: FormaPago (EFECTIVO/VIRTUAL/MIXTO/POR_COBRAR/CREDITO)
     correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO",
-    refLocal                           // col 14: Ref_Local (ID del dispositivo para cross-ref QR)
+    refLocal,                          // col 14: Ref_Local (ID del dispositivo para cross-ref QR)
+    String(header.obs || '')           // col 15: Obs (observaciones / nota de crédito)
   ]);
 
   // Esquema VENTAS_DETALLE (7 columnas):
@@ -440,7 +453,8 @@ function ventasHoyZona(prefijosStr) {
       id_caja:        String(data[i][10] || ''),
       id_dispositivo: String(data[i][11] || ''),
       status:         String(data[i][12] || ''),  // col 13: Estado_Envio
-      ref_local:      String(data[i][13] || '')   // col 14: Ref_Local (cross-ref QR)
+      ref_local:      String(data[i][13] || ''), // col 14: Ref_Local (cross-ref QR)
+      obs:            String(data[i][14] || '')  // col 15: Obs
     });
   }
 
@@ -490,6 +504,72 @@ function cobrarVentaExistente(data) {
     }
   }
   return generarRespuestaError("Venta con ID " + data.idVenta + " no encontrada.");
+}
+
+// Marca una venta como CREDITO y guarda observación (tipoEvento='CREDITAR_VENTA')
+function creditarVenta(data) {
+  if (!data.idVenta) return generarRespuestaError("idVenta requerido");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("VENTAS_CABECERA");
+  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
+  var filas = sheet.getDataRange().getValues();
+  for (var i = 1; i < filas.length; i++) {
+    if (String(filas[i][0]) === String(data.idVenta)) {
+      sheet.getRange(i + 1, 9).setValue('CREDITO');        // col 9: FormaPago
+      sheet.getRange(i + 1, 15).setValue(String(data.obs || '')); // col 15: Obs
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success", mensaje: "Crédito registrado"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return generarRespuestaError("Venta " + data.idVenta + " no encontrada.");
+}
+
+// Registra un movimiento extra de caja (ingreso o egreso no asociado a venta)
+function registrarExtraCaja(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("MOVIMIENTOS_EXTRA");
+  if (!sheet) {
+    sheet = ss.insertSheet("MOVIMIENTOS_EXTRA");
+    sheet.appendRow(["ID_Extra","ID_Caja","Timestamp","Tipo","Monto","Concepto","Obs","Registrado_Por"]);
+  }
+  var id = "EX-" + new Date().getTime();
+  sheet.appendRow([
+    id,
+    String(data.cajaId || ''),
+    new Date(),
+    String(data.tipo || 'EGRESO'),
+    parseFloat(data.monto) || 0,
+    String(data.concepto || ''),
+    String(data.obs || ''),
+    String(data.registradoPor || '')
+  ]);
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success", idExtra: id
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Devuelve los movimientos extra registrados para una caja
+function getExtrasCaja(cajaId) {
+  if (!cajaId) return generarRespuestaError("cajaId requerido");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("MOVIMIENTOS_EXTRA");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "success", extras: [] })).setMimeType(ContentService.MimeType.JSON);
+  var data = sheet.getDataRange().getValues();
+  var result = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][1]) === String(cajaId)) {
+      result.push({
+        id:            String(data[i][0] || ''),
+        tipo:          String(data[i][3] || 'EGRESO'),
+        monto:         parseFloat(data[i][4]) || 0,
+        concepto:      String(data[i][5] || ''),
+        obs:           String(data[i][6] || ''),
+        registradoPor: String(data[i][7] || '')
+      });
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: "success", extras: result })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // Anula un ticket individual enviado desde el frontend (tipoEvento='ANULACION')
