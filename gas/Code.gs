@@ -193,12 +193,14 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   }
   if (!idsVenta.length) return;
 
-  // 2. Sumar cantidades por cod_barras
+  // 2. Sumar cantidades por Cod_Barras
+  // Col 6 (índice 6) = Cod_Barras real; col 1 (índice 1) = SKU (fallback para ventas antiguas sin col 7)
   var detalle = sheetVD.getDataRange().getValues();
   var totales = {};
   for (var j = 1; j < detalle.length; j++) {
     if (idsVenta.indexOf(String(detalle[j][0])) === -1) continue;
-    var cod = String(detalle[j][1]);
+    var cod = String(detalle[j][6] || detalle[j][1]).trim();
+    if (!cod) continue;
     totales[cod] = (totales[cod] || 0) + (parseFloat(detalle[j][3]) || 0);
   }
 
@@ -210,7 +212,7 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   // GUIAS_CABECERA: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
   sheetGC.appendRow([idGuia, new Date(), vendedor, zona, 'SALIDA_VENTAS', 'Auto cierre de caja · ' + cajaId, '', 'CONFIRMADO']);
   cods.forEach(function(cod) {
-    sheetGD.appendRow([idGuia, cod, totales[cod]]);
+    sheetGD.appendRow([idGuia, String(cod), totales[cod]]);
     actualizarStockFila(sheetStock, cod, zona, -totales[cod]);
   });
 }
@@ -247,9 +249,12 @@ function procesarVenta(data) {
     refLocal                           // col 14: Ref_Local (ID del dispositivo para cross-ref QR)
   ]);
 
+  // Esquema VENTAS_DETALLE (7 columnas):
+  // ID_Venta | SKU | Nombre | Cantidad | Precio | Subtotal | Cod_Barras
   items.forEach(function(item) {
     sheetDetalle.appendRow([
-      idVenta, item.sku, item.nombre, item.cantidad, item.precio, item.subtotal
+      idVenta, item.sku, item.nombre, item.cantidad, item.precio, item.subtotal,
+      String(item.codBarras || '')   // col 7: código de barras real — forzar texto
     ]);
   });
 
@@ -322,6 +327,9 @@ function descargarCatalogo() {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+// Columnas que deben tratarse siempre como texto (nunca como número)
+var COLUMNAS_TEXTO = ['Cod_Barras', 'Cod_Barras_Real', 'SKU_Base', 'SKU', 'ID_Dispositivo', 'ID_Venta', 'ID_Caja', 'ID_Guia'];
+
 function obtenerDatosHojaComoJSON(sheet) {
   var data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
@@ -332,7 +340,13 @@ function obtenerDatosHojaComoJSON(sheet) {
   for (var i = 1; i < data.length; i++) {
     var rowData = {};
     for (var j = 0; j < headers.length; j++) {
-      rowData[headers[j]] = data[i][j];
+      var header = String(headers[j]).trim();
+      var val = data[i][j];
+      // Columnas de código siempre como texto para no perder ceros a la izquierda
+      if (COLUMNAS_TEXTO.indexOf(header) !== -1) {
+        val = val === '' || val === null || val === undefined ? '' : String(val).trim();
+      }
+      rowData[header] = val;
     }
     result.push(rowData);
   }
@@ -613,7 +627,7 @@ function actualizarStockFila(sheet, codBarras, zonaId, delta) {
   }
   // No existe — crear fila nueva
   var cantInicial = Math.max(0, delta);
-  sheet.appendRow([codBarras, zonaId, cantInicial]);
+  sheet.appendRow([String(codBarras), String(zonaId), cantInicial]);
   return cantInicial;
 }
 
@@ -639,9 +653,10 @@ function registrarGuia(data) {
 
   var stockResult = [];
   (data.items || []).forEach(function(item) {
-    sheetDet.appendRow([idGuia, item.cod_barras, item.cantidad]);
-    var nuevaCant = actualizarStockFila(sheetStock, item.cod_barras, data.zona, signo * item.cantidad);
-    stockResult.push({ cod_barras: item.cod_barras, cantidad: nuevaCant });
+    var cb = String(item.cod_barras);
+    sheetDet.appendRow([idGuia, cb, item.cantidad]);
+    var nuevaCant = actualizarStockFila(sheetStock, cb, data.zona, signo * item.cantidad);
+    stockResult.push({ cod_barras: cb, cantidad: nuevaCant });
   });
 
   // SALIDA_MOVIMIENTO → ENTRADA_TRASLADO automática en zona destino
@@ -651,8 +666,9 @@ function registrarGuia(data) {
     sheetCab.appendRow([idGuiaEntrada, new Date(), data.vendedor, zonaDestino, 'ENTRADA_TRASLADO',
       'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia, data.zona, 'CONFIRMADO']);
     (data.items || []).forEach(function(item) {
-      sheetDet.appendRow([idGuiaEntrada, item.cod_barras, item.cantidad]);
-      actualizarStockFila(sheetStock, item.cod_barras, zonaDestino, item.cantidad);
+      var cb = String(item.cod_barras);
+      sheetDet.appendRow([idGuiaEntrada, cb, item.cantidad]);
+      actualizarStockFila(sheetStock, cb, zonaDestino, item.cantidad);
     });
   }
 
@@ -671,11 +687,12 @@ function registrarAuditoria(data) {
   var idAudit = "A-" + new Date().getTime();
   // Columnas AUDITORIAS: ID_Auditoria | Fecha | Vendedor | Zona_ID | Cod_Barras | Cant_Sistema | Cant_Real | Diferencia
   (data.items || []).forEach(function(item) {
+    var cb       = String(item.cod_barras);
     var cantReal = parseFloat(item.cantReal) || 0;
     var diff     = cantReal - (parseFloat(item.cantSistema) || 0);
-    sheetAudit.appendRow([idAudit, new Date(), data.vendedor, data.zona, item.cod_barras, item.cantSistema, cantReal, diff]);
+    sheetAudit.appendRow([idAudit, new Date(), data.vendedor, data.zona, cb, item.cantSistema, cantReal, diff]);
     // Actualizar stock a la cantidad real contada (diff puede ser + o -)
-    actualizarStockFila(sheetStock, item.cod_barras, data.zona, diff);
+    actualizarStockFila(sheetStock, cb, data.zona, diff);
   });
 
   return ContentService.createTextOutput(JSON.stringify({

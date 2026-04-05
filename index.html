@@ -171,23 +171,71 @@
     </div>
 
     <!-- WIZARD INICIAL -->
-    <div v-if="!config.completado && !mostrarModalSesionAnterior" class="absolute inset-0 z-50 bg-posBg flex flex-col items-center justify-center p-6">
-      <div class="w-full max-w-md bg-white p-8 rounded-3xl shadow-2xl border border-gray-100">
-        <h2 class="text-2xl font-black text-center mb-6">Setup Terminal</h2>
-        <input v-model="configWizard.vendedor" type="text" placeholder="Tu Nombre" class="w-full p-4 mb-4 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold">
-        <div v-if="!dbCargada" class="text-sm text-gray-400 font-bold mb-4 text-center animate-pulse">Sincronizando configuraciones...</div>
-        <select v-if="dbCargada" v-model="configWizard.zona" @change="configWizard.estacion = null" class="w-full p-4 mb-4 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold">
-          <option :value="null" disabled>Selecciona la Zona...</option>
-          <option v-for="z in zonasUnicas" :key="z" :value="z">{{ z }}</option>
-        </select>
-        <select v-if="configWizard.zona" v-model="configWizard.estacion" class="w-full p-4 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold">
-          <option :value="null" disabled>Selecciona Estación...</option>
-          <option v-for="est in estacionesFiltradas" :key="est.Estacion_Nombre" :value="est">{{ est.Estacion_Nombre }}</option>
-        </select>
-        <button @click="configWizard.esCajero = !configWizard.esCajero" :disabled="!configWizard.estacion" class="w-full mt-4 py-4 rounded-xl font-black text-sm border-2 transition-all" :class="configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg' : 'bg-gray-100 text-gray-400 border-gray-200 disabled:opacity-40'">
-          {{ configWizard.esCajero ? '✓ SOY CAJERO — Modo Caja Activo' : 'SOY CAJERO (toca para activar)' }}
+    <div v-if="!config.completado && !mostrarModalSesionAnterior" class="absolute inset-0 z-50 bg-posBg flex flex-col items-center justify-center p-5">
+      <div class="w-full max-w-md bg-white p-7 rounded-3xl shadow-2xl border border-gray-100">
+        <h2 class="text-2xl font-black text-center mb-6">Iniciar sesión</h2>
+
+        <!-- Nombre -->
+        <input v-model="configWizard.vendedor" type="text" placeholder="Tu nombre completo"
+               class="w-full p-4 mb-5 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold text-gray-800">
+
+        <!-- Cargando -->
+        <div v-if="!dbCargada" class="flex items-center justify-center gap-2 text-sm text-gray-400 font-bold mb-5">
+          <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          Cargando configuración...
+        </div>
+
+        <!-- Zonas como botones -->
+        <div v-if="dbCargada" class="mb-5">
+          <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Zona de trabajo</p>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="z in zonasUnicas" :key="z" @click="seleccionarZonaWizard(z)"
+                    class="px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 border-2"
+                    :class="configWizard.zona === z
+                      ? 'bg-posPrimary text-white border-posPrimary shadow-md'
+                      : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-posPrimary hover:text-posPrimary'">
+              {{ z }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Estaciones: solo mostrar si hay más de una -->
+        <div v-if="configWizard.zona && estacionesFiltradas.length > 1" class="mb-5">
+          <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Estación</p>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="est in estacionesFiltradas" :key="est.Estacion_Nombre"
+                    @click="configWizard.estacion = est"
+                    class="px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 border-2"
+                    :class="configWizard.estacion?.Estacion_Nombre === est.Estacion_Nombre
+                      ? 'bg-gray-800 text-white border-gray-800 shadow-md'
+                      : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-gray-400 hover:text-gray-700'">
+              {{ est.Estacion_Nombre }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Botón cajero: visible solo cuando hay estación seleccionada -->
+        <div v-if="configWizard.estacion" class="mb-1">
+          <button @click="!wizardCajeroOcupado && (configWizard.esCajero = !configWizard.esCajero)"
+                  class="w-full py-4 rounded-xl font-black text-sm border-2 transition-all flex items-center justify-center gap-2"
+                  :class="wizardVerificando ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-wait'
+                          : wizardCajeroOcupado ? 'bg-red-50 text-red-400 border-red-200 cursor-not-allowed'
+                          : configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg'
+                          : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-emerald-300 hover:text-emerald-600'">
+            <svg v-if="wizardVerificando" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            <svg v-else-if="wizardCajeroOcupado" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            <svg v-else-if="configWizard.esCajero" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <span v-if="wizardVerificando">Verificando zona...</span>
+            <span v-else-if="wizardCajeroOcupado">Ya hay cajero activo en {{ configWizard.zona }}</span>
+            <span v-else>{{ configWizard.esCajero ? 'SOY CAJERO — Activo' : 'SOY CAJERO (opcional)' }}</span>
+          </button>
+          <p v-if="wizardCajeroOcupado" class="text-[10px] text-red-400 text-center font-semibold mt-1.5">Solo puede haber un cajero activo por zona</p>
+        </div>
+
+        <button @click="iniciarTurno" :disabled="!configWizard.vendedor || !configWizard.estacion"
+                class="w-full mt-4 bg-posPrimary text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-300 disabled:shadow-none transition-all">
+          ENTRAR
         </button>
-        <button @click="iniciarTurno" :disabled="!configWizard.vendedor || !configWizard.estacion" class="w-full mt-4 bg-posPrimary text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-400 disabled:shadow-none transition-all">INICIAR PWA</button>
       </div>
     </div>
     
@@ -218,23 +266,31 @@
             </div>
 
             <div v-else class="max-w-4xl mx-auto">
-                <!-- Header Cajero: con saldo y cierre de turno -->
-                <div v-if="config.esCajero" class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-6 rounded-3xl shadow-lg mb-6 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div class="relative z-10 w-full flex justify-between sm:w-auto sm:flex-col sm:justify-start">
-                        <div><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">CAJA ACTIVA</p><h2 class="text-2xl font-black mt-1">{{ idCajaActual }}</h2></div>
+                <!-- Header Cajero: info + botones apilados -->
+                <div v-if="config.esCajero" class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-5 rounded-3xl shadow-lg mb-6 relative overflow-hidden">
+                    <!-- Fila superior: caja activa + saldo -->
+                    <div class="flex justify-between items-start mb-4 relative z-10">
+                        <div>
+                            <p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">CAJA ACTIVA</p>
+                            <h2 class="text-xl font-black mt-0.5">{{ idCajaActual }}</h2>
+                            <p class="text-emerald-300 text-xs mt-0.5 font-semibold">{{ config.vendedor }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">SALDO INICIAL</p>
+                            <h2 class="text-2xl font-black mt-0.5">S/ {{ montoAperturaMemoria.toFixed(2) }}</h2>
+                        </div>
                     </div>
-                    <div class="text-right relative z-10 w-full sm:w-auto flex justify-between sm:flex-col sm:justify-start items-center sm:items-end">
-                       <div><p class="text-emerald-200 font-bold uppercase text-xs tracking-wider sm:mb-1">SALDO INICIAL</p><h2 class="text-3xl font-black">S/ {{ montoAperturaMemoria.toFixed(2) }}</h2></div>
-                       <div class="flex items-center gap-2">
-                           <button @click="abrirModoCajero" class="mt-4 sm:mt-2 bg-white text-emerald-700 font-black text-xs px-4 py-2 rounded-xl shadow-lg active:scale-95 transition-transform flex items-center gap-1.5 shrink-0 border-2 border-emerald-300">
-                               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                               MODO CAJERO
-                           </button>
-                           <button @click="cerrarCaja" :disabled="procesandoCierre" class="mt-4 sm:mt-2 bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
-                               <svg v-if="procesandoCierre" class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                               CERRAR EL TURNO
-                           </button>
-                       </div>
+                    <!-- Fila inferior: botones apilados -->
+                    <div class="flex gap-2 relative z-10">
+                        <button @click="abrirModoCajero" class="flex-1 bg-white text-emerald-700 font-black text-xs py-3 rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-1.5 border-2 border-white/80">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            MODO CAJERO
+                        </button>
+                        <button @click="cerrarCaja" :disabled="procesandoCierre" class="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                            <svg v-if="procesandoCierre" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                            {{ procesandoCierre ? 'CERRANDO...' : 'CERRAR TURNO' }}
+                        </button>
                     </div>
                 </div>
                 <!-- Header Vendedor: solo nombre, estación y cerrar sesión -->
@@ -744,139 +800,192 @@
         </div>
     </div>
     <!-- ============================================================ -->
-    <!-- MODO CAJERO: interfaz fullscreen de cobro rápido por QR     -->
+    <!-- MODO CAJERO — Pantalla horizontal (cine mode)              -->
     <!-- ============================================================ -->
     <div v-if="modoCajero" class="fixed inset-0 z-[200] bg-gray-950 overflow-hidden select-none">
 
-        <!-- Input invisible para bluetooth (siempre enfocado al escanear) -->
+        <!-- Input invisible: captura bluetooth scanner (siempre activo) -->
         <input ref="cajeroInput" v-model="cajeroBusqueda" @keyup.enter="buscarTicketCajero"
                type="text" inputmode="none" autocomplete="off"
                style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none">
 
-        <!-- ESTADO: ESCANEANDO (sin ticket cargado) -->
-        <div v-if="!cajeroTicketActual" class="absolute inset-0 flex flex-col">
-            <!-- Cámara QR ocupa todo el espacio -->
-            <div id="cajero-qr-reader" class="flex-1 bg-black w-full" style="min-height:0"></div>
-            <!-- Overlay inferior con hint -->
-            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent p-6 text-center pointer-events-none">
-                <p class="text-emerald-400 font-black text-lg tracking-widest uppercase mb-1">Modo Cajero</p>
-                <p class="text-gray-400 text-sm">Apunta la cámara al QR del ticket impreso</p>
+        <!-- Layout principal horizontal: cámara (izq) + contenido (der) -->
+        <div class="absolute inset-0 flex flex-row overflow-hidden">
+
+            <!-- ═══ CÁMARA — siempre en DOM, siempre activa ═══ -->
+            <div class="relative bg-black flex flex-col overflow-hidden shrink-0 transition-all duration-200"
+                 :style="cajeroTicketActual ? 'width:200px' : 'flex:1'">
+
+                <div id="cajero-qr-reader" class="flex-1 w-full" style="min-height:0"></div>
+
+                <!-- Marco de encuadre -->
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div class="relative transition-all duration-200"
+                         :class="cajeroTicketActual ? 'w-28 h-28' : 'w-52 h-52'">
+                        <div class="absolute top-0 left-0 w-7 h-7 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg"></div>
+                        <div class="absolute top-0 right-0 w-7 h-7 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg"></div>
+                        <div class="absolute bottom-0 left-0 w-7 h-7 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg"></div>
+                        <div class="absolute bottom-0 right-0 w-7 h-7 border-b-4 border-r-4 border-emerald-400 rounded-br-lg"></div>
+                    </div>
+                </div>
+
+                <!-- Sin ticket: hint de escaneo -->
+                <div v-if="!cajeroTicketActual"
+                     class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent py-5 text-center pointer-events-none">
+                    <p class="text-emerald-400 font-black text-sm tracking-widest uppercase">Modo Cajero</p>
+                    <p class="text-gray-400 text-xs mt-0.5">Escanea el QR o usa lector</p>
+                </div>
+
+                <!-- Con ticket: badge "siguiente" -->
+                <div v-if="cajeroTicketActual"
+                     class="bg-gray-900 border-t border-gray-800 py-2 px-2 text-center shrink-0">
+                    <p class="text-emerald-400 text-[9px] font-black uppercase tracking-widest leading-none">Siguiente →</p>
+                </div>
             </div>
-            <!-- Botón X esquina superior derecha -->
-            <button @click="cerrarModoCajero" class="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-gray-900/80 text-gray-300 hover:text-white font-black text-lg backdrop-blur z-10">✕</button>
-            <!-- Indicador vendedor esquina superior izquierda -->
-            <div class="absolute top-4 left-4 flex items-center gap-2 bg-gray-900/80 px-3 py-1.5 rounded-full backdrop-blur z-10">
-                <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                <span class="text-emerald-400 text-xs font-bold">{{ config.vendedor }}</span>
-            </div>
-        </div>
 
-        <!-- ESTADO: TICKET CARGADO (layout 2 columnas horizontal) -->
-        <div v-else class="absolute inset-0 flex flex-row">
-
-            <!-- Columna izquierda: info del ticket + método de pago -->
-            <div class="w-[45%] min-w-[260px] flex flex-col bg-gray-900 border-r border-gray-800 overflow-y-auto p-5 gap-4">
-
-                <!-- Header con X -->
+            <!-- ═══ SIN TICKET: panel de instrucciones ═══ -->
+            <div v-if="!cajeroTicketActual"
+                 class="w-52 bg-gray-900 border-l border-gray-800 flex flex-col p-4 gap-4 shrink-0">
                 <div class="flex items-center justify-between shrink-0">
-                    <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                        <span class="text-emerald-400 text-xs font-black uppercase tracking-widest">Modo Cajero</span>
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+                        <span class="text-emerald-400 text-[10px] font-black uppercase tracking-widest">Cajero</span>
                     </div>
-                    <button @click="cerrarModoCajero" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:text-white font-black text-sm">✕</button>
+                    <button @click="cerrarModoCajero"
+                            class="w-7 h-7 bg-gray-800 rounded-full text-gray-400 hover:text-white font-black text-xs flex items-center justify-center active:scale-90">✕</button>
                 </div>
-
-                <!-- Info ticket -->
-                <div class="bg-gray-800 rounded-2xl p-4 border border-gray-700">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="text-xs font-black px-2 py-0.5 rounded-full uppercase"
-                              :class="cajeroTicketActual.tipo === 'FACTURA' ? 'bg-purple-900 text-purple-300' : cajeroTicketActual.tipo === 'BOLETA' ? 'bg-blue-900 text-blue-300' : 'bg-gray-700 text-gray-300'">
-                            {{ cajeroTicketActual.tipo === 'FACTURA' ? 'FAC.' : cajeroTicketActual.tipo === 'BOLETA' ? 'BOL.' : 'N.V.' }}
-                        </span>
-                        <p class="text-white font-black text-base">{{ cajeroTicketActual.correlativo }}</p>
+                <div class="flex-1 flex flex-col items-center justify-center gap-3 text-center">
+                    <div class="w-14 h-14 bg-emerald-900/40 border border-emerald-700/50 rounded-2xl flex items-center justify-center">
+                        <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                        </svg>
                     </div>
-                    <p class="text-gray-300 text-sm font-bold truncate">{{ cajeroTicketActual.cliente_nombre || 'Sin cliente' }}</p>
-                    <p class="text-gray-500 text-xs mt-1">Vendedor: {{ cajeroTicketActual.raw_data?.auth?.vendedor }}</p>
+                    <p class="text-white font-bold text-sm leading-snug">Apunta al QR<br>del ticket</p>
+                    <p class="text-gray-500 text-xs leading-snug">También funciona<br>con lector bluetooth</p>
                 </div>
-
-                <!-- Total destacado -->
-                <div class="bg-emerald-900/40 border border-emerald-700/50 rounded-2xl p-4 text-center">
-                    <p class="text-emerald-500 text-xs font-bold uppercase tracking-wider mb-1">Total a cobrar</p>
-                    <p class="text-emerald-300 font-black text-5xl leading-none">S/ {{ cajeroTicketActual.total.toFixed(2) }}</p>
-                </div>
-
-                <!-- Método de pago -->
-                <div>
-                    <p class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Forma de pago</p>
-                    <div class="flex gap-2 bg-gray-800 p-1 rounded-xl">
-                        <button @click="pagoCobroPendiente.metodo = 'EFECTIVO'; pagoCobroPendiente.montoVirtual = 0; pagoCobroPendiente.montoRecibido = cajeroTicketActual.total"
-                                :class="pagoCobroPendiente.metodo === 'EFECTIVO' ? 'bg-emerald-500 text-white shadow' : 'text-gray-400 hover:text-gray-200'"
-                                class="flex-1 py-3 rounded-lg font-black text-xs transition-all">EFECTIVO</button>
-                        <button @click="pagoCobroPendiente.metodo = 'VIRTUAL'; pagoCobroPendiente.montoRecibido = cajeroTicketActual.total; pagoCobroPendiente.montoVirtual = 0"
-                                :class="pagoCobroPendiente.metodo === 'VIRTUAL' ? 'bg-sky-500 text-white shadow' : 'text-gray-400 hover:text-gray-200'"
-                                class="flex-1 py-3 rounded-lg font-black text-xs transition-all">VIRTUAL</button>
-                        <button @click="pagoCobroPendiente.metodo = 'MIXTO'; pagoCobroPendiente.montoRecibido = 0; pagoCobroPendiente.montoVirtual = 0"
-                                :class="pagoCobroPendiente.metodo === 'MIXTO' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-gray-200'"
-                                class="flex-1 py-3 rounded-lg font-black text-xs transition-all">MIXTO</button>
-                    </div>
+                <div class="bg-gray-800 rounded-xl p-3 text-center shrink-0">
+                    <p class="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Cajero activo</p>
+                    <p class="text-white font-black text-sm truncate">{{ config.vendedor }}</p>
                 </div>
             </div>
 
-            <!-- Columna derecha: inputs de cobro + botón COBRAR -->
-            <div class="flex-1 flex flex-col bg-gray-950 p-5 gap-4 overflow-y-auto">
+            <!-- ═══ CON TICKET: pantalla de cobro ═══ -->
+            <div v-if="cajeroTicketActual"
+                 class="flex-1 flex flex-col bg-gray-950 overflow-hidden min-w-0">
 
-                <!-- Efectivo -->
-                <template v-if="pagoCobroPendiente.metodo === 'EFECTIVO'">
-                    <div class="flex-1 flex flex-col gap-3 justify-center">
-                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Efectivo recibido (S/)</label>
-                        <input v-model.number="pagoCobroPendiente.montoRecibido" type="number" step="0.10"
-                               class="w-full bg-gray-800 text-white font-black text-4xl px-5 py-4 rounded-2xl border-2 border-gray-700 focus:outline-none focus:border-emerald-500 text-center">
-                        <!-- Billetes rápidos -->
-                        <div class="grid grid-cols-4 gap-2">
-                            <button v-for="b in [10,20,50,100]" :key="b" @click="pagoCobroPendiente.montoRecibido = b"
-                                    class="bg-gray-800 hover:bg-gray-700 text-white font-black text-sm py-3 rounded-xl transition-colors active:scale-95">
-                                S/ {{ b }}
+                <!-- Header: ticket info + cancelar + cerrar -->
+                <div class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-800 shrink-0 bg-gray-900">
+                    <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shrink-0"></div>
+                    <span class="text-[10px] font-black px-2 py-0.5 rounded-full uppercase shrink-0"
+                          :class="cajeroTicketActual.tipo === 'FACTURA' ? 'bg-purple-900 text-purple-300' : cajeroTicketActual.tipo === 'BOLETA' ? 'bg-blue-900 text-blue-300' : 'bg-gray-700 text-gray-300'">
+                        {{ cajeroTicketActual.tipo === 'FACTURA' ? 'FAC' : cajeroTicketActual.tipo === 'BOLETA' ? 'BOL' : 'N.V.' }}
+                    </span>
+                    <span class="text-white font-black text-sm shrink-0">{{ cajeroTicketActual.correlativo }}</span>
+                    <span class="text-gray-500 text-xs truncate flex-1">· {{ cajeroTicketActual.raw_data?.auth?.vendedor }} · {{ cajeroTicketActual.cliente_nombre || 'Sin cliente' }}</span>
+                    <button @click="resetearCajero"
+                            class="shrink-0 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg font-bold text-xs active:scale-95 transition-all">
+                        ← Otro
+                    </button>
+                    <button @click="cerrarModoCajero"
+                            class="shrink-0 w-7 h-7 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-full font-black text-xs flex items-center justify-center active:scale-90">✕</button>
+                </div>
+
+                <!-- TOTAL — número grande y visible -->
+                <div class="flex items-center justify-between px-5 py-3 bg-emerald-950 border-b border-emerald-900/60 shrink-0">
+                    <p class="text-emerald-500 text-xs font-black uppercase tracking-widest">TOTAL A COBRAR</p>
+                    <p class="text-emerald-300 font-black leading-none" style="font-size:clamp(2rem,6vw,3.5rem)">
+                        S/ {{ cajeroTicketActual.total.toFixed(2) }}
+                    </p>
+                </div>
+
+                <!-- Método de pago (tabs grandes) -->
+                <div class="px-4 pt-3 shrink-0">
+                    <div class="flex gap-2 bg-gray-800 p-1 rounded-xl">
+                        <button @click="pagoCobroPendiente.metodo='EFECTIVO'; pagoCobroPendiente.montoVirtual=0; pagoCobroPendiente.montoRecibido=cajeroTicketActual.total"
+                                class="flex-1 py-3 rounded-lg font-black text-sm transition-all"
+                                :class="pagoCobroPendiente.metodo==='EFECTIVO' ? 'bg-emerald-500 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'">
+                            EFECTIVO
+                        </button>
+                        <button @click="pagoCobroPendiente.metodo='VIRTUAL'; pagoCobroPendiente.montoRecibido=cajeroTicketActual.total; pagoCobroPendiente.montoVirtual=0"
+                                class="flex-1 py-3 rounded-lg font-black text-sm transition-all"
+                                :class="pagoCobroPendiente.metodo==='VIRTUAL' ? 'bg-sky-500 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'">
+                            VIRTUAL
+                        </button>
+                        <button @click="pagoCobroPendiente.metodo='MIXTO'; pagoCobroPendiente.montoRecibido=0; pagoCobroPendiente.montoVirtual=0"
+                                class="flex-1 py-3 rounded-lg font-black text-sm transition-all"
+                                :class="pagoCobroPendiente.metodo==='MIXTO' ? 'bg-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'">
+                            MIXTO
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Área de contenido del método -->
+                <div class="flex-1 px-4 pt-3 flex flex-col gap-2.5 overflow-hidden min-h-0">
+
+                    <!-- EFECTIVO -->
+                    <template v-if="pagoCobroPendiente.metodo==='EFECTIVO'">
+                        <!-- Billetes rápidos + EXACTO -->
+                        <div class="grid grid-cols-5 gap-2 shrink-0">
+                            <button @click="pagoCobroPendiente.montoRecibido = cajeroTicketActual.total"
+                                    class="bg-emerald-800 hover:bg-emerald-700 text-emerald-200 font-black text-xs py-4 rounded-xl active:scale-95 transition-all">
+                                EXACTO
+                            </button>
+                            <button v-for="b in [10,20,50,100]" :key="b"
+                                    @click="pagoCobroPendiente.montoRecibido = b"
+                                    class="bg-gray-700 hover:bg-gray-600 text-white font-black text-2xl py-4 rounded-xl active:scale-95 transition-all">
+                                {{ b }}
                             </button>
                         </div>
+                        <!-- Monto recibido -->
+                        <input v-model.number="pagoCobroPendiente.montoRecibido" type="number" step="0.10"
+                               class="w-full bg-gray-800 text-white font-black text-5xl px-4 py-3 rounded-2xl border-2 border-gray-700 focus:border-emerald-500 text-center outline-none shrink-0">
                         <!-- Vuelto -->
-                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-4">
-                            <span class="text-gray-400 font-bold uppercase tracking-wider text-sm">Vuelto</span>
-                            <span class="font-black text-3xl" :class="vueltoCobro >= 0 ? 'text-emerald-400' : 'text-red-400'">S/ {{ vueltoCobro.toFixed(2) }}</span>
+                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-3 shrink-0">
+                            <span class="text-gray-400 font-black text-sm uppercase tracking-wider">Vuelto</span>
+                            <span class="font-black text-4xl" :class="vueltoCobro >= 0 ? 'text-emerald-400' : 'text-red-400'">
+                                S/ {{ vueltoCobro.toFixed(2) }}
+                            </span>
                         </div>
-                    </div>
-                </template>
+                    </template>
 
-                <!-- Virtual -->
-                <template v-if="pagoCobroPendiente.metodo === 'VIRTUAL'">
-                    <div class="flex-1 flex flex-col items-center justify-center gap-4">
-                        <svg class="w-16 h-16 text-sky-400 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-                        <p class="text-sky-300 font-black text-xl">Yape / Plin / Transferencia</p>
-                        <p class="text-gray-400 text-sm text-center">Confirma que el pago digital<br>de <span class="text-white font-black">S/ {{ cajeroTicketActual.total.toFixed(2) }}</span> fue recibido</p>
-                    </div>
-                </template>
+                    <!-- VIRTUAL -->
+                    <template v-if="pagoCobroPendiente.metodo==='VIRTUAL'">
+                        <div class="flex-1 flex flex-col items-center justify-center gap-4 text-center">
+                            <div class="w-20 h-20 bg-sky-900/40 border border-sky-700/50 rounded-3xl flex items-center justify-center">
+                                <svg class="w-10 h-10 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                </svg>
+                            </div>
+                            <p class="text-sky-300 font-black text-2xl">Yape / Plin / Transferencia</p>
+                            <p class="text-gray-400">Confirma que recibiste <span class="text-white font-black text-xl">S/ {{ cajeroTicketActual.total.toFixed(2) }}</span></p>
+                        </div>
+                    </template>
 
-                <!-- Mixto -->
-                <template v-if="pagoCobroPendiente.metodo === 'MIXTO'">
-                    <div class="flex-1 flex flex-col gap-3 justify-center">
-                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">Yape / Plin (S/)</label>
+                    <!-- MIXTO -->
+                    <template v-if="pagoCobroPendiente.metodo==='MIXTO'">
+                        <p class="text-xs font-black text-gray-500 uppercase tracking-wider shrink-0">Yape / Plin (S/)</p>
                         <input v-model.number="pagoCobroPendiente.montoVirtual" type="number" step="0.10"
-                               class="w-full bg-gray-800 text-white font-black text-4xl px-5 py-4 rounded-2xl border-2 border-gray-700 focus:outline-none focus:border-sky-500 text-center">
-                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-4">
+                               class="w-full bg-gray-800 text-sky-300 font-black text-4xl px-4 py-3 rounded-2xl border-2 border-gray-700 focus:border-sky-500 text-center outline-none shrink-0">
+                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-3 shrink-0">
                             <span class="text-gray-400 font-bold text-sm uppercase">Efectivo complemento</span>
-                            <span class="text-white font-black text-2xl">S/ {{ Math.max(0, cajeroTicketActual.total - (pagoCobroPendiente.montoVirtual||0)).toFixed(2) }}</span>
+                            <span class="text-white font-black text-3xl">S/ {{ Math.max(0, cajeroTicketActual.total - (pagoCobroPendiente.montoVirtual||0)).toFixed(2) }}</span>
                         </div>
-                    </div>
-                </template>
+                    </template>
+                </div>
 
-                <!-- Botón COBRAR (siempre abajo) -->
-                <button @click="procesarCobroPendiente"
-                        :disabled="procesandoCobro || (pagoCobroPendiente.metodo === 'EFECTIVO' && vueltoCobro < 0) || (pagoCobroPendiente.metodo === 'MIXTO' && (!pagoCobroPendiente.montoVirtual || pagoCobroPendiente.montoVirtual >= cajeroTicketActual.total))"
-                        class="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-2xl py-6 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3 shrink-0">
-                    <svg v-if="procesandoCobro" class="animate-spin w-7 h-7" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    {{ procesandoCobro ? 'PROCESANDO...' : 'COBRAR · S/ ' + cajeroTicketActual.total.toFixed(2) }}
-                </button>
+                <!-- COBRAR — botón grande siempre al fondo -->
+                <div class="px-4 pb-4 pt-2 shrink-0">
+                    <button @click="procesarCobroPendiente"
+                            :disabled="procesandoCobro || (pagoCobroPendiente.metodo==='EFECTIVO' && vueltoCobro < 0) || (pagoCobroPendiente.metodo==='MIXTO' && (!pagoCobroPendiente.montoVirtual || pagoCobroPendiente.montoVirtual >= cajeroTicketActual.total))"
+                            class="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-2xl py-5 rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                        <svg v-if="procesandoCobro" class="animate-spin w-6 h-6" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        {{ procesandoCobro ? 'PROCESANDO...' : 'COBRAR · S/ ' + cajeroTicketActual.total.toFixed(2) }}
+                    </button>
+                </div>
             </div>
-        </div>
+
+        </div><!-- fin layout principal -->
     </div>
 
     <!-- MODAL COBRO (cajero cobra ticket emitido por vendedor) -->
@@ -1360,6 +1469,8 @@
         // --- SETUP WIZARD ---
         const config = ref({ completado: false, vendedor: '', zona: '', estacion: null, esCajero: false });
         const configWizard = ref({ vendedor: '', zona: null, estacion: null, esCajero: false });
+        const wizardCajeroOcupado = ref(false);
+        const wizardVerificando = ref(false);
         const sesionAnteriorInfo = ref(null);
         const mostrarModalSesionAnterior = ref(false);
 
@@ -1423,7 +1534,11 @@
         // --- LISTENERS ---
         // < 900px = pantalla pequeña (celular, tablet 7" vertical): un panel a la vez
         // ≥ 900px = pantalla grande (tablet 7"+ horizontal, PC): pantalla dividida
-        const handleResize = () => { uiState.value.isMobile = window.innerWidth < 900; };
+        const esPantallaVertical = ref(window.innerHeight > window.innerWidth);
+        const handleResize = () => {
+            uiState.value.isMobile = window.innerWidth < 900;
+            esPantallaVertical.value = window.innerHeight > window.innerWidth;
+        };
         const updateOnlineStatus = () => { 
             offlineMode.value = !navigator.onLine; 
             if (!offlineMode.value && pendingSales.value.length > 0) {
@@ -1725,7 +1840,7 @@
                      const term = encodeURIComponent(String(base.Nombre || 'N/A').split(' ')[0].toLowerCase());
                      const stockVal = (stockKey && base[stockKey] !== undefined && base[stockKey] !== '') ? (parseInt(base[stockKey]) || 0) : null;
                      prodsText.push({
-                         idUnico: base.SKU_Base, sku: base.SKU_Base, codBarras: pres[0].Cod_Barras, nombreCorto: base.Nombre || 'Sin Nombre',
+                         idUnico: String(base.SKU_Base), sku: String(base.SKU_Base), codBarras: String(pres[0].Cod_Barras), nombreCorto: base.Nombre || 'Sin Nombre',
                          presentaciones: pres,
                          empaque: pres[0].Empaque, precio: parseFloat(pres[0].Precio_Venta) || 0, codSunat: base.Cod_SUNAT || '01010101',
                          promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`,
@@ -1934,10 +2049,35 @@
             cajeroCamara.value = false;
         };
 
+        const verificarCajeroEnZonaWizard = async (zona) => {
+            if (!zona || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            wizardVerificando.value = true;
+            try {
+                const r = await fetch(`${API_URL}?accion=cajero_activo&zona=${encodeURIComponent(zona)}`);
+                const d = await r.json();
+                wizardCajeroOcupado.value = d.status === 'success' && d.activo;
+                if (wizardCajeroOcupado.value) configWizard.value.esCajero = false;
+            } catch(e) { wizardCajeroOcupado.value = false; }
+            finally { wizardVerificando.value = false; }
+        };
+
+        const seleccionarZonaWizard = async (zona) => {
+            configWizard.value.zona = zona;
+            configWizard.value.estacion = null;
+            configWizard.value.esCajero = false;
+            wizardCajeroOcupado.value = false;
+            // Auto-seleccionar si hay una sola estación en la zona
+            const estaciones = estacionesFiltradas.value;
+            if (estaciones.length === 1) configWizard.value.estacion = estaciones[0];
+            await verificarCajeroEnZonaWizard(zona);
+        };
+
         const abrirModoCajero = () => {
             modoCajero.value = true;
             cajeroBusqueda.value = '';
             cajeroTicketActual.value = null;
+            // Forzar modo horizontal (cinema mode)
+            try { if (screen.orientation?.lock) screen.orientation.lock('landscape').catch(() => {}); } catch(e) {}
             nextTick(() => {
                 if (cajeroInput.value) cajeroInput.value.focus();
                 iniciarCamaraCajero();
@@ -1950,6 +2090,8 @@
             cajeroTicketActual.value = null;
             cajeroBusqueda.value = '';
             modalCobro.value = false;
+            // Liberar bloqueo de orientación
+            try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch(e) {}
         };
 
         // --- POLLING DE ZONA EN SEGUNDO PLANO ---
@@ -2001,7 +2143,8 @@
 
                 if (nuevas.length > 0) {
                     ventasZona.value.unshift(...nuevas);
-                    playCoinSound();
+                    // Solo sonar si hay tickets pendientes de cobro (no cobrados)
+                    if (nuevas.some(t => !t.cobrado && !t.anulada)) playCoinSound();
                     // Flash del marco completo
                     flashNuevosTickets.value = false;
                     nextTick(() => { flashNuevosTickets.value = true; });
@@ -2525,8 +2668,8 @@
 
         const elegirPresentacion = (prodBase, pres) => {
             const item = {
-                sku: prodBase.sku, 
-                codBarras: pres.Cod_Barras, 
+                sku: String(prodBase.sku),
+                codBarras: String(pres.Cod_Barras),
                 nombreCorto: prodBase.nombreCorto + ' (' + pres.Empaque + ')', 
                 codSunat: prodBase.codSunat, 
                 precio: parseFloat(pres.Precio_Venta), 
@@ -2587,7 +2730,7 @@
           const idx = carrito.value.findIndex(i => i.codBarras === prodObj.codBarras);
           if (idx > -1) { carrito.value[idx].cantidad++; calcularImportes(carrito.value[idx]); }
           else {
-            const item = { sku: prodObj.sku, codBarras: prodObj.codBarras, nombre: prodObj.nombreCorto, codSunat: prodObj.codSunat, precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio, ahorroPromo: 0, imagen: prodObj.imagen };
+            const item = { sku: String(prodObj.sku), codBarras: String(prodObj.codBarras), nombre: prodObj.nombreCorto, codSunat: prodObj.codSunat, precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio, ahorroPromo: 0, imagen: prodObj.imagen };
             calcularImportes(item); carrito.value.unshift(item);
           }
           agregarToast('¡Añadido!', prodObj.nombreCorto);
@@ -2768,7 +2911,7 @@
            const correlativoLocal = serieElegida + "-LOCAL";
 
            // Capturar todo antes de limpiar el carrito
-           const itemsParaImprimir = carrito.value.map(c => ({ sku: c.sku, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }));
+           const itemsParaImprimir = carrito.value.map(c => ({ sku: c.sku, codBarras: c.codBarras, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }));
            const totalVenta = granTotal.value;
            const vueltoVenta = vuelto.value;
            const tipoDocVenta = pago.value.tipoDoc;
@@ -2822,10 +2965,12 @@
                txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
                txt += "------------------------------------------------\n";
                itemsParaImprimir.forEach(item => {
-                   let desc = item.nombre;
-                   if (desc.length > 31) desc = desc.substring(0, 31);
-                   else desc = desc.padEnd(31, ' ');
+                   const m = item.nombre.match(/^(.+?)\s+\((.+)\)$/);
+                   const baseName = m ? m[1] : item.nombre;
+                   const empaque  = m ? m[2] : null;
+                   let desc = baseName.length > 31 ? baseName.substring(0, 31) : baseName.padEnd(31, ' ');
                    txt += String(item.cantidad).padEnd(5, ' ') + " " + desc + " " + parseFloat(item.subtotal).toFixed(2).padStart(10, ' ') + "\n";
+                   if (empaque) txt += "        " + empaque.substring(0, 38) + "\n";
                });
                txt += "------------------------------------------------\n";
                txt += "\x1b\x61\x02";
@@ -2867,8 +3012,8 @@
                        ventasHoy.value[idx].isNew = true;
                        localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                    }
-                   // Efecto visual en modo vendedor
-                   playCoinSound();
+                   // Sonido solo si el ticket queda pendiente de cobro (POR_COBRAR)
+                   if (metodoVenta === 'POR_COBRAR') playCoinSound();
                    flashNuevosTickets.value = false;
                    nextTick(() => { flashNuevosTickets.value = true; });
                    setTimeout(() => {
@@ -2892,7 +3037,7 @@
                    // Evitar duplicado si el polling ya lo trajo
                    if (!ventasZona.value.find(v => v.id === res.idVenta)) {
                        ventasZona.value.unshift(ticketNuevo);
-                       playCoinSound();
+                       // Sin sonido aquí — ya sonó arriba si era POR_COBRAR
                        flashNuevosTickets.value = false;
                        nextTick(() => { flashNuevosTickets.value = true; });
                        setTimeout(() => {
@@ -2992,12 +3137,14 @@
             txt += "------------------------------------------------\n";
             if (items.length > 0) {
                items.forEach(item => {
-                  let desc = item.nombre;
-                  if (desc.length > 31) desc = desc.substring(0, 31);
-                  else desc = desc.padEnd(31, ' ');
+                  const m = item.nombre.match(/^(.+?)\s+\((.+)\)$/);
+                  const baseName = m ? m[1] : item.nombre;
+                  const empaque  = m ? m[2] : null;
+                  let desc = baseName.length > 31 ? baseName.substring(0, 31) : baseName.padEnd(31, ' ');
                   let qty = String(item.cantidad).padEnd(5, ' ');
                   let sub = parseFloat(item.subtotal).toFixed(2).padStart(10, ' ');
                   txt += qty + " " + desc + " " + sub + "\n";
+                  if (empaque) txt += "        " + empaque.substring(0, 38) + "\n";
                });
             } else {
                txt += "  (detalle no disponible - sin conexion)\n";
@@ -3429,6 +3576,8 @@
           procesandoCatalogo, sincronizarCatalogoBase,
           modalPresentaciones, prodSeleccionado, elegirPresentacion,
           mostrarTeclado, toggleTeclado,
+          esPantallaVertical,
+          wizardCajeroOcupado, wizardVerificando, seleccionarZonaWizard,
           darkMode, toggleDarkMode,
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
