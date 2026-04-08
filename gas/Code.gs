@@ -246,6 +246,21 @@ function procesarVenta(data) {
   var fechaActual = new Date();
   var idVenta = "V-" + fechaActual.getTime();
 
+  // ── Idempotencia: si ya existe una venta con este ref_local, devolver la existente ──
+  // Previene duplicados cuando el browser reintenta una venta que GAS ya procesó
+  var refLocal = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
+  if (refLocal) {
+    var totalFilas  = sheetCabecera.getLastRow();
+    var buscarDesde = Math.max(2, totalFilas - 199); // revisar últimas 200 filas
+    var filasBuscar = sheetCabecera.getRange(buscarDesde, 1, totalFilas - buscarDesde + 1, 16).getValues();
+    for (var fi = filasBuscar.length - 1; fi >= 0; fi--) {
+      if (String(filasBuscar[fi][13]) === refLocal) { // col 14 = Ref_Local (índice 13)
+        // Venta ya registrada — retornar idempotente sin insertar nada nuevo
+        return { idVenta: String(filasBuscar[fi][0]), correlativo: String(filasBuscar[fi][9]), printDispatched: false };
+      }
+    }
+  }
+
   // ── Correlativo rápido (hoja CORRELATIVOS, O(1) vs O(n)) ─────────────────
   var correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
   var correlativoFinal  = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
@@ -254,7 +269,6 @@ function procesarVenta(data) {
   // ID_Venta | Fecha | Vendedor | Estacion | Cliente_Doc | Cliente_Nombre | Total
   // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio
   // | Ref_Local | Obs | Tipo_Doc_Cliente
-  var refLocal       = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
   var tipoDocCliente = parseInt((header.cliente && header.cliente.tipo) || 0, 10); // 0=sin doc, 1=DNI, 6=RUC
   sheetCabecera.appendRow([
     idVenta, fechaActual, auth.vendedor, auth.estacion,
