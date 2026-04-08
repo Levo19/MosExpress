@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mosexpress-cache-v39';
+const CACHE_NAME = 'mosexpress-cache-v40';
 const urlsToCache = [
   './',
   './index.html',

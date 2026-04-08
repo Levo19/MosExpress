@@ -1463,6 +1463,9 @@
 
     const app = createApp({
       setup() {
+        // Helper: localStorage.setItem con try-catch (no falla si storage lleno o bloqueado)
+        const lsSet = (key, value) => { try { localStorage.setItem(key, value); } catch(e) { console.warn('localStorage lleno:', key, e); } };
+
         // --- ESTADOS NÚCLEO v2 ---
         const offlineMode = ref(!navigator.onLine);
         const db = ref({}); 
@@ -1895,30 +1898,33 @@
                dispositivoAutorizado.value = true; // Salto si está en local MOCK default
                return;
            }
-           // Cache: si el dispositivo fue verificado hoy, no volver a llamar al servidor
-           const _hoyAuth = new Date().toDateString();
-           const _authDate = localStorage.getItem('mosexpress_device_auth_date');
-           const _authId = localStorage.getItem('mosexpress_device_auth_id');
-           if (_authDate === _hoyAuth && _authId === deviceId.value) {
+           // Cache: si el dispositivo fue verificado en las últimas 4 horas, no volver a llamar
+           const _authTs  = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
+           const _authId  = localStorage.getItem('mosexpress_device_auth_id');
+           const _4horas  = 4 * 60 * 60 * 1000;
+           if (_authId === deviceId.value && (Date.now() - _authTs) < _4horas) {
                dispositivoAutorizado.value = true;
                return;
            }
            verificandoDispositivo.value = true;
            try {
-             const resp = await fetch(`${API_URL}?accion=verificar_dispositivo&id=${deviceId.value}`);
+             const _ctrl = new AbortController();
+             const _tid = setTimeout(() => _ctrl.abort(), 10000);
+             const resp = await fetch(`${API_URL}?accion=verificar_dispositivo&id=${deviceId.value}`, { signal: _ctrl.signal });
+             clearTimeout(_tid);
              if (!resp.ok) throw new Error("Error HTTP");
              const jsonResp = await resp.json();
 
              if(jsonResp && typeof jsonResp.autorizado !== 'undefined') {
                  dispositivoAutorizado.value = jsonResp.autorizado === true;
                  if (dispositivoAutorizado.value) {
-                     localStorage.setItem('mosexpress_device_auth_date', _hoyAuth);
-                     localStorage.setItem('mosexpress_device_auth_id', deviceId.value);
+                     lsSet('mosexpress_device_auth_date', String(Date.now()));
+                     lsSet('mosexpress_device_auth_id', deviceId.value);
                  }
              } else {
                  dispositivoAutorizado.value = true; // Fallback si el script responde otra cosa temporalmente
-                 localStorage.setItem('mosexpress_device_auth_date', _hoyAuth);
-                 localStorage.setItem('mosexpress_device_auth_id', deviceId.value);
+                 lsSet('mosexpress_device_auth_date', String(Date.now()));
+                 lsSet('mosexpress_device_auth_id', deviceId.value);
              }
            } catch(e) {
              console.error("Error validando dispositivo:", e);
@@ -1934,15 +1940,13 @@
             if(!db.value.PRESENTACIONES || !db.value.PRODUCTO_BASE) return;
             let prodsText = [];
             const zona = config.value?.zona || '';
-            // Normaliza ambos lados: quita espacios y ceros iniciales antes de dígitos
-            // "zona01" → "zona1", "Zona1" → "zona1" → coinciden
-            const _norm = s => s.toLowerCase().replace(/\s+/g, '').replace(/0+(\d)/g, '$1');
-            const zonaNorm = _norm(zona);
-            const stockKey = zona ? (
-                Object.keys(db.value.PRODUCTO_BASE?.[0] || {}).find(k => {
-                    if (!k.toLowerCase().startsWith('stock_')) return false;
-                    return _norm(k.slice(6)) === zonaNorm; // slice(6) quita "Stock_"
-                }) || null
+            // Busca columna Stock_<zona> — normaliza a minúsculas sin espacios (case-insensitive)
+            const _normZona = s => s.toLowerCase().replace(/\s+/g, '');
+            const zonaNorm  = _normZona(zona);
+            const stockKey  = zona ? (
+                Object.keys(db.value.PRODUCTO_BASE?.[0] || {}).find(k =>
+                    k.toLowerCase().startsWith('stock_') && _normZona(k.slice(6)) === zonaNorm
+                ) || null
             ) : null;
             db.value.PRODUCTO_BASE.forEach(base => {
                  try {
@@ -1997,6 +2001,10 @@
 
         const sincronizarDatos = async () => {
            if (offlineMode.value || pendingSales.value.length === 0 || isSyncing.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+           // Mutex cross-tab: evita que dos pestañas sincronicen al mismo tiempo
+           const _syncTs = parseInt(localStorage.getItem('_mos_syncing') || '0', 10);
+           if (Date.now() - _syncTs < 15000) return; // otra tab está sincronizando
+           lsSet('_mos_syncing', String(Date.now()));
            isSyncing.value = true;
            let exitos = 0;
            const ventasAProcesar = [...pendingSales.value];
@@ -2030,19 +2038,19 @@
            }
 
            if (exitos > 0) {
-               localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
-               localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+               lsSet('pending_sales', JSON.stringify(pendingSales.value));
+               lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                agregarToast('Sincronización', `${exitos} comprobante(s) subidos a la Nube`);
            }
+           localStorage.removeItem('_mos_syncing');
            isSyncing.value = false;
         };
 
         const generarBaseDatosMock = () => {
             return {
-                PRODUCTO_BASE: [{ SKU_Base: 'PROD1', Nombre: 'Avena Quaker', Cod_SUNAT: '01' }, { SKU_Base: 'PROD2', Nombre: 'Gaseosa Inka Cola', Cod_SUNAT: '01' }],
-                PRESENTACIONES: [{ Cod_Barras: '775123', SKU_Base: 'PROD1', Empaque: '1KG', Precio_Venta: 7.50 }, { Cod_Barras: '775456', SKU_Base: 'PROD2', Empaque: '3L', Precio_Venta: 11.00 }],
+                PRODUCTO_BASE: [], PRESENTACIONES: [],
                 EQUIVALENCIAS: [], PROMOCIONES: [],
-                ZONAS_CONFIG: [{ Zona_ID: 'SUR', Estacion_Nombre: 'Caja 01', PrintNode_ID: '123', Serie_Nota: 'NV01', Serie_Boleta: 'B001', Serie_Factura: 'F001' }]
+                ZONAS_CONFIG: [], CLIENTES_FRECUENTES: []
             };
         };
 
@@ -2840,12 +2848,20 @@
                 const efeNeto = parseFloat((venta.total - (pCobro.montoVirtual || 0)).toFixed(2));
                 metodoFinal = `MIXTO (VIR:${parseFloat(pCobro.montoVirtual).toFixed(2)}/EFE:${efeNeto.toFixed(2)})`;
             }
-            // Actualizar GAS
+            // Actualizar GAS primero — solo marcar localmente si el servidor confirma
+            let cobradoEnServidor = false;
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 try {
-                    await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) });
-                } catch(e) { agregarToast('Aviso', 'Cobro registrado localmente'); }
+                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) });
+                    const res = await r.json();
+                    cobradoEnServidor = res.status === 'success';
+                    if (!cobradoEnServidor) agregarToast('Aviso', 'GAS no confirmó el cobro — intenta de nuevo');
+                } catch(e) { agregarToast('Sin conexión', 'Cobro no sincronizado — intenta cuando haya red'); }
+            } else {
+                // Offline: marcar localmente de todas formas (sin servidor activo es el único registro)
+                cobradoEnServidor = true;
             }
+            if (!cobradoEnServidor) { procesandoCobro.value = false; return; }
             // Marcar localmente como cobrado y guardar método real
             const idx = ventasZona.value.findIndex(v => v.id === venta.id);
             if (idx !== -1) {
@@ -3248,6 +3264,7 @@
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
         const procesarPago = async () => {
+           if (!carrito.value.length) return agregarToast('Carrito vacío', 'Agrega productos antes de cobrar.');
            if (vuelto.value < 0) return;
            // Vendedores no pueden vender sin cajero activo en la zona
            if (!config.value.esCajero && cajeroActivoEnZona.value === false) {
@@ -3256,9 +3273,10 @@
            }
            procesando.value = true;
 
-           let serieElegida = config.value.estacion.Serie_Nota;
-           if(pago.value.tipoDoc === 'BOLETA') serieElegida = config.value.estacion.Serie_Boleta;
-           if(pago.value.tipoDoc === 'FACTURA') serieElegida = config.value.estacion.Serie_Factura;
+           const _est = config.value.estacion || {};
+           let serieElegida = _est.Serie_Nota || 'NV01';
+           if(pago.value.tipoDoc === 'BOLETA') serieElegida = _est.Serie_Boleta || 'B001';
+           if(pago.value.tipoDoc === 'FACTURA') serieElegida = _est.Serie_Factura || 'F001';
 
            const localId = Date.now();
            const correlativoLocal = serieElegida + "-LOCAL";
@@ -3322,14 +3340,14 @@
            const ventaBase = {
               auth: {
                   vendedor:  config.value.vendedor,
-                  estacion:  config.value.estacion.Estacion_Nombre,
+                  estacion:  _est.Estacion_Nombre || '',
                   deviceId:  deviceId.value,
                   esCajero:  config.value.esCajero
               },
               pos_config: {
                   cajaId:        idCajaActual.value,
                   serieActual:   serieElegida,
-                  printerId:     config.value.estacion.PrintNode_ID,
+                  printerId:     _est.PrintNode_ID,
                   print_request: true   // le dice al GAS que imprima internamente (v39+)
               },
               data_sync: { last_sync: localId, tables_required: ["productos", "promociones", "clientes", "zonas", "cajas"] },
@@ -3359,7 +3377,7 @@
            // 1. Guardar en historial local inmediatamente (para mostrar en UI)
            const ht = { id: localId, tipo: tipoDocVenta, correlativo: correlativoLocal, total: totalVenta, timestamp: localId, cliente_doc: docClienteVenta || '-', cliente_nombre: nombreClienteVenta || 'Genérico', items_count: itemsParaImprimir.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
            ventasHoy.value.unshift(ht);
-           localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+           lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
 
            // 2. Decrementar stock local
            itemsParaImprimir.forEach(item => {
@@ -3423,7 +3441,14 @@
                try {
                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) });
                    const res = await r.json();
-                   if (res.status !== 'success') throw new Error(res.mensaje || 'Error GAS');
+                   if (res.status !== 'success') {
+                       // Error lógico de GAS (no de red): restaurar stock local y mostrar error
+                       itemsParaImprimir.forEach(item => {
+                           const prod = productosCatalogo.value.find(p => p.sku === item.sku);
+                           if (prod && prod.stock !== null) prod.stock += item.cantidad;
+                       });
+                       throw new Error(res.mensaje || 'Error GAS');
+                   }
 
                    // Actualizar correlativo real en historial local
                    const idx = ventasHoy.value.findIndex(v => v.id === localId);
@@ -3433,7 +3458,7 @@
                        ventasHoy.value[idx].syncStatus   = 'synced';
                        ventasHoy.value[idx].raw_data.status = 'synced';
                        ventasHoy.value[idx].isNew = true;
-                       localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                       lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                    }
                    if (metodoVenta === 'POR_COBRAR') playCoinSound();
                    flashNuevosTickets.value = false;
@@ -3474,14 +3499,14 @@
                } catch(e) {
                    // Falla de red: guardar en cola y imprimir con correlativo provisional
                    pendingSales.value.push({ id: localId, raw_data: ventaBase });
-                   localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+                   lsSet('pending_sales', JSON.stringify(pendingSales.value));
                    agregarToast('Sin conexión', 'Guardado. Se sincronizará automáticamente.');
                    imprimirTicketVenta(correlativoLocal, false);
                }
            } else {
                // Offline desde el inicio
                pendingSales.value.push({ id: localId, raw_data: ventaBase });
-               localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+               lsSet('pending_sales', JSON.stringify(pendingSales.value));
                agregarToast('Offline', 'Guardado en modo offline');
                imprimirTicketVenta(correlativoLocal, false);
            }

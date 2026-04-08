@@ -434,7 +434,6 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
     sheet = ss.insertSheet('CORRELATIVOS');
     sheet.appendRow(['Serie', 'Siguiente']);
     sheet.appendRow([serie, initial + 1]);
-    SpreadsheetApp.flush();
     return initial;
   }
 
@@ -451,7 +450,6 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
       if (String(data[i][0]) === serie) {
         var siguiente = parseInt(data[i][1], 10) || 1;
         sheet.getRange(i + 1, 2).setValue(siguiente + 1);
-        SpreadsheetApp.flush(); // confirmar antes de liberar lock
         return siguiente;
       }
     }
@@ -459,7 +457,6 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
     var sheetCab2 = ss.getSheetByName('VENTAS_CABECERA');
     var initial2  = sheetCab2 ? obtenerSiguienteCorrelativo(sheetCab2, serie) : 1;
     sheet.appendRow([serie, initial2 + 1]);
-    SpreadsheetApp.flush();
     return initial2;
   } finally {
     lock.releaseLock();
@@ -926,6 +923,24 @@ function registrarGuia(data) {
   sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo, data.observacion || '', zonaDestino, 'CONFIRMADO']);
 
   var stockResult = [];
+  // Validar que las salidas no excedan el stock disponible
+  if (esSalida) {
+    var stockData = sheetStock.getDataRange().getValues();
+    for (var si = 0; si < (data.items || []).length; si++) {
+      var siItem = data.items[si];
+      var siCb   = String(siItem.cod_barras);
+      var stockActual = 0;
+      for (var sr = 1; sr < stockData.length; sr++) {
+        if (String(stockData[sr][0]) === siCb && String(stockData[sr][1]) === String(data.zona)) {
+          stockActual = parseFloat(stockData[sr][2]) || 0;
+          break;
+        }
+      }
+      if (stockActual < siItem.cantidad) {
+        return generarRespuestaError('Stock insuficiente para ' + siCb + ': disponible=' + stockActual + ', solicitado=' + siItem.cantidad);
+      }
+    }
+  }
   (data.items || []).forEach(function(item) {
     var cb = String(item.cod_barras);
     sheetDet.appendRow([idGuia, cb, item.cantidad]);
