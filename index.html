@@ -199,8 +199,8 @@
           </div>
         </div>
 
-        <!-- Estaciones: solo mostrar si hay más de una -->
-        <div v-if="configWizard.zona && estacionesFiltradas.length > 1" class="mb-5">
+        <!-- Estaciones: mostrar siempre que haya zona seleccionada (incluso si es una sola) -->
+        <div v-if="configWizard.zona && estacionesFiltradas.length > 0" class="mb-5">
           <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Estación</p>
           <div class="flex flex-wrap gap-2">
             <button v-for="est in estacionesFiltradas" :key="est.Estacion_Nombre"
