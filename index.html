@@ -3327,9 +3327,10 @@
                   esCajero:  config.value.esCajero
               },
               pos_config: {
-                  cajaId:    idCajaActual.value,
-                  serieActual: serieElegida,
-                  printerId: config.value.estacion.PrintNode_ID
+                  cajaId:        idCajaActual.value,
+                  serieActual:   serieElegida,
+                  printerId:     config.value.estacion.PrintNode_ID,
+                  print_request: true   // le dice al GAS que imprima internamente (v39+)
               },
               data_sync: { last_sync: localId, tables_required: ["productos", "promociones", "clientes", "zonas", "cajas"] },
               header: {

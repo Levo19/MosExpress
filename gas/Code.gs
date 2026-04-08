@@ -304,9 +304,12 @@ function procesarVenta(data) {
     );
   }
 
-  // ── Imprimir en el mismo round-trip (sin segundo llamado desde el browser) ─
+  // ── Imprimir en el mismo round-trip — SOLO si el browser lo pide explícitamente ─
+  // pos.print_request = true lo envía solo el browser nuevo (index.html v39+).
+  // Sin este flag, el browser antiguo (caché vieja) manejaría la impresión por su cuenta
+  // y tendríamos ticket doble.
   var printDispatched = false;
-  if (pos.printerId) {
+  if (pos.print_request === true && pos.printerId) {
     printDispatched = imprimirTicketInternamente(data, correlativoFinal, pos.printerId);
   }
 
