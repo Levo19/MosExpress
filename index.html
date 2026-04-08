@@ -1592,7 +1592,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', montoRecibido: 0, montoVirtual: 0 });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0 });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
         const clienteNombreManual = ref('');
@@ -1959,7 +1959,10 @@
                      prodsText.push({
                          idUnico: String(base.SKU_Base), sku: String(base.SKU_Base), codBarras: String(pres[0].Cod_Barras), nombreCorto: base.Nombre || 'Sin Nombre',
                          presentaciones: pres,
-                         empaque: pres[0].Empaque, precio: parseFloat(pres[0].Precio_Venta) || 0, codSunat: base.Cod_SUNAT || '01010101',
+                         empaque: pres[0].Empaque, precio: parseFloat(pres[0].Precio_Venta) || 0,
+                         codSunat:     String(base.Cod_SUNAT     || ''),   // código producto SUNAT
+                         tipoIgv:      parseInt(base.Tipo_IGV    || '1', 10), // 1=Gravado 2=Exonerado 3=Inafecto
+                         unidadMedida: String(base.Unidad_Medida || 'NIU'),   // NIU=Unidad KGM=Kg ZZ=Servicio
                          promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`,
                          stock: stockVal
                      });
@@ -3013,13 +3016,15 @@
 
         const elegirPresentacion = (prodBase, pres) => {
             const item = {
-                sku: String(prodBase.sku),
-                codBarras: String(pres.Cod_Barras),
-                nombreCorto: prodBase.nombreCorto + ' (' + pres.Empaque + ')', 
-                codSunat: prodBase.codSunat, 
-                precio: parseFloat(pres.Precio_Venta), 
-                imagen: prodBase.imagen,
-                promoStr: prodBase.promoStr
+                sku:          String(prodBase.sku),
+                codBarras:    String(pres.Cod_Barras),
+                nombreCorto:  prodBase.nombreCorto + ' (' + pres.Empaque + ')',
+                codSunat:     prodBase.codSunat,
+                tipoIgv:      prodBase.tipoIgv,
+                unidadMedida: prodBase.unidadMedida,
+                precio:       parseFloat(pres.Precio_Venta),
+                imagen:       prodBase.imagen,
+                promoStr:     prodBase.promoStr
             };
             agregarCarritoObj(item);
             modalPresentaciones.value = false;
@@ -3075,7 +3080,7 @@
           const idx = carrito.value.findIndex(i => i.codBarras === prodObj.codBarras);
           if (idx > -1) { carrito.value[idx].cantidad++; calcularImportes(carrito.value[idx]); }
           else {
-            const item = { sku: String(prodObj.sku), codBarras: String(prodObj.codBarras), nombre: prodObj.nombreCorto, codSunat: prodObj.codSunat, precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio, ahorroPromo: 0, imagen: prodObj.imagen };
+            const item = { sku: String(prodObj.sku), codBarras: String(prodObj.codBarras), nombre: prodObj.nombreCorto, codSunat: prodObj.codSunat || '', tipoIgv: prodObj.tipoIgv || 1, unidadMedida: prodObj.unidadMedida || 'NIU', precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio, ahorroPromo: 0, imagen: prodObj.imagen };
             calcularImportes(item); carrito.value.unshift(item);
           }
           agregarToast('¡Añadido!', prodObj.nombreCorto);
@@ -3136,14 +3141,16 @@
         });
         const clienteBusqEsDocumento = computed(() => /^\d{8}$/.test(busquedaNombre.value.trim()) || /^\d{11}$/.test(busquedaNombre.value.trim()));
         const elegirClienteFrecuente = (c) => {
-            pago.value.docCliente = String(c.Documento || '');
-            pago.value.nombreCliente = c.Nombre || '';
+            pago.value.docCliente       = String(c.Documento  || '');
+            pago.value.nombreCliente    = c.Nombre     || '';
+            pago.value.direccionCliente = c.Direccion  || '';
             busquedaNombre.value = '';
             agregarToast('Cliente', c.Nombre);
         };
         const limpiarCliente = () => {
-            pago.value.docCliente = '';
-            pago.value.nombreCliente = '';
+            pago.value.docCliente       = '';
+            pago.value.nombreCliente    = '';
+            pago.value.direccionCliente = '';
             busquedaNombre.value = '';
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
@@ -3211,8 +3218,9 @@
                const d = await r.json();
                if (d.status === 'success') {
                    // Encontrado: auto-rellenar directamente
-                   pago.value.docCliente = d.documento;
-                   pago.value.nombreCliente = d.nombre;
+                   pago.value.docCliente       = d.documento;
+                   pago.value.nombreCliente    = d.nombre;
+                   pago.value.direccionCliente = d.direccion || '';
                    busquedaNombre.value = '';
                    agregarToast('Cliente', d.nombre + (d.fuente === 'api' ? ' · ' + d.tipo : ''));
                } else {
@@ -3256,24 +3264,93 @@
            const correlativoLocal = serieElegida + "-LOCAL";
 
            // Capturar todo antes de limpiar el carrito
-           const itemsParaImprimir = carrito.value.map(c => ({ sku: c.sku, codBarras: c.codBarras, nombre: c.nombre, cantidad: c.cantidad, precio: c.precioUnitario, subtotal: c.subtotal }));
-           const totalVenta = granTotal.value;
-           const vueltoVenta = vuelto.value;
-           const tipoDocVenta = pago.value.tipoDoc;
-           const metodoVenta = pago.value.metodo;
-           const montoRecibidoVenta = parseFloat(pago.value.montoRecibido);
-           const montoVirtualVenta = parseFloat(pago.value.montoVirtual || 0);
-           const nombreClienteVenta = pago.value.nombreCliente;
-           const docClienteVenta = pago.value.docCliente;
+           const tipoDocVenta        = pago.value.tipoDoc;
+           const metodoVenta         = pago.value.metodo;
+           const montoRecibidoVenta  = parseFloat(pago.value.montoRecibido);
+           const montoVirtualVenta   = parseFloat(pago.value.montoVirtual || 0);
+           const nombreClienteVenta  = pago.value.nombreCliente;
+           const docClienteVenta     = pago.value.docCliente;
+           const direccionClienteVenta = pago.value.direccionCliente || '';
+           const totalVenta          = granTotal.value;
+           const vueltoVenta         = vuelto.value;
+
+           // Tipo de documento SUNAT: 0=sin doc, 1=DNI (8 dígitos), 6=RUC (11 dígitos)
+           const tipoDocCliente = docClienteVenta.length === 8 ? 1
+                                : docClienteVenta.length === 11 ? 6
+                                : 0;
+
+           const IGV_RATE = 0.18;
+
            const metodoLabel = metodoVenta === 'MIXTO'
                ? `MIXTO (VIR:${montoVirtualVenta.toFixed(2)}/EFE:${(totalVenta - montoVirtualVenta).toFixed(2)})`
                : metodoVenta;
 
+           // Items con campos NubeFact — tipo_igv y unidad_de_medida vienen del producto (PRODUCTO_BASE)
+           // Códigos catálogo 07 SUNAT: 1=Gravado(18%) 8=IVAP-arroz(4%) 9=Exonerado 11=Inafecto (y más)
+           const itemsParaImprimir = carrito.value.map(c => {
+               const igv      = c.tipoIgv || 1;
+               const valUnit  = igv === 1  ? Math.round(c.precioUnitario / 1.18 * 100) / 100   // Gravado 18%
+                              : igv === 8  ? Math.round(c.precioUnitario / 1.04 * 100) / 100   // IVAP 4% (arroz pilado)
+                              : c.precioUnitario; // Exonerado (9) / Inafecto (11+): precio = valor unitario
+               return {
+                   sku:              c.sku,
+                   codBarras:        c.codBarras,
+                   nombre:           c.nombre,
+                   cantidad:         c.cantidad,
+                   precio:           c.precioUnitario,
+                   valor_unitario:   valUnit,
+                   subtotal:         c.subtotal,
+                   tipo_igv:         igv,
+                   unidad_de_medida: c.unidadMedida || 'NIU',
+                   cod_sunat:        c.codSunat || ''
+               };
+           });
+
+           // Desglose por tipo — catálogo 07 SUNAT (NubeFact requiere separar cada grupo)
+           const subGravado   = itemsParaImprimir.filter(i => i.tipo_igv === 1).reduce((s, i) => s + i.subtotal, 0);
+           const subIVAP      = itemsParaImprimir.filter(i => i.tipo_igv === 8).reduce((s, i) => s + i.subtotal, 0);
+           // Exonerados: códigos 9,10 | Inafectos: códigos 11-17
+           const subExonerado = itemsParaImprimir.filter(i => i.tipo_igv === 9 || i.tipo_igv === 10).reduce((s, i) => s + i.subtotal, 0);
+           const subInafecto  = itemsParaImprimir.filter(i => i.tipo_igv >= 11).reduce((s, i) => s + i.subtotal, 0);
+           const totalGravada   = Math.round(subGravado / 1.18 * 100) / 100;
+           const totalIGV       = Math.round((subGravado - totalGravada) * 100) / 100;
+           const totalIVAP      = Math.round(subIVAP / 1.04 * 100) / 100;      // base IVAP (arroz pilado)
+           const totalImpIVAP   = Math.round((subIVAP - totalIVAP) * 100) / 100; // 4% IVAP
+           const totalExonerada = Math.round(subExonerado * 100) / 100;
+           const totalInafecta  = Math.round(subInafecto  * 100) / 100;
+
            const ventaBase = {
-              auth: { vendedor: config.value.vendedor, estacion: config.value.estacion.Estacion_Nombre, deviceId: deviceId.value },
-              pos_config: { cajaId: idCajaActual.value, serieActual: serieElegida, printerId: config.value.estacion.PrintNode_ID },
+              auth: {
+                  vendedor:  config.value.vendedor,
+                  estacion:  config.value.estacion.Estacion_Nombre,
+                  deviceId:  deviceId.value,
+                  esCajero:  config.value.esCajero
+              },
+              pos_config: {
+                  cajaId:    idCajaActual.value,
+                  serieActual: serieElegida,
+                  printerId: config.value.estacion.PrintNode_ID
+              },
               data_sync: { last_sync: localId, tables_required: ["productos", "promociones", "clientes", "zonas", "cajas"] },
-              header: { tipoDoc: tipoDocVenta, metodo: metodoLabel, total: totalVenta, cliente: { doc: docClienteVenta, nombre: nombreClienteVenta, tipo: 'N/A' } },
+              header: {
+                  tipoDoc:         tipoDocVenta,
+                  metodo:          metodoLabel,
+                  total:           totalVenta,
+                  total_gravada:   totalGravada,    // NubeFact: base imponible gravada sin IGV (18%)
+                  total_igv:       totalIGV,         // NubeFact: monto IGV 18%
+                  total_ivap:      totalIVAP,        // NubeFact: base imponible IVAP sin impuesto (arroz pilado)
+                  total_imp_ivap:  totalImpIVAP,     // NubeFact: monto IVAP 4%
+                  total_exonerada: totalExonerada,   // NubeFact: monto exonerado
+                  total_inafecta:  totalInafecta,    // NubeFact: monto inafecto
+                  porcentaje_igv:  IGV_RATE * 100,   // 18
+                  moneda:          1,                    // 1 = PEN (Soles)
+                  cliente: {
+                      doc:       docClienteVenta,
+                      nombre:    nombreClienteVenta,
+                      tipo:      tipoDocCliente,      // 0/1/6 para NubeFact
+                      direccion: direccionClienteVenta // requerido en FACTURA
+                  }
+              },
               status: 'pending',
               items: itemsParaImprimir
            };
@@ -3340,7 +3417,7 @@
                    .catch(e => agregarToast('Error Impresión', e.message));
            };
 
-           // 4. Sync con GAS — ESPERAR respuesta antes de imprimir
+           // 4. Sync con GAS — un solo round-trip: guarda + imprime internamente
            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                try {
                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) });
@@ -3350,14 +3427,13 @@
                    // Actualizar correlativo real en historial local
                    const idx = ventasHoy.value.findIndex(v => v.id === localId);
                    if (idx !== -1) {
-                       ventasHoy.value[idx].correlativo = res.correlativo;
+                       ventasHoy.value[idx].correlativo  = res.correlativo;
                        ventasHoy.value[idx].id_venta_gas = res.idVenta;
-                       ventasHoy.value[idx].syncStatus = 'synced';
+                       ventasHoy.value[idx].syncStatus   = 'synced';
                        ventasHoy.value[idx].raw_data.status = 'synced';
                        ventasHoy.value[idx].isNew = true;
                        localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                    }
-                   // Sonido solo si el ticket queda pendiente de cobro (POR_COBRAR)
                    if (metodoVenta === 'POR_COBRAR') playCoinSound();
                    flashNuevosTickets.value = false;
                    nextTick(() => { flashNuevosTickets.value = true; });
@@ -3366,7 +3442,11 @@
                        if (idx !== -1) ventasHoy.value[idx].isNew = false;
                    }, 4000);
                    agregarToast('¡Venta Registrada!', res.correlativo);
-                   imprimirTicketVenta(res.correlativo, true);
+
+                   // GAS ya imprimió — solo fallback si reporta que no pudo
+                   if (!res.printDispatched) {
+                       imprimirTicketVenta(res.correlativo, true);
+                   }
 
                    // Insertar en ventasZona instantáneamente (sin esperar polling)
                    const ticketNuevo = {
@@ -3379,10 +3459,8 @@
                        cobrado: metodoVenta !== 'POR_COBRAR' && metodoVenta !== 'EFECTIVO_PENDIENTE',
                        anulada: false, id_venta_gas: res.idVenta, ref_local: String(localId)
                    };
-                   // Evitar duplicado si el polling ya lo trajo
                    if (!ventasZona.value.find(v => v.id === res.idVenta)) {
                        ventasZona.value.unshift(ticketNuevo);
-                       // Sin sonido aquí — ya sonó arriba si era POR_COBRAR
                        flashNuevosTickets.value = false;
                        nextTick(() => { flashNuevosTickets.value = true; });
                        setTimeout(() => {

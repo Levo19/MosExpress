@@ -113,6 +113,7 @@ function doPost(e) {
       status: "success",
       idVenta: response.idVenta,
       correlativo: response.correlativo,
+      printDispatched: response.printDispatched,
       mensaje: "Venta procesada con éxito"
     })).setMimeType(ContentService.MimeType.JSON);
 
@@ -232,50 +233,84 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
 function procesarVenta(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCabecera = ss.getSheetByName("VENTAS_CABECERA");
-  var sheetDetalle = ss.getSheetByName("VENTAS_DETALLE");
+  var sheetDetalle  = ss.getSheetByName("VENTAS_DETALLE");
 
   if (!sheetCabecera) throw new Error("Pestaña VENTAS_CABECERA no encontrada.");
-  if (!sheetDetalle) throw new Error("Pestaña VENTAS_DETALLE no encontrada.");
+  if (!sheetDetalle)  throw new Error("Pestaña VENTAS_DETALLE no encontrada.");
 
-  var auth = data.auth;
-  var pos = data.pos_config;
-  var header = data.header;
-  var items = data.items;
+  var auth   = data.auth        || {};
+  var pos    = data.pos_config  || {};
+  var header = data.header      || {};
+  var items  = data.items       || [];
 
   var fechaActual = new Date();
   var idVenta = "V-" + fechaActual.getTime();
 
-  var correlativoNumero = obtenerSiguienteCorrelativo(sheetCabecera, pos.serieActual);
-  var correlativoFinal = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
+  // ── Correlativo rápido (hoja CORRELATIVOS, O(1) vs O(n)) ─────────────────
+  var correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
+  var correlativoFinal  = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
 
-  // Esquema VENTAS_CABECERA (15 columnas):
+  // ── VENTAS_CABECERA (16 columnas) ────────────────────────────────────────
   // ID_Venta | Fecha | Vendedor | Estacion | Cliente_Doc | Cliente_Nombre | Total
-  // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio | Ref_Local | Obs
-  var refLocal = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
+  // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio
+  // | Ref_Local | Obs | Tipo_Doc_Cliente
+  var refLocal       = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
+  var tipoDocCliente = parseInt((header.cliente && header.cliente.tipo) || 0, 10); // 0=sin doc, 1=DNI, 6=RUC
   sheetCabecera.appendRow([
     idVenta, fechaActual, auth.vendedor, auth.estacion,
-    header.cliente.doc, header.cliente.nombre, header.total,
-    header.tipoDoc,                    // col 8: Tipo_Doc  (limpio)
-    header.metodo || 'EFECTIVO',       // col 9: FormaPago (EFECTIVO/VIRTUAL/MIXTO/POR_COBRAR/CREDITO)
+    (header.cliente && header.cliente.doc)    || '',
+    (header.cliente && header.cliente.nombre) || '',
+    header.total,
+    header.tipoDoc,
+    header.metodo || 'EFECTIVO',
     correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO",
-    refLocal,                          // col 14: Ref_Local (ID del dispositivo para cross-ref QR)
-    String(header.obs || '')           // col 15: Obs (observaciones / nota de crédito)
+    refLocal,
+    String(header.obs || ''),
+    tipoDocCliente                              // col 16: Tipo_Doc_Cliente (NubeFact)
   ]);
 
-  // Esquema VENTAS_DETALLE (7 columnas):
+  // ── VENTAS_DETALLE — escritura por lote (1 setValues vs N appendRow) ──────
   // ID_Venta | SKU | Nombre | Cantidad | Precio | Subtotal | Cod_Barras
-  items.forEach(function(item) {
-    sheetDetalle.appendRow([
-      idVenta, item.sku, item.nombre, item.cantidad, item.precio, item.subtotal,
-      String(item.codBarras || '')   // col 7: código de barras real — forzar texto
-    ]);
-  });
-
-  if (header.tipoDoc !== 'NOTA_DE_VENTA') {
-    verificarYAgregaCliente(header.cliente.doc, header.cliente.nombre, header.tipoDoc);
+  // | Valor_Unitario | Tipo_IGV | Unidad_Medida
+  if (items.length > 0) {
+    var detalleRows = items.map(function(item) {
+      var valorUnitario = parseFloat(item.valor_unitario) || Math.round(parseFloat(item.precio || 0) / 1.18 * 100) / 100;
+      return [
+        idVenta,
+        item.sku,
+        item.nombre,
+        item.cantidad,
+        item.precio,
+        item.subtotal,
+        String(item.codBarras || ''),
+        Math.round(valorUnitario * 100) / 100,  // col 8: Valor_Unitario sin IGV (NubeFact)
+        parseInt(item.tipo_igv || 1, 10),        // col 9: Tipo_IGV 1=Gravado (NubeFact)
+        String(item.unidad_de_medida || 'NIU')   // col 10: Unidad_Medida (NubeFact)
+      ];
+    });
+    var lastRow = sheetDetalle.getLastRow();
+    sheetDetalle
+      .getRange(lastRow + 1, 1, detalleRows.length, detalleRows[0].length)
+      .setValues(detalleRows);
   }
 
-  return { idVenta: idVenta, correlativo: correlativoFinal };
+  // ── Registrar cliente frecuente ───────────────────────────────────────────
+  if (header.tipoDoc !== 'NOTA_DE_VENTA') {
+    verificarYAgregaCliente(
+      (header.cliente && header.cliente.doc)      || '',
+      (header.cliente && header.cliente.nombre)   || '',
+      header.tipoDoc,
+      (header.cliente && header.cliente.direccion) || ''
+    );
+  }
+
+  // ── Imprimir en el mismo round-trip (sin segundo llamado desde el browser) ─
+  var printDispatched = false;
+  if (pos.printerId) {
+    printDispatched = imprimirTicketInternamente(data, correlativoFinal, pos.printerId);
+  }
+
+  return { idVenta: idVenta, correlativo: correlativoFinal, printDispatched: printDispatched };
 }
 
 // NUEVO: proxy de impresión para PrintNode — la clave nunca sale del servidor
@@ -383,7 +418,162 @@ function obtenerSiguienteCorrelativo(sheet, serie) {
   return maxCorrelativo + 1;
 }
 
-function verificarYAgregaCliente(doc, nombre, tipoDoc) {
+// ── Correlativo O(1): lee/incrementa una celda en hoja CORRELATIVOS ─────────
+// Hoja CORRELATIVOS: encabezados Serie | Siguiente
+// Crea la hoja automáticamente si no existe.
+// Usa LockService para evitar duplicados en ventas simultáneas.
+function obtenerSiguienteCorrelativoRapido(ss, serie) {
+  var sheet = ss.getSheetByName('CORRELATIVOS');
+  if (!sheet) {
+    // Primera vez: fallback lento + creación automática de la hoja
+    var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
+    var initial  = sheetCab ? obtenerSiguienteCorrelativo(sheetCab, serie) : 1;
+    sheet = ss.insertSheet('CORRELATIVOS');
+    sheet.appendRow(['Serie', 'Siguiente']);
+    sheet.appendRow([serie, initial + 1]);
+    SpreadsheetApp.flush();
+    return initial;
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(6000); } catch (e) {
+    // Contención excesiva — fallback seguro sin bloquear la venta
+    var sheetCabFb = ss.getSheetByName('VENTAS_CABECERA');
+    return sheetCabFb ? obtenerSiguienteCorrelativo(sheetCabFb, serie) : 1;
+  }
+
+  try {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === serie) {
+        var siguiente = parseInt(data[i][1], 10) || 1;
+        sheet.getRange(i + 1, 2).setValue(siguiente + 1);
+        SpreadsheetApp.flush(); // confirmar antes de liberar lock
+        return siguiente;
+      }
+    }
+    // Serie nueva — detectar desde VENTAS_CABECERA para no reiniciar
+    var sheetCab2 = ss.getSheetByName('VENTAS_CABECERA');
+    var initial2  = sheetCab2 ? obtenerSiguienteCorrelativo(sheetCab2, serie) : 1;
+    sheet.appendRow([serie, initial2 + 1]);
+    SpreadsheetApp.flush();
+    return initial2;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ── Normaliza texto para ESC/POS (quita tildes y no-ASCII) ──────────────────
+function normalizarTextoGAS(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')   // eliminar diacríticos
+    .replace(/[^\x20-\x7E]/g, '?');    // reemplazar no-ASCII con ?
+}
+
+// ── Genera bloque ESC/POS de QR Code (mismo algoritmo que el browser) ───────
+function qrESCPOSGas(text) {
+  var len = text.length + 3;
+  var pL  = len & 0xFF;
+  var pH  = (len >> 8) & 0xFF;
+  return '\x1d\x28\x6b\x04\x00\x31\x41\x32\x00' +
+         '\x1d\x28\x6b\x03\x00\x31\x43\x05' +
+         '\x1d\x28\x6b\x03\x00\x31\x45\x31' +
+         '\x1d\x28\x6b' + String.fromCharCode(pL) + String.fromCharCode(pH) +
+         '\x31\x50\x30' + text +
+         '\x1d\x28\x6b\x03\x00\x31\x51\x30' +
+         '\n';
+}
+
+// ── Construye el ticket ESC/POS en GAS y envía a PrintNode ──────────────────
+// Elimina el segundo round-trip browser→GAS→PrintNode.
+function imprimirTicketInternamente(data, correlativo, printerId) {
+  var printNodeKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+  if (!printNodeKey || !printerId) return false;
+
+  var auth   = data.auth   || {};
+  var header = data.header || {};
+  var items  = data.items  || [];
+
+  var W    = 48;
+  var SEP  = new Array(W + 1).join('=') + '\n';
+  var SEPd = new Array(W + 1).join('-') + '\n';
+
+  var tipoLabel = header.tipoDoc === 'NOTA_DE_VENTA' ? 'NOTA DE VENTA' :
+                  header.tipoDoc === 'BOLETA'         ? 'BOLETA'         :
+                  header.tipoDoc === 'FACTURA'        ? 'FACTURA'        :
+                  normalizarTextoGAS(header.tipoDoc || '');
+
+  var txt = '\x1b\x40';                                         // reset impresora
+  txt += '\x1b\x61\x01';                                        // centrar
+  txt += '\x1b\x21\x30MOSexpress\x1b\x21\x00\n';               // logo grande
+  txt += '\x1b\x21\x10' + tipoLabel + '\x1b\x21\x00\n';        // tipo doc
+  txt += 'Tk: ' + correlativo + '\n';
+  txt += SEP;
+  txt += '\x1b\x61\x00';                                        // izquierda
+  txt += 'FECHA   : ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') + '\n';
+
+  var clienteNombre = normalizarTextoGAS((header.cliente && header.cliente.nombre) || '');
+  var clienteDoc    = (header.cliente && header.cliente.doc) ? String(header.cliente.doc) : '';
+  if (clienteNombre) txt += 'CLIENTE : ' + clienteNombre.substring(0, 38) + '\n';
+  if (clienteDoc)    txt += 'DOC     : ' + clienteDoc + '\n';
+  txt += (auth.esCajero ? 'CAJERO  ' : 'VENDEDOR') + ': ' + normalizarTextoGAS(auth.vendedor || '') + '\n';
+  txt += SEP;
+  txt += 'CANT  DESCRIPCION                      SUBTOTAL \n';
+  txt += SEPd;
+
+  items.forEach(function(item) {
+    var nombre   = normalizarTextoGAS(item.nombre || '');
+    var m        = nombre.match(/^(.+?)\s+\((.+)\)$/);
+    var baseName = m ? m[1] : nombre;
+    var empaque  = m ? m[2] : null;
+    var desc = baseName.substring(0, 31);
+    while (desc.length < 31) desc += ' ';
+    var cant = String(item.cantidad || '').substring(0, 4);
+    while (cant.length < 5) cant += ' ';
+    var sub = parseFloat(item.subtotal || 0).toFixed(2);
+    while (sub.length < 10) sub = ' ' + sub;
+    txt += cant + ' ' + desc + ' ' + sub + '\n';
+    if (empaque) txt += '        ' + empaque.substring(0, 38) + '\n';
+  });
+
+  txt += SEPd;
+  txt += '\x1b\x61\x02';                                        // derecha
+  txt += '\x1b\x21\x10TOTAL: S/ ' + parseFloat(header.total || 0).toFixed(2) + '\x1b\x21\x00\n';
+  txt += 'METODO: ' + normalizarTextoGAS(header.metodo || 'EFECTIVO') + '\n';
+  txt += '\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n';
+  txt += qrESCPOSGas(correlativo);
+  txt += '\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02'; // feed + corte + beep
+
+  // Convertir a bytes explícitos (evita ambigüedad UTF-8 vs Latin-1)
+  var bytes = [];
+  for (var ci = 0; ci < txt.length; ci++) {
+    bytes.push(txt.charCodeAt(ci) & 0xFF);
+  }
+  var content = Utilities.base64Encode(bytes);
+
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printjobs', {
+      method: 'post',
+      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(printNodeKey + ':') },
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        printerId:   parseInt(printerId, 10),
+        title:       tipoLabel + ' ' + correlativo,
+        contentType: 'raw_base64',
+        content:     content,
+        source:      'MOSexpress-GAS'
+      }),
+      muteHttpExceptions: true
+    });
+    return resp.getResponseCode() === 201;
+  } catch (e) {
+    Logger.log('imprimirTicketInternamente error: ' + e.toString());
+    return false;
+  }
+}
+
+function verificarYAgregaCliente(doc, nombre, tipoDoc, direccion) {
   if (!doc) return;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CLIENTES_FRECUENTES");
@@ -392,7 +582,8 @@ function verificarYAgregaCliente(doc, nombre, tipoDoc) {
   for (var i = 0; i < data.length; i++) {
     if (String(data[i].Documento) === String(doc)) return; // ya existe
   }
-  sheet.appendRow([doc, nombre, tipoDoc, new Date()]);
+  // Esquema: Documento | Nombre | Tipo | Fecha | Direccion
+  sheet.appendRow([doc, nombre, tipoDoc, new Date(), String(direccion || '')]);
 }
 
 // Anula en masa todos los tickets POR_COBRAR que no fueron cobrados al cierre del turno
@@ -828,15 +1019,17 @@ function consultarCliente(doc) {
     var headers = rows[0].map(function(h) { return String(h).trim(); });
     var docIdx = headers.indexOf('Documento');
     var nomIdx = headers.indexOf('Nombre');
+    var dirIdx = headers.indexOf('Direccion'); // puede no existir en tablas antiguas
     if (docIdx >= 0 && nomIdx >= 0) {
       for (var i = 1; i < rows.length; i++) {
         if (String(rows[i][docIdx]).trim() === doc) {
           return ContentService.createTextOutput(JSON.stringify({
-            status: 'success',
-            nombre: String(rows[i][nomIdx]),
+            status:    'success',
+            nombre:    String(rows[i][nomIdx]),
             documento: doc,
-            tipo: doc.length === 11 ? 'RUC' : 'DNI',
-            fuente: 'local'
+            tipo:      doc.length === 11 ? 'RUC' : 'DNI',
+            fuente:    'local',
+            direccion: dirIdx >= 0 ? String(rows[i][dirIdx] || '') : ''
           })).setMimeType(ContentService.MimeType.JSON);
         }
       }
@@ -858,11 +1051,14 @@ function consultarCliente(doc) {
     var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     var json = JSON.parse(response.getContentText());
 
-    var nombre = '';
+    var nombre    = '';
+    var direccion = '';
     if (tipo === 'dni') {
       nombre = [json.nombres, json.apellidoPaterno, json.apellidoMaterno].filter(Boolean).join(' ').trim();
+      // RENIEC no expone dirección públicamente — se deja vacía
     } else {
-      nombre = (json.razonSocial || '').trim();
+      nombre    = (json.razonSocial || '').trim();
+      direccion = (json.direccion   || '').trim(); // APISPeru devuelve dirección fiscal del RUC
     }
 
     if (!nombre) {
@@ -873,11 +1069,12 @@ function consultarCliente(doc) {
     }
 
     return ContentService.createTextOutput(JSON.stringify({
-      status: 'success',
-      nombre: nombre,
+      status:    'success',
+      nombre:    nombre,
       documento: doc,
-      tipo: tipo === 'ruc' ? 'RUC' : 'DNI',
-      fuente: 'api'
+      tipo:      tipo === 'ruc' ? 'RUC' : 'DNI',
+      fuente:    'api',
+      direccion: direccion
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch (e) {

@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>MOSexpress — Guía de Relleno de Tablas (NubeFact)</title>
+<style>
+  body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; margin: 2.5cm 3cm; color: #1a1a1a; }
+  h1 { font-size: 18pt; color: #16a34a; border-bottom: 3px solid #16a34a; padding-bottom: 6px; margin-bottom: 4px; }
+  h2 { font-size: 13pt; color: #15803d; margin-top: 24px; margin-bottom: 6px; border-left: 4px solid #16a34a; padding-left: 8px; }
+  h3 { font-size: 11pt; color: #374151; margin-top: 16px; margin-bottom: 4px; }
+  p  { margin: 4px 0 8px 0; line-height: 1.5; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px 0; font-size: 10pt; }
+  th { background: #15803d; color: white; padding: 7px 10px; text-align: left; font-weight: bold; }
+  td { border: 1px solid #d1d5db; padding: 6px 10px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f0fdf4; }
+  tr:nth-child(odd)  td { background: #ffffff; }
+  .nuevo    { background: #dcfce7 !important; font-weight: bold; }
+  .obs      { font-size: 9pt; color: #6b7280; font-style: italic; }
+  .alerta   { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 8px 12px; margin: 10px 0; font-size: 10pt; }
+  .tip      { background: #eff6ff; border: 1px solid #3b82f6; border-radius: 4px; padding: 8px 12px; margin: 10px 0; font-size: 10pt; }
+  .code     { font-family: Consolas, monospace; background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 9.5pt; }
+  .seccion  { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; }
+  .titulo-doc { text-align: center; margin-bottom: 8px; }
+  .subtitulo  { text-align: center; color: #6b7280; font-size: 10pt; margin-bottom: 24px; }
+  .resumen-box { background: #f0fdf4; border: 2px solid #16a34a; border-radius: 6px; padding: 12px 16px; margin: 16px 0; }
+  ul { margin: 4px 0 8px 0; padding-left: 20px; line-height: 1.8; }
+  li { margin-bottom: 2px; }
+  .tag-nuevo  { background: #16a34a; color: white; font-size: 8pt; padding: 1px 5px; border-radius: 3px; vertical-align: middle; }
+  .tag-exist  { background: #6b7280; color: white; font-size: 8pt; padding: 1px 5px; border-radius: 3px; vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<div class="titulo-doc">
+  <h1>MOSexpress — Guía de Relleno de Tablas</h1>
+</div>
+<p class="subtitulo">Preparación para NubeFact (Facturación Electrónica SUNAT) · Versión Abril 2026</p>
+
+<!-- ===== RESUMEN ===== -->
+<div class="resumen-box">
+  <strong>¿Qué cambió?</strong> Se agregaron campos a 4 tablas del Google Sheets para que el sistema pueda emitir
+  Boletas y Facturas electrónicas a través de NubeFact. Las columnas marcadas con <span class="tag-nuevo">NUEVA</span>
+  son las que debes agregar. Las de <span class="tag-exist">EXISTENTE</span> ya estaban, solo se documenta cómo usarlas.
+</div>
+
+<!-- ===== TABLA 1: PRODUCTO_BASE ===== -->
+<h2>1. PRODUCTO_BASE &nbsp;<span class="tag-nuevo">NUEVA: 2 columnas</span></h2>
+<p>Es la fuente de verdad para los campos fiscales por producto. Agrega las dos columnas al final de la hoja.</p>
+
+<div class="alerta">
+  ⚠️ Si dejas la celda vacía, el sistema asume <strong>Tipo_IGV = 1</strong> (Gravado) y <strong>Unidad_Medida = NIU</strong> automáticamente. No rompe nada existente.
+</div>
+
+<table>
+  <tr>
+    <th>Columna</th>
+    <th>Descripción</th>
+    <th>Valores válidos</th>
+    <th>Cuándo usar cada uno</th>
+  </tr>
+  <tr>
+    <td><span class="tag-exist">EXISTENTE</span><br><strong>Cod_SUNAT</strong></td>
+    <td>Código de producto según catálogo SUNAT (tabla 25). Ya existía, ahora se envía a NubeFact.</td>
+    <td><span class="code">01010101</span>, <span class="code">01010400</span>, etc.</td>
+    <td>Obligatorio para Facturas y Boletas. Si no sabes el código exacto, usa <span class="code">01010101</span> (genérico bienes). Puedes consultarlo en el portal SUNAT.</td>
+  </tr>
+  <tr class="nuevo">
+    <td><span class="tag-nuevo">NUEVA</span><br><strong>Tipo_IGV</strong></td>
+    <td>Tipo de afectación al IGV según SUNAT (catálogo 07).</td>
+    <td>
+      <strong>1</strong> = Gravado Op. Onerosa<br>
+      <strong>2</strong> = Exonerado Op. Onerosa<br>
+      <strong>3</strong> = Inafecto Op. Onerosa<br>
+      <em>(dejar vacío = 1)</em>
+    </td>
+    <td>
+      <strong>1 → La mayoría de productos</strong> (abarrotes, bebidas con alcohol, electrodomésticos, etc.)<br>
+      <strong>2 → Exonerados</strong> (agua embotellada, algunos alimentos básicos como arroz, azúcar, leche — ver Apéndice I IGV)<br>
+      <strong>3 → Inafectos</strong> (servicios educativos, seguros, etc.)
+    </td>
+  </tr>
+  <tr class="nuevo">
+    <td><span class="tag-nuevo">NUEVA</span><br><strong>Unidad_Medida</strong></td>
+    <td>Unidad de medida según catálogo ONU (tabla 6 SUNAT).</td>
+    <td>
+      <strong>NIU</strong> = Unidad<br>
+      <strong>KGM</strong> = Kilogramo<br>
+      <strong>LTR</strong> = Litro<br>
+      <strong>BLL</strong> = Barril/Botella<br>
+      <strong>BG</strong> = Bolsa<br>
+      <strong>ZZ</strong> = Servicio (mutualmente acordado)<br>
+      <em>(dejar vacío = NIU)</em>
+    </td>
+    <td>
+      <strong>NIU</strong> → cuando vendes por unidad (caja de galletas, botella, paquete, etc.)<br>
+      <strong>KGM</strong> → cuando vendes por kilo (carne, granos a granel)<br>
+      <strong>LTR</strong> → cuando vendes por litro (aceite a granel, etc.)<br>
+      <strong>ZZ</strong> → cuando vendes un servicio
+    </td>
+  </tr>
+</table>
+
+<h3>Ejemplos completos de PRODUCTO_BASE</h3>
+<table>
+  <tr>
+    <th>SKU_Base</th>
+    <th>Nombre</th>
+    <th>Cod_SUNAT</th>
+    <th>Tipo_IGV</th>
+    <th>Unidad_Medida</th>
+    <th>¿Por qué?</th>
+  </tr>
+  <tr>
+    <td>COKE-001</td>
+    <td>Coca Cola</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>1</strong></td>
+    <td>NIU</td>
+    <td>Gravado 18%. Venta normal de bebida gaseosa.</td>
+  </tr>
+  <tr>
+    <td>CERV-001</td>
+    <td>Cerveza Cristal</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>1</strong></td>
+    <td>NIU</td>
+    <td>Gravado 18%. Las bebidas alcohólicas también pagan ISC, pero en IGV son gravadas (código 1).</td>
+  </tr>
+  <tr>
+    <td>CHIP-001</td>
+    <td>Papas Lays</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>1</strong></td>
+    <td>NIU</td>
+    <td>Gravado 18%. Snack procesado.</td>
+  </tr>
+  <tr>
+    <td>DETERG-001</td>
+    <td>Detergente Ariel</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>1</strong></td>
+    <td>NIU</td>
+    <td>Gravado 18%. Producto de limpieza.</td>
+  </tr>
+  <tr>
+    <td>ACEITE-001</td>
+    <td>Aceite Primor envasado</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>1</strong></td>
+    <td>NIU</td>
+    <td>Gravado 18%. Aceite vegetal envasado. (Solo aceite a granel podría ser exonerado.)</td>
+  </tr>
+  <tr style="background:#fef9c3">
+    <td>ARROZ-001</td>
+    <td>Arroz pilado Extra</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>8</strong> ⚠️</td>
+    <td>KGM</td>
+    <td><strong>IVAP 4%</strong> — El arroz PILADO tiene su propio impuesto (no es IGV normal). Usar código 8, NO el 9. Por kilo.</td>
+  </tr>
+  <tr>
+    <td>AGUA-001</td>
+    <td>Agua San Luis</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>9</strong></td>
+    <td>NIU</td>
+    <td>Exonerada. Apéndice I Ley IGV. Valor unitario = precio directo.</td>
+  </tr>
+  <tr>
+    <td>LECHE-001</td>
+    <td>Leche Gloria (tarro)</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>9</strong></td>
+    <td>NIU</td>
+    <td>Exonerada. Leche evaporada en Apéndice I.</td>
+  </tr>
+  <tr>
+    <td>AZUC-001</td>
+    <td>Azúcar rubia</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>9</strong></td>
+    <td>KGM</td>
+    <td>Exonerada. Por kilo.</td>
+  </tr>
+  <tr>
+    <td>HUEV-001</td>
+    <td>Huevos (cartón x30)</td>
+    <td>01010101</td>
+    <td style="text-align:center"><strong>9</strong></td>
+    <td>NIU</td>
+    <td>Exonerados. Huevos de ave frescos en Apéndice I.</td>
+  </tr>
+  <tr>
+    <td>SERV-001</td>
+    <td>Delivery / Flete</td>
+    <td>77101801</td>
+    <td style="text-align:center"><strong>11</strong></td>
+    <td>ZZ</td>
+    <td>Inafecto. Servicio, no venta de bien. Cod. SUNAT de servicios de transporte.</td>
+  </tr>
+</table>
+
+<div class="tip">
+  💡 <strong>Regla práctica:</strong> En Peru, los productos del <strong>Apéndice I de la Ley del IGV</strong> son exonerados (arroz, azúcar, leche, agua, etc.). Todo lo demás es generalmente Gravado (tipo 1). Si tienes dudas, consulta a tu contador o busca "Apéndice I IGV Peru" en Google.
+</div>
+
+<!-- ===== TABLA 2: VENTAS_DETALLE ===== -->
+<h2>2. VENTAS_DETALLE &nbsp;<span class="tag-nuevo">NUEVA: 3 columnas</span></h2>
+<p>Estas columnas las llena el sistema automáticamente al registrar cada venta. <strong>Tú solo debes agregar las columnas vacías al final de la hoja</strong> — el sistema las rellena solo con los valores que vienen de PRODUCTO_BASE.</p>
+
+<table>
+  <tr>
+    <th>#</th>
+    <th>Columna</th>
+    <th>¿Quién la llena?</th>
+    <th>Descripción</th>
+    <th>Ejemplo</th>
+  </tr>
+  <tr><td>1</td><td>ID_Venta</td><td class="obs">Sistema</td><td>ID interno de la venta</td><td class="code">V-1712345678</td></tr>
+  <tr><td>2</td><td>SKU</td><td class="obs">Sistema</td><td>Código interno del producto</td><td class="code">COKE-001</td></tr>
+  <tr><td>3</td><td>Nombre</td><td class="obs">Sistema</td><td>Nombre del producto</td><td class="code">Coca Cola (600ml)</td></tr>
+  <tr><td>4</td><td>Cantidad</td><td class="obs">Sistema</td><td>Unidades vendidas</td><td class="code">3</td></tr>
+  <tr><td>5</td><td>Precio</td><td class="obs">Sistema</td><td>Precio unitario con IGV (precio de venta)</td><td class="code">3.00</td></tr>
+  <tr><td>6</td><td>Subtotal</td><td class="obs">Sistema</td><td>Cantidad × Precio</td><td class="code">9.00</td></tr>
+  <tr><td>7</td><td>Cod_Barras</td><td class="obs">Sistema</td><td>Código de barras de la presentación</td><td class="code">7750000012345</td></tr>
+  <tr class="nuevo"><td>8</td><td><strong>Valor_Unitario</strong> <span class="tag-nuevo">NUEVA</span></td><td class="obs">Sistema</td><td>Precio sin IGV. Si Gravado: Precio÷1.18. Si Exonerado/Inafecto: igual al Precio.</td><td class="code">2.542 (gravado)<br>3.000 (exonerado)</td></tr>
+  <tr class="nuevo"><td>9</td><td><strong>Tipo_IGV</strong> <span class="tag-nuevo">NUEVA</span></td><td class="obs">Sistema</td><td>Tomado de PRODUCTO_BASE. 1=Gravado, 2=Exonerado, 3=Inafecto.</td><td class="code">1</td></tr>
+  <tr class="nuevo"><td>10</td><td><strong>Unidad_Medida</strong> <span class="tag-nuevo">NUEVA</span></td><td class="obs">Sistema</td><td>Tomado de PRODUCTO_BASE. NIU, KGM, LTR, etc.</td><td class="code">NIU</td></tr>
+</table>
+
+<!-- ===== TABLA 3: VENTAS_CABECERA ===== -->
+<h2>3. VENTAS_CABECERA &nbsp;<span class="tag-nuevo">NUEVA: 1 columna</span></h2>
+<p>Agrega esta columna al final. El sistema la llena automáticamente según el documento del cliente ingresado en el POS.</p>
+
+<table>
+  <tr>
+    <th>#</th>
+    <th>Columna</th>
+    <th>¿Quién la llena?</th>
+    <th>Descripción</th>
+    <th>Ejemplo</th>
+  </tr>
+  <tr><td>1-15</td><td>Columnas existentes...</td><td class="obs">Sistema</td><td>(sin cambios)</td><td>—</td></tr>
+  <tr class="nuevo">
+    <td>16</td>
+    <td><strong>Tipo_Doc_Cliente</strong> <span class="tag-nuevo">NUEVA</span></td>
+    <td class="obs">Sistema (auto)</td>
+    <td>
+      Código SUNAT del tipo de documento del cliente:<br>
+      <strong>0</strong> = Sin documento (cliente genérico / consumidor final)<br>
+      <strong>1</strong> = DNI (8 dígitos)<br>
+      <strong>6</strong> = RUC (11 dígitos)<br>
+      Se detecta automáticamente del largo del número ingresado.
+    </td>
+    <td class="code">0 (Nota de Venta sin doc)<br>1 (Boleta con DNI)<br>6 (Factura con RUC)</td>
+  </tr>
+</table>
+
+<!-- ===== TABLA 4: CLIENTES_FRECUENTES ===== -->
+<h2>4. CLIENTES_FRECUENTES &nbsp;<span class="tag-nuevo">NUEVA: 1 columna</span></h2>
+<p>Agrega esta columna al final. Se llena automáticamente cuando se busca un RUC por la API de APISPeru. Para DNI queda vacía (RENIEC no expone direcciones públicamente).</p>
+
+<table>
+  <tr>
+    <th>#</th>
+    <th>Columna</th>
+    <th>¿Quién la llena?</th>
+    <th>Descripción</th>
+    <th>Ejemplo</th>
+  </tr>
+  <tr><td>1</td><td>Documento</td><td class="obs">Sistema</td><td>DNI o RUC del cliente</td><td class="code">20100070970</td></tr>
+  <tr><td>2</td><td>Nombre</td><td class="obs">Sistema</td><td>Razón social o nombre completo</td><td class="code">ALICORP SAA</td></tr>
+  <tr><td>3</td><td>Tipo</td><td class="obs">Sistema</td><td>BOLETA o FACTURA</td><td class="code">FACTURA</td></tr>
+  <tr><td>4</td><td>Fecha</td><td class="obs">Sistema</td><td>Fecha del primer registro</td><td class="code">07/04/2026</td></tr>
+  <tr class="nuevo">
+    <td>5</td>
+    <td><strong>Direccion</strong> <span class="tag-nuevo">NUEVA</span></td>
+    <td class="obs">Sistema (desde API RUC)</td>
+    <td>Dirección fiscal del RUC, obtenida automáticamente de APISPeru al buscar el RUC. Para DNI queda en blanco. Necesaria para emitir Facturas en NubeFact.</td>
+    <td class="code">AV. MANUEL OLGUIN 375 SURCO LIMA</td>
+  </tr>
+</table>
+
+<!-- ===== TABLA 5: CORRELATIVOS ===== -->
+<h2>5. CORRELATIVOS &nbsp;<span class="tag-nuevo">HOJA NUEVA</span></h2>
+<p>Esta es una hoja completamente nueva que el sistema crea solo automáticamente. <strong>No necesitas crearla manualmente</strong>, pero si la creas antes del primer deploy, el primer uso será más rápido.</p>
+
+<table>
+  <tr>
+    <th>Columna A: Serie</th>
+    <th>Columna B: Siguiente</th>
+    <th>¿Para qué?</th>
+  </tr>
+  <tr>
+    <td><span class="code">NV01</span></td>
+    <td><span class="code">47</span></td>
+    <td rowspan="3">Cada fila guarda el próximo número a usar para esa serie. El sistema lo actualiza solo con cada venta. Esto reemplaza el método lento que antes leía toda la tabla VENTAS_CABECERA.</td>
+  </tr>
+  <tr>
+    <td><span class="code">B001</span></td>
+    <td><span class="code">12</span></td>
+  </tr>
+  <tr>
+    <td><span class="code">F001</span></td>
+    <td><span class="code">5</span></td>
+  </tr>
+</table>
+
+<div class="tip">
+  💡 Si creas la hoja manualmente, el encabezado de la fila 1 debe ser: <span class="code">Serie</span> en A1 y <span class="code">Siguiente</span> en B1. Luego agrega una fila por cada serie que uses (NV01, B001, F001, etc.) con el número donde quieres continuar.
+</div>
+
+<!-- ===== RESUMEN DE ACCIONES ===== -->
+<h2>Resumen: Qué debes hacer en Google Sheets</h2>
+
+<div class="seccion">
+  <h3>Paso 1 — PRODUCTO_BASE: agregar 2 columnas al final</h3>
+  <ul>
+    <li>Columna: <strong>Tipo_IGV</strong> → usar los <strong>códigos reales del catálogo 07 SUNAT</strong>:
+      <ul>
+        <li><strong>1</strong> → mayoría de productos (gravado 18%)</li>
+        <li><strong>8</strong> → arroz pilado exclusivamente (IVAP 4%)</li>
+        <li><strong>9</strong> → exonerados: agua, leche, azúcar, pan, huevos, pollo fresco...</li>
+        <li><strong>11</strong> → servicios: delivery, flete, instalación...</li>
+        <li>Ver catálogo completo de 17 códigos más abajo en este documento</li>
+      </ul>
+    </li>
+    <li>Columna: <strong>Unidad_Medida</strong> → NIU (mayoría), KGM (por kilo), ZZ (servicios)</li>
+    <li>Si dejas en blanco → el sistema usa código <strong>1</strong> y <strong>NIU</strong> por defecto</li>
+  </ul>
+
+  <h3>Paso 2 — VENTAS_DETALLE: agregar 3 columnas al final</h3>
+  <ul>
+    <li>Columna 8: <strong>Valor_Unitario</strong> (dejar vacía — el sistema la llena)</li>
+    <li>Columna 9: <strong>Tipo_IGV</strong> (dejar vacía — el sistema la llena)</li>
+    <li>Columna 10: <strong>Unidad_Medida</strong> (dejar vacía — el sistema la llena)</li>
+  </ul>
+
+  <h3>Paso 3 — VENTAS_CABECERA: agregar 1 columna al final</h3>
+  <ul>
+    <li>Columna 16: <strong>Tipo_Doc_Cliente</strong> (dejar vacía — el sistema la llena)</li>
+  </ul>
+
+  <h3>Paso 4 — CLIENTES_FRECUENTES: agregar 1 columna al final</h3>
+  <ul>
+    <li>Columna 5: <strong>Direccion</strong> (dejar vacía — el sistema la llena al buscar RUC)</li>
+  </ul>
+
+  <h3>Paso 5 — Crear hoja CORRELATIVOS (opcional pero recomendado)</h3>
+  <ul>
+    <li>Crear hoja nueva llamada exactamente <strong>CORRELATIVOS</strong></li>
+    <li>Fila 1 (encabezados): <span class="code">Serie</span> | <span class="code">Siguiente</span></li>
+    <li>Agregar una fila por cada serie activa con el número actual + 1</li>
+    <li>Si no la creas, el sistema la crea sola pero el primer uso será más lento</li>
+  </ul>
+</div>
+
+<!-- ===== REFERENCIA RAPIDA IGV ===== -->
+<h2>Referencia Completa — Catálogo 07 SUNAT: Tipo de Afectación al IGV</h2>
+
+<div class="alerta">
+  ⚠️ <strong>Importante:</strong> El catálogo 07 de SUNAT tiene 17 códigos, no 3. El campo <strong>Tipo_IGV</strong> en PRODUCTO_BASE debe tener el <strong>código real de SUNAT</strong> directamente, para que cuando se integre NubeFact se envíe sin necesidad de conversión. Los más usados en retail están resaltados en verde.
+</div>
+
+<h3>Grupo GRAVADO — Paga IGV 18%</h3>
+<table>
+  <tr>
+    <th>Código<br>(poner en Sheets)</th>
+    <th>Nombre SUNAT</th>
+    <th>Cómo afecta el precio</th>
+    <th>¿Cuándo ocurre en un POS?</th>
+  </tr>
+  <tr class="nuevo">
+    <td><strong>1</strong> ⭐ MÁS USADO</td>
+    <td>Gravado – Operación Onerosa</td>
+    <td>Precio incluye 18% IGV.<br><strong>Valor unitario = Precio ÷ 1.18</strong></td>
+    <td>Venta normal de cualquier producto gravado: gaseosas, cervezas, snacks, limpieza, ropa, electrodomésticos, aceite envasado, etc.</td>
+  </tr>
+  <tr>
+    <td><strong>2</strong></td>
+    <td>Gravado – Retiro por premio</td>
+    <td>Precio incluye 18% IGV.</td>
+    <td>Cuando se entrega un producto <em>gratis</em> como premio a un cliente (sorteo, concurso). Poco común en POS.</td>
+  </tr>
+  <tr>
+    <td><strong>3</strong></td>
+    <td>Gravado – Retiro por donación</td>
+    <td>Precio incluye 18% IGV.</td>
+    <td>Donación de productos a instituciones. Casi nunca en POS.</td>
+  </tr>
+  <tr>
+    <td><strong>4</strong></td>
+    <td>Gravado – Retiro</td>
+    <td>Precio incluye 18% IGV.</td>
+    <td>Retiro interno de mercadería para uso propio del negocio. No es una venta al cliente.</td>
+  </tr>
+  <tr>
+    <td><strong>5</strong></td>
+    <td>Gravado – Retiro por publicidad</td>
+    <td>Precio incluye 18% IGV.</td>
+    <td>Muestras o productos regalados con fines de marketing. Ej: prueba gratuita de un producto nuevo.</td>
+  </tr>
+  <tr>
+    <td><strong>6</strong></td>
+    <td>Gravado – Bonificaciones</td>
+    <td>Precio incluye 18% IGV.</td>
+    <td>Productos dados como bonificación comercial. Ej: "compra 10 cajas y te regalo 1". La caja de regalo se emite con código 6.</td>
+  </tr>
+  <tr>
+    <td><strong>7</strong></td>
+    <td>Gravado – Retiro por entrega a trabajadores</td>
+    <td>Precio incluye 18% IGV.</td>
+    <td>Bienes entregados a empleados como parte de su remuneración en especie.</td>
+  </tr>
+  <tr class="nuevo">
+    <td><strong>8</strong> ⚠️ ESPECIAL</td>
+    <td>Gravado – IVAP (Impuesto a la Venta de Arroz Pilado)</td>
+    <td>No paga IGV estándar. Paga <strong>IVAP 4%</strong> en vez de 18%.<br><strong>Valor unitario = Precio ÷ 1.04</strong></td>
+    <td>Exclusivo para <strong>arroz pilado</strong>. Este producto tiene su propio impuesto (4%) y NO usa IGV normal. Si vendes arroz pilado, usar código 8, no código 9.</td>
+  </tr>
+</table>
+
+<h3>Grupo EXONERADO — No paga IGV (Apéndice I Ley del IGV)</h3>
+<table>
+  <tr>
+    <th>Código<br>(poner en Sheets)</th>
+    <th>Nombre SUNAT</th>
+    <th>Cómo afecta el precio</th>
+    <th>¿Cuándo ocurre en un POS?</th>
+  </tr>
+  <tr class="nuevo">
+    <td><strong>9</strong> ⭐ MUY USADO</td>
+    <td>Exonerado – Operación Onerosa</td>
+    <td>No paga IGV.<br><strong>Valor unitario = Precio (directo)</strong></td>
+    <td>Venta normal de productos del Apéndice I: <strong>agua embotellada, leche evaporada, azúcar, pan, pollo vivo, huevos, frutas y verduras frescas, pescado fresco.</strong> Ver tabla de ejemplos abajo.</td>
+  </tr>
+  <tr>
+    <td><strong>10</strong></td>
+    <td>Exonerado – Transferencia gratuita</td>
+    <td>No paga IGV.</td>
+    <td>Regalo de un producto exonerado (ej: regalar una botella de agua). Muy poco común en POS.</td>
+  </tr>
+</table>
+
+<h3>Grupo INAFECTO — Fuera del ámbito del IGV</h3>
+<table>
+  <tr>
+    <th>Código<br>(poner en Sheets)</th>
+    <th>Nombre SUNAT</th>
+    <th>Cómo afecta el precio</th>
+    <th>¿Cuándo ocurre en un POS?</th>
+  </tr>
+  <tr class="nuevo">
+    <td><strong>11</strong> ⭐ SERVICIOS</td>
+    <td>Inafecto – Operación Onerosa</td>
+    <td>No paga IGV.<br><strong>Valor unitario = Precio (directo)</strong></td>
+    <td>Venta de servicios que están fuera del IGV: <strong>delivery, flete, comisiones.</strong> También exportaciones cuando se factura en PEN.</td>
+  </tr>
+  <tr>
+    <td><strong>12</strong></td>
+    <td>Inafecto – Retiro por Bonificación</td>
+    <td>No paga IGV.</td>
+    <td>Bonificación de un producto inafecto.</td>
+  </tr>
+  <tr>
+    <td><strong>13</strong></td>
+    <td>Inafecto – Retiro</td>
+    <td>No paga IGV.</td>
+    <td>Retiro de un bien inafecto para uso interno.</td>
+  </tr>
+  <tr>
+    <td><strong>14</strong></td>
+    <td>Inafecto – Retiro por Muestras Médicas</td>
+    <td>No paga IGV.</td>
+    <td>Muestras médicas gratuitas. Solo aplica a farmacias o laboratorios.</td>
+  </tr>
+  <tr>
+    <td><strong>15</strong></td>
+    <td>Inafecto – Transferencia gratuita</td>
+    <td>No paga IGV.</td>
+    <td>Regalo de un bien inafecto. Muy poco común.</td>
+  </tr>
+  <tr>
+    <td><strong>16</strong></td>
+    <td>Inafecto – Transferencias no gravadas IRTA</td>
+    <td>No paga IGV.</td>
+    <td>Específico para el sector agropecuario regulado por el IRTA. Casi nunca en POS.</td>
+  </tr>
+  <tr>
+    <td><strong>17</strong></td>
+    <td>Inafecto – Exportación</td>
+    <td>No paga IGV.</td>
+    <td>Cuando se exporta un bien. La factura se emite en USD normalmente. Poco frecuente en POS local.</td>
+  </tr>
+</table>
+
+<div class="resumen-box">
+  <strong>Resumen para un POS retail en Perú — los 4 que realmente usarás:</strong>
+  <table style="margin-top:10px">
+    <tr>
+      <th>Poner en PRODUCTO_BASE</th>
+      <th>Significado real</th>
+      <th>Cálculo IGV</th>
+      <th>Ejemplos</th>
+    </tr>
+    <tr>
+      <td style="text-align:center"><strong style="font-size:14pt">1</strong></td>
+      <td>Gravado – Op. Onerosa</td>
+      <td>Valor unit = Precio ÷ 1.18</td>
+      <td>Gaseosas, cervezas, snacks, limpieza, ropa, aceite envasado, electrodomésticos</td>
+    </tr>
+    <tr>
+      <td style="text-align:center"><strong style="font-size:14pt">8</strong></td>
+      <td>Gravado – IVAP (arroz pilado)</td>
+      <td>Valor unit = Precio ÷ 1.04</td>
+      <td><strong>Solo arroz pilado.</strong> Tiene régimen especial 4%.</td>
+    </tr>
+    <tr>
+      <td style="text-align:center"><strong style="font-size:14pt">9</strong></td>
+      <td>Exonerado – Op. Onerosa</td>
+      <td>Valor unit = Precio (sin división)</td>
+      <td>Agua embotellada, leche evaporada, azúcar, pan, huevos, pollo vivo, frutas/verduras frescas</td>
+    </tr>
+    <tr>
+      <td style="text-align:center"><strong style="font-size:14pt">11</strong></td>
+      <td>Inafecto – Op. Onerosa</td>
+      <td>Valor unit = Precio (sin división)</td>
+      <td>Servicios: delivery, flete, instalación</td>
+    </tr>
+  </table>
+</div>
+
+<h3>Tabla de ejemplos corregida — PRODUCTO_BASE con códigos reales SUNAT</h3>
+<table>
+  <tr>
+    <th>Producto</th>
+    <th>Tipo_IGV<br>(código real)</th>
+    <th>Unidad_Medida</th>
+    <th>¿Por qué ese código?</th>
+  </tr>
+  <tr><td>Coca Cola 600ml</td>      <td style="text-align:center"><strong>1</strong></td>  <td>NIU</td> <td>Gravado 18%. Venta normal.</td></tr>
+  <tr><td>Cerveza Cristal</td>      <td style="text-align:center"><strong>1</strong></td>  <td>NIU</td> <td>Gravado 18%. Alcohólicas también pagan ISC aparte, pero en IGV son gravadas.</td></tr>
+  <tr><td>Papas Lays</td>           <td style="text-align:center"><strong>1</strong></td>  <td>NIU</td> <td>Gravado 18%. Snack procesado.</td></tr>
+  <tr><td>Aceite Primor (envasado)</td><td style="text-align:center"><strong>1</strong></td><td>NIU</td><td>Aceite envasado: gravado. (Solo aceite a granel en bidón podría ser exonerado.)</td></tr>
+  <tr><td>Detergente Ariel</td>     <td style="text-align:center"><strong>1</strong></td>  <td>NIU</td> <td>Limpieza: gravado 18%.</td></tr>
+  <tr><td>Arroz Costeño pilado</td> <td style="text-align:center"><strong>8</strong></td>  <td>KGM</td> <td>⚠️ Arroz PILADO: paga IVAP 4%, NO el IGV normal. Código 8, no 9.</td></tr>
+  <tr><td>Agua San Luis</td>        <td style="text-align:center"><strong>9</strong></td>  <td>NIU</td> <td>Exonerada. Apéndice I IGV.</td></tr>
+  <tr><td>Leche Gloria (tarro)</td> <td style="text-align:center"><strong>9</strong></td>  <td>NIU</td> <td>Exonerada. Apéndice I IGV.</td></tr>
+  <tr><td>Azúcar rubia x kg</td>    <td style="text-align:center"><strong>9</strong></td>  <td>KGM</td> <td>Exonerada. Por kilo.</td></tr>
+  <tr><td>Pan francés</td>          <td style="text-align:center"><strong>9</strong></td>  <td>NIU</td> <td>Exonerado. Productos de panadería sin relleno.</td></tr>
+  <tr><td>Huevos (cartón x30)</td>  <td style="text-align:center"><strong>9</strong></td>  <td>NIU</td> <td>Exonerado. Huevos de ave frescos.</td></tr>
+  <tr><td>Pollo entero fresco</td>  <td style="text-align:center"><strong>9</strong></td>  <td>KGM</td> <td>Exonerado. Carne de ave fresca.</td></tr>
+  <tr><td>Delivery / Flete</td>     <td style="text-align:center"><strong>11</strong></td> <td>ZZ</td>  <td>Servicio inafecto. No es venta de bien.</td></tr>
+</table>
+
+<div class="tip">
+  💡 <strong>¿Cómo saber si un producto es exonerado?</strong> Busca "Apéndice I Ley del IGV Peru" en Google. Ese apéndice lista exactamente qué alimentos y bienes están exonerados. Si tu producto no está en esa lista, es Gravado (código 1) salvo que sea arroz pilado (código 8) o un servicio (código 11).
+</div>
+
+<!-- ===== REFERENCIA RAPIDA UNIDADES ===== -->
+<h2>Referencia Rápida — Unidad_Medida más usadas</h2>
+
+<table>
+  <tr>
+    <th>Código</th>
+    <th>Descripción</th>
+    <th>Cuándo usar</th>
+  </tr>
+  <tr><td><strong>NIU</strong></td><td>Unidad (Unit)</td><td>La mayoría de productos: botellas, latas, cajas, paquetes, unidades sueltas. <strong>Usar si no sabes cuál poner.</strong></td></tr>
+  <tr><td><strong>KGM</strong></td><td>Kilogramo</td><td>Productos vendidos por peso: carne, granos a granel, frutas por kilo, etc.</td></tr>
+  <tr><td><strong>LTR</strong></td><td>Litro</td><td>Líquidos a granel: aceite a granel, leche fresca por litro, etc.</td></tr>
+  <tr><td><strong>BLL</strong></td><td>Barril / Botella (según contexto)</td><td>Bebidas en botella retornable (algunos proveedores lo usan para cervezas en envase).</td></tr>
+  <tr><td><strong>BG</strong></td><td>Bolsa</td><td>Productos vendidos en bolsa: papas en bolsa, detergente en bolsa, etc.</td></tr>
+  <tr><td><strong>GRM</strong></td><td>Gramo</td><td>Productos muy pequeños vendidos por gramos.</td></tr>
+  <tr><td><strong>ZZ</strong></td><td>Servicio (mutually defined)</td><td>Cualquier servicio: delivery, instalación, mantenimiento, etc.</td></tr>
+</table>
+
+<br>
+<p class="obs" style="text-align:center">Documento generado por MOSexpress · Abril 2026 · Para consultas revisar CLAUDE.md del proyecto</p>
+
+</body>
+</html>
