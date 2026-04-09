@@ -417,6 +417,13 @@
                                             :class="venta.anulada ? 'bg-red-100 text-red-400 border-2 border-red-200' : 'bg-white border-2 border-red-300 text-red-600 hover:bg-red-50'">
                                         {{ venta.anulada ? '✕ Anulado' : 'Anular' }}
                                     </button>
+                                    <button v-if="!venta.anulada"
+                                            @click="abrirModalMoneda(venta)"
+                                            class="flex-1 min-w-[80px] bg-amber-500 text-white font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors shadow-md flex items-center justify-center gap-1"
+                                            title="Cambiar forma de pago">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        Moneda
+                                    </button>
                                 </template>
                                 <button @click="reimprimirTicket(venta)" class="flex-1 min-w-[80px] bg-posSecondary text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center">
                                     Imprimir
@@ -1099,6 +1106,76 @@
         </div>
     </div>
 
+    <!-- ===== MODAL: PIN DE ADMINISTRADOR ===== -->
+    <div v-if="modalPin" class="fixed inset-0 bg-gray-900/80 z-[60] flex items-end justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 w-full max-w-sm shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]">
+            <div class="flex justify-between items-center mb-5">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">Clave de Administrador</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">Acción protegida — ingresa la clave</p>
+                </div>
+                <button @click="modalPin = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <input v-model="pinInput" @keyup.enter="confirmarPin" type="password" inputmode="numeric" maxlength="20"
+                   :class="pinError ? 'border-red-400 bg-red-50' : 'border-gray-200'"
+                   class="w-full border-2 rounded-2xl px-4 py-4 text-center text-3xl font-black tracking-widest outline-none focus:border-amber-400 mb-2"
+                   placeholder="••••" autofocus>
+            <p v-if="pinError" class="text-red-500 text-xs font-bold text-center mb-3">{{ pinError }}</p>
+            <button @click="confirmarPin" :disabled="!pinInput.trim()"
+                    class="w-full mt-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
+                CONFIRMAR
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: MONEDA (cambio de forma de pago posterior) ===== -->
+    <div v-if="modalMoneda && ticketParaMoneda" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[85dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <div>
+                    <h2 class="text-2xl font-black text-gray-800">Cambiar Forma de Pago</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaMoneda.correlativo }} · S/ {{ ticketParaMoneda.total.toFixed(2) }}</p>
+                </div>
+                <button @click="modalMoneda = false" class="p-3 bg-gray-100 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="flex-1 overflow-y-auto space-y-4 scrollbar-hide pb-4">
+                <!-- Total -->
+                <div class="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 flex justify-between items-center">
+                    <span class="font-bold text-gray-500 text-sm uppercase tracking-wider">Total del Ticket</span>
+                    <span class="text-4xl font-black text-amber-700">S/ {{ ticketParaMoneda.total.toFixed(2) }}</span>
+                </div>
+                <!-- Método -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Nuevo Método de Pago</label>
+                    <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
+                        <button @click="pagoMoneda.metodo = 'EFECTIVO'; pagoMoneda.montoVirtual = 0" :class="pagoMoneda.metodo === 'EFECTIVO' ? 'bg-white text-amber-600 shadow' : 'text-gray-500'" class="flex-1 py-3 rounded-lg font-black text-xs transition-all">EFECTIVO</button>
+                        <button @click="pagoMoneda.metodo = 'VIRTUAL'; pagoMoneda.montoVirtual = 0" :class="pagoMoneda.metodo === 'VIRTUAL' ? 'bg-white text-amber-600 shadow' : 'text-gray-500'" class="flex-1 py-3 rounded-lg font-black text-xs transition-all">VIRTUAL</button>
+                        <button @click="pagoMoneda.metodo = 'MIXTO'; pagoMoneda.montoVirtual = 0" :class="pagoMoneda.metodo === 'MIXTO' ? 'bg-white text-amber-600 shadow' : 'text-gray-500'" class="flex-1 py-3 rounded-lg font-black text-xs transition-all">MIXTO</button>
+                    </div>
+                </div>
+                <!-- Mixto: monto virtual -->
+                <div v-if="pagoMoneda.metodo === 'MIXTO'" class="space-y-2">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">Monto Virtual / Yape</label>
+                    <input v-model.number="pagoMoneda.montoVirtual" type="number" step="0.01" placeholder="0.00"
+                           class="w-full p-4 text-center text-3xl font-black bg-blue-50 border-2 border-posSecondary rounded-2xl outline-none">
+                    <p class="text-xs text-gray-400 text-center font-bold">
+                        Efectivo: S/ {{ Math.max(0, ticketParaMoneda.total - (pagoMoneda.montoVirtual || 0)).toFixed(2) }}
+                    </p>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3">
+                    <p class="text-amber-700 text-xs font-bold">Esta acción actualiza la forma de pago del ticket en el sistema. Acción autorizada por administrador.</p>
+                </div>
+            </div>
+            <button @click="confirmarMoneda"
+                    :disabled="procesandoMoneda || (pagoMoneda.metodo === 'MIXTO' && (!pagoMoneda.montoVirtual || pagoMoneda.montoVirtual <= 0 || pagoMoneda.montoVirtual >= ticketParaMoneda.total))"
+                    class="mt-4 w-full bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-black text-xl py-5 rounded-2xl shadow-xl active:scale-95 transition-all shrink-0">
+                CONFIRMAR CAMBIO
+            </button>
+        </div>
+    </div>
+
     <!-- ===== MODAL: EXTRA DE CAJA (ingreso/egreso extra) ===== -->
     <div v-if="modalExtra" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
         <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
@@ -1510,6 +1587,16 @@
         const modalCredito = ref(false);
         const ticketParaCredito = ref(null);
         const obsCredito = ref('');
+        // Estado PIN de administrador (guarda acciones protegidas: Crédito, Moneda)
+        const modalPin = ref(false);
+        const pinInput = ref('');
+        const pinError = ref('');
+        const _pinCallback = ref(null); // función a ejecutar tras PIN correcto
+        // Estado MONEDA (cambio de forma de pago posterior — requiere PIN admin)
+        const modalMoneda = ref(false);
+        const ticketParaMoneda = ref(null);
+        const pagoMoneda = ref({ metodo: 'EFECTIVO', montoVirtual: 0 });
+        const procesandoMoneda = ref(false);
         // Estado EXTRAS de caja (movimientos que afectan el saldo: ingresos/egresos extra)
         const extrasMovimientos = ref([]);
         const modalExtra = ref(false);
@@ -2727,11 +2814,72 @@
         };
 
         // --- CAJERO: carga tickets de zona desde GAS ---
-        // --- CAJERO: Marcar ticket como CRÉDITO ---
+
+        // --- ADMIN PIN: pedir clave antes de acciones protegidas ---
+        const pedirPin = (callback) => {
+            const pin = String(config.value.estacion?.Admin_PIN || '').trim();
+            if (!pin) { agregarToast('Sin configurar', 'Agrega Admin_PIN en ZONAS_CONFIG'); return; }
+            _pinCallback.value = callback;
+            pinInput.value = '';
+            pinError.value = '';
+            modalPin.value = true;
+        };
+        const confirmarPin = () => {
+            const pin = String(config.value.estacion?.Admin_PIN || '').trim();
+            if (pinInput.value.trim() !== pin) {
+                pinError.value = 'Clave incorrecta';
+                pinInput.value = '';
+                return;
+            }
+            modalPin.value = false;
+            pinInput.value = '';
+            pinError.value = '';
+            if (_pinCallback.value) { _pinCallback.value(); _pinCallback.value = null; }
+        };
+
+        // --- CAJERO: Marcar ticket como CRÉDITO (requiere PIN admin) ---
         const abrirModalCredito = (venta) => {
-            ticketParaCredito.value = venta;
-            obsCredito.value = venta.obs || '';
-            modalCredito.value = true;
+            pedirPin(() => {
+                ticketParaCredito.value = venta;
+                obsCredito.value = venta.obs || '';
+                modalCredito.value = true;
+            });
+        };
+
+        // --- CAJERO: Cambiar forma de pago posterior (MONEDA, requiere PIN admin) ---
+        const abrirModalMoneda = (venta) => {
+            pedirPin(() => {
+                ticketParaMoneda.value = venta;
+                pagoMoneda.value = { metodo: 'EFECTIVO', montoVirtual: 0 };
+                modalMoneda.value = true;
+            });
+        };
+        const confirmarMoneda = async () => {
+            if (!ticketParaMoneda.value) return;
+            procesandoMoneda.value = true;
+            const venta = ticketParaMoneda.value;
+            let metodoFinal = pagoMoneda.value.metodo;
+            if (pagoMoneda.value.metodo === 'MIXTO') {
+                const efeNeto = parseFloat((venta.total - (pagoMoneda.value.montoVirtual || 0)).toFixed(2));
+                metodoFinal = `MIXTO (VIR:${parseFloat(pagoMoneda.value.montoVirtual).toFixed(2)}/EFE:${efeNeto.toFixed(2)})`;
+            }
+            // Actualizar localmente
+            const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+            if (idx !== -1) {
+                ventasZona.value[idx].cobrado = true;
+                ventasZona.value[idx].cobradoMetodo = metodoFinal;
+                ventasZona.value[idx].credito = false;
+                ventasZona.value[idx].raw_data.header.metodo = metodoFinal;
+            }
+            modalMoneda.value = false;
+            ticketParaMoneda.value = null;
+            procesandoMoneda.value = false;
+            agregarToast('Forma de pago cambiada', metodoFinal);
+            // Sincronizar con GAS en segundo plano
+            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
+                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) })
+                    .catch(() => {});
+            }
         };
 
         const confirmarCredito = async () => {
@@ -2838,9 +2986,8 @@
             modalCobro.value = true;
         };
 
-        const procesarCobroPendiente = async () => {
+        const procesarCobroPendiente = () => {
             if (!ventaCobrar.value) return;
-            procesandoCobro.value = true;
             const venta = ventaCobrar.value;
             const pCobro = pagoCobroPendiente.value;
             let metodoFinal = pCobro.metodo;
@@ -2848,53 +2995,11 @@
                 const efeNeto = parseFloat((venta.total - (pCobro.montoVirtual || 0)).toFixed(2));
                 metodoFinal = `MIXTO (VIR:${parseFloat(pCobro.montoVirtual).toFixed(2)}/EFE:${efeNeto.toFixed(2)})`;
             }
-            // Actualizar GAS primero — solo marcar localmente si el servidor confirma
-            let cobradoEnServidor = false;
-            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                try {
-                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) });
-                    const res = await r.json();
-                    cobradoEnServidor = res.status === 'success';
-                    if (!cobradoEnServidor) agregarToast('Aviso', 'GAS no confirmó el cobro — intenta de nuevo');
-                } catch(e) { agregarToast('Sin conexión', 'Cobro no sincronizado — intenta cuando haya red'); }
-            } else {
-                // Offline: marcar localmente de todas formas (sin servidor activo es el único registro)
-                cobradoEnServidor = true;
-            }
-            if (!cobradoEnServidor) { procesandoCobro.value = false; return; }
-            // Marcar localmente como cobrado y guardar método real
+            // OPTIMISTA: marcar localmente de inmediato — sin esperar GAS, sin imprimir
             const idx = ventasZona.value.findIndex(v => v.id === venta.id);
             if (idx !== -1) {
                 ventasZona.value[idx].cobrado = true;
                 ventasZona.value[idx].cobradoMetodo = metodoFinal;
-            }
-            // Imprimir recibo de cobro solo si NO estamos en Modo Cajero
-            // (en Modo Cajero el ticket ya fue impreso por el vendedor — solo se registra el pago)
-            if (!modoCajero.value) {
-                let txt = "\x1b\x40\x1b\x61\x01";
-                txt += "\x1b\x21\x30MOSexpress\n";
-                txt += "\x1b\x21\x00\n";
-                txt += "\x1b\x21\x10COBRO\n";
-                txt += "\x1b\x21\x00Tk: " + venta.correlativo + "\n";
-                txt += "================================================\n";
-                txt += "\x1b\x61\x00";
-                txt += "FECHA   : " + new Date().toLocaleString() + "\n";
-                if (venta.cliente_nombre && venta.cliente_nombre !== 'Genérico') txt += "CLIENTE : " + venta.cliente_nombre + "\n";
-                txt += "CAJERO  : " + config.value.vendedor + "\n";
-                txt += "VENDEDOR: " + (venta.raw_data?.auth?.vendedor || '-') + "\n";
-                txt += "================================================\n";
-                txt += "\x1b\x61\x02";
-                txt += "\x1b\x21\x10TOTAL: S/ " + venta.total.toFixed(2) + "\n\x1b\x21\x00";
-                txt += "METODO: " + metodoFinal + "\n";
-                if (pCobro.metodo === 'EFECTIVO' && pCobro.montoRecibido > 0) {
-                    txt += "PAGO  : S/ " + parseFloat(pCobro.montoRecibido).toFixed(2) + "\n";
-                    txt += "VUELTO: S/ " + vueltoCobro.value.toFixed(2) + "\n";
-                }
-                txt += "\n\x1b\x61\x01*** GRACIAS ***\n";
-                txt += qrESCPOS(venta.correlativo);
-                txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-                mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cobro", b64ESC(txt))
-                    .catch(e => agregarToast('Error Impresión', e.message));
             }
             // Registrar cobro en sesión para el Z report
             const efeNeto = pCobro.metodo === 'VIRTUAL' ? 0 : pCobro.metodo === 'MIXTO' ? parseFloat((venta.total - (pCobro.montoVirtual||0)).toFixed(2)) : venta.total;
@@ -2909,11 +3014,16 @@
                 timestamp: Date.now()
             });
             localStorage.setItem('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value));
-            agregarToast('Cobro registrado', venta.correlativo);
-            procesandoCobro.value = false;
+            // Cerrar modal inmediatamente
             modalCobro.value = false;
             ventaCobrar.value = null;
             if (modoCajero.value) resetearCajero();
+            agregarToast('Cobro registrado', venta.correlativo);
+            // Sincronizar con GAS en segundo plano (fire and forget)
+            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
+                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) })
+                    .catch(() => {});
+            }
         };
 
         // Cierre de sesión para vendedores (sin caja)
@@ -4042,6 +4152,8 @@
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
+          modalPin, pinInput, pinError, confirmarPin,
+          modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra
         };
       }

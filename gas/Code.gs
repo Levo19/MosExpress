@@ -114,6 +114,9 @@ function doPost(e) {
       idVenta: response.idVenta,
       correlativo: response.correlativo,
       printDispatched: response.printDispatched,
+      nfEstado: response.nfEstado || 'NA',
+      nfHash:   response.nfHash   || '',
+      nfEnlace: response.nfEnlace || '',
       mensaje: "Venta procesada con éxito"
     })).setMimeType(ContentService.MimeType.JSON);
 
@@ -265,10 +268,10 @@ function procesarVenta(data) {
   var correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
   var correlativoFinal  = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
 
-  // ── VENTAS_CABECERA (16 columnas) ────────────────────────────────────────
+  // ── VENTAS_CABECERA (19 columnas) ────────────────────────────────────────
   // ID_Venta | Fecha | Vendedor | Estacion | Cliente_Doc | Cliente_Nombre | Total
   // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio
-  // | Ref_Local | Obs | Tipo_Doc_Cliente
+  // | Ref_Local | Obs | Tipo_Doc_Cliente | NF_Estado | NF_Hash | NF_Enlace
   var tipoDocCliente = parseInt((header.cliente && header.cliente.tipo) || 0, 10); // 0=sin doc, 1=DNI, 6=RUC
   sheetCabecera.appendRow([
     idVenta, fechaActual, auth.vendedor, auth.estacion,
@@ -280,7 +283,8 @@ function procesarVenta(data) {
     correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO",
     refLocal,
     String(header.obs || ''),
-    tipoDocCliente                              // col 16: Tipo_Doc_Cliente (NubeFact)
+    tipoDocCliente,                             // col 16: Tipo_Doc_Cliente (NubeFact)
+    '', '', ''                                  // cols 17-19: NF_Estado, NF_Hash, NF_Enlace (se llenan después)
   ]);
 
   // ── VENTAS_DETALLE — escritura por lote (1 setValues vs N appendRow) ──────
@@ -318,16 +322,35 @@ function procesarVenta(data) {
     );
   }
 
+  // ── Emitir CPE en NubeFact (solo BOLETA y FACTURA) ───────────────────────
+  var nfEstado = 'NA';
+  var nfHash   = '';
+  var nfEnlace = '';
+  var nfResult = null;
+
+  if (header.tipoDoc === 'BOLETA' || header.tipoDoc === 'FACTURA') {
+    nfResult = emitirNubeFact(data, correlativoFinal);
+    nfEstado  = nfResult.ok ? 'EMITIDO' : 'ERROR';
+    nfHash    = nfResult.hash   || '';
+    nfEnlace  = nfResult.enlace || '';
+    // Actualizar cols 17-19 en la fila recién escrita
+    var nfRow = sheetCabecera.getLastRow();
+    sheetCabecera.getRange(nfRow, 17, 1, 3).setValues([[nfEstado, nfHash, nfEnlace]]);
+    if (!nfResult.ok) {
+      Logger.log('NubeFact error venta ' + idVenta + ': ' + (nfResult.error || ''));
+    }
+  }
+
   // ── Imprimir en el mismo round-trip — SOLO si el browser lo pide explícitamente ─
   // pos.print_request = true lo envía solo el browser nuevo (index.html v39+).
   // Sin este flag, el browser antiguo (caché vieja) manejaría la impresión por su cuenta
   // y tendríamos ticket doble.
   var printDispatched = false;
   if (pos.print_request === true && pos.printerId) {
-    printDispatched = imprimirTicketInternamente(data, correlativoFinal, pos.printerId);
+    printDispatched = imprimirTicketInternamente(data, correlativoFinal, pos.printerId, nfResult);
   }
 
-  return { idVenta: idVenta, correlativo: correlativoFinal, printDispatched: printDispatched };
+  return { idVenta: idVenta, correlativo: correlativoFinal, printDispatched: printDispatched, nfEstado: nfEstado, nfHash: nfHash, nfEnlace: nfEnlace };
 }
 
 // NUEVO: proxy de impresión para PrintNode — la clave nunca sale del servidor
@@ -369,6 +392,142 @@ function procesarImpresion(data) {
     })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return generarRespuestaError("Error llamando a PrintNode: " + err.toString());
+  }
+}
+
+// ── Emite un CPE (Boleta o Factura) vía NubeFact API ─────────────────────────
+// Script Properties requeridas: NUBEFACT_TOKEN, NUBEFACT_RUC
+// Retorna: { ok, hash, enlace, qrString, aceptada, error }
+function emitirNubeFact(data, correlativo) {
+  var props  = PropertiesService.getScriptProperties();
+  var token  = props.getProperty('NUBEFACT_TOKEN');
+  var ruc    = props.getProperty('NUBEFACT_RUC');
+
+  if (!token || !ruc) {
+    Logger.log('NubeFact: NUBEFACT_TOKEN o NUBEFACT_RUC no configurados en Script Properties.');
+    return { ok: false, error: 'NubeFact no configurado' };
+  }
+
+  var header  = data.header || {};
+  var items   = data.items  || [];
+  var tipoDoc = header.tipoDoc;
+
+  // Extraer serie y número del correlativo (ej: "B001-000000042" → serie=B001, numero=42)
+  var partes = correlativo.split('-');
+  var serie  = partes[0] || '';
+  var numero = parseInt(partes[partes.length - 1], 10) || 1;
+  var tipoComprobante = (tipoDoc === 'FACTURA') ? 1 : 2; // 1=Factura, 2=Boleta
+
+  // Calcular totales gravada/exonerada/inafecta/igv
+  var totalGravada   = 0;
+  var totalExonerada = 0;
+  var totalInafecta  = 0;
+
+  var nfItems = items.map(function(item) {
+    var tipoIgv       = parseInt(item.tipo_igv || 1, 10);
+    var cantidad      = parseFloat(item.cantidad || 1);
+    var valorUnitario = parseFloat(item.valor_unitario || 0);
+    var subtotalVU    = Math.round(valorUnitario * cantidad * 100) / 100;
+    var precioTotal   = parseFloat(item.subtotal || 0);
+    var igvItem       = Math.round((precioTotal - subtotalVU) * 100) / 100;
+
+    if (tipoIgv === 1) {
+      totalGravada += subtotalVU;
+    } else if (tipoIgv === 2) {
+      totalExonerada += precioTotal;
+      igvItem = 0;
+    } else {
+      totalInafecta += precioTotal;
+      igvItem = 0;
+    }
+
+    return {
+      unidad_de_medida:       String(item.unidad_de_medida || 'NIU'),
+      codigo:                 String(item.sku || ''),
+      codigo_producto_sunat:  String(item.cod_sunat || ''),
+      descripcion:            String(item.nombre || ''),
+      cantidad:               cantidad,
+      valor_unitario:         Math.round(valorUnitario * 100) / 100,
+      precio_unitario:        parseFloat(item.precio || 0),
+      descuento:              '',
+      subtotal:               subtotalVU,
+      tipo_de_igv:            tipoIgv,
+      igv:                    igvItem,
+      total:                  precioTotal,
+      anticipo_regularizacion:  false,
+      anticipo_documento_serie: '',
+      anticipo_documento_numero:''
+    };
+  });
+
+  totalGravada   = Math.round(totalGravada   * 100) / 100;
+  totalExonerada = Math.round(totalExonerada * 100) / 100;
+  totalInafecta  = Math.round(totalInafecta  * 100) / 100;
+  var totalGeneral = parseFloat(header.total || 0);
+  var totalIgv     = Math.round((totalGeneral - totalGravada - totalExonerada - totalInafecta) * 100) / 100;
+
+  var cliente    = header.cliente || {};
+  var fechaHoy   = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd-MM-yyyy');
+
+  var payload = {
+    operacion:                    'generar_comprobante',
+    tipo_de_comprobante:          tipoComprobante,
+    serie:                        serie,
+    numero:                       numero,
+    sunat_transaction:            1,
+    cliente_tipo_de_documento:    parseInt(cliente.tipo || 0, 10),
+    cliente_numero_de_documento:  String(cliente.doc   || '0'),
+    cliente_denominacion:         String(cliente.nombre || 'CLIENTE ANONIMO'),
+    cliente_direccion:            String(cliente.direccion || ''),
+    cliente_email:                '',
+    fecha_de_emision:             fechaHoy,
+    fecha_de_vencimiento:         '',
+    moneda:                       1,
+    tipo_de_cambio:               '',
+    porcentaje_de_igv:            18,
+    total_gravada:                totalGravada   > 0 ? totalGravada   : '',
+    total_exonerada:              totalExonerada > 0 ? totalExonerada : '',
+    total_inafecta:               totalInafecta  > 0 ? totalInafecta  : '',
+    total_igv:                    totalIgv       > 0 ? totalIgv       : '',
+    total_precio_de_venta:        totalGeneral,
+    total_descuentos:             '',
+    total_otros_cargos:           '',
+    total:                        totalGeneral,
+    detraccion:                   false,
+    enviar_automaticamente_a_la_sunat:    true,
+    enviar_automaticamente_al_cliente:    false,
+    formato_de_pdf:               'TICKET',
+    items:                        nfItems
+  };
+
+  var endpoint = 'https://api.nubefact.com/api/v1/' + ruc + '/' + (tipoDoc === 'FACTURA' ? 'factura' : 'boleta');
+
+  try {
+    var resp = UrlFetchApp.fetch(endpoint, {
+      method:            'post',
+      headers:           { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
+      payload:           JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    var body = {};
+    try { body = JSON.parse(resp.getContentText() || '{}'); } catch(pe) {}
+
+    if (code === 200 || code === 201) {
+      return {
+        ok:       true,
+        hash:     String(body.codigo_hash              || ''),
+        enlace:   String(body.enlace_del_pdf           || ''),
+        qrString: String(body.cadena_para_codigo_qr   || ''),
+        aceptada: body.aceptada_por_sunat === true
+      };
+    }
+    var errMsg = (body.errors || body.message || resp.getContentText() || '').toString().substring(0, 200);
+    Logger.log('NubeFact HTTP ' + code + ': ' + errMsg);
+    return { ok: false, error: 'HTTP ' + code + ': ' + errMsg };
+  } catch (e) {
+    Logger.log('NubeFact excepcion: ' + e.toString());
+    return { ok: false, error: e.toString() };
   }
 }
 
@@ -501,7 +660,8 @@ function qrESCPOSGas(text) {
 
 // ── Construye el ticket ESC/POS en GAS y envía a PrintNode ──────────────────
 // Elimina el segundo round-trip browser→GAS→PrintNode.
-function imprimirTicketInternamente(data, correlativo, printerId) {
+// nfResult: objeto devuelto por emitirNubeFact (puede ser null para NOTA_DE_VENTA).
+function imprimirTicketInternamente(data, correlativo, printerId, nfResult) {
   var printNodeKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
   if (!printNodeKey || !printerId) return false;
 
@@ -556,7 +716,16 @@ function imprimirTicketInternamente(data, correlativo, printerId) {
   txt += '\x1b\x21\x10TOTAL: S/ ' + parseFloat(header.total || 0).toFixed(2) + '\x1b\x21\x00\n';
   txt += 'METODO: ' + normalizarTextoGAS(header.metodo || 'EFECTIVO') + '\n';
   txt += '\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n';
-  txt += qrESCPOSGas(correlativo);
+  // Si NubeFact devolvió cadena QR SUNAT, usarla; si no, usar el correlativo
+  var qrData = (nfResult && nfResult.qrString) ? nfResult.qrString : correlativo;
+  txt += qrESCPOSGas(qrData);
+  if (nfResult && nfResult.hash) {
+    txt += '\x1b\x61\x01';
+    txt += normalizarTextoGAS('Hash: ' + nfResult.hash).substring(0, W) + '\n';
+  }
+  if (nfResult && !nfResult.ok && nfResult.error) {
+    txt += '\x1b\x61\x01[CPE pendiente de emision]\n';
+  }
   txt += '\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02'; // feed + corte + beep
 
   // Convertir a bytes explícitos (evita ambigüedad UTF-8 vs Latin-1)
