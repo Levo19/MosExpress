@@ -2877,7 +2877,7 @@
             agregarToast('Forma de pago cambiada', metodoFinal);
             // Sincronizar con GAS en segundo plano
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
-                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) })
+                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }) })
                     .catch(() => {});
             }
         };
@@ -3021,7 +3021,7 @@
             agregarToast('Cobro registrado', venta.correlativo);
             // Sincronizar con GAS en segundo plano (fire and forget)
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
-                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal }) })
+                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }) })
                     .catch(() => {});
             }
         };
@@ -3325,7 +3325,7 @@
         const abrirModalPago = () => {
             leerMontoEnVoz(granTotal.value);
             pago.value.tipoDoc = 'NOTA_DE_VENTA';
-            pago.value.metodo = config.value.esCajero ? 'EFECTIVO' : 'POR_COBRAR';
+            pago.value.metodo = (config.value.esCajero && cajaAbierta.value) ? 'EFECTIVO' : 'POR_COBRAR';
             pago.value.montoRecibido = granTotal.value;
             pago.value.montoVirtual = 0;
             limpiarCliente();
@@ -3393,7 +3393,8 @@
 
            // Capturar todo antes de limpiar el carrito
            const tipoDocVenta        = pago.value.tipoDoc;
-           const metodoVenta         = pago.value.metodo;
+           // Seguridad de rol: vendedor o cajero sin caja abierta → siempre POR_COBRAR
+           const metodoVenta         = (config.value.esCajero && cajaAbierta.value) ? pago.value.metodo : 'POR_COBRAR';
            const montoRecibidoVenta  = parseFloat(pago.value.montoRecibido);
            const montoVirtualVenta   = parseFloat(pago.value.montoVirtual || 0);
            const nombreClienteVenta  = pago.value.nombreCliente;

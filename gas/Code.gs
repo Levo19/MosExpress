@@ -246,6 +246,12 @@ function procesarVenta(data) {
   var header = data.header      || {};
   var items  = data.items       || [];
 
+  // ── Seguridad de rol: si dice ser cajero pero no tiene caja abierta → POR_COBRAR ──
+  // Previene que dispositivos mal configurados registren cobros directos sin caja
+  if (auth.esCajero && !pos.cajaId) {
+    header.metodo = 'POR_COBRAR';
+  }
+
   var fechaActual = new Date();
   var idVenta = "V-" + fechaActual.getTime();
 
@@ -594,6 +600,22 @@ function obtenerSiguienteCorrelativo(sheet, serie) {
   return maxCorrelativo + 1;
 }
 
+// ── Verifica si un correlativo ya existe en las últimas 100 filas de VENTAS_CABECERA ──
+// Bounded O(100) — detecta cuando CORRELATIVOS está desfasado sin escanear toda la hoja.
+function correlativoYaExiste(ss, serie, numero) {
+  var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
+  if (!sheetCab) return false;
+  var objetivo = serie + '-' + ('000000' + numero).slice(-6);
+  var totalRows = sheetCab.getLastRow();
+  if (totalRows < 2) return false;
+  var desde = Math.max(2, totalRows - 99);
+  var filas = sheetCab.getRange(desde, 10, totalRows - desde + 1, 1).getValues(); // col 10 = correlativo
+  for (var i = 0; i < filas.length; i++) {
+    if (String(filas[i][0]) === objetivo) return true;
+  }
+  return false;
+}
+
 // ── Correlativo O(1): lee/incrementa una celda en hoja CORRELATIVOS ─────────
 // Hoja CORRELATIVOS: encabezados Serie | Siguiente
 // Crea la hoja automáticamente si no existe.
@@ -612,9 +634,19 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(6000); } catch (e) {
-    // Contención excesiva — fallback seguro sin bloquear la venta
+    // Contención excesiva — tomar el mayor entre CORRELATIVOS y O(n) para no retroceder
     var sheetCabFb = ss.getSheetByName('VENTAS_CABECERA');
-    return sheetCabFb ? obtenerSiguienteCorrelativo(sheetCabFb, serie) : 1;
+    var numON = sheetCabFb ? obtenerSiguienteCorrelativo(sheetCabFb, serie) : 1;
+    try {
+      var dataFb = sheet.getDataRange().getValues();
+      for (var fi = 1; fi < dataFb.length; fi++) {
+        if (String(dataFb[fi][0]) === serie) {
+          numON = Math.max(numON, parseInt(dataFb[fi][1], 10) || 1);
+          break;
+        }
+      }
+    } catch(e2) {}
+    return numON;
   }
 
   try {
@@ -622,6 +654,13 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][0]) === serie) {
         var siguiente = parseInt(data[i][1], 10) || 1;
+
+        // Salvaguarda anti-duplicado: si CORRELATIVOS fue editado manualmente
+        // y quedó detrás de la realidad, avanzar hasta el siguiente número libre.
+        while (correlativoYaExiste(ss, serie, siguiente)) {
+          siguiente++;
+        }
+
         sheet.getRange(i + 1, 2).setValue(siguiente + 1);
         return siguiente;
       }
@@ -871,7 +910,8 @@ function cobrarVentaExistente(data) {
   var filas = sheet.getDataRange().getValues();
   for (var i = 1; i < filas.length; i++) {
     if (String(filas[i][0]) === String(data.idVenta)) {
-      sheet.getRange(i + 1, 9).setValue(data.metodo); // col 9: FormaPago = método real
+      sheet.getRange(i + 1, 9).setValue(data.metodo);                          // col 9: FormaPago = método real
+      if (data.cajaId) sheet.getRange(i + 1, 11).setValue(String(data.cajaId)); // col 11: ID_Caja (trazabilidad)
       return ContentService.createTextOutput(JSON.stringify({
         status: "success", mensaje: "Venta cobrada correctamente"
       })).setMimeType(ContentService.MimeType.JSON);
