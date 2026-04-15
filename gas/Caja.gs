@@ -4,18 +4,46 @@
 // movimientos extra de caja y query de cajero activo.
 // ============================================================
 
+// ── Helper: cierra automáticamente cajas ABIERTA de días anteriores ──────────
+// Retorna la cantidad de cajas auto-cerradas.
+function _autoCerrarCajasViejas(sheetCajas) {
+  var tz  = Session.getScriptTimeZone();
+  var hoy = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var filas = sheetCajas.getDataRange().getValues();
+  var cerradas = 0;
+  for (var c = 1; c < filas.length; c++) {
+    if (String(filas[c][5]) !== 'ABIERTA') continue;
+    var fApert = filas[c][3];
+    if (!fApert) continue;
+    var diaApert = Utilities.formatDate(
+      fApert instanceof Date ? fApert : new Date(fApert), tz, 'yyyy-MM-dd'
+    );
+    if (diaApert < hoy) {
+      sheetCajas.getRange(c + 1, 6).setValue('CERRADA_AUTO');
+      sheetCajas.getRange(c + 1, 8).setValue(new Date());
+      cerradas++;
+    }
+  }
+  if (cerradas > 0) SpreadsheetApp.flush(); // garantiza que los setValue se escriban antes del próximo read
+  return cerradas;
+}
+
 function procesarAperturaCaja(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCajas = ss.getSheetByName("CAJAS");
   if (!sheetCajas) return generarRespuestaError("Pestaña CAJAS no encontrada.");
 
+  // Auto-cerrar cajas de días anteriores y forzar escritura antes de re-leer
+  var _cajasAutoCerradas = _autoCerrarCajasViejas(sheetCajas);
+
   // Un solo cajero activo por zona a la vez
   if (data.zona) {
-    var filasCheck = sheetCajas.getDataRange().getValues();
-    for (var c = 1; c < filasCheck.length; c++) {
-      if (String(filasCheck[c][5]) === 'ABIERTA' && String(filasCheck[c][8] || '') === String(data.zona)) {
+    var filasActualizadas = sheetCajas.getDataRange().getValues();
+    for (var i = 1; i < filasActualizadas.length; i++) {
+      if (String(filasActualizadas[i][5]) === 'ABIERTA' &&
+          String(filasActualizadas[i][8] || '') === String(data.zona)) {
         return generarRespuestaError(
-          "Ya hay un turno activo en " + data.zona + " (cajero: " + filasCheck[c][1] + "). Cierra ese turno primero."
+          "Ya hay un turno activo en " + data.zona + " (cajero: " + filasActualizadas[i][1] + "). Cierra ese turno primero."
         );
       }
     }
@@ -23,10 +51,12 @@ function procesarAperturaCaja(data) {
 
   var idCaja = "CAJA-" + new Date().getTime();
   // Columnas: ID_Caja | Vendedor | Estacion | Fecha_Apertura | Monto_Inicial | Estado | Monto_Final | Fecha_Cierre | Zona_ID
-  sheetCajas.appendRow([idCaja, data.vendedor, data.estacion, new Date(), data.montoInicial, "ABIERTA", "", "", data.zona || '']);
+  sheetCajas.appendRow([idCaja, data.vendedor, data.estacion, new Date(), data.montoInicial || 0, "ABIERTA", "", "", data.zona || '']);
 
   return ContentService.createTextOutput(JSON.stringify({
-    status: "success", idCaja: idCaja, mensaje: "Caja aperturada exitosamente"
+    status: "success", idCaja: idCaja,
+    mensaje: "Caja aperturada exitosamente",
+    cajasAutoCerradas: _cajasAutoCerradas
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -70,17 +100,21 @@ function cajeroActivo(zona) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CAJAS");
   if (!sheet) return generarRespuestaError("CAJAS no encontrada");
+  // Auto-cerrar cajas viejas antes de consultar (evita falso positivo de "hay cajero activo")
+  var _cerradas = _autoCerrarCajasViejas(sheet);
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][5]) === 'ABIERTA' && String(data[i][8] || '') === zona) {
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success', activo: true,
-        vendedor: String(data[i][1]), idCaja: String(data[i][0]), desde: data[i][3]
+        vendedor: String(data[i][1]), idCaja: String(data[i][0]), desde: data[i][3],
+        cajasAutoCerradas: _cerradas
       })).setMimeType(ContentService.MimeType.JSON);
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({ status: 'success', activo: false }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', activo: false, cajasAutoCerradas: _cerradas
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function cobrarVentaExistente(data) {
