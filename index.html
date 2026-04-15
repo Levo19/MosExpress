@@ -320,8 +320,13 @@
                     <div class="flex justify-between items-start mb-4 relative z-10">
                         <div>
                             <p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">CAJA ACTIVA</p>
-                            <h2 class="text-xl font-black mt-0.5">{{ idCajaActual }}</h2>
+                            <h2 class="text-xl font-black mt-0.5">{{ idCajaActual.startsWith('CAJA-LOCAL-') ? '⏳ Pendiente de registro' : idCajaActual }}</h2>
                             <p class="text-emerald-300 text-xs mt-0.5 font-semibold">{{ config.vendedor }}</p>
+                            <!-- Aviso si el ID es LOCAL (no registrado en GAS aún) -->
+                            <div v-if="idCajaActual.startsWith('CAJA-LOCAL-')" class="mt-1.5 flex items-center gap-1 bg-amber-400 bg-opacity-30 border border-amber-300 border-opacity-60 rounded-lg px-2 py-1">
+                                <svg class="w-3 h-3 text-amber-200 animate-pulse shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
+                                <span class="text-amber-100 text-[10px] font-bold">Sin registrar en sistema · Reintentando cada 60s</span>
+                            </div>
                         </div>
                         <div class="text-right">
                             <p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">SALDO INICIAL</p>
@@ -1863,6 +1868,64 @@
         let _intervalFocus = null;
         let _intervalSync = null;
         let _intervalMidnight = null;
+        let _intervalCajaRetry = null;
+
+        // ── Reintento de registro de caja LOCAL en GAS ───────────────────────
+        // Si la apertura falló (red/timeout) queda como CAJA-LOCAL-xxx.
+        // Esta función intenta registrarla hasta obtener un ID real.
+        const _intentarRegistrarCajaLocal = async () => {
+            const idActual = idCajaActual.value || '';
+            if (!idActual.startsWith('CAJA-LOCAL-')) return; // ya tiene ID real, nada que hacer
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            if (!config.value.completado) return;
+
+            // Recuperar payload guardado al abrir caja
+            let payload;
+            try {
+                const raw = localStorage.getItem('mosexpress_caja_payload');
+                payload = raw ? JSON.parse(raw) : null;
+            } catch(e) { payload = null; }
+            if (!payload) {
+                // Reconstruir desde config si no se guardó
+                payload = {
+                    tipoEvento: 'APERTURA_CAJA',
+                    vendedor:   config.value.vendedor,
+                    estacion:   config.value.estacion?.Estacion_Nombre || config.value.estacion || '',
+                    montoInicial: montoAperturaMemoria.value || 0,
+                    zona:       config.value.zona || ''
+                };
+            }
+
+            try {
+                const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                const res = await req.json();
+                if (res.status === 'success') {
+                    const realId = res.idCaja;
+                    idCajaActual.value = realId;
+                    localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
+                        idCaja: realId, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
+                    }));
+                    localStorage.removeItem('mosexpress_caja_payload');
+                    agregarToast('Caja registrada', 'El turno quedó registrado en el sistema (' + realId + ')');
+                } else if (res.mensaje && res.mensaje.includes('turno activo')) {
+                    // Ya existe una caja abierta en la zona → adoptar ese ID
+                    try {
+                        const zona = encodeURIComponent(config.value.zona || '');
+                        const reqCaj = await fetch(`${API_URL}?accion=cajero_activo&zona=${zona}`);
+                        const resCaj = await reqCaj.json();
+                        if (resCaj.status === 'success' && resCaj.activo && resCaj.idCaja) {
+                            idCajaActual.value = resCaj.idCaja;
+                            localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
+                                idCaja: resCaj.idCaja, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
+                            }));
+                            localStorage.removeItem('mosexpress_caja_payload');
+                            agregarToast('Caja sincronizada', 'Se adoptó la caja activa en la zona (' + resCaj.idCaja + ')');
+                        }
+                    } catch(e2) { /* reintentará */ }
+                }
+                // Si GAS devuelve otro error, se reintentará en el próximo ciclo
+            } catch(e) { /* sin red, reintentará */ }
+        };
 
         onMounted(() => {
           window.addEventListener('resize', handleResize);
@@ -1872,6 +1935,9 @@
 
           // Reloj header — actualizar cada minuto
           setInterval(() => { horaActual.value = _fmtHora(); }, 60000);
+
+          // Reintento de registro de caja LOCAL — cada 60 segundos
+          _intervalCajaRetry = setInterval(_intentarRegistrarCajaLocal, 60000);
 
           _intervalFocus = setInterval(() => {
             if(config.value.completado && currentModule.value === 'POS' && !modalPago.value && !camaraAbierta.value && !popover.value.visible && scannerInput.value) {
@@ -1912,6 +1978,7 @@
           clearInterval(_intervalFocus);
           clearInterval(_intervalSync);
           clearInterval(_intervalMidnight);
+          clearInterval(_intervalCajaRetry);
           detenerPollingZona();
           detenerCamaraCajero();
           if(html5QrcodeScanner) html5QrcodeScanner.clear().catch(() => {});
@@ -2051,12 +2118,14 @@
                       zona:       config.value.zona || ''
                   };
                   let cid = 'CAJA-LOCAL-' + Date.now();
+                  localStorage.setItem('mosexpress_caja_payload', JSON.stringify(payload));
                   if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                       try {
                           const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                           const res = await req.json();
                           if (res.status === 'success') {
                               cid = res.idCaja;
+                              localStorage.removeItem('mosexpress_caja_payload');
                           } else {
                               // GAS rechazó la apertura (ej: ya hay caja abierta) —
                               // intentar obtener el ID real de la caja activa en esta zona
@@ -2681,12 +2750,15 @@
             };
 
             let cid = "CAJA-LOCAL-" + Date.now();
+            // Guardar payload para reintento automático si la apertura falla
+            localStorage.setItem('mosexpress_caja_payload', JSON.stringify(payload));
             if(!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 try {
                     const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                     const res = await req.json();
                     if(res.status === 'success') {
                         cid = res.idCaja;
+                        localStorage.removeItem('mosexpress_caja_payload'); // ya no necesita reintento
                         if (res.cajasAutoCerradas > 0)
                             agregarToast('⚠ Caja anterior cerrada', res.cajasAutoCerradas + ' caja(s) del día anterior fueron cerradas automáticamente. Informa a tu supervisor.', 'warning');
                     } else {
@@ -3015,6 +3087,7 @@
              localStorage.removeItem('mosexpress_extras_sesion');
              ventasZona.value = [];
              localStorage.removeItem('mosexpress_caja_activa');
+             localStorage.removeItem('mosexpress_caja_payload'); // cancelar reintento de apertura
              localStorage.removeItem('mosexpress_cobrados_sesion');
              localStorage.removeItem('mosexpress_session_start');
              ventasHoy.value = [];
