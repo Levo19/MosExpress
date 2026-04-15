@@ -2770,8 +2770,14 @@
              // 2. Registrar cierre en GAS
              if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                  try {
-                     await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: idCajaActual.value, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) });
-                 } catch(e) { agregarToast("Aviso Red", "Cierre local (Cola)"); }
+                     const reqCierre = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: idCajaActual.value, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) });
+                     const resCierre = await reqCierre.json();
+                     if (resCierre.status !== 'success') {
+                         procesandoCierre.value = false;
+                         agregarToast('Error al cerrar caja', resCierre.mensaje || resCierre.message || 'GAS devolvió error — intenta de nuevo.', 'warning');
+                         return;
+                     }
+                 } catch(e) { agregarToast("Aviso Red", "Cierre local (sin conexión)"); }
              }
 
              // 3. Datos del turno para el Ticket Z
