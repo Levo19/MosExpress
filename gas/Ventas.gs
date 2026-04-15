@@ -81,7 +81,12 @@ function procesarVenta(data) {
       ];
     });
     var lastRow = sheetDetalle.getLastRow();
-    sheetDetalle.getRange(lastRow + 1, 1, detalleRows.length, detalleRows[0].length).setValues(detalleRows);
+    var rangeDetalle = sheetDetalle.getRange(lastRow + 1, 1, detalleRows.length, detalleRows[0].length);
+    // Forzar texto en col 7 (Cod_Barras) y col 2 (SKU) antes de escribir
+    // para que Sheets no elimine ceros a la izquierda de códigos numéricos
+    sheetDetalle.getRange(lastRow + 1, 7, detalleRows.length, 1).setNumberFormat('@STRING@');
+    sheetDetalle.getRange(lastRow + 1, 2, detalleRows.length, 1).setNumberFormat('@STRING@');
+    rangeDetalle.setValues(detalleRows);
   }
 
   // ── Registrar cliente frecuente ──────────────────────────────────────────
