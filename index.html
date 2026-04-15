@@ -2055,7 +2055,19 @@
                       try {
                           const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                           const res = await req.json();
-                          if (res.status === 'success') cid = res.idCaja;
+                          if (res.status === 'success') {
+                              cid = res.idCaja;
+                          } else {
+                              // GAS rechazó la apertura (ej: ya hay caja abierta) —
+                              // intentar obtener el ID real de la caja activa en esta zona
+                              try {
+                                  const reqCaj = await fetch(`${API_URL}?accion=cajero_activo&zona=${encodeURIComponent(config.value.zona || '')}`);
+                                  const resCaj = await reqCaj.json();
+                                  if (resCaj.status === 'success' && resCaj.activo && resCaj.idCaja) {
+                                      cid = resCaj.idCaja; // reutilizar la caja activa existente
+                                  }
+                              } catch(e2) { /* sin resultado: queda LOCAL */ }
+                          }
                       } catch(e) { /* offline: usar ID local */ }
                   }
                   idCajaActual.value    = cid;
@@ -2719,6 +2731,18 @@
         };
 
         const cerrarCaja = async () => {
+             // --- Validar que existe un ID de caja real antes de continuar ---
+             const _idCaja = idCajaActual.value || '';
+             if (!_idCaja) {
+                 agregarToast('Sin caja activa', 'No hay ID de caja registrado. Reinicia sesión.', 'warning');
+                 return;
+             }
+             const _esLocal = _idCaja.startsWith('CAJA-LOCAL-');
+             if (_esLocal) {
+                 const _ok = confirm('⚠ Esta caja fue abierta sin conexión al servidor.\n\nEl cierre NO se enviará al sistema (la fila en el Sheet no existirá).\n\n¿Deseas cerrar el turno localmente de todas formas?');
+                 if (!_ok) return;
+             }
+
              // --- Totales desde cobradosEnSesion (tickets de vendedores cobrados por este cajero) ---
              let tEfectivoCobros = 0, tVirtualCobros = 0;
              cobradosEnSesion.value.forEach(c => { tEfectivoCobros += c.efectivo || 0; tVirtualCobros += c.virtual || 0; });
@@ -2768,16 +2792,16 @@
              procesandoCierre.value = true;
 
              // 1. Anulación masiva de POR_COBRAR no cobrados
-             if (idsAnular.length > 0 && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+             if (idsAnular.length > 0 && !_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                  try {
                      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION_MASIVA', ids: idsAnular }) });
                  } catch(e) { agregarToast("Aviso Red", "Anulaciones en cola"); }
              }
 
-             // 2. Registrar cierre en GAS
-             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+             // 2. Registrar cierre en GAS (solo si el ID es real, no LOCAL)
+             if (!_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                  try {
-                     const reqCierre = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: idCajaActual.value, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) });
+                     const reqCierre = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) });
                      const resCierre = await reqCierre.json();
                      if (resCierre.status !== 'success') {
                          procesandoCierre.value = false;
