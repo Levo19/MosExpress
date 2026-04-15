@@ -454,6 +454,13 @@
                                             :class="venta.cobrado ? 'bg-emerald-100 text-emerald-700' : venta.anulada ? 'bg-gray-100 text-gray-400' : 'bg-posPrimary text-white shadow-md'">
                                         {{ venta.cobrado ? '✓ Cobrado' : venta.credito ? 'Cobrar crédito' : 'Cobrar' }}
                                     </button>
+                                    <!-- Revertir cobro: solo visible si está cobrado y no anulado -->
+                                    <button v-if="venta.cobrado && !venta.anulada"
+                                            @click="revertirCobro(venta)"
+                                            class="min-w-[40px] bg-white border-2 border-red-300 text-red-600 font-bold py-2 px-3 rounded-xl text-sm active:scale-95 transition-colors hover:bg-red-50 flex items-center justify-center"
+                                            title="Revertir cobro — pasar a Sin Pagar">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    </button>
                                     <button v-if="!venta.cobrado && !venta.anulada && !venta.credito"
                                             @click="abrirModalCredito(venta)"
                                             class="flex-1 min-w-[80px] bg-orange-500 text-white font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors shadow-md">
@@ -3069,6 +3076,29 @@
             }
         };
 
+        const revertirCobro = (venta) => {
+            pedirPin(() => {
+                if (!confirm(`¿Revertir cobro de ${venta.correlativo}?\nEl ticket pasará a SIN PAGAR.`)) return;
+                // Actualizar local
+                const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+                if (idx !== -1) {
+                    ventasZona.value[idx].cobrado = false;
+                    ventasZona.value[idx].cobradoMetodo = 'POR_COBRAR';
+                    ventasZona.value[idx].raw_data.header.metodo = 'POR_COBRAR';
+                }
+                // Quitar de cobradosEnSesion
+                cobradosEnSesion.value = cobradosEnSesion.value.filter(c => c.id !== venta.id);
+                localStorage.setItem('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value));
+                // Sincronizar con GAS
+                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
+                    fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                        tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value
+                    }) }).catch(() => {});
+                }
+                agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
+            });
+        };
+
         const confirmarCredito = async () => {
             if (!obsCredito.value.trim()) { agregarToast('Requerido', 'Indica a quién se da el crédito'); return; }
             if (!ticketParaCredito.value?.id_venta_gas) { agregarToast('Error', 'Ticket aún no sincronizado'); return; }
@@ -4351,7 +4381,7 @@
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
           modalPin, pinInput, pinError, confirmarPin,
-          modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda,
+          modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra
         };
       }
