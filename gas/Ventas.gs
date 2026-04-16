@@ -127,18 +127,27 @@ function procesarVenta(data) {
 }
 
 // Devuelve todas las ventas de hoy de la zona del cajero (filtradas por prefijos de serie)
-function ventasHoyZona(prefijosStr) {
+function ventasHoyZona(prefijosStr, desdeStr) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
   if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
 
   var prefijos = prefijosStr ? prefijosStr.split(',').map(function(p) { return p.trim(); }) : [];
   var data = sheet.getDataRange().getValues();
-  var hoy  = new Date().toDateString();
+  var hoy   = new Date().toDateString();
+  // Si se envía "desde" (ISO datetime de apertura de caja), filtrar por turno.
+  // Si no, usar el filtro legacy de "hoy".
+  var desde = (desdeStr && desdeStr.trim()) ? new Date(desdeStr.trim()) : null;
   var result = [];
 
   for (var i = 1; i < data.length; i++) {
-    if (new Date(data[i][1]).toDateString() !== hoy) continue;
+    var fechaTk = data[i][1] instanceof Date ? data[i][1] : new Date(data[i][1]);
+    if (desde) {
+      // Solo tickets emitidos en o después de la apertura del turno
+      if (fechaTk < desde) continue;
+    } else {
+      if (fechaTk.toDateString() !== hoy) continue;
+    }
     var correlativo = String(data[i][9]);
     if (prefijos.length > 0) {
       var enZona = prefijos.some(function(p) { return correlativo.indexOf(p) === 0; });

@@ -42,7 +42,9 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   sheetGC.appendRow([idGuia, new Date(), vendedor, zona, 'SALIDA_VENTAS',
     'Auto cierre de caja · ' + cajaId, '', 'CONFIRMADO']);
   cods.forEach(function(cod) {
-    sheetGD.appendRow([idGuia, String(cod), totales[cod]]);
+    var nextGD = sheetGD.getLastRow() + 1;
+    sheetGD.getRange(nextGD, 2).setNumberFormat('@STRING@');
+    sheetGD.getRange(nextGD, 1, 1, 3).setValues([[idGuia, String(cod), totales[cod]]]);
     actualizarStockFila(sheetStock, cod, zona, -totales[cod]);
   });
 }
@@ -174,7 +176,9 @@ function registrarGuia(data) {
   var stockResult = [];
   (data.items || []).forEach(function(item) {
     var cb = String(item.cod_barras);
-    sheetDet.appendRow([idGuia, cb, item.cantidad]);
+    var nextDet = sheetDet.getLastRow() + 1;
+    sheetDet.getRange(nextDet, 2).setNumberFormat('@STRING@');
+    sheetDet.getRange(nextDet, 1, 1, 3).setValues([[idGuia, cb, item.cantidad]]);
     var nuevaCant = actualizarStockFila(sheetStock, cb, data.zona, signo * item.cantidad);
     stockResult.push({ cod_barras: cb, cantidad: nuevaCant });
   });
@@ -187,7 +191,9 @@ function registrarGuia(data) {
       'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia, data.zona, 'CONFIRMADO']);
     (data.items || []).forEach(function(item) {
       var cb = String(item.cod_barras);
-      sheetDet.appendRow([idGuiaEntrada, cb, item.cantidad]);
+      var nextDetE = sheetDet.getLastRow() + 1;
+      sheetDet.getRange(nextDetE, 2).setNumberFormat('@STRING@');
+      sheetDet.getRange(nextDetE, 1, 1, 3).setValues([[idGuiaEntrada, cb, item.cantidad]]);
       actualizarStockFila(sheetStock, cb, zonaDestino, item.cantidad);
     });
   }
@@ -265,20 +271,56 @@ function registrarAuditoria(data) {
   if (!sheetAudit) return generarRespuestaError("Pestaña AUDITORIAS no encontrada.");
   if (!sheetStock) return generarRespuestaError("Pestaña STOCK_ZONAS no encontrada.");
 
-  // Auto-add audit tracking columns if missing
   _ensureStockZonasAuditCols(sheetStock);
 
-  var idAudit  = "A-" + new Date().getTime();
-  var usuario  = String(data.vendedor || '');
+  var tz       = Session.getScriptTimeZone();
   var ahora    = new Date();
+  var ahoraStr = Utilities.formatDate(ahora, tz, 'yyyy-MM-dd HH:mm:ss');
+  var hoy      = Utilities.formatDate(ahora, tz, 'yyyy-MM-dd');
+  var usuario  = String(data.vendedor || '');
+  var idAudit  = "A-" + ahora.getTime();
 
-  // Columnas AUDITORIAS: ID_Auditoria | Fecha | Vendedor | Zona_ID | Cod_Barras | Cant_Sistema | Cant_Real | Diferencia
+  // ── Leer tabla AUDITORIAS UNA vez y construir índice para dedup ──
+  // key = vendedor|zona|cod_barras → fila (1-based) si ya existe HOY
+  var auditData  = sheetAudit.getDataRange().getValues();
+  var auditIndex = {};
+  for (var r = 1; r < auditData.length; r++) {
+    var rawFecha = auditData[r][1];
+    var rowDate  = rawFecha instanceof Date
+      ? Utilities.formatDate(rawFecha, tz, 'yyyy-MM-dd')
+      : String(rawFecha).substring(0, 10);
+    if (rowDate !== hoy) continue;
+    var k = String(auditData[r][2]) + '|' + String(auditData[r][3]) + '|' + String(auditData[r][4]);
+    auditIndex[k] = r + 1; // fila real en Sheets (1-based)
+  }
+
+  // Columnas AUDITORIAS: ID_Auditoria(1) | Fecha(2) | Vendedor(3) | Zona_ID(4) | Cod_Barras(5) | Cant_Sistema(6) | Cant_Real(7) | Diferencia(8)
   (data.items || []).forEach(function(item) {
-    var cb       = String(item.cod_barras);
+    var cb      = String(item.cod_barras);
+    var cantSis = parseFloat(item.cantSistema) || 0;
     var cantReal = parseFloat(item.cantReal) || 0;
-    var diff     = cantReal - (parseFloat(item.cantSistema) || 0);
-    sheetAudit.appendRow([idAudit, ahora, usuario, data.zona, cb, item.cantSistema, cantReal, diff]);
-    _actualizarStockAuditoria(sheetStock, cb, data.zona, diff, usuario, ahora);
+    var diff    = cantReal - cantSis;
+    var key     = usuario + '|' + data.zona + '|' + cb;
+
+    if (auditIndex[key]) {
+      // ── Ya existe fila hoy → ACTUALIZAR (no duplicar) ──
+      var existingRow = auditIndex[key];
+      sheetAudit.getRange(existingRow, 2).setValue(ahoraStr); // Fecha con hora
+      sheetAudit.getRange(existingRow, 6).setValue(cantSis);
+      sheetAudit.getRange(existingRow, 7).setValue(cantReal);
+      sheetAudit.getRange(existingRow, 8).setValue(diff);
+    } else {
+      // ── Fila nueva: formatear Cod_Barras como texto ANTES de escribir ──
+      var nextAuditRow = sheetAudit.getLastRow() + 1;
+      sheetAudit.getRange(nextAuditRow, 5).setNumberFormat('@STRING@');
+      sheetAudit.getRange(nextAuditRow, 1, 1, 8).setValues(
+        [[idAudit, ahoraStr, usuario, data.zona, cb, cantSis, cantReal, diff]]
+      );
+      auditIndex[key] = nextAuditRow; // evitar duplicado si el mismo item llega dos veces en el batch
+    }
+
+    // Stock: establecer cantidad DIRECTAMENTE al valor real auditado
+    _actualizarStockAuditoria(sheetStock, cb, data.zona, cantReal, usuario, ahoraStr);
   });
 
   return ContentService.createTextOutput(JSON.stringify({
@@ -298,9 +340,9 @@ function _ensureStockZonasAuditCols(sheet) {
   }
 }
 
-// Updates stock for an audit: applies diff and records who audited + when.
+// Establece el stock de un producto a la cantidad real auditada (SET, no delta).
 // Barcode stored as string to preserve leading zeros.
-function _actualizarStockAuditoria(sheet, codBarras, zonaId, diff, usuario, fecha) {
+function _actualizarStockAuditoria(sheet, codBarras, zonaId, cantReal, usuario, fecha) {
   var data = sheet.getDataRange().getValues();
   var hdrs = data[0].map(function(h) { return String(h).trim(); });
   var colCB   = hdrs.indexOf('Cod_Barras');           if (colCB   < 0) colCB   = 0;
@@ -311,26 +353,28 @@ function _actualizarStockAuditoria(sheet, codBarras, zonaId, diff, usuario, fech
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][colCB]) === String(codBarras) && String(data[i][colZona]) === String(zonaId)) {
-      var nuevaCant = (parseFloat(data[i][colCant]) || 0) + diff;
-      sheet.getRange(i + 1, colCant + 1).setValue(nuevaCant);
+      // SET directamente la cantidad auditada (no aplicar delta)
+      sheet.getRange(i + 1, colCant + 1).setValue(cantReal);
       if (colUser >= 0) sheet.getRange(i + 1, colUser + 1).setValue(usuario);
       if (colFech >= 0) sheet.getRange(i + 1, colFech + 1).setValue(fecha);
+      // Re-escribir barcode como string (corrige filas antiguas guardadas como número)
       sheet.getRange(i + 1, colCB + 1).setNumberFormat('@STRING@');
-      return nuevaCant;
+      sheet.getRange(i + 1, colCB + 1).setValue(String(codBarras));
+      return cantReal;
     }
   }
-  // New row — build it respecting column positions
+  // Fila nueva: formatear Cod_Barras como texto ANTES de escribir el valor
   var totalCols = Math.max(colCant, colUser >= 0 ? colUser : 0, colFech >= 0 ? colFech : 0) + 1;
   var newRow = new Array(totalCols).fill('');
   newRow[colCB]   = String(codBarras);
   newRow[colZona] = String(zonaId);
-  newRow[colCant] = Math.max(0, diff);
+  newRow[colCant] = Math.max(0, cantReal);
   if (colUser >= 0) newRow[colUser] = usuario;
   if (colFech >= 0) newRow[colFech] = fecha;
-  sheet.appendRow(newRow);
-  var lastRow = sheet.getLastRow();
-  sheet.getRange(lastRow, colCB + 1).setNumberFormat('@STRING@');
-  return Math.max(0, diff);
+  var nextStockRow = sheet.getLastRow() + 1;
+  sheet.getRange(nextStockRow, colCB + 1).setNumberFormat('@STRING@');
+  sheet.getRange(nextStockRow, 1, 1, totalCols).setValues([newRow]);
+  return Math.max(0, cantReal);
 }
 
 // Actualiza (o crea) la fila de stock para un código+zona. Devuelve la cantidad resultante.
@@ -344,6 +388,9 @@ function actualizarStockFila(sheet, codBarras, zonaId, delta) {
     }
   }
   var cantInicial = Math.max(0, delta);
-  sheet.appendRow([String(codBarras), String(zonaId), cantInicial]);
+  // Formatear Cod_Barras como texto ANTES de escribir para preservar ceros a la izquierda
+  var nextRow = sheet.getLastRow() + 1;
+  sheet.getRange(nextRow, 1).setNumberFormat('@STRING@');
+  sheet.getRange(nextRow, 1, 1, 3).setValues([[String(codBarras), String(zonaId), cantInicial]]);
   return cantInicial;
 }

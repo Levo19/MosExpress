@@ -16,24 +16,28 @@
 function doGet(e) {
   var accion = e.parameter.accion;
 
-  // ── Reporte HTML de cierre de caja (devuelve HTML, no JSON) ──
+  // ── Reporte HTML de cierre de caja (devuelve HTML, no JSON — intencional) ──
   if (accion === 'ver_cierre') return getCierreHtml(e.parameter.id_caja);
 
-  if (accion === 'descargar')             return descargarCatalogo();
-  if (accion === 'verificar_dispositivo') return verificarDispositivo(e.parameter.id);
-  if (accion === 'ventas_hoy_zona')       return ventasHoyZona(e.parameter.prefijos);
-  if (accion === 'detalle_venta')         return detalleVenta(e.parameter.id_venta);
-  if (accion === 'stock_zonas')           return getStockZonas();
-  if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
-  if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
-  if (accion === 'listar_guias')          return listarGuias(e.parameter.zona);
-  if (accion === 'detalle_guia')          return detalleGuia(e.parameter.id_guia);
-  if (accion === 'traslados_entrantes')   return trasladosEntrantes(e.parameter.zona, e.parameter.desde);
-  if (accion === 'consultar_cliente')     return consultarCliente(e.parameter.doc);
-  if (accion === 'extras_caja')          return getExtrasCaja(e.parameter.cajaId);
-  if (accion === 'estado_cajas')          return estadoCajas();
-
-  return generarRespuestaError("Acción no válida");
+  // Todas las demás acciones siempre devuelven JSON (igual que doPost)
+  try {
+    if (accion === 'descargar')             return descargarCatalogo();
+    if (accion === 'verificar_dispositivo') return verificarDispositivo(e.parameter.id);
+    if (accion === 'ventas_hoy_zona')       return ventasHoyZona(e.parameter.prefijos, e.parameter.desde);
+    if (accion === 'detalle_venta')         return detalleVenta(e.parameter.id_venta);
+    if (accion === 'stock_zonas')           return getStockZonas();
+    if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
+    if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
+    if (accion === 'listar_guias')          return listarGuias(e.parameter.zona);
+    if (accion === 'detalle_guia')          return detalleGuia(e.parameter.id_guia);
+    if (accion === 'traslados_entrantes')   return trasladosEntrantes(e.parameter.zona, e.parameter.desde);
+    if (accion === 'consultar_cliente')     return consultarCliente(e.parameter.doc);
+    if (accion === 'extras_caja')           return getExtrasCaja(e.parameter.cajaId);
+    if (accion === 'estado_cajas')          return estadoCajas();
+    return generarRespuestaError('Acción no válida: ' + accion);
+  } catch(err) {
+    return generarRespuestaError('Error interno [' + accion + ']: ' + err.message);
+  }
 }
 
 // ── Estado completo de cajas con analítica en tiempo real ──────
