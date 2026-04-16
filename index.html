@@ -1561,7 +1561,7 @@
                 <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
                 <div>
                     <p class="text-white font-black text-base uppercase tracking-widest leading-none">Auditoría · {{ auditZona }}</p>
-                    <p class="text-purple-200 text-xs mt-0.5">{{ auditItems.length }} / 30 productos · {{ new Date().toLocaleDateString('es-PE') }}</p>
+                    <p class="text-purple-200 text-xs mt-0.5">{{ auditConfirmados }} / {{ auditItems.length }} confirmados · {{ new Date().toLocaleDateString('es-PE') }}</p>
                 </div>
             </div>
             <button @click="cerrarAuditoria" class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
@@ -1570,8 +1570,8 @@
         <!-- Barra de búsqueda/escaneo manual -->
         <div class="p-3 bg-gray-800 border-b border-gray-700 shrink-0">
             <div class="flex gap-2">
-                <input v-model="auditBusq" @keyup.enter="auditAgregarItem(null)" type="text" placeholder="Escanear o escribir código para agregar..." class="flex-1 bg-gray-700 text-white font-mono px-4 py-2.5 rounded-xl border border-gray-600 outline-none focus:border-purple-400 text-sm tracking-widest">
-                <button @click="auditAgregarItem(null)" class="bg-purple-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
+                <input v-model="auditBusq" @keyup.enter="auditEscanear(null)" type="text" placeholder="Escanear código de barras para confirmar..." class="flex-1 bg-gray-700 text-white font-mono px-4 py-2.5 rounded-xl border border-gray-600 outline-none focus:border-purple-400 text-sm tracking-widest">
+                <button @click="auditEscanear(null)" class="bg-purple-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">OK</button>
                 <button @click="toggleCamaraAudit" class="w-11 h-11 rounded-xl flex items-center justify-center transition-colors" :class="camaraAuditAbierta ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 </button>
@@ -1585,45 +1585,75 @@
 
         <!-- Lista de ítems a auditar -->
         <div class="flex-1 overflow-y-auto p-4 space-y-3">
-            <div v-if="!auditItems.length" class="text-center py-12">
-                <p class="text-gray-500 text-sm">No hay stock registrado en <strong class="text-gray-300">{{ auditZona }}</strong>.</p>
-                <p class="text-gray-600 text-xs mt-2">Puedes agregar productos manualmente con el campo de arriba.</p>
+            <!-- Loading state -->
+            <div v-if="auditCargando" class="text-center py-12">
+                <svg class="animate-spin w-8 h-8 text-purple-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <p class="text-gray-400 text-sm">Cargando lista de auditoría...</p>
             </div>
 
-            <div v-for="(item, idx) in auditItems" :key="item.cod_barras"
-                 class="bg-gray-800 rounded-2xl p-4 border"
-                 :class="item.esNuevo ? 'border-blue-500/60' : (parseFloat(item.cantReal) !== item.cantSistema ? 'border-amber-500/60' : 'border-gray-700')">
-                <div class="flex justify-between items-start mb-3">
-                    <div class="flex-1 min-w-0 pr-3">
-                        <div class="flex items-center gap-2">
-                            <span v-if="item.esNuevo" class="text-[10px] font-black bg-blue-500 text-white px-1.5 py-0.5 rounded uppercase">NUEVO</span>
-                        </div>
-                        <p class="text-white font-bold text-sm mt-0.5">{{ item.nombre }}</p>
-                        <p class="text-gray-500 text-xs font-mono mt-0.5">{{ item.cod_barras }}</p>
-                    </div>
-                    <div class="text-right shrink-0">
-                        <p class="text-gray-400 text-xs">Sistema</p>
-                        <p class="text-gray-300 font-black text-xl">{{ item.cantSistema }}</p>
-                    </div>
-                </div>
-                <div>
-                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Cantidad contada</label>
-                    <input v-model.number="item.cantReal" type="number" min="0" step="1"
-                           class="w-full bg-gray-700 text-white font-black text-2xl px-4 py-3 rounded-xl border border-gray-600 focus:border-purple-400 outline-none text-center"
-                           :class="parseFloat(item.cantReal) !== item.cantSistema ? 'border-amber-500 bg-amber-900/20' : ''">
-                    <p v-if="parseFloat(item.cantReal) !== item.cantSistema" class="text-amber-400 text-xs font-bold mt-1 text-center">
-                        Diferencia: {{ (parseFloat(item.cantReal)||0) - item.cantSistema > 0 ? '+' : '' }}{{ ((parseFloat(item.cantReal)||0) - item.cantSistema) }}
-                    </p>
-                </div>
+            <div v-else-if="!auditItems.length" class="text-center py-12">
+                <p class="text-gray-500 text-sm">No hay productos elegibles en <strong class="text-gray-300">{{ auditZona }}</strong>.</p>
+                <p class="text-gray-600 text-xs mt-2">Escanea un código para agregar productos manualmente.</p>
             </div>
+
+            <template v-else>
+                <!-- Progress bar -->
+                <div class="bg-gray-800 rounded-xl p-3 flex items-center gap-3">
+                    <div class="flex-1 bg-gray-700 rounded-full h-2 overflow-hidden">
+                        <div class="h-2 bg-purple-500 rounded-full transition-all duration-300"
+                             :style="{ width: (auditItems.length ? (auditConfirmados / auditItems.length * 100) : 0) + '%' }"></div>
+                    </div>
+                    <span class="text-sm font-black shrink-0" :class="auditConfirmados >= auditItems.length ? 'text-green-400' : 'text-gray-400'">
+                        {{ auditConfirmados }}/{{ auditItems.length }}
+                    </span>
+                </div>
+
+                <div v-for="(item, idx) in auditItems" :key="item.cod_barras"
+                     class="rounded-2xl p-4 border transition-colors"
+                     :class="item.confirmado ? 'bg-green-900/20 border-green-500/60' : (item.esCatalogo ? 'bg-blue-900/10 border-blue-500/40' : 'bg-gray-800 border-gray-700')">
+                    <div class="flex justify-between items-start" :class="item.confirmado ? '' : 'mb-0'">
+                        <div class="flex-1 min-w-0 pr-3">
+                            <div class="flex items-center gap-2 flex-wrap mb-0.5">
+                                <span v-if="item.confirmado" class="text-[10px] font-black bg-green-500 text-white px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+                                    CONFIRMADO
+                                </span>
+                                <span v-else-if="item.esCatalogo" class="text-[10px] font-black bg-blue-500 text-white px-1.5 py-0.5 rounded uppercase">NUEVO</span>
+                                <span v-else class="text-[10px] font-black bg-gray-600 text-gray-300 px-1.5 py-0.5 rounded uppercase">ESCANEAR</span>
+                            </div>
+                            <p class="text-white font-bold text-sm">{{ item.nombre }}</p>
+                            <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <p class="text-gray-400 text-xs">Sistema</p>
+                            <p class="text-gray-300 font-black text-xl">{{ item.cantSistema }}</p>
+                        </div>
+                    </div>
+                    <!-- Qty input — only visible after confirming -->
+                    <div v-if="item.confirmado" class="mt-3">
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Cantidad contada</label>
+                        <input v-model.number="item.cantReal" type="number" min="0" step="1"
+                               class="w-full bg-gray-700 text-white font-black text-2xl px-4 py-3 rounded-xl border outline-none text-center"
+                               :class="parseFloat(item.cantReal) !== item.cantSistema ? 'border-amber-500 bg-amber-900/20 focus:border-amber-400' : 'border-gray-600 focus:border-purple-400'">
+                        <p v-if="parseFloat(item.cantReal) !== item.cantSistema" class="text-amber-400 text-xs font-bold mt-1 text-center">
+                            Diferencia: {{ (parseFloat(item.cantReal)||0) - item.cantSistema > 0 ? '+' : '' }}{{ ((parseFloat(item.cantReal)||0) - item.cantSistema) }}
+                        </p>
+                    </div>
+                </div>
+            </template>
         </div>
 
         <!-- Botón confirmar auditoría -->
-        <div v-if="auditItems.length" class="p-4 bg-gray-900 border-t border-gray-700 shrink-0">
-            <button @click="confirmarAuditoria" :disabled="procesandoAudit"
+        <div v-if="!auditCargando && auditItems.length" class="p-4 bg-gray-900 border-t border-gray-700 shrink-0">
+            <div class="flex items-center justify-between mb-2 px-1">
+                <span class="text-xs text-gray-400">{{ auditConfirmados }} de {{ auditItems.length }} productos escaneados</span>
+                <span v-if="auditConfirmados >= auditItems.length" class="text-xs text-green-400 font-bold">Lista completa!</span>
+                <span v-else class="text-xs text-amber-400">Escanea los restantes</span>
+            </div>
+            <button @click="confirmarAuditoria" :disabled="procesandoAudit || auditConfirmados === 0"
                     class="w-full bg-purple-500 hover:bg-purple-400 disabled:bg-purple-900/40 text-white font-black py-5 rounded-2xl uppercase tracking-widest active:scale-95 flex items-center justify-center gap-2">
                 <svg v-if="procesandoAudit" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                {{ procesandoAudit ? 'Registrando...' : 'Confirmar Auditoría (' + auditItems.length + ')' }}
+                {{ procesandoAudit ? 'Registrando...' : 'Confirmar Auditoría (' + auditConfirmados + ')' }}
             </button>
         </div>
     </div>
@@ -1743,7 +1773,9 @@
         const auditItems = ref([]);
         const auditBusq = ref('');
         const procesandoAudit = ref(false);
-        const auditHoyDate = ref(localStorage.getItem('mosexpress_audit_date') || '');
+        const auditCargando = ref(false);
+        // Per-user audit date — loaded on login, keyed by vendedor name
+        const auditHoyDate = ref('');
 
         // --- RELOJ HEADER ---
         const _fmtHora = () => { const n = new Date(); return n.getHours().toString().padStart(2,'0') + ':' + n.getMinutes().toString().padStart(2,'0'); };
@@ -1822,7 +1854,12 @@
             return m;
         });
         const zonasUnicasStock = computed(() => [...new Set(stockZonas.value.map(r => r.Zona_ID))]);
-        const auditPendiente = computed(() => auditHoyDate.value !== new Date().toDateString());
+        // Per-user: pending if this user hasn't completed audit today
+        const auditPendiente = computed(() => {
+            if (!config.value.vendedor || !config.value.completado) return false;
+            return auditHoyDate.value !== new Date().toDateString();
+        });
+        const auditConfirmados = computed(() => auditItems.value.filter(i => i.confirmado).length);
 
         // Filtro Historial de Caja
         const ventasHistorialFiltradas = computed(() => {
@@ -2710,6 +2747,8 @@
             config.value = { completado: true, vendedor: configWizard.value.vendedor, zona: configWizard.value.zona, estacion: configWizard.value.estacion, esCajero: configWizard.value.esCajero };
             localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
             localStorage.setItem('mosexpress_session_date', new Date().toDateString());
+            // Load per-user audit completion date
+            auditHoyDate.value = localStorage.getItem('mosexpress_audit_' + config.value.vendedor) || '';
             if (!config.value.esCajero) {
                 cajaAbierta.value = true;
                 cambiarModulo('POS');
@@ -4243,9 +4282,31 @@
             modoAuditoria.value = true;
             auditItems.value = [];
             auditBusq.value = '';
+            auditCargando.value = true;
             auditZona.value = config.value.zona || (zonasUnicas.value[0] || '');
-            await cargarStockZonas();
-            iniciarAuditoria();
+            if (!auditZona.value) { auditCargando.value = false; return; }
+            try {
+                const r = await fetch(`${API_URL}?accion=lista_auditoria&zona=${encodeURIComponent(auditZona.value)}&usuario=${encodeURIComponent(config.value.vendedor)}`);
+                const d = await r.json();
+                if (d.status === 'success' && d.items) {
+                    auditItems.value = d.items.map(item => {
+                        const cod  = String(item.cod_barras);
+                        const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === cod);
+                        const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
+                        const nombre = base ? (base.Nombre + ' · ' + pres.Empaque) : (pres ? pres.SKU_Base : cod);
+                        return { cod_barras: cod, nombre, cantSistema: item.cantSistema, cantReal: item.cantSistema, confirmado: false, esCatalogo: item.esCatalogo || false };
+                    });
+                } else {
+                    agregarToast('Aviso', 'Sin datos del servidor — auditoría local');
+                    await cargarStockZonas();
+                    iniciarAuditoria();
+                }
+            } catch(e) {
+                agregarToast('Aviso', 'Sin conexión — auditoría local');
+                await cargarStockZonas();
+                iniciarAuditoria();
+            }
+            auditCargando.value = false;
         };
 
         const cerrarAuditoria = () => {
@@ -4376,26 +4437,40 @@
             } catch(e) { agregarToast('Error', e.message); }
         };
 
+        // Fallback: build audit list from local stock (used when GAS is unreachable)
         const iniciarAuditoria = () => {
             if (!auditZona.value) return;
-            // Toma 30 ítems al azar de la zona (incluye cantidades cero para detectar faltantes)
             const enZona = stockZonas.value.filter(r => r.Zona_ID === auditZona.value);
             const muestra = [...enZona].sort(() => Math.random() - 0.5).slice(0, 30);
             auditItems.value = muestra.map(r => {
                 const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === String(r.Cod_Barras));
                 const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
                 const nombre = base ? (base.Nombre + ' · ' + pres.Empaque) : r.Cod_Barras;
-                return { cod_barras: String(r.Cod_Barras), nombre, cantSistema: parseFloat(r.Cantidad) || 0, cantReal: parseFloat(r.Cantidad) || 0, esNuevo: false };
+                return { cod_barras: String(r.Cod_Barras), nombre, cantSistema: parseFloat(r.Cantidad) || 0, cantReal: parseFloat(r.Cantidad) || 0, confirmado: false, esCatalogo: false };
             });
             if (!auditItems.value.length) agregarToast('Aviso', 'No hay stock registrado en ' + auditZona.value);
         };
 
-        const auditAgregarItem = (cod) => {
+        const auditEscanear = (cod) => {
             const q = (cod || auditBusq.value).trim();
             if (!q) return;
+            auditBusq.value = '';
+
+            // Check if this code confirms an existing audit item
+            const idx = auditItems.value.findIndex(i => i.cod_barras === q);
+            if (idx >= 0) {
+                if (auditItems.value[idx].confirmado) {
+                    agregarToast('Aviso', 'Ya confirmado: ' + auditItems.value[idx].nombre);
+                } else {
+                    auditItems.value[idx].confirmado = true;
+                    agregarToast('OK', auditItems.value[idx].nombre + ' confirmado');
+                }
+                return;
+            }
+
+            // Code not in list → add as new item
             if (auditItems.value.find(i => i.cod_barras === q)) {
                 agregarToast('Aviso', 'Este producto ya está en la lista');
-                auditBusq.value = '';
                 return;
             }
             const stockRow = stockZonas.value.find(r => String(r.Cod_Barras) === q && r.Zona_ID === auditZona.value);
@@ -4404,8 +4479,8 @@
             const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
             const nombre = base ? (base.Nombre + ' · ' + pres.Empaque) : (pres ? pres.SKU_Base : q);
             if (!pres) agregarToast('Aviso', 'Código no en catálogo — se registrará de todas formas');
-            auditItems.value.push({ cod_barras: q, nombre, cantSistema, cantReal: 0, esNuevo: !stockRow });
-            auditBusq.value = '';
+            // Newly scanned item not in list → add already confirmed (it was physically scanned)
+            auditItems.value.push({ cod_barras: q, nombre, cantSistema, cantReal: cantSistema, confirmado: true, esCatalogo: false });
         };
 
         const toggleCamaraAudit = () => {
@@ -4419,7 +4494,7 @@
                         (txt) => {
                             camaraAuditAbierta.value = false;
                             if (html5QrAudit) { html5QrAudit.stop().then(() => { try { html5QrAudit.clear(); } catch(e) {} html5QrAudit = null; }).catch(() => { html5QrAudit = null; }); }
-                            auditAgregarItem(txt);
+                            auditEscanear(txt);
                         },
                         () => {}
                     ).catch(() => {
@@ -4434,19 +4509,21 @@
         };
 
         const confirmarAuditoria = async () => {
-            if (!auditItems.value.length || !auditZona.value) return;
+            if (!auditZona.value) return;
+            const confirmados = auditItems.value.filter(i => i.confirmado);
+            if (!confirmados.length) { agregarToast('Aviso', 'Escanea al menos un producto para confirmar'); return; }
             procesandoAudit.value = true;
             try {
                 const payload = {
                     tipoEvento: 'REGISTRAR_AUDITORIA',
                     vendedor: config.value.vendedor,
                     zona: auditZona.value,
-                    items: auditItems.value.map(i => ({ cod_barras: i.cod_barras, cantSistema: i.cantSistema, cantReal: parseFloat(i.cantReal) || 0 }))
+                    items: confirmados.map(i => ({ cod_barras: i.cod_barras, cantSistema: i.cantSistema, cantReal: parseFloat(i.cantReal) || 0 }))
                 };
                 const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                 const d = await r.json();
                 if (d.status === 'success') {
-                    auditItems.value.forEach(i => {
+                    confirmados.forEach(i => {
                         const si = stockZonas.value.findIndex(row => String(row.Cod_Barras) === i.cod_barras && row.Zona_ID === auditZona.value);
                         const cantFinal = parseFloat(i.cantReal) || 0;
                         if (si >= 0) stockZonas.value[si].Cantidad = cantFinal;
@@ -4454,10 +4531,12 @@
                     });
                     localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
                     const hoy = new Date().toDateString();
+                    const auditKey = 'mosexpress_audit_' + config.value.vendedor;
                     auditHoyDate.value = hoy;
-                    localStorage.setItem('mosexpress_audit_date', hoy);
-                    agregarToast('Éxito', 'Auditoría ' + d.idAuditoria + ' registrada');
+                    localStorage.setItem(auditKey, hoy);
+                    agregarToast('Éxito', 'Auditoría ' + d.idAuditoria + ' · ' + confirmados.length + ' productos registrados');
                     auditItems.value = [];
+                    modoAuditoria.value = false;
                 } else { agregarToast('Error', d.mensaje || 'Error al registrar auditoría'); }
             } catch(e) { agregarToast('Error', 'No se pudo conectar con el servidor'); }
             procesandoAudit.value = false;
@@ -4504,8 +4583,8 @@
           guiaHistorial, guiaHistorialCargando, guiaDetallando, guiaDetalle, camaraGuiaAbierta,
           abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
           guiaBuscarItem, quitarItemGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
-          auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente,
-          camaraAuditAbierta, toggleCamaraAudit, auditAgregarItem,
+          auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente, auditCargando, auditConfirmados,
+          camaraAuditAbierta, toggleCamaraAudit, auditEscanear,
           stockMap, zonasUnicasStock,
           abrirAuditoria, cerrarAuditoria, iniciarAuditoria, confirmarAuditoria,
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,

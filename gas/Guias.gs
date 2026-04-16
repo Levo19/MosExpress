@@ -197,6 +197,67 @@ function registrarGuia(data) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+// Returns up to 30 stock items for audit: prioritises products not audited in 7+ days,
+// fills remainder from PRESENTACIONES catalog (items not yet in zone stock).
+function getListaAuditoria(zona, usuario) {
+  if (!zona) return ContentService.createTextOutput(JSON.stringify({ status: 'error', mensaje: 'zona requerida' }))
+    .setMimeType(ContentService.MimeType.JSON);
+
+  var ss         = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetStock = ss.getSheetByName('STOCK_ZONAS');
+  var sheetPres  = ss.getSheetByName('PRESENTACIONES');
+  var items      = [];
+  var codsEnZona = {};
+
+  if (sheetStock && sheetStock.getLastRow() > 1) {
+    var stockData = sheetStock.getDataRange().getValues();
+    var hdrs  = stockData[0].map(function(h) { return String(h).trim(); });
+    var colCB   = hdrs.indexOf('Cod_Barras');           if (colCB   < 0) colCB   = 0;
+    var colZona = hdrs.indexOf('Zona_ID');              if (colZona < 0) colZona = 1;
+    var colCant = hdrs.indexOf('Cantidad');             if (colCant < 0) colCant = 2;
+    var colFech = hdrs.indexOf('Fecha_Ultimo_Registro');
+
+    for (var i = 1; i < stockData.length; i++) {
+      if (String(stockData[i][colZona]) !== String(zona)) continue;
+      var cb = String(stockData[i][colCB]);
+      if (!cb) continue;
+      codsEnZona[cb] = true;
+
+      var fechaReg = colFech >= 0 ? stockData[i][colFech] : null;
+      var diasSin  = fechaReg ? (Date.now() - new Date(fechaReg).getTime()) / 86400000 : 9999;
+
+      if (diasSin >= 7) {
+        items.push({ cod_barras: cb, cantSistema: parseFloat(stockData[i][colCant]) || 0, diasSin: diasSin, esCatalogo: false });
+      }
+    }
+  }
+
+  // Oldest audit first
+  items.sort(function(a, b) { return b.diasSin - a.diasSin; });
+  var seleccionados = items.slice(0, 30);
+
+  // Fill remainder from catalog (products not yet in zone stock)
+  if (seleccionados.length < 30 && sheetPres && sheetPres.getLastRow() > 1) {
+    var presData = sheetPres.getDataRange().getValues();
+    var presHdrs = presData[0].map(function(h) { return String(h).trim(); });
+    var presColCB = presHdrs.indexOf('Cod_Barras'); if (presColCB < 0) presColCB = 0;
+    // Shuffle catalog rows for variety
+    var presRows = presData.slice(1).sort(function() { return Math.random() - 0.5; });
+    for (var p = 0; p < presRows.length && seleccionados.length < 30; p++) {
+      var pCb = String(presRows[p][presColCB]);
+      if (!pCb || codsEnZona[pCb]) continue;
+      seleccionados.push({ cod_barras: pCb, cantSistema: 0, esCatalogo: true });
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success',
+    items: seleccionados.map(function(x) {
+      return { cod_barras: x.cod_barras, cantSistema: x.cantSistema, esCatalogo: x.esCatalogo || false };
+    })
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function registrarAuditoria(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetAudit = ss.getSheetByName("AUDITORIAS");
@@ -204,19 +265,72 @@ function registrarAuditoria(data) {
   if (!sheetAudit) return generarRespuestaError("Pestaña AUDITORIAS no encontrada.");
   if (!sheetStock) return generarRespuestaError("Pestaña STOCK_ZONAS no encontrada.");
 
-  var idAudit = "A-" + new Date().getTime();
+  // Auto-add audit tracking columns if missing
+  _ensureStockZonasAuditCols(sheetStock);
+
+  var idAudit  = "A-" + new Date().getTime();
+  var usuario  = String(data.vendedor || '');
+  var ahora    = new Date();
+
   // Columnas AUDITORIAS: ID_Auditoria | Fecha | Vendedor | Zona_ID | Cod_Barras | Cant_Sistema | Cant_Real | Diferencia
   (data.items || []).forEach(function(item) {
     var cb       = String(item.cod_barras);
     var cantReal = parseFloat(item.cantReal) || 0;
     var diff     = cantReal - (parseFloat(item.cantSistema) || 0);
-    sheetAudit.appendRow([idAudit, new Date(), data.vendedor, data.zona, cb, item.cantSistema, cantReal, diff]);
-    actualizarStockFila(sheetStock, cb, data.zona, diff);
+    sheetAudit.appendRow([idAudit, ahora, usuario, data.zona, cb, item.cantSistema, cantReal, diff]);
+    _actualizarStockAuditoria(sheetStock, cb, data.zona, diff, usuario, ahora);
   });
 
   return ContentService.createTextOutput(JSON.stringify({
     status: 'success', idAuditoria: idAudit
   })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Adds Usuario and Fecha_Ultimo_Registro columns to STOCK_ZONAS if not present
+function _ensureStockZonasAuditCols(sheet) {
+  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
+  if (hdrs.indexOf('Usuario') < 0) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('Usuario');
+    hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
+  }
+  if (hdrs.indexOf('Fecha_Ultimo_Registro') < 0) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('Fecha_Ultimo_Registro');
+  }
+}
+
+// Updates stock for an audit: applies diff and records who audited + when.
+// Barcode stored as string to preserve leading zeros.
+function _actualizarStockAuditoria(sheet, codBarras, zonaId, diff, usuario, fecha) {
+  var data = sheet.getDataRange().getValues();
+  var hdrs = data[0].map(function(h) { return String(h).trim(); });
+  var colCB   = hdrs.indexOf('Cod_Barras');           if (colCB   < 0) colCB   = 0;
+  var colZona = hdrs.indexOf('Zona_ID');              if (colZona < 0) colZona = 1;
+  var colCant = hdrs.indexOf('Cantidad');             if (colCant < 0) colCant = 2;
+  var colUser = hdrs.indexOf('Usuario');
+  var colFech = hdrs.indexOf('Fecha_Ultimo_Registro');
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][colCB]) === String(codBarras) && String(data[i][colZona]) === String(zonaId)) {
+      var nuevaCant = (parseFloat(data[i][colCant]) || 0) + diff;
+      sheet.getRange(i + 1, colCant + 1).setValue(nuevaCant);
+      if (colUser >= 0) sheet.getRange(i + 1, colUser + 1).setValue(usuario);
+      if (colFech >= 0) sheet.getRange(i + 1, colFech + 1).setValue(fecha);
+      sheet.getRange(i + 1, colCB + 1).setNumberFormat('@STRING@');
+      return nuevaCant;
+    }
+  }
+  // New row — build it respecting column positions
+  var totalCols = Math.max(colCant, colUser >= 0 ? colUser : 0, colFech >= 0 ? colFech : 0) + 1;
+  var newRow = new Array(totalCols).fill('');
+  newRow[colCB]   = String(codBarras);
+  newRow[colZona] = String(zonaId);
+  newRow[colCant] = Math.max(0, diff);
+  if (colUser >= 0) newRow[colUser] = usuario;
+  if (colFech >= 0) newRow[colFech] = fecha;
+  sheet.appendRow(newRow);
+  var lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow, colCB + 1).setNumberFormat('@STRING@');
+  return Math.max(0, diff);
 }
 
 // Actualiza (o crea) la fila de stock para un código+zona. Devuelve la cantidad resultante.

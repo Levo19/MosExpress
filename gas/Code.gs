@@ -24,6 +24,7 @@ function doGet(e) {
   if (accion === 'ventas_hoy_zona')       return ventasHoyZona(e.parameter.prefijos);
   if (accion === 'detalle_venta')         return detalleVenta(e.parameter.id_venta);
   if (accion === 'stock_zonas')           return getStockZonas();
+  if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
   if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
   if (accion === 'listar_guias')          return listarGuias(e.parameter.zona);
   if (accion === 'detalle_guia')          return detalleGuia(e.parameter.id_guia);
