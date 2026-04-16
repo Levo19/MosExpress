@@ -103,8 +103,90 @@ function descargarCatalogo() {
     });
   }
 
-  // Estas siempre vienen de ME (no son de MOS)
-  ['PROMOCIONES', 'ZONAS_CONFIG', 'CLIENTES_FRECUENTES', 'STOCK_ZONAS'].forEach(function(name) {
+  // ZONAS_CONFIG: si Phase 2 (MOS_SS_ID), construir desde MOS cruzando
+  //   ESTACIONES + IMPRESORAS + SERIES_DOCUMENTALES
+  // Si no → leer ZONAS_CONFIG local de ME (Phase 1 / fallback)
+  if (mosSsId) {
+    try {
+      var mosSS2       = SpreadsheetApp.openById(mosSsId);
+      var estRows      = _obtenerHojaMOS(mosSS2, 'ESTACIONES');
+      var impRows      = _obtenerHojaMOS(mosSS2, 'IMPRESORAS');
+      var seriesRows   = _obtenerHojaMOS(mosSS2, 'SERIES_DOCUMENTALES');
+
+      // ── Mapa idEstacion → printNodeId (impresora TICKET activa de ME) ──
+      var printMap = {};
+      impRows.forEach(function(imp) {
+        if (String(imp.activo) === '0') return;
+        if (imp.appOrigen && imp.appOrigen !== 'mosExpress') return;
+        var tipo = String(imp.tipo || '').toUpperCase();
+        if (tipo && tipo !== 'TICKET') return; // solo impresoras de ticket
+        var est = String(imp.idEstacion || '').trim();
+        if (est && !printMap[est]) printMap[est] = String(imp.printNodeId || '').trim();
+      });
+
+      // ── Mapa idZona → { Serie_Nota, Serie_Boleta, Serie_Factura } ──
+      var serieMap = {};
+      seriesRows.forEach(function(r) {
+        if (String(r.activo) === '0') return;
+        var zId  = String(r.idZona        || '').trim();
+        var tipo = String(r.tipoDocumento || '').toUpperCase().replace(/[\s_]/g, '');
+        var ser  = String(r.serie         || '').trim();
+        if (!zId || !ser) return;
+        if (!serieMap[zId]) serieMap[zId] = { Serie_Nota: '', Serie_Boleta: '', Serie_Factura: '' };
+        if (tipo === 'NOTAVENTA' || tipo === 'NV' || tipo === 'NOTADEVENTA') serieMap[zId].Serie_Nota    = ser;
+        else if (tipo === 'BOLETA')  serieMap[zId].Serie_Boleta   = ser;
+        else if (tipo === 'FACTURA') serieMap[zId].Serie_Factura  = ser;
+      });
+
+      // ── Una fila de ZONAS_CONFIG por cada estación activa de ME ──
+      // appOrigen: incluir si es 'mosExpress' o si está vacío (no asignado aún)
+      // Excluir solo los que explícitamente pertenecen a otra app (ej: 'warehouseMos')
+      var zonasConfig = [];
+      estRows.forEach(function(est) {
+        if (String(est.activo) === '0') return;
+        var origen = String(est.appOrigen || '').trim();
+        if (origen && origen !== 'mosExpress') return;
+        var zId     = String(est.idZona      || '').trim();
+        var estId   = String(est.idEstacion  || '').trim();
+        var nombre  = String(est.nombre      || '').trim();
+        if (!nombre) return; // ignorar filas vacías
+        var pin     = String(est.adminPin    || '').trim();
+        var printer = printMap[estId] || '';
+        var series  = serieMap[zId]   || { Serie_Nota: '', Serie_Boleta: '', Serie_Factura: '' };
+        zonasConfig.push({
+          Zona_ID:         zId,
+          Estacion_Nombre: nombre,
+          idEstacion:      estId,
+          PrintNode_ID:    printer,
+          Serie_Nota:      series.Serie_Nota,
+          Serie_Boleta:    series.Serie_Boleta,
+          Serie_Factura:   series.Serie_Factura,
+          Admin_PIN:       pin
+        });
+      });
+
+      // Si MOS devuelve vacío (ESTACIONES no migradas aún) → usar tabla local
+      if (zonasConfig.length === 0) {
+        Logger.log('MOS bridge ZONAS_CONFIG — ESTACIONES vacías, usando tabla local de ME');
+        var fbSheet = ss.getSheetByName('ZONAS_CONFIG');
+        catalogo['ZONAS_CONFIG'] = fbSheet ? obtenerDatosHojaComoJSON(fbSheet) : [];
+      } else {
+        catalogo['ZONAS_CONFIG'] = zonasConfig;
+        Logger.log('MOS bridge ZONAS_CONFIG — ' + zonasConfig.length + ' estaciones desde MOS');
+      }
+
+    } catch(eZonas) {
+      Logger.log('ZONAS_CONFIG bridge ERROR: ' + eZonas.message + ' — usando tabla local');
+      var fallbackSheet = ss.getSheetByName('ZONAS_CONFIG');
+      catalogo['ZONAS_CONFIG'] = fallbackSheet ? obtenerDatosHojaComoJSON(fallbackSheet) : [];
+    }
+  } else {
+    var localSheet = ss.getSheetByName('ZONAS_CONFIG');
+    catalogo['ZONAS_CONFIG'] = localSheet ? obtenerDatosHojaComoJSON(localSheet) : [];
+  }
+
+  // Estas siempre vienen de ME (datos operativos locales)
+  ['PROMOCIONES', 'CLIENTES_FRECUENTES', 'STOCK_ZONAS'].forEach(function(name) {
     var sheet = ss.getSheetByName(name);
     catalogo[name] = sheet ? obtenerDatosHojaComoJSON(sheet) : [];
   });
@@ -164,18 +246,39 @@ function _convertirTipoIGV(tipoMos) {
 function verificarDispositivo(deviceId) {
   if (!deviceId) return generarRespuestaError("ID de dispositivo no proporcionado");
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName("DISPOSITIVOS");
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID') || '';
 
-  if (!sheet) {
-    return ContentService.createTextOutput(JSON.stringify({
-      status: "success", autorizado: false, mensaje: "Tabla DISPOSITIVOS no encontrada"
-    })).setMimeType(ContentService.MimeType.JSON);
+  // Phase 2: verificar contra tabla DISPOSITIVOS de MOS (gestión centralizada)
+  // Phase 1: tabla local DISPOSITIVOS de ME
+  var datos = [];
+  try {
+    if (mosSsId) {
+      var mosSS  = SpreadsheetApp.openById(mosSsId);
+      var mosSheet = mosSS.getSheetByName('DISPOSITIVOS');
+      if (mosSheet) {
+        datos = obtenerDatosHojaComoJSON(mosSheet);
+        Logger.log('verificarDispositivo — usando DISPOSITIVOS de MOS (' + datos.length + ' registros)');
+      }
+    }
+  } catch(e) {
+    Logger.log('verificarDispositivo MOS ERROR: ' + e.message + ' — fallback a local');
   }
 
-  var data = obtenerDatosHojaComoJSON(sheet);
-  var autorizado = data.some(function(d) {
-    return d.ID_Dispositivo === deviceId && d.Estado === 'ACTIVO';
+  // Fallback: tabla local si MOS no tiene la hoja o falló
+  if (datos.length === 0) {
+    var localSheet = ss.getSheetByName('DISPOSITIVOS');
+    if (!localSheet) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success", autorizado: false, mensaje: "Tabla DISPOSITIVOS no encontrada"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    datos = obtenerDatosHojaComoJSON(localSheet);
+  }
+
+  var autorizado = datos.some(function(d) {
+    return (d.ID_Dispositivo === deviceId || d.idDispositivo === deviceId) &&
+           (d.Estado === 'ACTIVO' || d.estado === 'ACTIVO' || d.activo === '1' || d.activo === 1);
   });
 
   return ContentService.createTextOutput(JSON.stringify({
