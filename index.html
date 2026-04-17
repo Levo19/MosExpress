@@ -2805,7 +2805,7 @@
                 .catch(e => agregarToast('Error Impresión', e.message));
         };
 
-        const iniciarTurno = () => {
+        const iniciarTurno = async () => {
             // Doble-guarda: si hay cajero activo en la zona no puede entrar como cajero
             if (wizardCajeroOcupado.value && configWizard.value.esCajero) {
                 agregarToast('Acceso bloqueado', 'Ya hay un cajero activo en esta zona. Entra como vendedor o espera el cierre de turno.');
@@ -2817,6 +2817,37 @@
             localStorage.setItem('mosexpress_session_date', new Date().toDateString());
             _cargarAuditHoy();
             if (!config.value.esCajero) {
+                // Registrar apertura de sesión vendedor en GAS y persistir en localStorage
+                // Esto evita que onMounted la cree de nuevo en cada recarga con monto S/0
+                const payload = {
+                    tipoEvento:   'APERTURA_CAJA',
+                    vendedor:     config.value.vendedor,
+                    estacion:     config.value.estacion?.Estacion_Nombre || '',
+                    montoInicial: 0,
+                    zona:         config.value.zona || ''
+                };
+                let cid = 'CAJA-LOCAL-' + Date.now();
+                localStorage.setItem('mosexpress_caja_payload', JSON.stringify(payload));
+                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                    try {
+                        const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                        const res = await req.json();
+                        if (res.status === 'success') {
+                            cid = res.idCaja;
+                            localStorage.removeItem('mosexpress_caja_payload');
+                        }
+                    } catch(e) { /* sin red — reintentará _intentarRegistrarCajaLocal */ }
+                }
+                idCajaActual.value     = cid;
+                sessionStartTime.value = new Date().toISOString();
+                cobradosEnSesion.value = [];
+                extrasMovimientos.value = [];
+                localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
+                localStorage.removeItem('mosexpress_cobrados_sesion');
+                localStorage.removeItem('mosexpress_extras_sesion');
+                localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
+                    idCaja: cid, monto: 0, fecha: Date.now()
+                }));
                 cajaAbierta.value = true;
                 cambiarModulo('POS');
                 // Ticket de confirmación de conexión para el vendedor
