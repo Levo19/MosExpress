@@ -1,86 +1,70 @@
-const CACHE_NAME = 'mosexpress-cache-v46';
-const urlsToCache = [
+// ============================================================
+// MOSexpress — Service Worker
+// Cambia VERSION en cada deploy para invalidar caché
+// ============================================================
+const VERSION = '1.0.0';
+const CACHE   = 'mosexpress-v' + VERSION;
+const ASSETS  = [
   './',
   './index.html',
   './manifest.json',
+  './version.json',
   'https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js',
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
 ];
 
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(async cache => {
-        console.log('Opened cache');
-        try { await cache.addAll(urlsToCache); } catch(e) { console.warn('SW cache install parcial:', e); }
-      })
+// ── Instalar: cachear assets con no-store (ignora CDN) ──────
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(
+        ASSETS.map(url => new Request(url, { cache: 'no-store' }))
+      ))
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('fetch', event => {
-  // Solo interceptamos peticiones GET (no interceptamos POST al GAS)
-  if (event.request.method !== 'GET') return;
-  
-  // No interceptar peticiones a la API del backend
-  if (event.request.url.includes('script.google.com') || event.request.url.includes('api.printnode.com')) {
-      return;
+// ── Activar: borrar cachés viejos y reclamar clientes ───────
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
+  );
+});
+
+// ── Fetch: caché primero, red como fallback ──────────────────
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+
+  // No interceptar GAS ni PrintNode
+  if (url.hostname.includes('script.google.com') ||
+      url.hostname.includes('printnode.com')) return;
+
+  // version.json: siempre desde red para detectar cambios
+  if (url.pathname.endsWith('version.json')) {
+    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+    return;
   }
 
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Cache hit - return response
-        if (response) {
-          return response;
-        }
-
-        // Clone the request because it's a stream and can only be consumed once
-        var fetchRequest = event.request.clone();
-
-        return fetch(fetchRequest).then(
-          function(response) {
-            if(!response || response.status !== 200) {
-              return response;
-            }
-            // Cachear respuestas básicas y CORS válidas
-            if(response.type !== 'basic' && response.type !== 'cors') {
-              return response;
-            }
-
-            var responseToCache = response.clone();
-
-            // Usar waitUntil para garantizar que el cache se guarda antes de que el SW se duerma
-            event.waitUntil(
-              caches.open(CACHE_NAME).then(function(cache) {
-                if (event.request.url.startsWith('http')) {
-                    return cache.put(event.request, responseToCache);
-                }
-              })
-            );
-
-            return response;
-          }
-        ).catch(function(error) {
-            console.error('Fetch event failed:', error);
-            return Response.error();
-        });
-      })
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      if (cached) return cached;
+      return fetch(e.request).then(res => {
+        if (!res || res.status !== 200) return res;
+        if (res.type !== 'basic' && res.type !== 'cors') return res;
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return res;
+      }).catch(() => Response.error());
+    })
   );
 });
 
-self.addEventListener('activate', event => {
-  const cacheWhitelist = [CACHE_NAME];
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-  );
-  self.clients.claim();
+// ── Mensaje SKIP_WAITING desde la app ───────────────────────
+self.addEventListener('message', e => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });

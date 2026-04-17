@@ -55,24 +55,103 @@
       .modal-pago-inner { max-height: 98dvh !important; }
     }
   </style>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').then(reg => {
-        // Cuando el SW detecta una nueva versión, recarga la página automáticamente
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
-              // Nueva versión activa — recargar para que todos los dispositivos vean los cambios
-              window.location.reload();
-            }
-          });
-        });
-      }).catch(e => console.error(e));
+  <style>
+    /* ── Update overlay ─────────────────────────────── */
+    #meUpdateOverlay {
+      display:none;position:fixed;inset:0;z-index:9999;
+      background:#0a0f1e;
+      flex-direction:column;align-items:center;justify-content:center;
+      font-family:system-ui,-apple-system,sans-serif;
     }
+    #meUpdateOverlay.visible { display:flex; }
+    .me-upd-logo {
+      width:68px;height:68px;border-radius:20px;
+      background:linear-gradient(135deg,#6366f1,#8b5cf6);
+      display:flex;align-items:center;justify-content:center;
+      font-size:2rem;font-weight:900;color:#fff;
+      margin-bottom:28px;
+      animation:meLogoPulse 2s ease-in-out infinite;
+    }
+    @keyframes meLogoPulse {
+      0%,100%{ box-shadow:0 0 0 0 rgba(99,102,241,.5); }
+      50%    { box-shadow:0 0 0 18px rgba(99,102,241,0); }
+    }
+    .me-upd-title { font-size:1.2rem;font-weight:700;color:#f1f5f9;margin:0 0 6px;text-align:center; }
+    .me-upd-sub   { font-size:.82rem;color:#64748b;margin:0 0 26px;text-align:center; }
+    .me-upd-dots  { display:flex;gap:9px; }
+    .me-upd-dots span {
+      width:8px;height:8px;border-radius:50%;background:#6366f1;
+      animation:meDotP 1.2s ease-in-out infinite;
+    }
+    .me-upd-dots span:nth-child(2){ animation-delay:.2s; }
+    .me-upd-dots span:nth-child(3){ animation-delay:.4s; }
+    @keyframes meDotP {
+      0%,80%,100%{ opacity:.2;transform:scale(.8); }
+      40%        { opacity:1;transform:scale(1.2); }
+    }
+  </style>
+  <script>
+  (function() {
+    if (!('serviceWorker' in navigator)) return;
+    let _reg = null;
+
+    function _showOverlay() {
+      const el = document.getElementById('meUpdateOverlay');
+      if (el) el.classList.add('visible');
+    }
+
+    function _activateWaiting(worker) {
+      _showOverlay();
+      worker.postMessage('SKIP_WAITING');
+    }
+
+    // Expuesto para que Vue lo llame en el sync periódico
+    window._SWCheck = async function() {
+      if (!_reg) return;
+      try {
+        await _reg.update();
+        if (_reg.waiting) _activateWaiting(_reg.waiting);
+      } catch(e) {}
+    };
+
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      _reg = reg;
+
+      // ¿Ya hay un SW en espera? (p.ej. otra pestaña actualizó antes)
+      if (reg.waiting) { _activateWaiting(reg.waiting); return; }
+
+      // Nueva versión detectada mientras la app corre
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+            _activateWaiting(nw);
+          }
+        });
+      });
+
+      // Reload cuando controller cambia (skipWaiting aplicado)
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+
+      // Check inmediato al abrir la app (siempre busca nueva versión)
+      _reg.update().catch(() => {});
+
+    }).catch(e => console.warn('[SW]', e));
+  })();
   </script>
 </head>
 <body class="h-screen flex flex-col font-sans overflow-hidden select-none" :class="{'dark-mode': false}">
+
+  <!-- Overlay de actualización (fuera de Vue) -->
+  <div id="meUpdateOverlay">
+    <div class="me-upd-logo">ME</div>
+    <h2 class="me-upd-title">Actualizando MOSexpress</h2>
+    <p class="me-upd-sub">Nueva versión disponible · Instalando...</p>
+    <div class="me-upd-dots"><span></span><span></span><span></span></div>
+  </div>
+
   <div id="app" class="h-full flex flex-col relative" v-cloak>
     
     <!-- HEADER PWA -->
@@ -1986,6 +2065,8 @@
               if (esHoraSync && horasSinSync > 1 && !offlineMode.value) {
                   sincronizarCatalogoBase();
               }
+              // Verificar nueva versión del frontend en cada ciclo de sync
+              if (navigator.onLine && window._SWCheck) window._SWCheck();
           }, 5 * 60 * 1000); // Chequear cada 5 min
         });
 
@@ -2922,25 +3003,17 @@
                  if (!corrPorTipo[v.tipo]) corrPorTipo[v.tipo] = [];
                  corrPorTipo[v.tipo].push(v.correlativo);
              });
-             // Performance por vendedor
+             // Performance por vendedor — basado en ventas EMITIDAS (tksTurno), no en cobros
+             // Muestra cuánto vendió cada persona, independientemente de si ya cobró
              const pMap = {};
-             cobradosEnSesion.value.forEach(c => {
-                 const n = c.vendedor || 'Vendedor';
-                 if (!pMap[n]) pMap[n] = { tks:0, efe:0, vir:0, total:0, esCaj:false };
-                 pMap[n].tks++; pMap[n].efe += c.efectivo||0; pMap[n].vir += c.virtual||0; pMap[n].total += c.total||0;
+             tksTurno.filter(v => !v.anulada).forEach(v => {
+                 const n = v.raw_data?.auth?.vendedor || 'Sin nombre';
+                 if (!pMap[n]) pMap[n] = { tks:0, total:0, esCaj:false };
+                 pMap[n].tks++;
+                 pMap[n].total += v.total;
              });
              const cajN = config.value.vendedor;
-             if (tEfectivoPropios > 0 || tVirtualPropios > 0) {
-                 const propTks = ventasHoy.value.filter(v => !v.anulada &&
-                     v.raw_data?.header?.metodo !== 'POR_COBRAR' &&
-                     !String(v.raw_data?.header?.metodo||'').includes('POR COBRAR')).length;
-                 if (!pMap[cajN]) pMap[cajN] = { tks:0, efe:0, vir:0, total:0, esCaj:true };
-                 pMap[cajN].esCaj = true;
-                 pMap[cajN].tks   += propTks;
-                 pMap[cajN].efe   += tEfectivoPropios;
-                 pMap[cajN].vir   += tVirtualPropios;
-                 pMap[cajN].total += tEfectivoPropios + tVirtualPropios;
-             } else if (pMap[cajN]) { pMap[cajN].esCaj = true; }
+             if (pMap[cajN]) pMap[cajN].esCaj = true;
              const pTotal = Object.values(pMap).reduce((s,p) => s+p.total, 0);
              // ── Helpers de formato (80mm = 48 chars ancho) ──────
              const W    = 48;
@@ -3004,15 +3077,13 @@
              txt += SEPd;
              txt += sRow('Base inicial',    montoAperturaMemoria.value,  0);
              txt += sRow('Ventas cobradas', tEfectivo,                   tVirtual);
-             if (tCreditoTotal > 0)
-                 txt += sRow('Creditos (c/p)', -tCreditoTotal,           0);
              if (tExtrasIngreso > 0 || tExtrasEgreso > 0)
                  txt += sRow('Extras neto',    tExtrasIngreso-tExtrasEgreso, 0);
              txt += SEPd;
              txt += "\x1b\x45\x01";
              txt += sRow('EFECTIVO FINAL',  montoFinal,                  tVirtual);
              txt += "\x1b\x45\x00";
-             if (tCreditoTotal > 0) txt += "  (c/p)=credito pendiente, no en caja\n";
+             if (tCreditoTotal > 0) txt += "  +Credito pendiente: " + amtP(tCreditoTotal,8) + " (no en caja)\n";
 
              // ══ PARTE 4: CORRELATIVOS DEL TURNO ══════════════
              txt += sHdr('CORRELATIVOS DEL TURNO');
@@ -3079,17 +3150,17 @@
              // ══ PARTE 8: DESEMPENO POR VENDEDOR ══════════════
              txt += sHdr('DESEMPENO DEL TURNO');
              if (Object.keys(pMap).length > 0) {
-                 txt += lPad('VENDEDOR',15) + 'TICK.' + ' ' + 'EFECTIVO '.padStart(13) + ' ' + 'VIRTUAL'.padStart(12) + '\n';
+                 txt += lPad('VENDEDOR',17) + 'TKS'.padStart(5) + ' ' + 'TOTAL VENDIDO'.padStart(17) + '\n';
                  txt += SEPd;
-                 // Ordenar por total descendente
                  Object.entries(pMap).sort((a,b) => b[1].total - a[1].total).forEach(([nombre, p]) => {
-                     const label = (p.esCaj ? nombre+'(caj)' : nombre).substring(0,15).padEnd(15);
-                     txt += label + String(p.tks).padStart(5) + ' ' + amtP(p.efe,13) + ' ' + amtP(p.vir,12) + '\n';
+                     const label = (p.esCaj ? nombre+'(caj)' : nombre).substring(0,17).padEnd(17);
+                     txt += label + String(p.tks).padStart(5) + ' ' + amtP(p.total,17) + '\n';
                      if (pTotal > 0) txt += mkBar(Math.round(p.total*100/pTotal));
                  });
                  txt += SEPd;
                  txt += "\x1b\x45\x01";
-                 txt += pRow('TOTAL TURNO', cobradosEnSesion.value.length + (tEfectivoPropios>0||tVirtualPropios>0 ? Object.keys(pMap).filter(k => pMap[k].esCaj).reduce((s,k)=>s+pMap[k].tks,0) : 0), pTotal===0?tEfectivo:(Object.values(pMap).reduce((s,p)=>s+p.efe,0)), pTotal===0?tVirtual:(Object.values(pMap).reduce((s,p)=>s+p.vir,0)));
+                 const pTotalTks = Object.values(pMap).reduce((s,p)=>s+p.tks,0);
+                 txt += lPad('TOTAL TURNO',17) + String(pTotalTks).padStart(5) + ' ' + amtP(pTotal,17) + '\n';
                  txt += "\x1b\x45\x00";
              } else {
                  txt += "  Sin datos de vendedores en este turno\n";
