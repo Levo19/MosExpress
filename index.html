@@ -1966,6 +1966,7 @@
         let _intervalSync = null;
         let _intervalMidnight = null;
         let _intervalCajaRetry = null;
+        let _intervalVendedorCajeroCheck = null;
 
         // ── Reintento de registro de caja LOCAL en GAS ───────────────────────
         // Si la apertura falló (red/timeout) queda como CAJA-LOCAL-xxx.
@@ -2078,6 +2079,8 @@
           clearInterval(_intervalSync);
           clearInterval(_intervalMidnight);
           clearInterval(_intervalCajaRetry);
+          clearInterval(_intervalVendedorCajeroCheck);
+          _intervalVendedorCajeroCheck = null;
           detenerPollingZona();
           detenerCamaraCajero();
           if(html5QrcodeScanner) html5QrcodeScanner.clear().catch(() => {});
@@ -2872,6 +2875,22 @@
             }
             // Verificar si ya hay cajero activo en la zona al iniciar sesión
             verificarCajeroActivo();
+            // Vendedor: si no hay cajero activo, seguir verificando cada 30 s hasta encontrar uno
+            if (!config.value.esCajero) {
+                clearInterval(_intervalVendedorCajeroCheck);
+                _intervalVendedorCajeroCheck = setInterval(async () => {
+                    if (cajeroActivoEnZona.value) {
+                        clearInterval(_intervalVendedorCajeroCheck);
+                        _intervalVendedorCajeroCheck = null;
+                        return;
+                    }
+                    await verificarCajeroActivo();
+                    if (cajeroActivoEnZona.value) {
+                        clearInterval(_intervalVendedorCajeroCheck);
+                        _intervalVendedorCajeroCheck = null;
+                    }
+                }, 30000);
+            }
             // Sincronizar catálogo al iniciar sesión (silencioso, no bloquea)
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 sincronizarCatalogoBase();
@@ -3505,6 +3524,8 @@
         // Cierre de sesión para vendedores (sin caja)
         const cerrarSesion = () => {
              if (!confirm(`¿Cerrar sesión de ${config.value.vendedor}?`)) return;
+             clearInterval(_intervalVendedorCajeroCheck);
+             _intervalVendedorCajeroCheck = null;
              ventasHoy.value = [];
              localStorage.removeItem('mosexpress_ventas_hoy');
              config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
