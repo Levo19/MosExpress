@@ -20,7 +20,7 @@ function _autoCerrarCajasViejas(sheetCajas) {
     );
     if (diaApert < hoy) {
       sheetCajas.getRange(c + 1, 6).setValue('CERRADA_AUTO');
-      sheetCajas.getRange(c + 1, 8).setValue(new Date());
+      sheetCajas.getRange(c + 1, 8).setValue(Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss'));
       cerradas++;
     }
   }
@@ -50,8 +50,11 @@ function procesarAperturaCaja(data) {
   }
 
   var idCaja = "CAJA-" + new Date().getTime();
+  var _tz    = Session.getScriptTimeZone();
+  var _ahora = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd HH:mm:ss');
   // Columnas: ID_Caja | Vendedor | Estacion | Fecha_Apertura | Monto_Inicial | Estado | Monto_Final | Fecha_Cierre | Zona_ID
-  sheetCajas.appendRow([idCaja, data.vendedor, data.estacion, new Date(), data.montoInicial || 0, "ABIERTA", "", "", data.zona || '']);
+  sheetCajas.appendRow([idCaja, data.vendedor, data.estacion, _ahora, data.montoInicial || 0, "ABIERTA", "", "", data.zona || '']);
+  SpreadsheetApp.flush(); // garantiza que appendRow llegue a Sheets antes de retornar el ID al frontend
 
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", idCaja: idCaja,
@@ -74,7 +77,7 @@ function procesarCierreCaja(data) {
     if (String(filas[i][0]) === String(data.cajaId)) {
       sheetCajas.getRange(i + 1, 6).setValue("CERRADA");
       sheetCajas.getRange(i + 1, 7).setValue(data.montoFinal);
-      sheetCajas.getRange(i + 1, 8).setValue(new Date());
+      sheetCajas.getRange(i + 1, 8).setValue(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'));
       cajaVendedor = String(filas[i][1]);
       cajaZona = String(filas[i][8] || '');
       cajaEncontrada = true;

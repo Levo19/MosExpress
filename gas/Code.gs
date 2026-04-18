@@ -116,8 +116,8 @@ function estadoCajas() {
     var row    = cajasData[i];
     var idC    = String(row[0] || '');
     var estado2 = String(row[5] || '');
-    var fApert = row[3] instanceof Date ? row[3] : null;
-    var fCierr = row[7] instanceof Date ? row[7] : null;
+    var fApert = row[3] instanceof Date ? row[3] : (row[3] ? new Date(row[3]) : null);
+    var fCierr = row[7] instanceof Date ? row[7] : (row[7] ? new Date(row[7]) : null);
 
     // Cerradas: incluir últimos 30 días
     if (estado2 === 'CERRADA' && fCierr && fCierr < limite) continue;
