@@ -4246,10 +4246,16 @@
                const eq = (db.value.EQUIVALENCIAS || []).find(e => String(e.Cod_Alias).toUpperCase() === cd);
                const codResuelto = eq ? String(eq.Cod_Barras_Real).toUpperCase() : cd;
 
-               // 2. Buscar en PRESENTACIONES por barcode exacto
-               const pres = (db.value.PRESENTACIONES || []).find(
+               // 2. Buscar en PRESENTACIONES por Cod_Barras exacto
+               //    Fallback: Cod_Barras_Real puede ser SKU_Base (no un barcode)
+               let pres = (db.value.PRESENTACIONES || []).find(
                    p => String(p.Cod_Barras).trim().toUpperCase() === codResuelto
                );
+               if (!pres) {
+                   pres = (db.value.PRESENTACIONES || []).find(
+                       p => String(p.SKU_Base).trim().toUpperCase() === codResuelto
+                   );
+               }
                if (!pres) {
                    agregarToast('No Encontrado', 'Verifica el código');
                    procesandoMembrete.value = false;
@@ -4263,13 +4269,15 @@
                    p => String(p.SKU_Base) === skuBase && _nf(p.Factor) === 1
                );
 
-               // 4. Verificar si alguna equivalencia apunta a un barcode de este SKU_Base
+               // 4. Verificar si alguna equivalencia apunta a este SKU_Base
+               //    Cod_Barras_Real puede ser un Cod_Barras del grupo O el propio SKU_Base
                const barcodesDelSku = (db.value.PRESENTACIONES || [])
                    .filter(p => String(p.SKU_Base) === skuBase)
                    .map(p => String(p.Cod_Barras).toUpperCase());
-               const tieneEq = (db.value.EQUIVALENCIAS || []).some(
-                   e => barcodesDelSku.includes(String(e.Cod_Barras_Real).toUpperCase())
-               );
+               const tieneEq = (db.value.EQUIVALENCIAS || []).some(e => {
+                   const real = String(e.Cod_Barras_Real).toUpperCase();
+                   return barcodesDelSku.includes(real) || real === skuBase.toUpperCase();
+               });
 
                // 5. Si hay múltiples barcodes con factor=1 o tiene equivalencias → imprimir SKU_Base
                //    caso único y sin alias → imprimir el barcode escaneado (ya resuelto)
