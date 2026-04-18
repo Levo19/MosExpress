@@ -4237,49 +4237,88 @@
         // --- MÓDULO C: LOGICA TOOLS (MEMBRETES RAW) ---
         const imprimirMembrete = async () => {
            const cd = bHerramientas.value.trim().toUpperCase();
-           if(!cd) return;
+           if (!cd) return;
            procesandoMembrete.value = true;
+           try {
+               const _nf = v => parseFloat(String(v ?? '').replace(',', '.')) || 1;
 
-           const obj = productosCatalogo.value.find(p => p.codBarras === cd || p.sku === cd);
-           if(!obj) {
-               agregarToast('No Encontrado', 'Verifica el código');
-           } else {
-               // Membrete 80mm x 30mm — 6 renglones: 2 nombre | 2 código barras | 2 precio
-               const MAX_N = 24; // chars por línea en doble altura
-               const n1 = obj.nombreCorto.substring(0, MAX_N);
-               const n2 = obj.nombreCorto.length > MAX_N ? obj.nombreCorto.substring(MAX_N, MAX_N * 2) : '';
-               const bLen = String.fromCharCode(obj.codBarras.length); // longitud para CODE128 formato B
-               let raw = btoa(
-                  "\x1b\x40" +           // Inicializar impresora
-                  "\x1b\x33\x10" +       // Espaciado mínimo entre líneas (16/180" ≈ 2mm)
-                  "\x1b\x61\x01" +       // Centrar
-                  "\x1b\x45\x01" +       // Negrita ON
-                  "\x1b\x21\x10" +       // Doble altura
-                  n1 + "\n" +
-                  (n2 ? n2 + "\n" : "") +
-                  "\x1b\x21\x00" +       // Normal
-                  "\x1b\x45\x00" +       // Negrita OFF
-                  "\x1d\x68\x30" +       // Alto de barras = 48 dots (~6mm)
-                  "\x1d\x77\x02" +       // Ancho módulo = 2 dots
-                  "\x1d\x48\x02" +       // HRI debajo del código de barras
-                  "\x1d\x66\x00" +       // Fuente HRI: Font A
-                  "\x1d\x6b\x49" +       // CODE128 (formato B longitud variable)
-                  bLen + obj.codBarras + // longitud + datos del código
-                  "\n" +
-                  "\x1b\x21\x30" +       // Doble ancho + altura para precio grande
-                  "\x1b\x45\x01" +       // Negrita ON
-                  "S/ " + obj.precio.toFixed(2) + "\n" +
-                  "\x1b\x21\x00" +       // Normal
-                  "\x1b\x45\x00" +       // Negrita OFF
-                  "\x07" +               // BEL — alerta sonora
-                  "\x1d\x56\x42\x00"    // Corte parcial
+               // 1. Resolver equivalencia (Cod_Alias → Cod_Barras_Real)
+               const eq = (db.value.EQUIVALENCIAS || []).find(e => String(e.Cod_Alias).toUpperCase() === cd);
+               const codResuelto = eq ? String(eq.Cod_Barras_Real).toUpperCase() : cd;
+
+               // 2. Buscar en PRESENTACIONES por barcode exacto
+               const pres = (db.value.PRESENTACIONES || []).find(
+                   p => String(p.Cod_Barras).trim().toUpperCase() === codResuelto
+               );
+               if (!pres) {
+                   agregarToast('No Encontrado', 'Verifica el código');
+                   procesandoMembrete.value = false;
+                   return;
+               }
+
+               const skuBase = String(pres.SKU_Base);
+
+               // 3. Contar barcodes con factor=1 para este SKU_Base
+               const presF1 = (db.value.PRESENTACIONES || []).filter(
+                   p => String(p.SKU_Base) === skuBase && _nf(p.Factor) === 1
                );
 
-               try {
-                  await mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Membrete", raw);
-                  agregarToast('Éxito', 'Membrete enviado');
-                  bHerramientas.value = '';
-               } catch (e) { agregarToast('Error de Impresión', e.message); }
+               // 4. Verificar si alguna equivalencia apunta a un barcode de este SKU_Base
+               const barcodesDelSku = (db.value.PRESENTACIONES || [])
+                   .filter(p => String(p.SKU_Base) === skuBase)
+                   .map(p => String(p.Cod_Barras).toUpperCase());
+               const tieneEq = (db.value.EQUIVALENCIAS || []).some(
+                   e => barcodesDelSku.includes(String(e.Cod_Barras_Real).toUpperCase())
+               );
+
+               // 5. Si hay múltiples barcodes con factor=1 o tiene equivalencias → imprimir SKU_Base
+               //    caso único y sin alias → imprimir el barcode escaneado (ya resuelto)
+               const codigoLabel = (presF1.length > 1 || tieneEq) ? skuBase : codResuelto;
+
+               // 6. Obtener nombre y precio desde el catálogo
+               const obj = productosCatalogo.value.find(p => p.sku === skuBase);
+               if (!obj) {
+                   agregarToast('No Encontrado', 'Producto no está en catálogo activo');
+                   procesandoMembrete.value = false;
+                   return;
+               }
+
+               // 7. Generar ESC/POS — Membrete 80mm x 30mm
+               const MAX_N = 24;
+               const n1 = obj.nombreCorto.substring(0, MAX_N);
+               const n2 = obj.nombreCorto.length > MAX_N ? obj.nombreCorto.substring(MAX_N, MAX_N * 2) : '';
+               const bLen = String.fromCharCode(codigoLabel.length);
+               const raw = btoa(
+                   "\x1b\x40" +
+                   "\x1b\x33\x10" +
+                   "\x1b\x61\x01" +
+                   "\x1b\x45\x01" +
+                   "\x1b\x21\x10" +
+                   n1 + "\n" +
+                   (n2 ? n2 + "\n" : "") +
+                   "\x1b\x21\x00" +
+                   "\x1b\x45\x00" +
+                   "\x1d\x68\x30" +
+                   "\x1d\x77\x02" +
+                   "\x1d\x48\x02" +
+                   "\x1d\x66\x00" +
+                   "\x1d\x6b\x49" +
+                   bLen + codigoLabel +
+                   "\n" +
+                   "\x1b\x21\x30" +
+                   "\x1b\x45\x01" +
+                   "S/ " + obj.precio.toFixed(2) + "\n" +
+                   "\x1b\x21\x00" +
+                   "\x1b\x45\x00" +
+                   "\x07" +
+                   "\x1d\x56\x42\x00"
+               );
+
+               await mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Membrete", raw);
+               agregarToast('Éxito', 'Membrete enviado');
+               bHerramientas.value = '';
+           } catch (e) {
+               agregarToast('Error de Impresión', e.message);
            }
            procesandoMembrete.value = false;
         };
