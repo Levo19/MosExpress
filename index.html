@@ -1423,26 +1423,12 @@
 
         <!-- Tabs navegación -->
         <div class="flex bg-gray-800 border-b border-gray-700 shrink-0">
-            <button @click="guiaTab = 'stock'; guiaFlujo = 'tipo'" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors" :class="guiaTab==='stock' ? 'bg-amber-500 text-white' : 'text-gray-400'">Stock</button>
             <button @click="guiaTab = 'salida'; guiaFlujo = 'tipo'" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors" :class="guiaTab==='salida' ? 'bg-red-500 text-white' : 'text-gray-400'">↓ Salida</button>
             <button @click="guiaTab = 'entrada'; guiaFlujo = 'tipo'" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors" :class="guiaTab==='entrada' ? 'bg-emerald-500 text-white' : 'text-gray-400'">↑ Entrada</button>
             <button @click="guiaTab = 'historial'; listarGuiasHistorial()" class="flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors relative" :class="guiaTab==='historial' ? 'bg-blue-500 text-white' : 'text-gray-400'">
                 Historial
                 <span v-if="trasladosPendientes.length" class="absolute top-1 right-1 w-2 h-2 bg-amber-400 rounded-full"></span>
             </button>
-        </div>
-
-        <!-- TAB: Stock Actual -->
-        <div v-if="guiaTab === 'stock'" class="flex-1 overflow-y-auto p-4 space-y-2">
-            <div v-for="row in stockZonas.filter(r => r.Zona_ID === guiaZona)" :key="row.Cod_Barras"
-                 class="flex items-center justify-between bg-gray-800 rounded-xl px-4 py-3">
-                <div>
-                    <p class="text-white font-bold text-sm">{{ getNombrePres(row.Cod_Barras) }}</p>
-                    <p class="text-gray-500 text-xs font-mono mt-0.5">{{ row.Cod_Barras }}</p>
-                </div>
-                <span class="font-black text-2xl" :class="parseFloat(row.Cantidad)<=0 ? 'text-red-400' : parseFloat(row.Cantidad)<=5 ? 'text-amber-400' : 'text-emerald-400'">{{ row.Cantidad }}</span>
-            </div>
-            <p v-if="!stockZonas.filter(r => r.Zona_ID === guiaZona).length" class="text-gray-500 text-center py-10 text-sm">Sin stock registrado en <strong class="text-gray-300">{{ guiaZona }}</strong>.</p>
         </div>
 
         <!-- TAB: SALIDA — selector de subtipo / formulario -->
@@ -1803,7 +1789,7 @@
         const modoGuias = ref(false);
         const modoAuditoria = ref(false);
         // Guías: flujo por pasos — 'inicio' | 'salida' | 'entrada' | 'formulario' | 'historial'
-        const guiaTab = ref('stock'); // 'stock' | 'salida' | 'entrada' | 'historial'
+        const guiaTab = ref('salida'); // 'salida' | 'entrada' | 'historial'
         const guiaFlujo = ref('tipo'); // dentro de salida/entrada: 'tipo' | 'form'
         const guiaSubtipo = ref(''); // SALIDA_JEFA | SALIDA_MOVIMIENTO | ENTRADA_ALMACEN | ENTRADA_LIBRE
         const stockZonas = ref([]);
@@ -2311,47 +2297,68 @@
           }
         };
 
-        const verificarDispositivoActivo = async () => {
-           if(API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-               dispositivoAutorizado.value = true; // Salto si está en local MOCK default
-               return;
-           }
-           // Cache: si el dispositivo fue verificado en las últimas 4 horas, no volver a llamar
-           const _authTs  = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
-           const _authId  = localStorage.getItem('mosexpress_device_auth_id');
-           const _4horas  = 4 * 60 * 60 * 1000;
-           if (_authId === deviceId.value && (Date.now() - _authTs) < _4horas) {
+        const _verificarDispositivoRed = async (silencioso = false) => {
+           if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                dispositivoAutorizado.value = true;
-               return;
+               return true;
            }
-           verificandoDispositivo.value = true;
+           if (!silencioso) verificandoDispositivo.value = true;
            try {
              const _ctrl = new AbortController();
-             const _tid = setTimeout(() => _ctrl.abort(), 10000);
-             const resp = await fetch(`${API_URL}?accion=verificar_dispositivo&id=${deviceId.value}`, { signal: _ctrl.signal });
+             const _tid  = setTimeout(() => _ctrl.abort(), 10000);
+             const resp  = await fetch(`${API_URL}?accion=verificar_dispositivo&id=${deviceId.value}`, { signal: _ctrl.signal });
              clearTimeout(_tid);
              if (!resp.ok) throw new Error("Error HTTP");
              const jsonResp = await resp.json();
 
-             if(jsonResp && typeof jsonResp.autorizado !== 'undefined') {
+             if (jsonResp && typeof jsonResp.autorizado !== 'undefined') {
                  dispositivoAutorizado.value = jsonResp.autorizado === true;
                  if (dispositivoAutorizado.value) {
                      lsSet('mosexpress_device_auth_date', String(Date.now()));
                      lsSet('mosexpress_device_auth_id', deviceId.value);
+                 } else if (!silencioso) {
+                     // Dispositivo desactivado — bloquear UI inmediatamente
+                     agregarToast("Acceso bloqueado", "Este dispositivo fue desactivado por el administrador", "error");
                  }
              } else {
-                 dispositivoAutorizado.value = true; // Fallback si el script responde otra cosa temporalmente
+                 // Respuesta inesperada — no bloquear por error de formato
+                 if (!dispositivoAutorizado.value) dispositivoAutorizado.value = true;
                  lsSet('mosexpress_device_auth_date', String(Date.now()));
                  lsSet('mosexpress_device_auth_id', deviceId.value);
              }
+             return dispositivoAutorizado.value;
            } catch(e) {
              console.error("Error validando dispositivo:", e);
-             // Error de red transitorio — permitir acceso con aviso (no bloquear por falla de conectividad)
-             dispositivoAutorizado.value = true;
-             if (!offlineMode.value) agregarToast("Aviso", "Verificación sin conexión — modo local");
+             if (!silencioso && !offlineMode.value) agregarToast("Aviso", "Verificación sin conexión — modo local");
+             // Error de red — no revocar acceso si ya estaba autorizado
+             if (!dispositivoAutorizado.value) dispositivoAutorizado.value = true;
+             return true;
+           } finally {
+             if (!silencioso) verificandoDispositivo.value = false;
            }
-           verificandoDispositivo.value = false;
         };
+
+        const verificarDispositivoActivo = async () => {
+           if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+               dispositivoAutorizado.value = true;
+               return;
+           }
+           // Cache: si el dispositivo fue verificado en la última hora, no volver a llamar
+           const _authTs = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
+           const _authId = localStorage.getItem('mosexpress_device_auth_id');
+           const _1hora  = 60 * 60 * 1000;
+           if (_authId === deviceId.value && (Date.now() - _authTs) < _1hora) {
+               dispositivoAutorizado.value = true;
+               return;
+           }
+           await _verificarDispositivoRed(false);
+        };
+
+        // Re-verificación silenciosa cada hora en segundo plano
+        setInterval(async () => {
+           if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+           await _verificarDispositivoRed(true);
+        }, 60 * 60 * 1000);
 
         // --- MOTOR DE BÚSQUEDA Y UX ---
         const mapearCatalogoLocal = () => {
@@ -4420,7 +4427,7 @@
 
         const abrirGuias = async () => {
             modoGuias.value = true;
-            guiaTab.value = 'stock';
+            guiaTab.value = 'salida';
             guiaZona.value = config.value.zona || (zonasUnicas.value[0] || '');
             _resetGuiaForm();
             await cargarStockZonas();
@@ -4546,9 +4553,10 @@
                     const msg = d.idGuiaEntrada ? `Guía ${d.idGuia} + traslado a ${guiaZonaDestino.value} registrados` : `Guía ${d.idGuia} registrada`;
                     agregarToast('Éxito', msg);
                     _resetGuiaForm();
-                    guiaTab.value = 'stock';
-                } else { agregarToast('Error', d.mensaje || 'Error al registrar guía'); }
-            } catch(e) { agregarToast('Error', 'No se pudo conectar con el servidor'); }
+                    guiaTab.value = 'historial';
+                    listarGuiasHistorial();
+                } else { agregarToast('Error al guardar guía', d.mensaje || 'Error desconocido — verifica conexión', 'error', 6000); }
+            } catch(e) { agregarToast('Error de red', 'No se pudo conectar — la guía NO se guardó. Intenta de nuevo.'); }
             procesandoGuia.value = false;
         };
 
