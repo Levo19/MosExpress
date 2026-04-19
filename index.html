@@ -2973,20 +2973,35 @@
                  if (!_ok) return;
              }
 
-             // --- Totales desde cobradosEnSesion (tickets de vendedores cobrados por este cajero) ---
-             let tEfectivoCobros = 0, tVirtualCobros = 0;
-             cobradosEnSesion.value.forEach(c => { tEfectivoCobros += c.efectivo || 0; tVirtualCobros += c.virtual || 0; });
+             // --- Parsear metodo → {efe, vir} (maneja EFECTIVO, VIRTUAL, MIXTO, CREDITO) ---
+             const _parseMetodo = (metodo, total) => {
+                 const m = String(metodo || '').toUpperCase().trim();
+                 if (!m || m === 'POR_COBRAR') return { efe: 0, vir: 0 };
+                 if (m === 'CREDITO')           return { efe: 0, vir: 0 };
+                 if (m === 'EFECTIVO')          return { efe: total, vir: 0 };
+                 if (m === 'VIRTUAL')           return { efe: 0, vir: total };
+                 if (m.startsWith('MIXTO')) {
+                     const virM = metodo.match(/VIR:([\d.]+)/i);
+                     const efeM = metodo.match(/EFE:([\d.]+)/i);
+                     const vir  = virM ? parseFloat(virM[1]) : 0;
+                     const efe  = efeM ? parseFloat(efeM[1]) : parseFloat((total - vir).toFixed(2));
+                     return { efe, vir };
+                 }
+                 return { efe: 0, vir: total }; // método desconocido → virtual
+             };
 
-             // --- Ventas directas del cajero (si también vendió) ---
-             let tEfectivoPropios = 0, tVirtualPropios = 0;
-             ventasHoy.value.forEach(v => {
-                 if (v.anulada) return;
-                 if (v.raw_data?.header?.metodo === 'EFECTIVO') tEfectivoPropios += v.total;
-                 if (v.raw_data?.header?.metodo === 'VIRTUAL')  tVirtualPropios  += v.total;
+             // --- Totales desde ventasZona (autoritativo: viene de GAS, sobrevive refresh/bloqueo) ---
+             const _startTs = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
+             const _tksTurno = ventasZona.value.filter(v => v.timestamp >= _startTs);
+             let tEfectivo = 0, tVirtual = 0;
+             _tksTurno.filter(v => !v.anulada).forEach(v => {
+                 const metodo = v.cobradoMetodo || v.raw_data?.header?.metodo || '';
+                 const { efe, vir } = _parseMetodo(metodo, v.total);
+                 tEfectivo += efe;
+                 tVirtual  += vir;
              });
-
-             const tEfectivo = tEfectivoCobros + tEfectivoPropios;
-             const tVirtual  = tVirtualCobros  + tVirtualPropios;
+             tEfectivo = parseFloat(tEfectivo.toFixed(2));
+             tVirtual  = parseFloat(tVirtual.toFixed(2));
 
              // --- Extras del turno (ingresos suman, egresos restan) ---
              const tExtrasIngreso = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO' ? parseFloat(e.monto) : 0), 0);
