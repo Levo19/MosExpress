@@ -2990,16 +2990,22 @@
                  return { efe: 0, vir: total }; // método desconocido → virtual
              };
 
-             // --- Totales desde ventasZona (autoritativo: viene de GAS, sobrevive refresh/bloqueo) ---
-             const _startTs = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
+             // --- Totales: ventasZona (GAS, autoritativo) con fallback a cobradosEnSesion (offline) ---
+             const _startTs  = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
              const _tksTurno = ventasZona.value.filter(v => v.timestamp >= _startTs);
              let tEfectivo = 0, tVirtual = 0;
-             _tksTurno.filter(v => !v.anulada).forEach(v => {
-                 const metodo = v.cobradoMetodo || v.raw_data?.header?.metodo || '';
-                 const { efe, vir } = _parseMetodo(metodo, v.total);
-                 tEfectivo += efe;
-                 tVirtual  += vir;
-             });
+             if (_tksTurno.length > 0) {
+                 // Online normal: ventasZona tiene datos del turno — fuente autoritativa
+                 _tksTurno.filter(v => !v.anulada).forEach(v => {
+                     const metodo = v.cobradoMetodo || v.raw_data?.header?.metodo || '';
+                     const { efe, vir } = _parseMetodo(metodo, v.total);
+                     tEfectivo += efe;
+                     tVirtual  += vir;
+                 });
+             } else {
+                 // Offline o recarga sin datos: fallback a cobradosEnSesion (localStorage)
+                 cobradosEnSesion.value.forEach(c => { tEfectivo += c.efectivo || 0; tVirtual += c.virtual || 0; });
+             }
              tEfectivo = parseFloat(tEfectivo.toFixed(2));
              tVirtual  = parseFloat(tVirtual.toFixed(2));
 
