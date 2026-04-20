@@ -251,13 +251,16 @@ function verificarDispositivo(deviceId) {
 
   // Phase 2: verificar contra tabla DISPOSITIVOS de MOS (gestión centralizada)
   // Phase 1: tabla local DISPOSITIVOS de ME
-  var datos = [];
+  var datos   = [];
+  var mosSS   = null;
+  var usingMOS = false;
   try {
     if (mosSsId) {
-      var mosSS  = SpreadsheetApp.openById(mosSsId);
+      mosSS = SpreadsheetApp.openById(mosSsId);
       var mosSheet = mosSS.getSheetByName('DISPOSITIVOS');
       if (mosSheet) {
         datos = obtenerDatosHojaComoJSON(mosSheet);
+        usingMOS = true;
         Logger.log('verificarDispositivo — usando DISPOSITIVOS de MOS (' + datos.length + ' registros)');
       }
     }
@@ -266,7 +269,7 @@ function verificarDispositivo(deviceId) {
   }
 
   // Fallback: tabla local si MOS no tiene la hoja o falló
-  if (datos.length === 0) {
+  if (!usingMOS) {
     var localSheet = ss.getSheetByName('DISPOSITIVOS');
     if (!localSheet) {
       return ContentService.createTextOutput(JSON.stringify({
@@ -276,10 +279,42 @@ function verificarDispositivo(deviceId) {
     datos = obtenerDatosHojaComoJSON(localSheet);
   }
 
-  var autorizado = datos.some(function(d) {
-    return (d.ID_Dispositivo === deviceId || d.idDispositivo === deviceId) &&
-           (d.Estado === 'ACTIVO' || d.estado === 'ACTIVO' || d.activo === '1' || d.activo === 1);
+  // Buscar el registro del dispositivo
+  var registro = null;
+  datos.forEach(function(d) {
+    var idMatch = (d.ID_Dispositivo === deviceId || d.idDispositivo === deviceId);
+    // Si viene de MOS, filtrar solo dispositivos de mosExpress
+    var appMatch = !usingMOS || !d.App || d.App === 'mosExpress';
+    if (idMatch && appMatch) registro = d;
   });
+
+  var autorizado = registro !== null &&
+    (registro.Estado === 'ACTIVO' || registro.estado === 'ACTIVO' ||
+     registro.activo === '1'      || registro.activo === 1);
+
+  // Actualizar Ultima_Conexion en MOS si el dispositivo está autorizado
+  if (autorizado && usingMOS && mosSS) {
+    try {
+      var dispSheet = mosSS.getSheetByName('DISPOSITIVOS');
+      if (dispSheet) {
+        var sheetData = dispSheet.getDataRange().getValues();
+        var hdrs = sheetData[0];
+        var colUC = hdrs.indexOf('Ultima_Conexion');
+        if (colUC >= 0) {
+          var tz = Session.getScriptTimeZone();
+          var ahora = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+          for (var i = 1; i < sheetData.length; i++) {
+            if (String(sheetData[i][0]) === String(deviceId)) {
+              dispSheet.getRange(i + 1, colUC + 1).setValue(ahora);
+              break;
+            }
+          }
+        }
+      }
+    } catch(eUC) {
+      Logger.log('verificarDispositivo — no se pudo actualizar Ultima_Conexion: ' + eUC.message);
+    }
+  }
 
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", autorizado: autorizado
