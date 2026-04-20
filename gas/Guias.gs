@@ -211,7 +211,6 @@ function getListaAuditoria(zona, usuario) {
 
   var ss         = SpreadsheetApp.getActiveSpreadsheet();
   var sheetStock = ss.getSheetByName('STOCK_ZONAS');
-  var sheetPres  = ss.getSheetByName('PRESENTACIONES');
   var items      = [];
   var codsEnZona = {};
 
@@ -242,17 +241,23 @@ function getListaAuditoria(zona, usuario) {
   items.sort(function(a, b) { return b.diasSin - a.diasSin; });
   var seleccionados = items.slice(0, 30);
 
-  // Fill remainder from catalog (products not yet in zone stock)
-  if (seleccionados.length < 30 && sheetPres && sheetPres.getLastRow() > 1) {
-    var presData = sheetPres.getDataRange().getValues();
-    var presHdrs = presData[0].map(function(h) { return String(h).trim(); });
-    var presColCB = presHdrs.indexOf('Cod_Barras'); if (presColCB < 0) presColCB = 0;
-    // Shuffle catalog rows for variety
-    var presRows = presData.slice(1).sort(function() { return Math.random() - 0.5; });
-    for (var p = 0; p < presRows.length && seleccionados.length < 30; p++) {
-      var pCb = String(presRows[p][presColCB]);
-      if (!pCb || codsEnZona[pCb]) continue;
-      seleccionados.push({ cod_barras: pCb, cantSistema: 0, esCatalogo: true });
+  // Fill remainder from MOS catalog (products not yet in zone stock)
+  if (seleccionados.length < 30) {
+    try {
+      var mosSsId2 = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID') || '';
+      if (mosSsId2) {
+        var mosSS2   = SpreadsheetApp.openById(mosSsId2);
+        var prodRows = _obtenerHojaMOS(mosSS2, 'PRODUCTOS_MASTER');
+        prodRows = prodRows.filter(function(p) { return String(p.estado) !== '0'; })
+                           .sort(function() { return Math.random() - 0.5; });
+        for (var p = 0; p < prodRows.length && seleccionados.length < 30; p++) {
+          var pCb = String(prodRows[p].codigoBarra || prodRows[p].idProducto || '').trim();
+          if (!pCb || codsEnZona[pCb]) continue;
+          seleccionados.push({ cod_barras: pCb, cantSistema: 0, esCatalogo: true });
+        }
+      }
+    } catch(eCat) {
+      Logger.log('getListaAuditoria catalog fill ERROR: ' + eCat.message);
     }
   }
 
