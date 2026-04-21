@@ -25,25 +25,35 @@ function emitirNubeFact(data, correlativo) {
   var tipoComprobante = (tipoDoc === 'FACTURA') ? 1 : 2;
 
   var totalGravada   = 0;
+  var totalIVAP      = 0;   // base IVAP sin impuesto (arroz pilado 4%)
+  var totalImpIVAP   = 0;   // monto 4% IVAP
   var totalExonerada = 0;
   var totalInafecta  = 0;
 
   var nfItems = items.map(function(item) {
+    // Catálogo 07 SUNAT: 1=Gravado(18%) 8=IVAP(4%) 9=Exonerado 10=Gratuito 11+=Inafecto
     var tipoIgv       = parseInt(item.tipo_igv || 1, 10);
     var cantidad      = parseFloat(item.cantidad || 1);
     var valorUnitario = parseFloat(item.valor_unitario || 0);
     var subtotalVU    = Math.round(valorUnitario * cantidad * 100) / 100;
     var precioTotal   = parseFloat(item.subtotal || 0);
-    var igvItem       = Math.round((precioTotal - subtotalVU) * 100) / 100;
+    var igvItem;
 
     if (tipoIgv === 1) {
+      igvItem = Math.round((precioTotal - subtotalVU) * 100) / 100;
       totalGravada += subtotalVU;
-    } else if (tipoIgv === 2) {
+    } else if (tipoIgv === 8) {
+      // IVAP: valor_unitario ya viene sin el 4%
+      igvItem = Math.round((precioTotal - subtotalVU) * 100) / 100;
+      totalIVAP    += subtotalVU;
+      totalImpIVAP += igvItem;
+    } else if (tipoIgv === 9 || tipoIgv === 10) {
+      igvItem = 0;
       totalExonerada += precioTotal;
-      igvItem = 0;
     } else {
-      totalInafecta += precioTotal;
+      // 11=Inafecto, 12=Exportación, etc.
       igvItem = 0;
+      totalInafecta += precioTotal;
     }
 
     return {
@@ -66,10 +76,12 @@ function emitirNubeFact(data, correlativo) {
   });
 
   totalGravada   = Math.round(totalGravada   * 100) / 100;
+  totalIVAP      = Math.round(totalIVAP      * 100) / 100;
+  totalImpIVAP   = Math.round(totalImpIVAP   * 100) / 100;
   totalExonerada = Math.round(totalExonerada * 100) / 100;
   totalInafecta  = Math.round(totalInafecta  * 100) / 100;
   var totalGeneral = parseFloat(header.total || 0);
-  var totalIgv     = Math.round((totalGeneral - totalGravada - totalExonerada - totalInafecta) * 100) / 100;
+  var totalIgv     = Math.round((totalGeneral - totalGravada - totalIVAP - totalExonerada - totalInafecta) * 100) / 100;
 
   var cliente  = header.cliente || {};
   var fechaHoy = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd-MM-yyyy');
@@ -91,6 +103,8 @@ function emitirNubeFact(data, correlativo) {
     tipo_de_cambio:                    '',
     porcentaje_de_igv:                 18,
     total_gravada:                     totalGravada   > 0 ? totalGravada   : '',
+    total_ivap:                        totalIVAP      > 0 ? totalIVAP      : '',
+    total_imp_ivap:                    totalImpIVAP   > 0 ? totalImpIVAP   : '',
     total_exonerada:                   totalExonerada > 0 ? totalExonerada : '',
     total_inafecta:                    totalInafecta  > 0 ? totalInafecta  : '',
     total_igv:                         totalIgv       > 0 ? totalIgv       : '',

@@ -183,8 +183,9 @@ function _parsePrice(val) {
 // MOS almacena: "gravado"|"exonerado"|"inafecto" → ME: 1|2|3
 function _convertirTipoIGV(tipoMos) {
   var t = String(tipoMos || '').toLowerCase();
-  if (t === 'exonerado') return 2;
-  if (t === 'inafecto')  return 3;
+  if (t === 'exonerado') return 9;   // catálogo 07 SUNAT
+  if (t === 'inafecto')  return 11;  // catálogo 07 SUNAT
+  if (t === 'ivap')      return 8;   // catálogo 07 SUNAT (arroz pilado 4%)
   return 1;
 }
 

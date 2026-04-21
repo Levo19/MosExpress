@@ -4121,6 +4121,13 @@
                    }, 4000);
                    agregarToast('¡Venta Registrada!', res.correlativo);
 
+                   // Informar resultado NubeFact si aplica
+                   if (res.nfEstado === 'ERROR') {
+                       agregarToast('CPE no emitido', 'NubeFact no pudo emitir el comprobante. Revisar GAS.', 'warning');
+                   } else if (res.nfEstado === 'EMITIDO') {
+                       agregarToast('CPE emitido SUNAT', res.correlativo, 'success');
+                   }
+
                    // GAS ya imprimió — solo fallback si reporta que no pudo
                    if (!res.printDispatched) {
                        imprimirTicketVenta(res.correlativo, true);
@@ -4653,7 +4660,24 @@
             // ── 1. Buscar por Cod_Barras exacto ──
             let pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
 
-            // ── 2. Si no encontró por barcode, intentar como SKU_Base ──
+            // ── 1.5. Resolver equivalencia (Cod_Alias → Cod_Barras_Real = SKU_Base en ME) ──
+            if (!pres) {
+                const eq = (db.value.EQUIVALENCIAS || []).find(e => String(e.Cod_Alias) === q);
+                if (eq) {
+                    const codReal = String(eq.Cod_Barras_Real);
+                    // Cod_Barras_Real puede ser un Cod_Barras directo o el SKU_Base
+                    pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === codReal);
+                    if (!pres) {
+                        // Es SKU_Base → tomar la presentación de factor 1
+                        const presF1eq = (db.value.PRESENTACIONES || []).filter(
+                            p => String(p.SKU_Base) === codReal && (parseFloat(String(p.Factor).replace(',', '.')) || 1) === 1
+                        );
+                        if (presF1eq.length === 1) pres = presF1eq[0];
+                    }
+                }
+            }
+
+            // ── 2. Si no encontró por barcode ni equivalencia, intentar como SKU_Base ──
             if (!pres) {
                 const presDelSku = (db.value.PRESENTACIONES || []).filter(p => String(p.SKU_Base) === q);
 
