@@ -4665,14 +4665,17 @@
                 const eq = (db.value.EQUIVALENCIAS || []).find(e => String(e.Cod_Alias) === q);
                 if (eq) {
                     const codReal = String(eq.Cod_Barras_Real);
-                    // Cod_Barras_Real puede ser un Cod_Barras directo o el SKU_Base
-                    pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === codReal);
-                    if (!pres) {
-                        // Es SKU_Base → tomar la presentación de factor 1
+                    let presRef = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === codReal);
+                    if (!presRef) {
                         const presF1eq = (db.value.PRESENTACIONES || []).filter(
                             p => String(p.SKU_Base) === codReal && (parseFloat(String(p.Factor).replace(',', '.')) || 1) === 1
                         );
-                        if (presF1eq.length === 1) pres = presF1eq[0];
+                        if (presF1eq.length === 1) presRef = presF1eq[0];
+                    }
+                    if (presRef) {
+                        // cbFinal = cod escaneado (q), no el cod del producto base.
+                        // Así cod1 y cod2 son entradas de auditoría independientes.
+                        pres = Object.assign({}, presRef, { Cod_Barras: q });
                     }
                 }
             }
