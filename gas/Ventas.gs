@@ -122,8 +122,57 @@ function procesarVenta(data) {
     printDispatched = imprimirTicketInternamente(data, correlativoFinal, pos.printerId, nfResult);
   }
 
+  // ── Auto-registro de jornada en MOS (idempotente por nombre + fecha) ───────
+  try { _registrarJornadaEnMOS(String(auth.vendedor || '')); } catch(eJ) {
+    Logger.log('Auto-jornada MOS: ' + eJ.message);
+  }
+
   return { idVenta: idVenta, correlativo: correlativoFinal, printDispatched: printDispatched,
            nfEstado: nfEstado, nfHash: nfHash, nfEnlace: nfEnlace };
+}
+
+// Registra la jornada del vendedor en ProyectoMOS al procesar su primera venta del día.
+// Idempotente: si ya existe una jornada con el mismo nombre y fecha no inserta duplicados.
+function _registrarJornadaEnMOS(nombreVendedor) {
+  if (!nombreVendedor) return;
+  var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID');
+  if (!mosSsId) return;
+
+  var tz    = Session.getScriptTimeZone();
+  var fecha = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var ss    = SpreadsheetApp.openById(mosSsId);
+  var sheet = ss.getSheetByName('JORNADAS');
+  if (!sheet) return;
+
+  // Idempotencia: verificar si ya existe la jornada hoy
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][3]).toLowerCase() === nombreVendedor.toLowerCase() &&
+        String(data[i][1]).substring(0, 10) === fecha) return;
+  }
+
+  // Buscar montoBase en PERSONAL_MASTER de MOS
+  var monto = 0;
+  try {
+    var pm    = ss.getSheetByName('PERSONAL_MASTER');
+    if (pm) {
+      var pmData = pm.getDataRange().getValues();
+      var pmHdrs = pmData[0].map(function(h){ return String(h).trim(); });
+      var idxNom = pmHdrs.indexOf('nombre');
+      var idxMon = pmHdrs.indexOf('montoBase');
+      for (var j = 1; j < pmData.length; j++) {
+        if (String(pmData[j][idxNom]).toLowerCase() === nombreVendedor.toLowerCase()) {
+          monto = parseFloat(pmData[j][idxMon]) || 0;
+          break;
+        }
+      }
+    }
+  } catch(e2) {}
+
+  sheet.appendRow([
+    'JOR' + new Date().getTime(), fecha, '', nombreVendedor,
+    'VENDEDOR', 'mosExpress', '', monto, '', 'AUTO', 'AUTO_VENTA'
+  ]);
 }
 
 // Devuelve todas las ventas de hoy de la zona del cajero (filtradas por prefijos de serie)
