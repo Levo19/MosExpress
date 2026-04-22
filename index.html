@@ -341,27 +341,60 @@
           </div>
         </div>
 
-        <!-- Botón cajero: visible solo cuando hay estación seleccionada -->
-        <div v-if="configWizard.estacion" class="mb-1">
-          <button @click="!wizardCajeroOcupado && (configWizard.esCajero = !configWizard.esCajero)"
-                  class="w-full py-4 rounded-xl font-black text-sm border-2 transition-all flex items-center justify-center gap-2"
-                  :class="wizardVerificando ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-wait'
-                          : wizardCajeroOcupado ? 'bg-red-50 text-red-400 border-red-200 cursor-not-allowed'
-                          : configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg'
-                          : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-emerald-300 hover:text-emerald-600'">
-            <svg v-if="wizardVerificando" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-            <svg v-else-if="wizardCajeroOcupado" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-            <svg v-else-if="configWizard.esCajero" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            <span v-if="wizardVerificando">Verificando zona...</span>
-            <span v-else-if="wizardCajeroOcupado">Ya hay cajero activo en {{ configWizard.zona }}</span>
-            <span v-else>{{ configWizard.esCajero ? 'SOY CAJERO — Activo' : 'SOY CAJERO (opcional)' }}</span>
-          </button>
-          <p v-if="wizardCajeroOcupado" class="text-[10px] text-red-400 text-center font-semibold mt-1.5">Solo puede haber un cajero activo por zona</p>
+        <!-- Selección de rol: visible solo cuando hay estación seleccionada -->
+        <div v-if="configWizard.estacion" class="mt-5">
+
+          <!-- Verificando zona -->
+          <div v-if="wizardVerificando" class="flex items-center justify-center gap-2 py-5 text-sm text-gray-400 font-bold">
+            <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            Verificando zona...
+          </div>
+
+          <!-- Sin cajero activo: mostrar las dos opciones -->
+          <div v-else-if="!wizardCajeroOcupado">
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3 text-center">¿Cuál es tu rol hoy?</p>
+
+            <!-- CAJERO -->
+            <button @click="configWizard.esCajero = true"
+                    class="w-full py-4 rounded-2xl font-black text-sm border-2 transition-all active:scale-95 mb-2 flex flex-col items-center"
+                    :class="configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-emerald-400 hover:text-emerald-600'">
+              <span class="text-base tracking-wide">CAJERO</span>
+              <span class="text-[11px] font-semibold mt-0.5 opacity-70">Abre la caja y gestiona cobros</span>
+            </button>
+
+            <!-- Monto inicial (aparece al elegir cajero) -->
+            <div v-if="configWizard.esCajero" class="mb-3 px-1">
+              <p class="text-xs text-gray-500 font-bold mb-1.5 text-center">Saldo inicial de caja (S/)</p>
+              <input v-model.number="configWizard.monto" type="number" placeholder="0.00" inputmode="decimal"
+                     class="w-full p-3 text-3xl font-black text-center border-2 border-emerald-300 rounded-xl focus:border-emerald-500 outline-none bg-emerald-50 text-emerald-800">
+            </div>
+
+            <!-- VENDEDOR -->
+            <button @click="configWizard.esCajero = false"
+                    class="w-full py-3 rounded-2xl font-black text-sm border-2 transition-all active:scale-95"
+                    :class="!configWizard.esCajero ? 'bg-blue-500 text-white border-blue-500' : 'bg-gray-50 text-gray-400 border-gray-100 hover:border-blue-300 hover:text-blue-500'">
+              Solo vendedor
+            </button>
+          </div>
+
+          <!-- Con cajero activo: solo puede entrar como vendedor -->
+          <div v-else>
+            <div class="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-3">
+              <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shrink-0"></span>
+              <p class="text-sm text-emerald-700 font-bold">Cajero activo: <span class="font-black">{{ cajeroWizardInfo?.vendedor || '...' }}</span></p>
+            </div>
+            <div class="w-full py-4 rounded-2xl text-sm border-2 bg-blue-100 text-blue-700 border-blue-200 text-center font-black">
+              ENTRAR COMO VENDEDOR
+            </div>
+          </div>
         </div>
 
-        <button @click="iniciarTurno" :disabled="!configWizard.vendedor || !configWizard.estacion || (wizardCajeroOcupado && configWizard.esCajero)"
-                class="w-full mt-4 bg-posPrimary text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-300 disabled:shadow-none transition-all">
-          ENTRAR
+        <button @click="iniciarTurno"
+                :disabled="!configWizard.vendedor || !configWizard.estacion || wizardVerificando || procesandoCaja"
+                class="w-full mt-4 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-300 disabled:shadow-none transition-all flex items-center justify-center gap-2"
+                :class="configWizard.esCajero ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-posPrimary hover:bg-emerald-600'">
+          <svg v-if="procesandoCaja" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          <span>{{ procesandoCaja ? 'Abriendo caja...' : configWizard.esCajero ? 'APERTURA DE CAJA' : 'ENTRAR COMO VENDEDOR' }}</span>
         </button>
       </div>
     </div>
@@ -1863,9 +1896,11 @@
 
         // --- SETUP WIZARD ---
         const config = ref({ completado: false, vendedor: '', zona: '', estacion: null, esCajero: false });
-        const configWizard = ref({ vendedor: '', zona: null, estacion: null, esCajero: false });
+        const configWizard = ref({ vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 });
         const wizardCajeroOcupado = ref(false);
         const wizardVerificando = ref(false);
+        const cajeroWizardInfo = ref(null); // { vendedor, idCaja } del cajero activo en wizard
+        let _wizardPollingTimer = null;
         const sesionAnteriorInfo = ref(null);
         const mostrarModalSesionAnterior = ref(false);
 
@@ -2077,6 +2112,7 @@
           clearInterval(_intervalCajaRetry);
           clearInterval(_intervalVendedorCajeroCheck);
           _intervalVendedorCajeroCheck = null;
+          if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
           detenerPollingZona();
           detenerCamaraCajero();
           if(html5QrcodeScanner) html5QrcodeScanner.clear().catch(() => {});
@@ -2205,49 +2241,8 @@
               if (es) extrasMovimientos.value = JSON.parse(es);
           } catch(e) {}
 
-          // Si no es cajero, auto-registrar apertura de sesión (monto inicial 0)
+          // Vendedor restaurado: ir directo al POS sin crear caja
           if (config.value.completado && !config.value.esCajero) {
-              if (!cajaAbierta.value) {
-                  // No hay caja activa del día → registrar apertura automática
-                  const payload = {
-                      tipoEvento: 'APERTURA_CAJA',
-                      vendedor:   config.value.vendedor,
-                      estacion:   config.value.estacion?.Estacion_Nombre || config.value.estacion || '',
-                      montoInicial: 0,
-                      zona:       config.value.zona || ''
-                  };
-                  let cid = 'CAJA-LOCAL-' + Date.now();
-                  localStorage.setItem('mosexpress_caja_payload', JSON.stringify(payload));
-                  if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                      try {
-                          const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                          const res = await req.json();
-                          if (res.status === 'success') {
-                              cid = res.idCaja;
-                              localStorage.removeItem('mosexpress_caja_payload');
-                          } else {
-                              // GAS rechazó la apertura (ej: ya hay caja abierta) —
-                              // intentar obtener el ID real de la caja activa en esta zona
-                              try {
-                                  const reqCaj = await fetch(`${API_URL}?accion=cajero_activo&zona=${encodeURIComponent(config.value.zona || '')}`);
-                                  const resCaj = await reqCaj.json();
-                                  if (resCaj.status === 'success' && resCaj.activo && resCaj.idCaja) {
-                                      cid = resCaj.idCaja; // reutilizar la caja activa existente
-                                  }
-                              } catch(e2) { /* sin resultado: queda LOCAL */ }
-                          }
-                      } catch(e) { /* offline: usar ID local */ }
-                  }
-                  idCajaActual.value    = cid;
-                  sessionStartTime.value = new Date().toISOString();
-                  cobradosEnSesion.value = [];
-                  extrasMovimientos.value = [];
-                  localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
-                  localStorage.removeItem('mosexpress_cobrados_sesion');
-                  localStorage.removeItem('mosexpress_extras_sesion');
-                  localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto: 0, fecha: Date.now() }));
-              }
-              cajaAbierta.value  = true;
               currentModule.value = 'POS';
           }
 
@@ -2641,6 +2636,10 @@
             cajeroCamara.value = false;
         };
 
+        const detenerPollingWizard = () => {
+            if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
+        };
+
         const verificarCajeroEnZonaWizard = async (zona) => {
             if (!zona || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             wizardVerificando.value = true;
@@ -2648,8 +2647,12 @@
                 const r = await fetch(`${API_URL}?accion=cajero_activo&zona=${encodeURIComponent(zona)}`);
                 const d = await r.json();
                 wizardCajeroOcupado.value = d.status === 'success' && d.activo;
+                cajeroWizardInfo.value = wizardCajeroOcupado.value ? { vendedor: d.vendedor, idCaja: d.idCaja } : null;
                 if (wizardCajeroOcupado.value) configWizard.value.esCajero = false;
-            } catch(e) { wizardCajeroOcupado.value = false; }
+            } catch(e) {
+                wizardCajeroOcupado.value = false;
+                cajeroWizardInfo.value = null;
+            }
             finally { wizardVerificando.value = false; }
         };
 
@@ -2657,11 +2660,20 @@
             configWizard.value.zona = zona;
             configWizard.value.estacion = null;
             configWizard.value.esCajero = false;
+            configWizard.value.monto = 0;
             wizardCajeroOcupado.value = false;
+            cajeroWizardInfo.value = null;
             // Auto-seleccionar si hay una sola estación en la zona
             const estaciones = estacionesFiltradas.value;
             if (estaciones.length === 1) configWizard.value.estacion = estaciones[0];
             await verificarCajeroEnZonaWizard(zona);
+            // Polling 3s mientras el wizard está abierto
+            detenerPollingWizard();
+            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                _wizardPollingTimer = setInterval(() => {
+                    verificarCajeroEnZonaWizard(configWizard.value.zona);
+                }, 3000);
+            }
         };
 
         const abrirModoCajero = () => {
@@ -2826,74 +2838,116 @@
         };
 
         const iniciarTurno = async () => {
-            // Doble-guarda: si hay cajero activo en la zona no puede entrar como cajero
+            // Guard: cajero ocupado no puede entrar como cajero
             if (wizardCajeroOcupado.value && configWizard.value.esCajero) {
-                agregarToast('Acceso bloqueado', 'Ya hay un cajero activo en esta zona. Entra como vendedor o espera el cierre de turno.');
+                agregarToast('Acceso bloqueado', 'Ya hay un cajero activo en esta zona. Entra como vendedor.');
                 configWizard.value.esCajero = false;
                 return;
             }
-            config.value = { completado: true, vendedor: configWizard.value.vendedor, zona: configWizard.value.zona, estacion: configWizard.value.estacion, esCajero: configWizard.value.esCajero };
+            detenerPollingWizard();
+
+            const esCajero = configWizard.value.esCajero;
+            config.value = {
+                completado: true,
+                vendedor:  configWizard.value.vendedor,
+                zona:      configWizard.value.zona,
+                estacion:  configWizard.value.estacion,
+                esCajero
+            };
             localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
             localStorage.setItem('mosexpress_session_date', new Date().toDateString());
             _cargarAuditHoy();
-            if (!config.value.esCajero) {
-                // Registrar apertura de sesión vendedor en GAS y persistir en localStorage
-                // Esto evita que onMounted la cree de nuevo en cada recarga con monto S/0
+
+            if (esCajero) {
+                // ── CAJERO: apertura inmediata desde el wizard ──
+                procesandoCaja.value = true;
+                const monto = parseFloat(configWizard.value.monto) || 0;
                 const payload = {
                     tipoEvento:   'APERTURA_CAJA',
                     vendedor:     config.value.vendedor,
                     estacion:     config.value.estacion?.Estacion_Nombre || '',
-                    montoInicial: 0,
+                    montoInicial: monto,
                     zona:         config.value.zona || ''
                 };
                 let cid = 'CAJA-LOCAL-' + Date.now();
-                localStorage.setItem('mosexpress_caja_payload', JSON.stringify(payload));
                 if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                     try {
                         const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                        // Guard: usuario cerró sesión mientras esperaba GAS
+                        if (!config.value.completado) return;
                         const res = await req.json();
                         if (res.status === 'success') {
                             cid = res.idCaja;
-                            localStorage.removeItem('mosexpress_caja_payload');
+                        } else {
+                            agregarToast('Error apertura', res.mensaje || 'No se pudo abrir la caja');
+                            config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+                            localStorage.removeItem('mosexpress_config');
+                            localStorage.removeItem('mosexpress_session_date');
+                            procesandoCaja.value = false;
+                            return;
                         }
-                    } catch(e) { /* sin red — reintentará _intentarRegistrarCajaLocal */ }
+                    } catch(e) { /* sin red: CAJA-LOCAL reintentará después */ }
                 }
-                idCajaActual.value     = cid;
+                // Guard final: sesión cerrada durante el await
+                if (!config.value.completado) return;
+                idCajaActual.value = cid;
+                cajaAbierta.value = true;
+                montoAperturaMemoria.value = monto;
+                sessionStartTime.value = new Date().toISOString();
+                cobradosEnSesion.value = [];
+                extrasMovimientos.value = [];
+                localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto, fecha: Date.now() }));
+                localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
+                localStorage.removeItem('mosexpress_cobrados_sesion');
+                localStorage.removeItem('mosexpress_extras_sesion');
+                procesandoCaja.value = false;
+                cambiarModulo('CAJA');
+                // Ticket apertura cajero
+                let txt = "\x1b\x40\x1b\x61\x01";
+                txt += "\x1b\x21\x30MOSexpress\n\n";
+                txt += "\x1b\x21\x00================================================\n";
+                txt += "\x1b\x21\x10APERTURA DE CAJA\n";
+                txt += "\x1b\x21\x00================================================\n\n";
+                txt += "\x1b\x61\x00";
+                txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+                txt += "CAJERO  : " + config.value.vendedor + "\n";
+                txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+                txt += "CAJA ID : " + cid + "\n";
+                txt += "MONTO   : S/ " + monto.toFixed(2) + "\n\n";
+                txt += "\x1b\x61\x01*** TURNO INICIADO ***\n\n\n\n\n\x1d\x56\x00";
+                mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura Caja", b64ESC(txt))
+                    .catch(e => agregarToast('Error Impresión', e.message));
+            } else {
+                // ── VENDEDOR: sin entrada en CAJAS, usa idCaja del cajero activo ──
+                idCajaActual.value = '';
+                cajaAbierta.value = false;
                 sessionStartTime.value = new Date().toISOString();
                 cobradosEnSesion.value = [];
                 extrasMovimientos.value = [];
                 localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
                 localStorage.removeItem('mosexpress_cobrados_sesion');
                 localStorage.removeItem('mosexpress_extras_sesion');
-                localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
-                    idCaja: cid, monto: 0, fecha: Date.now()
-                }));
-                cajaAbierta.value = true;
                 cambiarModulo('POS');
-                // Ticket de confirmación de conexión para el vendedor
+                // Ticket confirmación vendedor
                 let txtV = "\x1b\x40\x1b\x61\x01";
                 txtV += "\x1b\x21\x30MOSexpress\n\n";
-                txtV += "\x1b\x21\x00";
-                txtV += "================================================\n";
+                txtV += "\x1b\x21\x00================================================\n";
                 txtV += "\x1b\x21\x10VENDEDOR LISTO\n";
-                txtV += "\x1b\x21\x00";
-                txtV += "================================================\n\n";
+                txtV += "\x1b\x21\x00================================================\n\n";
                 txtV += "\x1b\x61\x00";
                 txtV += "FECHA   : " + new Date().toLocaleString() + "\n";
                 txtV += "VENDEDOR: " + config.value.vendedor + "\n";
                 txtV += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
                 txtV += "IMPRESORA: " + config.value.estacion.PrintNode_ID + "\n\n";
-                txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n";
-                txtV += "\n\n\n\n\n\x1d\x56\x00";
+                txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
                 mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Bienvenida Vendedor", b64ESC(txtV))
                     .catch(e => agregarToast('Error Impresión', e.message));
-            } else {
-                cambiarModulo('CAJA');
             }
-            // Verificar si ya hay cajero activo en la zona al iniciar sesión
+
+            // Verificar cajero activo en zona al entrar
             verificarCajeroActivo();
-            // Vendedor: si no hay cajero activo, seguir verificando cada 30 s hasta encontrar uno
-            if (!config.value.esCajero) {
+            // Vendedor: polling cada 30s hasta encontrar cajero activo
+            if (!esCajero) {
                 clearInterval(_intervalVendedorCajeroCheck);
                 _intervalVendedorCajeroCheck = setInterval(async () => {
                     if (cajeroActivoEnZona.value) {
@@ -2908,7 +2962,7 @@
                     }
                 }, 30000);
             }
-            // Sincronizar catálogo al iniciar sesión (silencioso, no bloquea)
+            // Sincronizar catálogo (silencioso)
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 sincronizarCatalogoBase();
             }
@@ -3290,7 +3344,9 @@
              config.value.vendedor = '';
              config.value.estacion = null;
              localStorage.removeItem('mosexpress_config');
-             configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false };
+             configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
+             cajeroWizardInfo.value = null;
+             wizardCajeroOcupado.value = false;
 
              procesandoCierre.value = false;
              agregarToast("Turno cerrado", "Hasta luego");
@@ -3574,8 +3630,16 @@
              localStorage.removeItem('mosexpress_ventas_hoy');
              config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
              localStorage.removeItem('mosexpress_config');
-             configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false };
+             localStorage.removeItem('mosexpress_session_date');
+             localStorage.removeItem('mosexpress_caja_activa');
+             localStorage.removeItem('mosexpress_caja_payload');
+             localStorage.removeItem('mosexpress_session_start');
+             configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
              cajaAbierta.value = false;
+             idCajaActual.value = '';
+             cajeroActivoEnZona.value = null;
+             wizardCajeroOcupado.value = false;
+             cajeroWizardInfo.value = null;
              currentModule.value = 'CAJA';
              agregarToast("Sesión cerrada", "Hasta luego");
         };
@@ -4013,7 +4077,7 @@
                   esCajero:  config.value.esCajero
               },
               pos_config: {
-                  cajaId:        idCajaActual.value,
+                  cajaId:        config.value.esCajero ? idCajaActual.value : (cajeroActivoEnZona.value?.idCaja || ''),
                   serieActual:   serieElegida,
                   printerId:     _est.PrintNode_ID,
                   print_request: true   // le dice al GAS que imprima internamente (v39+)
@@ -4859,7 +4923,7 @@
           modalPresentaciones, prodSeleccionado, elegirPresentacion, cerrarModalPres,
           mostrarTeclado, toggleTeclado,
           esPantallaVertical,
-          wizardCajeroOcupado, wizardVerificando, seleccionarZonaWizard,
+          wizardCajeroOcupado, wizardVerificando, cajeroWizardInfo, seleccionarZonaWizard,
           darkMode, toggleDarkMode,
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
