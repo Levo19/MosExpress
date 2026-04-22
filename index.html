@@ -433,8 +433,9 @@
                         <p class="text-emerald-200 text-[10px] font-black uppercase tracking-widest mb-2">Extras del turno</p>
                         <div v-for="(ex, i) in extrasMovimientos" :key="i" class="flex justify-between items-center text-xs mb-1">
                             <span class="text-white font-semibold truncate flex-1">{{ ex.concepto }}</span>
-                            <span class="font-black ml-2 shrink-0" :class="ex.tipo === 'INGRESO' ? 'text-emerald-300' : 'text-red-300'">
-                                {{ ex.tipo === 'INGRESO' ? '+' : '-' }} S/ {{ parseFloat(ex.monto).toFixed(2) }}
+                            <span class="font-black ml-2 shrink-0" :class="ex.tipo.startsWith('INGRESO') ? 'text-emerald-300' : 'text-red-300'">
+                                {{ ex.tipo.startsWith('INGRESO') ? '+' : '-' }} S/ {{ parseFloat(ex.monto).toFixed(2) }}
+                                <span v-if="ex.tipo.endsWith('_VIRTUAL')" class="text-indigo-300 text-xs ml-0.5">📲</span>
                             </span>
                         </div>
                     </div>
@@ -1357,7 +1358,7 @@
                 </button>
             </div>
             <!-- Tipo: INGRESO / EGRESO -->
-            <div class="flex gap-3 mb-4">
+            <div class="flex gap-3 mb-3">
                 <button @click="nuevoExtra.tipo = 'INGRESO'"
                         class="flex-1 py-4 rounded-2xl font-black text-sm border-2 transition-all"
                         :class="nuevoExtra.tipo === 'INGRESO' ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg' : 'bg-gray-50 text-gray-500 border-gray-200'">
@@ -1367,6 +1368,15 @@
                         class="flex-1 py-4 rounded-2xl font-black text-sm border-2 transition-all"
                         :class="nuevoExtra.tipo === 'EGRESO' ? 'bg-red-500 text-white border-red-500 shadow-lg' : 'bg-gray-50 text-gray-500 border-gray-200'">
                     - EGRESO
+                </button>
+            </div>
+            <!-- Toggle Efectivo / Virtual -->
+            <div class="flex justify-center mb-4">
+                <button @click="nuevoExtra.virtual = !nuevoExtra.virtual"
+                        class="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-black border-2 transition-all active:scale-95"
+                        :class="nuevoExtra.virtual ? 'bg-indigo-500 text-white border-indigo-500 shadow-md' : 'bg-gray-100 text-gray-400 border-gray-200'">
+                    <span>{{ nuevoExtra.virtual ? '📲' : '💵' }}</span>
+                    <span>{{ nuevoExtra.virtual ? 'Virtual' : 'Efectivo' }}</span>
                 </button>
             </div>
             <!-- Conceptos rápidos -->
@@ -1402,7 +1412,7 @@
             <button @click="registrarExtra" :disabled="procesandoExtra || !nuevoExtra.concepto.trim() || !nuevoExtra.monto"
                     class="w-full font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all disabled:bg-gray-200 disabled:text-gray-400"
                     :class="nuevoExtra.tipo === 'EGRESO' ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-emerald-500 text-white hover:bg-emerald-600'">
-                {{ procesandoExtra ? 'REGISTRANDO...' : (nuevoExtra.tipo === 'EGRESO' ? '- REGISTRAR EGRESO' : '+ REGISTRAR INGRESO') }}
+                {{ procesandoExtra ? 'REGISTRANDO...' : (nuevoExtra.tipo === 'EGRESO' ? '- REGISTRAR EGRESO' : '+ REGISTRAR INGRESO') + (nuevoExtra.virtual ? ' 📲' : '') }}
             </button>
         </div>
     </div>
@@ -1772,7 +1782,7 @@
         const extrasMovimientos = ref([]);
         const modalExtra = ref(false);
         const procesandoExtra = ref(false);
-        const nuevoExtra = ref({ tipo: 'EGRESO', monto: '', concepto: '', obs: '' });
+        const nuevoExtra = ref({ tipo: 'EGRESO', monto: '', concepto: '', obs: '', virtual: false });
 
         // --- MÓDULO B: POS ---
         const bBuscador = ref('');
@@ -3017,8 +3027,11 @@
              tVirtual  = parseFloat(tVirtual.toFixed(2));
 
              // --- Extras del turno (ingresos suman, egresos restan) ---
-             const tExtrasIngreso = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO' ? parseFloat(e.monto) : 0), 0);
-             const tExtrasEgreso  = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO'  ? parseFloat(e.monto) : 0), 0);
+             const tExtrasIngreso        = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO'         ? parseFloat(e.monto) : 0), 0);
+             const tExtrasIngresoVirtual = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO_VIRTUAL'  ? parseFloat(e.monto) : 0), 0);
+             const tExtrasEgreso         = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO'           ? parseFloat(e.monto) : 0), 0);
+             const tExtrasEgresoVirtual  = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO_VIRTUAL'   ? parseFloat(e.monto) : 0), 0);
+             // montoFinal solo incluye efectivo (extras virtuales no tocan la caja física)
              const montoFinal = montoAperturaMemoria.value + tEfectivo + tExtrasIngreso - tExtrasEgreso;
 
              // --- Tickets POR_COBRAR sin cobrar → anular (los CREDITO NO se anulan) ---
@@ -3210,16 +3223,19 @@
              txt += sHdr('EXTRAS DEL TURNO (' + extrasMovimientos.value.length + ')');
              if (extrasMovimientos.value.length > 0) {
                  extrasMovimientos.value.forEach(ex => {
-                     const signo = ex.tipo==='INGRESO' ? '+' : '-';
-                     const mEx   = ex.tipo==='INGRESO' ? parseFloat(ex.monto) : -parseFloat(ex.monto);
-                     txt += signo + " " + lPad(ex.concepto,22) + amtN(mEx,12) + "\n";
+                     const esVirtual = ex.tipo.endsWith('_VIRTUAL');
+                     const signo = ex.tipo.startsWith('INGRESO') ? '+' : '-';
+                     const mEx   = ex.tipo.startsWith('INGRESO') ? parseFloat(ex.monto) : -parseFloat(ex.monto);
+                     txt += signo + (esVirtual ? 'V' : ' ') + " " + lPad(ex.concepto,21) + amtN(mEx,12) + "\n";
                      if (ex.obs) txt += "    " + ex.obs.substring(0,44) + "\n";
                  });
                  txt += SEPd;
-                 if (tExtrasIngreso>0) txt += "+ INGRESOS       " + amtP(tExtrasIngreso,14) + "\n";
-                 if (tExtrasEgreso >0) txt += "- EGRESOS        " + amtN(-tExtrasEgreso,14) + "\n";
+                 if (tExtrasIngreso        > 0) txt += "+ ING.EFECTIVO   " + amtP(tExtrasIngreso,14) + "\n";
+                 if (tExtrasIngresoVirtual > 0) txt += "+ ING.VIRTUAL    " + amtP(tExtrasIngresoVirtual,14) + "\n";
+                 if (tExtrasEgreso         > 0) txt += "- EGR.EFECTIVO   " + amtN(-tExtrasEgreso,14) + "\n";
+                 if (tExtrasEgresoVirtual  > 0) txt += "- EGR.VIRTUAL    " + amtN(-tExtrasEgresoVirtual,14) + "\n";
                  txt += "\x1b\x45\x01";
-                 txt += "  NETO EXTRAS    " + amtN(tExtrasIngreso-tExtrasEgreso,14) + "\n";
+                 txt += "  NETO EFE.      " + amtN(tExtrasIngreso - tExtrasEgreso, 14) + "\n";
                  txt += "\x1b\x45\x00";
              } else {
                  txt += "  Sin movimientos extra en este turno\n";
@@ -3435,7 +3451,7 @@
             if (!nuevoExtra.value.concepto.trim()) { agregarToast('Error', 'Ingresa el concepto'); return; }
             procesandoExtra.value = true;
             const extra = {
-                tipo: nuevoExtra.value.tipo,
+                tipo: nuevoExtra.value.tipo + (nuevoExtra.value.virtual ? '_VIRTUAL' : ''),
                 monto: m,
                 concepto: nuevoExtra.value.concepto.trim(),
                 obs: nuevoExtra.value.obs.trim(),
@@ -3454,10 +3470,10 @@
             } catch(e) { /* guardar local igualmente */ }
             extrasMovimientos.value.push(extra);
             localStorage.setItem('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value));
-            nuevoExtra.value = { tipo: 'EGRESO', monto: '', concepto: '', obs: '' };
+            nuevoExtra.value = { tipo: 'EGRESO', monto: '', concepto: '', obs: '', virtual: false };
             modalExtra.value = false;
             procesandoExtra.value = false;
-            agregarToast('Extra registrado', (extra.tipo === 'EGRESO' ? '- ' : '+ ') + 'S/ ' + extra.monto.toFixed(2) + ' — ' + extra.concepto);
+            agregarToast('Extra registrado', (extra.tipo.startsWith('EGRESO') ? '- ' : '+ ') + 'S/ ' + extra.monto.toFixed(2) + ' — ' + extra.concepto + (extra.tipo.endsWith('_VIRTUAL') ? ' 📲' : ''));
         };
 
         const cargarVentasZona = async () => {

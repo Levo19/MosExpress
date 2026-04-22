@@ -130,8 +130,10 @@ function getCierreHtml(idCaja) {
   var totalCredito = creditos.reduce(function(s,x){ return s+x.total; }, 0);
   var totalOtros   = totalVirtual + totalCredito;
 
-  var totalEntradas = extras.filter(function(x){return x.tipo==='INGRESO';}).reduce(function(a,x){return a+x.monto;},0);
-  var totalSalidas  = extras.filter(function(x){return x.tipo==='EGRESO'; }).reduce(function(a,x){return a+x.monto;},0);
+  var totalEntradas        = extras.filter(function(x){return x.tipo==='INGRESO';        }).reduce(function(a,x){return a+x.monto;},0);
+  var totalEntradasVirtual = extras.filter(function(x){return x.tipo==='INGRESO_VIRTUAL';}).reduce(function(a,x){return a+x.monto;},0);
+  var totalSalidas         = extras.filter(function(x){return x.tipo==='EGRESO';         }).reduce(function(a,x){return a+x.monto;},0);
+  var totalSalidasVirtual  = extras.filter(function(x){return x.tipo==='EGRESO_VIRTUAL'; }).reduce(function(a,x){return a+x.monto;},0);
 
   // Efectivo esperado en caja = calculado directo desde Sheets (fuente autoritativa)
   var efectivoEsperado = caja.montoInicial + totalEfectivo + totalEntradas - totalSalidas;
@@ -312,10 +314,10 @@ function getCierreHtml(idCaja) {
   H.push('<div class="arqueo-row"><span class="op"> </span><span class="lbl">Monto inicial</span><span class="amt">' + fm(caja.montoInicial) + '</span></div>');
   H.push('<div class="arqueo-row"><span class="op pos">+</span><span class="lbl">Ventas efectivo</span><span class="amt pos">' + fm(totalEfectivo) + '</span></div>');
   if (totalEntradas > 0) {
-    H.push('<div class="arqueo-row"><span class="op pos">+</span><span class="lbl">Ingresos extra</span><span class="amt pos">' + fm(totalEntradas) + '</span></div>');
+    H.push('<div class="arqueo-row"><span class="op pos">+</span><span class="lbl">Ingresos extra (💵)</span><span class="amt pos">' + fm(totalEntradas) + '</span></div>');
   }
   if (totalSalidas > 0) {
-    H.push('<div class="arqueo-row"><span class="op neg">−</span><span class="lbl">Salidas extra</span><span class="amt neg">' + fm(totalSalidas) + '</span></div>');
+    H.push('<div class="arqueo-row"><span class="op neg">−</span><span class="lbl">Salidas extra (💵)</span><span class="amt neg">' + fm(totalSalidas) + '</span></div>');
   }
   H.push('<hr class="arqueo-divider">');
   H.push('<div class="arqueo-total">');
@@ -336,6 +338,15 @@ function getCierreHtml(idCaja) {
   H.push('<div><span class="oi-lbl">Total virtual</span><span class="oi-cnt">(' + cntVirtual + ' tickets)</span></div>');
   H.push('<span class="oi-amt">' + fm(totalVirtual) + '</span>');
   H.push('</div>');
+
+  // 1b. Extras virtuales (si los hay)
+  if (totalEntradasVirtual > 0 || totalSalidasVirtual > 0) {
+    H.push('<div class="otros-item">');
+    H.push('<div><span class="oi-lbl">📲 Extras virtuales</span></div>');
+    if (totalEntradasVirtual > 0) H.push('<span class="oi-amt" style="color:#6ee7b7">+' + fm(totalEntradasVirtual) + '</span>');
+    if (totalSalidasVirtual  > 0) H.push('<span class="oi-amt" style="color:#fca5a5">−' + fm(totalSalidasVirtual)  + '</span>');
+    H.push('</div>');
+  }
 
   // 2. Total anulados
   var totalAnulados = anuladas.reduce(function(s,x){ return s + x.total; }, 0);

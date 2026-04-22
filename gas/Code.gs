@@ -111,9 +111,11 @@ function estadoCajas() {
       var tipo = String(ed[e2][3] || 'EGRESO');
       var mto  = parseFloat(ed[e2][4]) || 0;
       if (!ec) continue;
-      if (!extrasPorCaja[ec]) extrasPorCaja[ec] = { entradas:0, salidas:0 };
-      if (tipo === 'INGRESO') extrasPorCaja[ec].entradas += mto;
-      else                    extrasPorCaja[ec].salidas  += mto;
+      if (!extrasPorCaja[ec]) extrasPorCaja[ec] = { entradas:0, salidas:0, entradasVirtual:0, salidasVirtual:0 };
+      if      (tipo === 'INGRESO')         extrasPorCaja[ec].entradas        += mto;
+      else if (tipo === 'INGRESO_VIRTUAL') extrasPorCaja[ec].entradasVirtual += mto;
+      else if (tipo === 'EGRESO')          extrasPorCaja[ec].salidas         += mto;
+      else if (tipo === 'EGRESO_VIRTUAL')  extrasPorCaja[ec].salidasVirtual  += mto;
     }
   }
 
