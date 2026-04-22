@@ -93,6 +93,12 @@ function procesarCierreCaja(data) {
     catch(e) { Logger.log("Error guia ventas: " + e.toString()); }
   }
 
+  // Push a MOS — cierre de caja
+  try {
+    var hora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm');
+    _notificarMOS('🔐 Caja cerrada · ' + hora, cajaVendedor + (cajaZona ? ' · ' + cajaZona : '') + ' · S/ ' + (parseFloat(data.montoFinal) || 0).toFixed(2));
+  } catch(eP) { Logger.log('Push cierre: ' + eP.message); }
+
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", mensaje: "Caja cerrada correctamente"
   })).setMimeType(ContentService.MimeType.JSON);
