@@ -84,8 +84,18 @@ function estadoCajas() {
       } else {
         vc.total   += total;
         vc.tickets++;
-        if (metodo === 'EFECTIVO') vc.efectivo += total;
-        else                       vc.otros    += total;
+        if (metodo === 'EFECTIVO') {
+          vc.efectivo += total;
+        } else if (metodo.indexOf('MIXTO') === 0) {
+          var _efeM = metodo.match(/EFE:([\d.]+)/i);
+          var _virM = metodo.match(/VIR:([\d.]+)/i);
+          var _efe  = _efeM ? parseFloat(_efeM[1]) : 0;
+          var _vir  = _virM ? parseFloat(_virM[1]) : total - _efe;
+          vc.efectivo += _efe;
+          vc.otros    += _vir;
+        } else {
+          vc.otros += total;
+        }
         vc.byMetodo[metodo] = (vc.byMetodo[metodo] || 0) + total;
         vc.byDoc[tipoDoc]   = (vc.byDoc[tipoDoc]   || 0) + total;
       }

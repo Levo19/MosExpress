@@ -108,15 +108,33 @@ function getCierreHtml(idCaja) {
   var creditos   = activas.filter(function(x){ return x.metodo === 'CREDITO'; });
   var cobradas   = activas.filter(function(x){ return x.metodo !== 'POR_COBRAR'; });
 
-  var totalVentas   = cobradas.reduce(function(a,x){ return a+x.total; }, 0);
-  var totalEfectivo = cobradas.filter(function(x){ return x.metodo==='EFECTIVO'; }).reduce(function(a,x){return a+x.total;},0);
-  var totalOtros    = cobradas.filter(function(x){ return x.metodo!=='EFECTIVO'; }).reduce(function(a,x){return a+x.total;},0);
+  var totalVentas = cobradas.reduce(function(a,x){ return a+x.total; }, 0);
+
+  // Totales por grupo: MIXTO se divide en su parte efectivo (EFE) y parte virtual (VIR)
+  var totalEfectivo = 0;
+  var totalVirtual  = 0;
+  cobradas.filter(function(x){ return x.metodo !== 'CREDITO'; }).forEach(function(x) {
+    if (x.metodo === 'EFECTIVO') {
+      totalEfectivo += x.total;
+    } else if (x.metodo.indexOf('MIXTO') === 0) {
+      var efeM = x.metodo.match(/EFE:([\d.]+)/i);
+      var virM = x.metodo.match(/VIR:([\d.]+)/i);
+      var efe  = efeM ? parseFloat(efeM[1]) : 0;
+      var vir  = virM ? parseFloat(virM[1]) : x.total - efe;
+      totalEfectivo += efe;
+      totalVirtual  += vir;
+    } else {
+      totalVirtual += x.total;
+    }
+  });
+  var totalCredito = creditos.reduce(function(s,x){ return s+x.total; }, 0);
+  var totalOtros   = totalVirtual + totalCredito;
 
   var totalEntradas = extras.filter(function(x){return x.tipo==='INGRESO';}).reduce(function(a,x){return a+x.monto;},0);
   var totalSalidas  = extras.filter(function(x){return x.tipo==='EGRESO'; }).reduce(function(a,x){return a+x.monto;},0);
 
+  // Efectivo esperado en caja = calculado directo desde Sheets (fuente autoritativa)
   var efectivoEsperado = caja.montoInicial + totalEfectivo + totalEntradas - totalSalidas;
-  var diferencia       = caja.montoFinal - efectivoEsperado;
 
   // Por método pago (solo cobradas)
   var byMetodo = {};
@@ -159,10 +177,10 @@ function getCierreHtml(idCaja) {
   var docVals    = docKeys.map(function(k){ return byDoc[k].total.toFixed(2); });
   var docLabArr  = docKeys.map(function(k){ return docLabels[k]||k; });
 
-  // Virtual = cobradas no efectivo, no crédito (Yape, Plin, Tarjeta, etc.)
+  // virtualMets: métodos no-efectivo no-crédito (para el chart y conteo de tickets)
   var METODOS_NO_VIRTUAL = { 'EFECTIVO': true, 'CREDITO': true };
   var virtualMets  = Object.keys(byMetodo).filter(function(k){ return !METODOS_NO_VIRTUAL[k]; });
-  var totalVirtual = virtualMets.reduce(function(s,k){ return s + byMetodo[k].total; }, 0);
+  // totalVirtual ya calculado arriba con MIXTO correctamente dividido (no se usa byMetodo aquí)
 
   var fm  = function(n){ return 'S/ ' + parseFloat(n||0).toFixed(2); };
   var pct = function(n,t){ return t===0?'0':((n/t)*100).toFixed(1); };
@@ -310,8 +328,10 @@ function getCierreHtml(idCaja) {
   H.push('<div class="arqueo-panel">');
   H.push('<div class="arqueo-title">Otros</div>');
 
-  // 1. Total virtual — resaltado en azul
-  var cntVirtual = virtualMets.reduce(function(s,k){ return s + byMetodo[k].count; }, 0);
+  // 1. Total virtual — resaltado en azul (contar tickets que tienen parte virtual)
+  var cntVirtual = cobradas.filter(function(x){
+    return x.metodo !== 'EFECTIVO' && x.metodo !== 'CREDITO';
+  }).length;
   H.push('<div class="otros-item virt">');
   H.push('<div><span class="oi-lbl">Total virtual</span><span class="oi-cnt">(' + cntVirtual + ' tickets)</span></div>');
   H.push('<span class="oi-amt">' + fm(totalVirtual) + '</span>');
@@ -343,15 +363,11 @@ function getCierreHtml(idCaja) {
 
   H.push('</div>'); // arqueo-wrap
 
-  // ── Caja diferencia box ──────────────────────────────────────
-  var diffBoxClass = diferencia > 0.05 ? 'diff-ok' : diferencia < -0.05 ? 'diff-neg' : 'diff-eq';
-  var diffIcon     = diferencia > 0.05 ? '✅' : diferencia < -0.05 ? '❌' : '✅';
-  var diffTexto    = diferencia > 0.05 ? 'Sobrante en caja' : diferencia < -0.05 ? 'Faltante en caja' : 'Caja cuadrada';
-  var difStr       = diferencia > 0.05 ? '+' + fm(diferencia) : diferencia < -0.05 ? fm(diferencia) : fm(0);
-  H.push('<div class="diff-box ' + diffBoxClass + '">' + diffIcon + ' <span>' + diffTexto + ': ' + difStr + '</span>');
-  if (caja.montoFinal > 0) {
-    H.push('<span style="font-size:13px;font-weight:400;margin-left:auto;opacity:.8">Declarado: ' + fm(caja.montoFinal) + ' · Esperado: ' + fm(efectivoEsperado) + '</span>');
-  }
+  // ── Resumen de caja ──────────────────────────────────────────
+  // El efectivo esperado se calcula siempre desde Sheets (fuente autoritativa).
+  // No existe "declarado" ni "diferencia" — el cajero nunca ingresa un conteo físico.
+  H.push('<div class="diff-box diff-eq">✅ <span>Efectivo esperado en caja: ' + fm(efectivoEsperado) + '</span>');
+  H.push('<span style="font-size:13px;font-weight:400;margin-left:auto;opacity:.8">Virtual: ' + fm(totalVirtual) + ' · Crédito: ' + fm(totalCredito) + '</span>');
   H.push('</div>');
 
   // ── Charts 2×2 ───────────────────────────────────────────────
