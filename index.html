@@ -2640,9 +2640,9 @@
             if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
         };
 
-        const verificarCajeroEnZonaWizard = async (zona) => {
+        const verificarCajeroEnZonaWizard = async (zona, silent = false) => {
             if (!zona || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
-            wizardVerificando.value = true;
+            if (!silent) wizardVerificando.value = true;
             try {
                 const r = await fetch(`${API_URL}?accion=cajero_activo&zona=${encodeURIComponent(zona)}`);
                 const d = await r.json();
@@ -2653,7 +2653,7 @@
                 wizardCajeroOcupado.value = false;
                 cajeroWizardInfo.value = null;
             }
-            finally { wizardVerificando.value = false; }
+            finally { if (!silent) wizardVerificando.value = false; }
         };
 
         const seleccionarZonaWizard = async (zona) => {
@@ -2671,7 +2671,7 @@
             detenerPollingWizard();
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 _wizardPollingTimer = setInterval(() => {
-                    verificarCajeroEnZonaWizard(configWizard.value.zona);
+                    verificarCajeroEnZonaWizard(configWizard.value.zona, true); // silent: no parpadea
                 }, 3000);
             }
         };
