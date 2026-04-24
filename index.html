@@ -2452,6 +2452,7 @@
                 dbCargada.value = true;
                 return agregarToast("Aviso", "No disponible offline/mock");
             }
+            if (procesandoGuia.value) return; // no competir con GAS mientras hay guía en curso
             procesandoCatalogo.value = true;
             try {
                 const req = await fetch(`${API_URL}?accion=descargar`);

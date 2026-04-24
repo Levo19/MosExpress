@@ -149,26 +149,6 @@ function registrarGuia(data) {
   var signo       = esSalida ? -1 : 1;
   var zonaDestino = String(data.zona_destino || '');
 
-  // Validar stock para salidas
-  if (esSalida) {
-    var stockData = sheetStock.getDataRange().getValues();
-    for (var si = 0; si < (data.items || []).length; si++) {
-      var siItem = data.items[si];
-      var siCb   = String(siItem.cod_barras);
-      var stockActual = 0;
-      for (var sr = 1; sr < stockData.length; sr++) {
-        if (String(stockData[sr][0]) === siCb && String(stockData[sr][1]) === String(data.zona)) {
-          stockActual = parseFloat(stockData[sr][2]) || 0;
-          break;
-        }
-      }
-      if (stockActual < siItem.cantidad) {
-        return generarRespuestaError('Stock insuficiente para ' + siCb +
-          ': disponible=' + stockActual + ', solicitado=' + siItem.cantidad);
-      }
-    }
-  }
-
   var idGuia = "G-" + new Date().getTime();
   sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo,
     data.observacion || '', zonaDestino, 'CONFIRMADO']);
