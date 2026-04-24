@@ -263,13 +263,14 @@ function obtenerDatosHojaComoJSON(sheet) {
 // ── Notificar a ProyectoMOS vía push (requiere MOS_WEB_APP_URL en Script Properties) ──
 function _notificarMOS(titulo, cuerpo) {
   var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
-  if (!url) return;
+  if (!url) { Logger.log('[Push] MOS_WEB_APP_URL no configurada'); return; }
   try {
-    UrlFetchApp.fetch(url, {
+    var resp = UrlFetchApp.fetch(url, {
       method: 'post',
       contentType: 'application/json',
       payload: JSON.stringify({ action: 'enviarPushNotif', titulo: titulo, cuerpo: cuerpo }),
       muteHttpExceptions: true
     });
-  } catch(e) { Logger.log('_notificarMOS: ' + e.message); }
+    Logger.log('[Push→MOS] HTTP ' + resp.getResponseCode() + ' | ' + resp.getContentText().substring(0, 120));
+  } catch(e) { Logger.log('[Push→MOS] excepcion: ' + e.message); }
 }

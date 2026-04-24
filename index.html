@@ -765,6 +765,17 @@
                        </button>
                     </div>
 
+                    <!-- Fila: Sonidos -->
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                       <div class="flex items-center gap-3">
+                          <svg class="w-5 h-5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9 9H5a2 2 0 00-2 2v2a2 2 0 002 2h4l5 5V4L9 9z"></path></svg>
+                          <span class="text-sm font-bold text-gray-700">Sonidos</span>
+                       </div>
+                       <button @click="toggleSound" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="soundEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
+                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="soundEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                       </button>
+                    </div>
+
                     <!-- Fila: Actualizar catálogo -->
                     <div class="flex items-center justify-between px-4 py-3">
                        <div class="flex items-center gap-3">
@@ -1763,6 +1774,7 @@
         const dbCargada = ref(false);
         const pendingSales = ref([]);
         const isSyncing = ref(false);
+        const soundEnabled = ref(localStorage.getItem('mosexpress_sound') !== 'false');
         
         // --- SEGURIDAD: DISPOSITIVOS ---
         const deviceId = ref('');
@@ -1876,6 +1888,7 @@
         // --- CÁMARA ---
         const camaraAbierta = ref(false);
         let html5QrcodeScanner = null;
+        let _lastPosCamScan = 0;
         const camaraHerramientasAbierta = ref(false);
         let html5QrHerramientas = null;
         const camaraAuditAbierta = ref(false);
@@ -1974,10 +1987,12 @@
             uiState.value.isMobile = window.innerWidth < 900;
             esPantallaVertical.value = window.innerHeight > window.innerWidth;
         };
-        const updateOnlineStatus = () => { 
-            offlineMode.value = !navigator.onLine; 
+        const updateOnlineStatus = () => {
+            const wasOffline = offlineMode.value;
+            offlineMode.value = !navigator.onLine;
+            if (!offlineMode.value && wasOffline) playOnlineBack();
             if (!offlineMode.value && pendingSales.value.length > 0) {
-                setTimeout(sincronizarDatos, 2000); // Dar un respiro a la red antes de intentar sync 
+                setTimeout(sincronizarDatos, 2000); // Dar un respiro a la red antes de intentar sync
             }
         };
         
@@ -2499,6 +2514,7 @@
            if (exitos > 0) {
                lsSet('pending_sales', JSON.stringify(pendingSales.value));
                lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+               playSyncOK();
                agregarToast('Sincronización', `${exitos} comprobante(s) subidos a la Nube`);
            }
            localStorage.removeItem('_mos_syncing');
@@ -2536,8 +2552,111 @@
             );
         };
 
-        // Sonido de caja registradora cuando llega un ticket nuevo
+        const toggleSound = () => {
+            soundEnabled.value = !soundEnabled.value;
+            localStorage.setItem('mosexpress_sound', String(soundEnabled.value));
+        };
+
+        const playBeepOK = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1047, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.25, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.09);
+            } catch(e) {}
+        };
+
+        const playBeepError = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(220, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.18);
+                gain.gain.setValueAtTime(0.35, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.19);
+            } catch(e) {}
+        };
+
+        // Dos notas ascendentes — confirma venta completada o cobro recibido
+        const playVentaOK = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [
+                    { t: 0.00, f: 880,  v: 0.28, d: 0.12 },
+                    { t: 0.14, f: 1320, v: 0.32, d: 0.18 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    osc.frequency.exponentialRampToValueAtTime(f * 0.85, ctx.currentTime + t + d);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t);
+                    osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // Doble bip suave — pendientes sincronizados con la nube
+        const playSyncOK = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [
+                    { t: 0.00, f: 660, v: 0.14, d: 0.07 },
+                    { t: 0.12, f: 880, v: 0.14, d: 0.07 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t);
+                    osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // Bip medio suave — conexión recuperada
+        const playOnlineBack = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(740, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.12);
+                gain.gain.setValueAtTime(0.18, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.13);
+            } catch(e) {}
+        };
+
+        // Sonido de caja registradora — ticket nuevo en modo Cajero
         const playCoinSound = () => {
+            if (!soundEnabled.value) return;
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 [
@@ -3613,6 +3732,7 @@
             modalCobro.value = false;
             ventaCobrar.value = null;
             if (modoCajero.value) resetearCajero();
+            playVentaOK();
             agregarToast('Cobro registrado', venta.correlativo);
             // Sincronizar con GAS en segundo plano (fire and forget)
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
@@ -3673,7 +3793,13 @@
                     html5QrcodeScanner.start(
                         { facingMode: "environment" },
                         { fps: 10, qrbox: { width: 250, height: 150 } },
-                        (txt) => { toggleCamara(); bBuscador.value = txt; procesarEscaneoOBusqueda(); },
+                        (txt) => {
+                            const now = Date.now();
+                            if (now - _lastPosCamScan < 1500) return;
+                            _lastPosCamScan = now;
+                            bBuscador.value = txt;
+                            procesarEscaneoOBusqueda();
+                        },
                         () => {}
                     ).catch(() => {
                         agregarToast('Cámara', 'Permiso denegado o no disponible');
@@ -3786,14 +3912,16 @@
               const baseMatch = productosCatalogo.value.find(p => String(p.sku).trim() === String(presMatch.SKU_Base).trim());
               if (baseMatch) {
                   // Agrega directamente al carrito usando la presentación específica escaneada (salta el Modal)
+                  playBeepOK();
                   elegirPresentacion(baseMatch, presMatch);
                   bBuscador.value = ''; filtrarCatalogo(); return;
               }
           }
-          
+
           // 2.5 Buscar directamente por SKU_Base
           const skuMatch = productosCatalogo.value.find(p => String(p.sku).toUpperCase() === searchCode);
           if (skuMatch) {
+              playBeepOK();
               agregarOVerDetalle(skuMatch);
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
@@ -3802,11 +3930,12 @@
           const pbObj = productosCatalogo.value.find(p => p.nombreCorto.toUpperCase().includes(code));
           if (pbObj) {
               // Si buscó por nombre y tiene varias presentaciones, sí le abrirá el Modal
+              playBeepOK();
               agregarOVerDetalle(pbObj);
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
 
-          agregarToast('NO ENCONTRADO', searchCode); bBuscador.value = ''; filtrarCatalogo();
+          playBeepError(); agregarToast('NO ENCONTRADO', searchCode); bBuscador.value = ''; filtrarCatalogo();
         };
 
         const agregarCarritoObj = (prodObj) => {
@@ -4192,7 +4321,7 @@
                        ventasHoy.value[idx].isNew = true;
                        lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                    }
-                   if (metodoVenta === 'POR_COBRAR') playCoinSound();
+                   // playVentaOK ya sonó en finalizarPostPago para todas las ventas
                    flashNuevosTickets.value = false;
                    nextTick(() => { flashNuevosTickets.value = true; });
                    setTimeout(() => {
@@ -4251,7 +4380,7 @@
            }
         };
 
-        const finalizarPostPago = () => { procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; pago.value.montoVirtual = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
+        const finalizarPostPago = () => { playVentaOK(); procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; pago.value.montoVirtual = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
 
         const anularVenta = (venta) => {
             pedirPin(() => _ejecutarAnulacion(venta));
@@ -4372,7 +4501,7 @@
                    );
                }
                if (!pres) {
-                   agregarToast('No Encontrado', 'Verifica el código');
+                   playBeepError(); agregarToast('No Encontrado', 'Verifica el código');
                    procesandoMembrete.value = false;
                    return;
                }
@@ -4401,7 +4530,7 @@
                // 6. Obtener nombre y precio desde el catálogo
                const obj = productosCatalogo.value.find(p => p.sku === skuBase);
                if (!obj) {
-                   agregarToast('No Encontrado', 'Producto no está en catálogo activo');
+                   playBeepError(); agregarToast('No Encontrado', 'Producto no está en catálogo activo');
                    procesandoMembrete.value = false;
                    return;
                }
@@ -4438,7 +4567,7 @@
                );
 
                await mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Membrete", raw);
-               agregarToast('Éxito', 'Membrete enviado');
+               playBeepOK(); agregarToast('Éxito', 'Membrete enviado');
                bHerramientas.value = '';
            } catch (e) {
                agregarToast('Error de Impresión', e.message);
@@ -4596,7 +4725,7 @@
             const q = guiaBusq.value.trim();
             if (!q) return;
             const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
-            if (!pres) { agregarToast('No encontrado', 'Código no está en el catálogo'); return; }
+            if (!pres) { playBeepError(); agregarToast('No encontrado', 'Código no está en el catálogo'); return; }
             const base = db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base);
             const nombre = (base ? base.Nombre : pres.SKU_Base) + ' · ' + pres.Empaque;
             const idx = guiaItems.value.findIndex(i => i.cod_barras === q);
@@ -4606,6 +4735,7 @@
                 const stockActual = stockMap.value[q + '_' + guiaZona.value] ?? null;
                 guiaItems.value.push({ cod_barras: q, nombre, cantidad: 1, stockActual });
             }
+            playBeepOK();
             guiaBusq.value = '';
         };
 
@@ -4766,7 +4896,7 @@
 
                 if (presDelSku.length === 0) {
                     // Tampoco existe como SKU_Base
-                    agregarToast('Error', 'Código no encontrado en el catálogo');
+                    playBeepError(); agregarToast('Error', 'Código no encontrado en el catálogo');
                     return;
                 }
 
@@ -4784,7 +4914,7 @@
                     pres = presF1[0];
                 } else {
                     // Ambiguo: múltiples barcodes con factor 1 o tiene equivalencias
-                    agregarToast('Aviso', 'Producto con muchos códigos de barra — escanea el código del empaque');
+                    playBeepError(); agregarToast('Aviso', 'Producto con muchos códigos de barra — escanea el código del empaque');
                     return;
                 }
             }
@@ -4792,7 +4922,7 @@
             // ── 3. Barcode resuelto — verificar duplicado ──
             const cbFinal = String(pres.Cod_Barras);
             if (auditItems.value.find(i => i.cod_barras === cbFinal)) {
-                agregarToast('Aviso', 'Ya registrado hoy: ' + cbFinal);
+                playBeepError(); agregarToast('Aviso', 'Ya registrado hoy: ' + cbFinal);
                 return;
             }
 
@@ -4803,6 +4933,7 @@
 
             // ── 4. Agregar al tope de la lista (optimista) ──
             const newItem = { cod_barras: cbFinal, nombre, cantSistema, cantReal: cantSistema, estado: 'pendiente' };
+            playBeepOK();
             auditItems.value.unshift(newItem);
             _guardarAuditHoy();
 
@@ -4898,6 +5029,7 @@
           uiState,
           cajaAbierta, idCajaActual, montoAperturaMemoria, montoApertura, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
           ventasZona, cargandoZona, cargarVentasZona, cobradosEnSesion, sessionStartTime, playCoinSound,
+          soundEnabled, toggleSound,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
