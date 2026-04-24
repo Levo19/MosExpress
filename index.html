@@ -4648,6 +4648,7 @@
             guiaTab.value = 'salida';
             guiaZona.value = config.value.zona || (zonasUnicas.value[0] || '');
             _resetGuiaForm();
+            listarGuiasHistorial(); // precarga historial mientras el usuario opera en salida/entrada
             await cargarStockZonas();
         };
 
@@ -4775,6 +4776,19 @@
             localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
 
             // 2. Liberar el form inmediatamente — usuario puede seguir operando
+            // Agregar entrada optimista al historial local para que se vea al instante
+            const _guiaOpt = {
+                id_guia: 'G-LOCAL-' + Date.now(),
+                fecha: new Date().toISOString(),
+                vendedor: config.value.vendedor,
+                zona: zonaSnap,
+                tipo: subtipoSnap,
+                observacion: payload.observacion || '',
+                zona_destino: destinoSnap,
+                estado: 'CONFIRMADO'
+            };
+            guiaHistorial.value = [_guiaOpt, ...guiaHistorial.value];
+            localStorage.setItem('mosexpress_guias_' + zonaSnap, JSON.stringify(guiaHistorial.value));
             agregarToast('Guía enviada', 'Registrando en segundo plano...');
             _resetGuiaForm();
 
@@ -4806,13 +4820,22 @@
         };
 
         const listarGuiasHistorial = async () => {
-            guiaHistorialCargando.value = true;
+            const cacheKey = 'mosexpress_guias_' + guiaZona.value;
+            // Mostrar cache inmediatamente si existe
+            try {
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) guiaHistorial.value = JSON.parse(cached);
+            } catch(e) {}
+            // Spinner solo si no hay nada que mostrar
+            if (!guiaHistorial.value.length) guiaHistorialCargando.value = true;
             try {
                 const r = await fetch(`${API_URL}?accion=listar_guias&zona=${encodeURIComponent(guiaZona.value)}`);
                 const d = await r.json();
-                if (d.status === 'success') guiaHistorial.value = d.guias;
-                else agregarToast('Error', d.mensaje || 'Error al cargar historial');
-            } catch(e) { agregarToast('Error', 'Sin conexión'); }
+                if (d.status === 'success') {
+                    guiaHistorial.value = d.guias;
+                    localStorage.setItem(cacheKey, JSON.stringify(d.guias));
+                }
+            } catch(e) { /* usa cache */ }
             guiaHistorialCargando.value = false;
         };
 
