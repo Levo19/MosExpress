@@ -2568,7 +2568,7 @@
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(1047, ctx.currentTime);
                 osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.08);
-                gain.gain.setValueAtTime(0.25, ctx.currentTime);
+                gain.gain.setValueAtTime(0.9, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
                 osc.start(ctx.currentTime);
                 osc.stop(ctx.currentTime + 0.09);
@@ -2585,7 +2585,7 @@
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(220, ctx.currentTime);
                 osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.18);
-                gain.gain.setValueAtTime(0.35, ctx.currentTime);
+                gain.gain.setValueAtTime(0.9, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
                 osc.start(ctx.currentTime);
                 osc.stop(ctx.currentTime + 0.19);
@@ -2598,8 +2598,8 @@
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 [
-                    { t: 0.00, f: 880,  v: 0.28, d: 0.12 },
-                    { t: 0.14, f: 1320, v: 0.32, d: 0.18 },
+                    { t: 0.00, f: 880,  v: 0.85, d: 0.12 },
+                    { t: 0.14, f: 1320, v: 0.9,  d: 0.18 },
                 ].forEach(({ t, f, v, d }) => {
                     const osc = ctx.createOscillator();
                     const gain = ctx.createGain();
@@ -2621,8 +2621,8 @@
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 [
-                    { t: 0.00, f: 660, v: 0.14, d: 0.07 },
-                    { t: 0.12, f: 880, v: 0.14, d: 0.07 },
+                    { t: 0.00, f: 660, v: 0.7, d: 0.07 },
+                    { t: 0.12, f: 880, v: 0.7, d: 0.07 },
                 ].forEach(({ t, f, v, d }) => {
                     const osc = ctx.createOscillator();
                     const gain = ctx.createGain();
@@ -2648,7 +2648,7 @@
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(740, ctx.currentTime);
                 osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.12);
-                gain.gain.setValueAtTime(0.18, ctx.currentTime);
+                gain.gain.setValueAtTime(0.65, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
                 osc.start(ctx.currentTime);
                 osc.stop(ctx.currentTime + 0.13);
@@ -2661,10 +2661,10 @@
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 [
-                    { t: 0.00, f: 1200, v: 0.35, d: 0.10 },
-                    { t: 0.08, f: 1500, v: 0.30, d: 0.10 },
-                    { t: 0.16, f: 1800, v: 0.30, d: 0.12 },
-                    { t: 0.26, f: 950,  v: 0.45, d: 0.22 },
+                    { t: 0.00, f: 1200, v: 0.85, d: 0.10 },
+                    { t: 0.08, f: 1500, v: 0.80, d: 0.10 },
+                    { t: 0.16, f: 1800, v: 0.80, d: 0.12 },
+                    { t: 0.26, f: 950,  v: 0.9,  d: 0.22 },
                 ].forEach(({ t, f, v, d }) => {
                     const osc = ctx.createOscillator();
                     const gain = ctx.createGain();
