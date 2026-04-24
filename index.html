@@ -2185,7 +2185,13 @@
 
           try {
               const configLocal = localStorage.getItem('mosexpress_config');
-              if(configLocal) config.value = JSON.parse(configLocal);
+              if (configLocal) {
+                  const _parsed = JSON.parse(configLocal);
+                  // Fijar módulo ANTES de asignar config para que <main v-if="config.completado">
+                  // aparezca ya en el módulo correcto y no flashee CAJA por un frame
+                  if (_parsed.completado && !_parsed.esCajero) currentModule.value = 'POS';
+                  config.value = _parsed;
+              }
           } catch(e) { localStorage.removeItem('mosexpress_config'); }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
 
@@ -2255,11 +2261,6 @@
               const es = localStorage.getItem('mosexpress_extras_sesion');
               if (es) extrasMovimientos.value = JSON.parse(es);
           } catch(e) {}
-
-          // Vendedor restaurado: ir directo al POS sin crear caja
-          if (config.value.completado && !config.value.esCajero) {
-              currentModule.value = 'POS';
-          }
 
           // Restore Ventas List (Mock Local) y Limpiar si son de Días Anteriores
           try {
