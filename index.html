@@ -1782,7 +1782,8 @@
   <script>
     const { createApp, ref, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
 
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+    const API_URL     = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+    const MOS_GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
     // NOTA: La clave de PrintNode fue movida al servidor (Google Apps Script).
     // El navegador ya NO llama a PrintNode directamente. Ver funcion mandarImpresionPrintNode.
 
@@ -3259,7 +3260,7 @@
              if(!confirm(`¿Cerrar Turno?\n\n${resumen}`)) return;
 
 
-             if(!confirm(`¿Seguro? Se imprimirá el Ticket Z.\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)`)) return;
+             if(!confirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)\n\nSe abrirá el reporte del turno.`)) return;
 
              procesandoCierre.value = true;
 
@@ -3283,193 +3284,12 @@
                  } catch(e) { agregarToast("Aviso Red", "Cierre local (sin conexión)"); }
              }
 
-             // 3. Datos del turno para el Ticket Z
-             const startTs    = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
-             const tksTurno   = ventasZona.value.filter(v => v.timestamp >= startTs);
-             const anulados   = tksTurno.filter(v => v.anulada);
-             const tAnulTotal = anulados.reduce((s,v) => s+v.total, 0);
-             // Correlativos por tipo (solo no anulados)
-             const corrPorTipo = {};
-             tksTurno.filter(v => !v.anulada).forEach(v => {
-                 if (!v.tipo || !v.correlativo) return;
-                 if (!corrPorTipo[v.tipo]) corrPorTipo[v.tipo] = [];
-                 corrPorTipo[v.tipo].push(v.correlativo);
-             });
-             // Performance por vendedor — basado en ventas EMITIDAS (tksTurno), no en cobros
-             // Muestra cuánto vendió cada persona, independientemente de si ya cobró
-             const pMap = {};
-             tksTurno.filter(v => !v.anulada).forEach(v => {
-                 const n = v.raw_data?.auth?.vendedor || 'Sin nombre';
-                 if (!pMap[n]) pMap[n] = { tks:0, total:0, esCaj:false };
-                 pMap[n].tks++;
-                 pMap[n].total += v.total;
-             });
-             const cajN = config.value.vendedor;
-             if (pMap[cajN]) pMap[cajN].esCaj = true;
-             const pTotal = Object.values(pMap).reduce((s,p) => s+p.total, 0);
-             // ── Helpers de formato (80mm = 48 chars ancho) ──────
-             const W    = 48;
-             const SEP  = '='.repeat(W) + '\n';
-             const SEPd = '-'.repeat(W) + '\n';
-             // Encabezado de sección centrado entre separadores
-             const sHdr = (t) => { const s=' '+t+' '; const l=Math.floor((W-s.length)/2); const r=W-s.length-l; return '='.repeat(l)+s+'='.repeat(r)+'\n'; };
-             // Monto con signo: " S/123.45" o "-S/123.45", ancho w
-             const amtN  = (n,w) => { const v=parseFloat(n)||0; const s=(v<0?'-':' ')+'S/'+Math.abs(v).toFixed(2); return s.padStart(w,' '); };
-             // Monto positivo: "S/123.45" padStart(w)
-             const amtP  = (n,w) => ('S/'+(parseFloat(n)||0).toFixed(2)).padStart(w,' ');
-             // Texto left-padded
-             const lPad  = (s,w) => String(s||'').substring(0,w).padEnd(w,' ');
-             // Fila tabla resumen: label(14)+efe(17)+virt(17) = 48
-             const sRow  = (lbl,efe,vir) => lPad(lbl,14)+amtN(efe,17)+amtN(vir,17)+'\n';
-             // Fila tabla performance: name(15)+tks(5)sp+efe(13)sp+vir(13) = 48
-             const pRow  = (nm,tk,efe,vir) => lPad(nm,15)+String(tk).padStart(5)+' '+amtP(efe,13)+' '+amtP(vir,12)+'\n';
-             // Barra visual de porcentaje [####----] XX%
-             const mkBar = (pct) => { const f=Math.round(pct*26/100); return '  ['+'#'.repeat(f)+'-'.repeat(26-f)+'] '+String(Math.round(pct)).padStart(3)+'%\n'; };
-
-             // 4. Ticket Z — 8 partes
-             let txt = "\x1b\x40";
-
-             // ══ PARTE 1: CABECERA ════════════════════════════
-             txt += "\x1b\x61\x01";
-             txt += "\x1b\x21\x30MOSexpress\x1b\x21\x00\n";
-             txt += "\x1b\x45\x01\x1b\x21\x10CIERRE DE TURNO (Z)\x1b\x21\x00\x1b\x45\x00\n";
-             txt += SEP;
-             txt += "\x1b\x61\x00";
-             txt += "CAJERO  : " + config.value.vendedor + "\n";
-             txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
-             txt += "APERTURA: " + horaApertura + "\n";
-             txt += "CIERRE  : " + new Date().toLocaleString() + "\n";
-             txt += SEPd;
-             const vdList = [...new Set(cobradosEnSesion.value.map(c=>c.vendedor).filter(Boolean))];
-             if (vdList.length > 0) {
-                 txt += "VENDEDORES A CARGO:\n";
-                 vdList.forEach(v => { txt += "  + " + v + "\n"; });
-             }
-             txt += "TICKETS COBRADOS : " + cobradosEnSesion.value.length + "\n";
-             txt += "ANULADOS         : " + anulados.length + "\n";
-             txt += "CREDITOS(c/p)    : " + ticketsCredito.length + "\n";
-
-             // ══ PARTE 2: MONTO A RECIBIR (para la jefa) ══════
-             txt += SEP;
-             txt += "\x1b\x61\x01";
-             txt += "\n\x1b\x45\x01-- SE DEBE RECIBIR --\x1b\x45\x00\n\n";
-             txt += "\x1b\x21\x30S/ " + montoFinal.toFixed(2) + "\x1b\x21\x00\n\n";
-             txt += "EFECTIVO EN CAJON\n";
-             txt += "\x1b\x61\x00";
-             if (tVirtualFinal > 0) {
-                 txt += SEPd;
-                 txt += "\x1b\x61\x01VIRTUAL RECIBIDO:\n";
-                 txt += "\x1b\x21\x10S/ " + tVirtualFinal.toFixed(2) + "\x1b\x21\x00\n";
-                 txt += "\x1b\x61\x00";
-             }
-
-             // ══ PARTE 3: TABLA RESUMEN ════════════════════════
-             txt += sHdr('RESUMEN DEL TURNO');
-             txt += lPad('CONCEPTO',14)+'  EFECTIVO         VIRTUAL\n';
-             txt += SEPd;
-             txt += sRow('Base inicial',    montoAperturaMemoria.value,  0);
-             txt += sRow('Ventas cobradas', tEfectivo,                   tVirtual);
-             if (tExtrasIngreso > 0 || tExtrasEgreso > 0 || tExtrasIngresoVirtual > 0 || tExtrasEgresoVirtual > 0)
-                 txt += sRow('Extras neto',    tExtrasIngreso-tExtrasEgreso, tExtrasIngresoVirtual-tExtrasEgresoVirtual);
-             txt += SEPd;
-             txt += "\x1b\x45\x01";
-             txt += sRow('EFECTIVO FINAL',  montoFinal,                  tVirtualFinal);
-             txt += "\x1b\x45\x00";
-             if (tCreditoTotal > 0) txt += "  +Credito pendiente: " + amtP(tCreditoTotal,8) + " (no en caja)\n";
-
-             // ══ PARTE 4: CORRELATIVOS DEL TURNO ══════════════
-             txt += sHdr('CORRELATIVOS DEL TURNO');
-             const TLBL = { NOTA_DE_VENTA:'Notas V.', BOLETA:'Boletas ', FACTURA:'Facturas' };
-             if (Object.keys(corrPorTipo).length === 0) {
-                 txt += "  Sin comprobantes emitidos en este turno\n";
-             } else {
-                 Object.entries(corrPorTipo).forEach(([tipo, corrs]) => {
-                     const sorted = [...corrs].sort();
-                     const label  = (TLBL[tipo]||tipo).padEnd(9);
-                     txt += label + ": " + sorted[0] + "\n";
-                     if (sorted.length > 1) txt += "           a: " + sorted[sorted.length-1] + "\n";
-                     txt += "  Total: " + corrs.length + " comprobante" + (corrs.length!==1?'s':'') + "\n";
-                 });
-             }
-
-             // ══ PARTE 5: ANULADOS ════════════════════════════
-             txt += sHdr('ANULADOS (' + anulados.length + ')');
-             if (anulados.length > 0) {
-                 txt += lPad('CORRELATIVO',22) + 'MONTO'.padStart(10) + '\n' + SEPd;
-                 anulados.forEach(v => {
-                     txt += lPad(v.correlativo,22) + amtN(-v.total,10) + "  ANULADO\n";
-                 });
-                 txt += SEPd;
-                 txt += "TOTAL ANULADO".padEnd(22) + amtN(-tAnulTotal,10) + "\n";
-             } else {
-                 txt += "  Sin anulados en este turno\n";
-             }
-
-             // ══ PARTE 6: CREDITOS PENDIENTES ══════════════════
-             txt += sHdr('CREDITOS PENDIENTES (' + ticketsCredito.length + ')');
-             if (ticketsCredito.length > 0) {
-                 txt += lPad('CORRELATIVO',18) + 'MONTO'.padStart(12) + '\n' + SEPd;
-                 ticketsCredito.forEach(v => {
-                     txt += lPad(v.correlativo,18) + amtP(v.total,12) + "\n";
-                     if (v.obs) txt += "  A: " + v.obs.substring(0,43) + "\n";
-                 });
-                 txt += SEPd;
-                 txt += "TOTAL CREDITO".padEnd(18) + amtP(tCreditoTotal,12) + "\n";
-                 txt += "  ** No incluido en caja — deuda pendiente\n";
-             } else {
-                 txt += "  Sin creditos otorgados en este turno\n";
-             }
-
-             // ══ PARTE 7: EXTRAS DEL TURNO ════════════════════
-             txt += sHdr('EXTRAS DEL TURNO (' + extrasMovimientos.value.length + ')');
-             if (extrasMovimientos.value.length > 0) {
-                 extrasMovimientos.value.forEach(ex => {
-                     const esVirtual = ex.tipo.endsWith('_VIRTUAL');
-                     const signo = ex.tipo.startsWith('INGRESO') ? '+' : '-';
-                     const mEx   = ex.tipo.startsWith('INGRESO') ? parseFloat(ex.monto) : -parseFloat(ex.monto);
-                     txt += signo + (esVirtual ? 'V' : ' ') + " " + lPad(ex.concepto,21) + amtN(mEx,12) + "\n";
-                     if (ex.obs) txt += "    " + ex.obs.substring(0,44) + "\n";
-                 });
-                 txt += SEPd;
-                 if (tExtrasIngreso        > 0) txt += "+ ING.EFECTIVO   " + amtP(tExtrasIngreso,14) + "\n";
-                 if (tExtrasIngresoVirtual > 0) txt += "+ ING.VIRTUAL    " + amtP(tExtrasIngresoVirtual,14) + "\n";
-                 if (tExtrasEgreso         > 0) txt += "- EGR.EFECTIVO   " + amtN(-tExtrasEgreso,14) + "\n";
-                 if (tExtrasEgresoVirtual  > 0) txt += "- EGR.VIRTUAL    " + amtN(-tExtrasEgresoVirtual,14) + "\n";
-                 txt += "\x1b\x45\x01";
-                 txt += "  NETO EFE.      " + amtN(tExtrasIngreso - tExtrasEgreso, 14) + "\n";
-                 if (tExtrasIngresoVirtual > 0 || tExtrasEgresoVirtual > 0)
-                     txt += "  NETO VIRTUAL   " + amtN(tExtrasIngresoVirtual - tExtrasEgresoVirtual, 14) + "\n";
-                 txt += "\x1b\x45\x00";
-             } else {
-                 txt += "  Sin movimientos extra en este turno\n";
-             }
-
-             // ══ PARTE 8: DESEMPENO POR VENDEDOR ══════════════
-             txt += sHdr('DESEMPENO DEL TURNO');
-             if (Object.keys(pMap).length > 0) {
-                 txt += lPad('VENDEDOR',17) + 'TKS'.padStart(5) + ' ' + 'TOTAL VENDIDO'.padStart(17) + '\n';
-                 txt += SEPd;
-                 Object.entries(pMap).sort((a,b) => b[1].total - a[1].total).forEach(([nombre, p]) => {
-                     const label = (p.esCaj ? nombre+'(caj)' : nombre).substring(0,17).padEnd(17);
-                     txt += label + String(p.tks).padStart(5) + ' ' + amtP(p.total,17) + '\n';
-                     if (pTotal > 0) txt += mkBar(Math.round(p.total*100/pTotal));
-                 });
-                 txt += SEPd;
-                 txt += "\x1b\x45\x01";
-                 const pTotalTks = Object.values(pMap).reduce((s,p)=>s+p.tks,0);
-                 txt += lPad('TOTAL TURNO',17) + String(pTotalTks).padStart(5) + ' ' + amtP(pTotal,17) + '\n';
-                 txt += "\x1b\x45\x00";
-             } else {
-                 txt += "  Sin datos de vendedores en este turno\n";
-             }
-
-             // ══ PIE ══════════════════════════════════════════
-             txt += SEP;
-             txt += "\x1b\x61\x01";
-             txt += "\x1b\x45\x01*** FIN DE TURNO ***\x1b\x45\x00\n";
-             txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-             mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Cierre Z", b64ESC(txt))
-                .catch(e => agregarToast('Error Impresión', e.message));
+             // 3. Abrir reporte del turno en nueva ventana (imprime automático a la impresora de la estación)
+             const _turnoUrl = 'https://levo19.github.io/MOS/turno.html'
+               + '?idCaja='    + encodeURIComponent(_idCaja)
+               + '&api='       + encodeURIComponent(MOS_GAS_URL)
+               + '&autoprint=1';
+             window.open(_turnoUrl, '_blank');
 
              // 4. Detener polling y limpiar estado local
              detenerPollingZona();
