@@ -3208,6 +3208,8 @@
              const tExtrasEgresoVirtual  = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO_VIRTUAL'   ? parseFloat(e.monto) : 0), 0);
              // montoFinal solo incluye efectivo (extras virtuales no tocan la caja física)
              const montoFinal = montoAperturaMemoria.value + tEfectivo + tExtrasIngreso - tExtrasEgreso;
+             // tVirtualFinal incluye ventas virtuales + extras virtuales
+             const tVirtualFinal = parseFloat((tVirtual + tExtrasIngresoVirtual - tExtrasEgresoVirtual).toFixed(2));
 
              // --- Tickets POR_COBRAR sin cobrar → anular (los CREDITO NO se anulan) ---
              const idsAnular = ventasZona.value
@@ -3229,11 +3231,11 @@
              const ultimoCobro = cobradosEnSesion.value.length ? cobradosEnSesion.value[cobradosEnSesion.value.length - 1].correlativo : '-';
              const horaApertura = sessionStartTime.value ? new Date(sessionStartTime.value).toLocaleString() : '-';
 
-             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtual.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nNo cobrados a anular: ${idsAnular.length}\nEn crédito (no se anulan): ${ticketsCredito.length}`;
+             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtualFinal.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nNo cobrados a anular: ${idsAnular.length}\nEn crédito (no se anulan): ${ticketsCredito.length}`;
              if(!confirm(`¿Cerrar Turno?\n\n${resumen}`)) return;
 
 
-             if(!confirm(`¿Seguro? Se imprimirá el Ticket Z.\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtual.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)`)) return;
+             if(!confirm(`¿Seguro? Se imprimirá el Ticket Z.\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)`)) return;
 
              procesandoCierre.value = true;
 
@@ -3330,10 +3332,10 @@
              txt += "\x1b\x21\x30S/ " + montoFinal.toFixed(2) + "\x1b\x21\x00\n\n";
              txt += "EFECTIVO EN CAJON\n";
              txt += "\x1b\x61\x00";
-             if (tVirtual > 0) {
+             if (tVirtualFinal > 0) {
                  txt += SEPd;
                  txt += "\x1b\x61\x01VIRTUAL RECIBIDO:\n";
-                 txt += "\x1b\x21\x10S/ " + tVirtual.toFixed(2) + "\x1b\x21\x00\n";
+                 txt += "\x1b\x21\x10S/ " + tVirtualFinal.toFixed(2) + "\x1b\x21\x00\n";
                  txt += "\x1b\x61\x00";
              }
 
@@ -3343,11 +3345,11 @@
              txt += SEPd;
              txt += sRow('Base inicial',    montoAperturaMemoria.value,  0);
              txt += sRow('Ventas cobradas', tEfectivo,                   tVirtual);
-             if (tExtrasIngreso > 0 || tExtrasEgreso > 0)
-                 txt += sRow('Extras neto',    tExtrasIngreso-tExtrasEgreso, 0);
+             if (tExtrasIngreso > 0 || tExtrasEgreso > 0 || tExtrasIngresoVirtual > 0 || tExtrasEgresoVirtual > 0)
+                 txt += sRow('Extras neto',    tExtrasIngreso-tExtrasEgreso, tExtrasIngresoVirtual-tExtrasEgresoVirtual);
              txt += SEPd;
              txt += "\x1b\x45\x01";
-             txt += sRow('EFECTIVO FINAL',  montoFinal,                  tVirtual);
+             txt += sRow('EFECTIVO FINAL',  montoFinal,                  tVirtualFinal);
              txt += "\x1b\x45\x00";
              if (tCreditoTotal > 0) txt += "  +Credito pendiente: " + amtP(tCreditoTotal,8) + " (no en caja)\n";
 
@@ -3411,6 +3413,8 @@
                  if (tExtrasEgresoVirtual  > 0) txt += "- EGR.VIRTUAL    " + amtN(-tExtrasEgresoVirtual,14) + "\n";
                  txt += "\x1b\x45\x01";
                  txt += "  NETO EFE.      " + amtN(tExtrasIngreso - tExtrasEgreso, 14) + "\n";
+                 if (tExtrasIngresoVirtual > 0 || tExtrasEgresoVirtual > 0)
+                     txt += "  NETO VIRTUAL   " + amtN(tExtrasIngresoVirtual - tExtrasEgresoVirtual, 14) + "\n";
                  txt += "\x1b\x45\x00";
              } else {
                  txt += "  Sin movimientos extra en este turno\n";
