@@ -1520,8 +1520,6 @@
                         <option v-for="z in zonasUnicas.filter(z => z !== guiaZona)" :key="z" :value="z">{{ z }}</option>
                     </select>
                 </div>
-                <!-- Observación (pre-llenada para JEFA) -->
-                <input v-model="guiaObs" type="text" :placeholder="guiaSubtipo==='SALIDA_JEFA' ? 'Pedido de jefa' : 'Observación (opcional)...'" class="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-amber-500 text-sm">
                 <!-- Escaneo/búsqueda -->
                 <div class="flex gap-2">
                     <input v-model="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-amber-500 text-lg tracking-widest">
@@ -1536,9 +1534,9 @@
                     <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
                         <div class="flex-1 min-w-0"><p class="text-white font-bold text-sm truncate">{{ item.nombre }}</p><p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p></div>
                         <div class="flex items-center gap-1.5">
-                            <button @click="item.cantidad = Math.max(1, item.cantidad - 1)" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
-                            <span class="text-white font-black text-base w-8 text-center">{{ item.cantidad }}</span>
-                            <button @click="item.cantidad++" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                            <button @click="item.cantidad = parseFloat((Math.max(0.01, item.cantidad - 1)).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                            <input :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat($event.target.value || 0.01).toFixed(2)) || 0.01" type="number" step="0.01" min="0.01" class="text-white font-black text-sm w-14 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-amber-500 py-1">
+                            <button @click="item.cantidad = parseFloat((item.cantidad + 1).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
                             <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
                         </div>
                     </div>
@@ -1595,7 +1593,6 @@
                 <div v-if="guiaSubtipo === 'ENTRADA_ALMACEN'" class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl px-4 py-3 text-xs text-emerald-300 font-bold">
                     Despacho de almacén · Registra los productos recibidos según la guía física
                 </div>
-                <input v-model="guiaObs" type="text" placeholder="N° de guía física / observación..." class="w-full bg-gray-800 text-white px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-sm">
                 <div class="flex gap-2">
                     <input v-model="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-lg tracking-widest">
                     <button @click="guiaBuscarItem" class="bg-emerald-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
@@ -1608,9 +1605,9 @@
                     <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
                         <div class="flex-1 min-w-0"><p class="text-white font-bold text-sm truncate">{{ item.nombre }}</p><p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p></div>
                         <div class="flex items-center gap-1.5">
-                            <button @click="item.cantidad = Math.max(1, item.cantidad - 1)" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
-                            <span class="text-white font-black text-base w-8 text-center">{{ item.cantidad }}</span>
-                            <button @click="item.cantidad++" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                            <button @click="item.cantidad = parseFloat((Math.max(0.01, item.cantidad - 1)).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                            <input :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat($event.target.value || 0.01).toFixed(2)) || 0.01" type="number" step="0.01" min="0.01" class="text-white font-black text-sm w-14 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-emerald-500 py-1">
+                            <button @click="item.cantidad = parseFloat((item.cantidad + 1).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
                             <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
                         </div>
                     </div>
@@ -1661,6 +1658,32 @@
                         </button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- ─── Botón flotante de comentario (solo en paso form) ─── -->
+        <button v-if="guiaFlujo === 'form'"
+                @click="guiaObsModal = !guiaObsModal"
+                class="absolute bottom-24 right-4 w-12 h-12 rounded-full shadow-xl flex items-center justify-center text-xl transition-all active:scale-90 z-20"
+                :class="guiaObs ? 'bg-amber-500 text-white shadow-amber-500/40' : 'bg-gray-700 text-gray-400'">
+            💬
+        </button>
+
+        <!-- ─── Mini-modal de observación ─── -->
+        <div v-if="guiaObsModal && guiaFlujo === 'form'"
+             class="absolute bottom-40 right-4 w-72 bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 p-4 z-20">
+            <p class="text-xs font-black uppercase tracking-wider mb-2"
+               :class="guiaObs ? 'text-amber-400' : 'text-gray-400'">
+                {{ guiaObs ? '💬 Observación' : '💬 Agregar observación' }}
+            </p>
+            <textarea v-model="guiaObs"
+                      :placeholder="guiaSubtipo==='SALIDA_JEFA' ? 'Pedido de jefa...' : guiaSubtipo==='ENTRADA_ALMACEN' ? 'N° de guía física / observación...' : 'Observación (opcional)...'"
+                      rows="3"
+                      class="w-full bg-gray-900 text-white text-sm px-3 py-2 rounded-xl border border-gray-700 outline-none focus:border-amber-500 resize-none"></textarea>
+            <div class="flex justify-between items-center mt-2">
+                <button v-if="guiaObs" @click="guiaObs = ''" class="text-xs text-gray-500 font-bold px-2 py-1.5 rounded-lg hover:text-red-400">Borrar</button>
+                <span v-else class="text-xs text-gray-600">Sin observación</span>
+                <button @click="guiaObsModal = false" class="text-xs font-black bg-amber-500 text-white px-3 py-1.5 rounded-lg active:scale-95">Listo ✓</button>
             </div>
         </div>
     </div>
@@ -1854,6 +1877,7 @@
         const guiaItems = ref([]);
         const guiaBusq = ref('');
         const guiaObs = ref('');
+        const guiaObsModal = ref(false);
         const procesandoGuia = ref(false);
         const guiaHistorial = ref([]);
         const guiaHistorialCargando = ref(false);
@@ -4641,6 +4665,7 @@
             guiaItems.value = [];
             guiaBusq.value = '';
             guiaObs.value = '';
+            guiaObsModal.value = false;
             guiaSubtipo.value = '';
             guiaZonaDestino.value = '';
             guiaFlujo.value = 'tipo';
@@ -5115,7 +5140,7 @@
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
           guiaTab, guiaFlujo, guiaSubtipo, guiaZonaDestino,
-          guiaItems, guiaBusq, guiaObs, procesandoGuia,
+          guiaItems, guiaBusq, guiaObs, guiaObsModal, procesandoGuia,
           guiaHistorial, guiaHistorialCargando, guiaDetallando, guiaDetalle, camaraGuiaAbierta,
           abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
           guiaBuscarItem, quitarItemGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
