@@ -2850,14 +2850,30 @@
             }, 1250);
         };
 
-        // ── Estado "esperando Enter / escaneando" ─────────────
+        // ── Estado "esperando Enter / escaneando" + detector de origen scanner vs tipeo ───
+        // Idea: un scanner físico/cámara mete los chars en <30ms cada uno; tipear toma 100ms+.
+        // Si fue scanner -> match SOLO exacto (no parcial). Si fue tipeo -> permite búsqueda parcial.
         const scanningPending = ref(false);
         let _scanIdleTimer = null;
+        let _firstInputTime = 0;
+        let _lastWasFastInput = false;
         const onScanInput = () => {
             filtrarCatalogo();
             scanningPending.value = false;
+            const now = Date.now();
+            const len = (bBuscador.value || '').length;
+            if (len === 0) {
+                _firstInputTime = 0;
+                _lastWasFastInput = false;
+            } else if (_firstInputTime === 0) {
+                _firstInputTime = now;
+            } else if (len >= 4) {
+                const elapsed = now - _firstInputTime;
+                // Promedio ≤ 25ms por char => imposible humano => scanner / pegado
+                if (elapsed < (len * 25)) _lastWasFastInput = true;
+            }
             if (_scanIdleTimer) clearTimeout(_scanIdleTimer);
-            if (bBuscador.value && bBuscador.value.length > 0) {
+            if (len > 0) {
                 _scanIdleTimer = setTimeout(() => { scanningPending.value = true; }, 250);
             }
         };
@@ -3835,6 +3851,7 @@
                             if (now - _lastPosCamScan < 1500) return;
                             _lastPosCamScan = now;
                             bBuscador.value = txt;
+                            _lastWasFastInput = true; // cámara = scanner → match estricto
                             procesarEscaneoOBusqueda();
                         },
                         () => {}
@@ -3940,11 +3957,12 @@
           scanningPending.value = false;
           if (_scanIdleTimer) { clearTimeout(_scanIdleTimer); _scanIdleTimer = null; }
 
-          // Detectar input "tipo código de barras / SKU" (numérico o alfanumérico):
-          // tiene al menos un dígito, sin espacios, y ≥4 caracteres.
-          // Cubre 7751761000039, WHEAV250GR, 00451, ABC-123, etc.
-          // Una búsqueda por texto (coca, pollo, "coca cola") NO entra aquí y permite match parcial.
-          const isBarcode = code.length >= 4 && !/\s/.test(code) && /\d/.test(code);
+          // Determinar origen: scanner (físico/cámara/pegado) vs tipeo manual.
+          // Solo el scanner activa modo estricto (sin búsqueda parcial por nombre).
+          // Tipear "250gr" o "coca cola" siempre permite match parcial.
+          const isFromScanner = _lastWasFastInput;
+          _firstInputTime = 0;
+          _lastWasFastInput = false;
 
           // 1º Resolver Equivalencia si existe (siempre match exacto)
           const eq = db.value.EQUIVALENCIAS?.find(e => String(e.Cod_Alias).toUpperCase() === code);
@@ -3982,9 +4000,9 @@
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
 
-          // 3º Búsqueda parcial por nombre — SOLO si el input NO es código de barras
-          // (evita que "123456" matchee parcialmente un nombre como "Producto 1234")
-          if (!isBarcode) {
+          // 3º Búsqueda parcial por nombre — SOLO si NO vino de scanner
+          // (el scanner debe matchear exacto; el tipeo manual permite filtrar por texto)
+          if (!isFromScanner) {
               const pbObj = productosCatalogo.value.find(p => p.nombreCorto.toUpperCase().includes(code));
               if (pbObj) {
                   playBeepNameMatch();
@@ -3994,9 +4012,9 @@
               }
           }
 
-          // No encontrado: mensaje según contexto
+          // No encontrado: mensaje según origen
           playBeepError();
-          if (isBarcode) {
+          if (isFromScanner) {
               agregarToast('Código no registrado', searchCode + ' — avisar al supervisor', 'warning');
           } else {
               agregarToast('NO ENCONTRADO', searchCode);
