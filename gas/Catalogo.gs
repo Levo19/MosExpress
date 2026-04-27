@@ -88,7 +88,8 @@ function descargarCatalogo() {
     var printMap = {};
     impRows.forEach(function(imp) {
       if (String(imp.activo) === '0') return;
-      if (imp.appOrigen && imp.appOrigen !== 'mosExpress') return;
+      var origenImp = String(imp.appOrigen || '').toLowerCase();
+      if (origenImp && origenImp !== 'mosexpress') return;
       var tipo = String(imp.tipo || '').toUpperCase();
       if (tipo && tipo !== 'TICKET') return;
       var est = String(imp.idEstacion || '').trim();
@@ -111,8 +112,8 @@ function descargarCatalogo() {
     var zonasConfig = [];
     estRows.forEach(function(est) {
       if (String(est.activo) === '0') return;
-      var origen = String(est.appOrigen || '').trim();
-      if (origen && origen !== 'mosExpress') return;
+      var origen = String(est.appOrigen || '').trim().toLowerCase();
+      if (origen && origen !== 'mosexpress') return;
       var zId    = String(est.idZona     || '').trim();
       var estId  = String(est.idEstacion || '').trim();
       var nombre = String(est.nombre     || '').trim();

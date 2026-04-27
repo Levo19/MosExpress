@@ -2753,44 +2753,64 @@
         };
 
         const procesandoCatalogo = ref(false);
-        // ── Sync impresoras desde ProyectoMOS_DB (fuente autoritativa centralizada) ───
-        // Las tablas IMPRESORAS y ESTACIONES viven en ProyectoMOS_DB. MosExpress
-        // sobreescribe el PrintNode_ID local matcheando por Estacion_Nombre.
+        // ── Sync ZONAS_CONFIG desde ProyectoMOS_DB (fuente autoritativa) ─────────────
+        // ESTACIONES, IMPRESORAS y SERIES_DOCUMENTALES viven en ProyectoMOS_DB.
+        // Si ZONAS_CONFIG viene vacío del catálogo MosExpress (bridge falló o appOrigen
+        // mismatch), lo poblamos completo desde el endpoint getEstacionesParaApp.
+        // Si viene con datos, sobreescribimos PrintNode_ID, idEstacion y series.
         const _syncImpresorasFromProyectoMOS = async () => {
             try {
                 if (offlineMode.value) return;
                 const url = MOS_GAS_URL + '?action=getEstacionesParaApp&appOrigen=mosExpress';
                 const r = await fetch(url);
                 const j = await r.json();
-                if (!j || !j.ok || !Array.isArray(j.data)) return;
+                if (!j || !j.ok || !Array.isArray(j.data) || j.data.length === 0) return;
+
                 if (!Array.isArray(db.value.ZONAS_CONFIG)) db.value.ZONAS_CONFIG = [];
 
-                let actualizadas = 0;
-                db.value.ZONAS_CONFIG.forEach(z => {
-                    const remota = j.data.find(rmt =>
-                        String(rmt.Estacion_Nombre).trim().toUpperCase() ===
-                        String(z.Estacion_Nombre).trim().toUpperCase()
-                    );
-                    if (remota && remota.PrintNode_ID) {
-                        z.PrintNode_ID = remota.PrintNode_ID;
-                        z.idEstacion = remota.idEstacion;
-                        actualizadas++;
-                    }
-                });
-                if (actualizadas > 0) {
-                    localStorage.setItem('mosexpress_db', JSON.stringify(db.value));
-                    // Refrescar la estación activa si aplica
-                    if (config.value.estacion?.Estacion_Nombre) {
-                        const fresh = db.value.ZONAS_CONFIG.find(z =>
-                            z.Estacion_Nombre === config.value.estacion.Estacion_Nombre);
-                        if (fresh) {
-                            config.value.estacion = { ...config.value.estacion, ...fresh };
-                            localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
-                        }
+                if (db.value.ZONAS_CONFIG.length === 0) {
+                    // ZONAS_CONFIG vacío → poblar entero desde ProyectoMOS_DB
+                    db.value.ZONAS_CONFIG = j.data.map(rmt => ({
+                        Zona_ID:         rmt.Zona_ID || '',
+                        Estacion_Nombre: rmt.Estacion_Nombre || '',
+                        idEstacion:      rmt.idEstacion || '',
+                        PrintNode_ID:    rmt.PrintNode_ID || '',
+                        Serie_Nota:      rmt.Serie_Nota || '',
+                        Serie_Boleta:    rmt.Serie_Boleta || '',
+                        Serie_Factura:   rmt.Serie_Factura || '',
+                        Admin_PIN:       rmt.Admin_PIN || ''
+                    }));
+                } else {
+                    // Override campos clave matcheando por Estacion_Nombre (case-insensitive)
+                    db.value.ZONAS_CONFIG.forEach(z => {
+                        const remota = j.data.find(rmt =>
+                            String(rmt.Estacion_Nombre).trim().toUpperCase() ===
+                            String(z.Estacion_Nombre).trim().toUpperCase()
+                        );
+                        if (!remota) return;
+                        if (remota.PrintNode_ID)  z.PrintNode_ID  = remota.PrintNode_ID;
+                        if (remota.idEstacion)    z.idEstacion    = remota.idEstacion;
+                        if (remota.Serie_Nota)    z.Serie_Nota    = remota.Serie_Nota;
+                        if (remota.Serie_Boleta)  z.Serie_Boleta  = remota.Serie_Boleta;
+                        if (remota.Serie_Factura) z.Serie_Factura = remota.Serie_Factura;
+                        if (remota.Admin_PIN)     z.Admin_PIN     = remota.Admin_PIN;
+                    });
+                }
+
+                localStorage.setItem('mosexpress_db', JSON.stringify(db.value));
+
+                // Refrescar la estación activa si aplica
+                if (config.value.estacion?.Estacion_Nombre) {
+                    const fresh = db.value.ZONAS_CONFIG.find(z =>
+                        String(z.Estacion_Nombre).trim().toUpperCase() ===
+                        String(config.value.estacion.Estacion_Nombre).trim().toUpperCase());
+                    if (fresh) {
+                        config.value.estacion = { ...config.value.estacion, ...fresh };
+                        localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
                     }
                 }
             } catch(e) {
-                console.warn('No se pudo sincronizar impresoras desde ProyectoMOS_DB', e);
+                console.warn('No se pudo sincronizar estaciones desde ProyectoMOS_DB', e);
             }
         };
 
