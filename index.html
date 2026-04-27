@@ -306,6 +306,9 @@
 
     function _activateWaiting(worker) {
       _showOverlay();
+      // Marcar para que la app fuerce resync de catálogo tras el reload
+      // (los masters pueden haberse actualizado junto con el deploy)
+      try { localStorage.setItem('mosexpress_force_resync', '1'); } catch(e) {}
       worker.postMessage('SKIP_WAITING');
     }
 
@@ -2584,11 +2587,21 @@
                   // Sincronizar impresoras desde ProyectoMOS_DB cada vez que la app inicia
                   // (independiente del catálogo — tablas IMPRESORAS/ESTACIONES son ligeras)
                   _syncImpresorasFromProyectoMOS();
-                  // Refresh en background si la caché tiene más de 6 horas
-                  const lastSync = parseInt(localStorage.getItem('mosexpress_last_autosync') || '0', 10);
-                  const horasSinSync = (Date.now() - lastSync) / 3600000;
-                  if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && horasSinSync > 1) {
-                      sincronizarCatalogoBase(); // silencioso, no bloquea
+                  // Si el SW acaba de actualizar la app → forzar resync del catálogo
+                  // para traer cambios de productos/precios/series del nuevo deploy
+                  const forceResync = localStorage.getItem('mosexpress_force_resync') === '1';
+                  if (forceResync) {
+                      localStorage.removeItem('mosexpress_force_resync');
+                      if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                          sincronizarCatalogoBase(); // post-update — silencioso
+                      }
+                  } else {
+                      // Refresh en background si la caché tiene más de 1 hora
+                      const lastSync = parseInt(localStorage.getItem('mosexpress_last_autosync') || '0', 10);
+                      const horasSinSync = (Date.now() - lastSync) / 3600000;
+                      if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && horasSinSync > 1) {
+                          sincronizarCatalogoBase(); // silencioso, no bloquea
+                      }
                   }
               } else {
                   // Primer uso — esperar descarga antes de mostrar el wizard
