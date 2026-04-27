@@ -3262,6 +3262,18 @@
 
              if(!confirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)\n\nSe abrirá el reporte del turno.`)) return;
 
+             // Abrir ventana ANTES del primer await — único momento en que el browser
+             // la acepta sin popup-blocker (sigue en contexto del gesto del usuario)
+             const _turnoUrl = 'https://levo19.github.io/MOS/turno.html'
+               + '?idCaja='    + encodeURIComponent(_idCaja)
+               + '&api='       + encodeURIComponent(MOS_GAS_URL)
+               + '&autoprint=1';
+             const _turnoWin = window.open('', '_blank');
+             if (_turnoWin) {
+               _turnoWin.document.write('<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="font-size:1.2rem">⏳ Cerrando turno…</p></body></html>');
+               _turnoWin.document.close();
+             }
+
              procesandoCierre.value = true;
 
              // 1. Anulación masiva de POR_COBRAR no cobrados
@@ -3284,12 +3296,12 @@
                  } catch(e) { agregarToast("Aviso Red", "Cierre local (sin conexión)"); }
              }
 
-             // 3. Abrir reporte del turno en nueva ventana (imprime automático a la impresora de la estación)
-             const _turnoUrl = 'https://levo19.github.io/MOS/turno.html'
-               + '?idCaja='    + encodeURIComponent(_idCaja)
-               + '&api='       + encodeURIComponent(MOS_GAS_URL)
-               + '&autoprint=1';
-             window.open(_turnoUrl, '_blank');
+             // 3. Navegar la ventana ya reservada al reporte del turno
+             if (_turnoWin && !_turnoWin.closed) {
+               _turnoWin.location.href = _turnoUrl;
+             } else {
+               window.open(_turnoUrl, '_blank'); // fallback si fue bloqueada
+             }
 
              // 4. Detener polling y limpiar estado local
              detenerPollingZona();
