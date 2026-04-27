@@ -132,6 +132,7 @@
       position: absolute; top: -20px; width: 10px; height: 14px;
       opacity: 0; will-change: transform;
       animation: confettiFall 5.5s linear forwards;
+      pointer-events: none;
     }
     @keyframes confettiFall {
       0%   { transform: translate3d(0, -20px, 0) rotate(0deg); opacity: 1; }
@@ -202,7 +203,9 @@
       font-size: clamp(15px, 3vw, 19px); font-weight: 600;
       text-align: center; line-height: 1.45; min-height: 56px;
       text-shadow: 0 2px 12px rgba(0,0,0,0.3);
+      animation: quoteFadeIn 0.5s ease 0.8s both;
     }
+    @keyframes quoteFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
     .welcome-quote .tw-cursor {
       display: inline-block; width: 2px; height: 1.1em; margin-left: 2px;
       background: #fef3c7; vertical-align: middle;
@@ -3177,6 +3180,7 @@
         const _animateCount = (key, target, ms) => {
             const start = Date.now();
             const tick = () => {
+                if (!welcomeOverlay.value.visible) return; // abortar si se cerró
                 const e = Math.min(1, (Date.now() - start) / ms);
                 const easeOut = 1 - Math.pow(1 - e, 3);
                 if (key === 'ventasShown') {
@@ -3208,6 +3212,8 @@
         };
 
         const triggerWelcome = () => {
+            // Guard: si ya está visible (ej. doble disparo accidental), no re-abrir
+            if (welcomeOverlay.value.visible) return;
             const nombre = (config.value.vendedor || 'Compañero').split(' ')[0];
             const iniciales = (config.value.vendedor || 'M').split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
             const rol = config.value.esCajero ? 'Cajero · Frente de batalla' : 'Vendedor · Frente de batalla';
@@ -3261,7 +3267,7 @@
             welcomeOverlay.value = {
                 visible: true, fading: false,
                 nombre, iniciales, rol, saludo, emoji, tag,
-                quote, quoteShown: '', typing: true,
+                quote, quoteShown: '', typing: false,
                 streak, streakShown: 0,
                 session, sessionShown: 0,
                 ventasHoy: ventasAyer, ventasShown: '0.00',
