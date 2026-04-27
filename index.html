@@ -3940,8 +3940,11 @@
           scanningPending.value = false;
           if (_scanIdleTimer) { clearTimeout(_scanIdleTimer); _scanIdleTimer = null; }
 
-          // Input puramente numérico = código de barras → match SOLO exacto, sin búsqueda parcial por nombre
-          const isBarcode = /^\d+$/.test(code);
+          // Detectar input "tipo código de barras / SKU" (numérico o alfanumérico):
+          // tiene al menos un dígito, sin espacios, y ≥4 caracteres.
+          // Cubre 7751761000039, WHEAV250GR, 00451, ABC-123, etc.
+          // Una búsqueda por texto (coca, pollo, "coca cola") NO entra aquí y permite match parcial.
+          const isBarcode = code.length >= 4 && !/\s/.test(code) && /\d/.test(code);
 
           // 1º Resolver Equivalencia si existe (siempre match exacto)
           const eq = db.value.EQUIVALENCIAS?.find(e => String(e.Cod_Alias).toUpperCase() === code);
