@@ -2781,12 +2781,23 @@
                         Admin_PIN:       rmt.Admin_PIN || ''
                     }));
                 } else {
-                    // Override campos clave matcheando por Estacion_Nombre (case-insensitive)
+                    // Override campos clave matcheando por idEstacion (único) — fallback
+                    // a Estacion_Nombre + Zona_ID (combinación única) para entradas
+                    // legacy sin idEstacion. NUNCA matchear por nombre solo: hay
+                    // estaciones con el mismo nombre en zonas distintas.
                     db.value.ZONAS_CONFIG.forEach(z => {
-                        const remota = j.data.find(rmt =>
-                            String(rmt.Estacion_Nombre).trim().toUpperCase() ===
-                            String(z.Estacion_Nombre).trim().toUpperCase()
-                        );
+                        let remota = null;
+                        if (z.idEstacion) {
+                            remota = j.data.find(rmt => String(rmt.idEstacion) === String(z.idEstacion));
+                        }
+                        if (!remota) {
+                            remota = j.data.find(rmt =>
+                                String(rmt.Estacion_Nombre).trim().toUpperCase() ===
+                                String(z.Estacion_Nombre).trim().toUpperCase() &&
+                                String(rmt.Zona_ID).trim().toUpperCase() ===
+                                String(z.Zona_ID).trim().toUpperCase()
+                            );
+                        }
                         if (!remota) return;
                         if (remota.PrintNode_ID)  z.PrintNode_ID  = remota.PrintNode_ID;
                         if (remota.idEstacion)    z.idEstacion    = remota.idEstacion;
@@ -2799,11 +2810,20 @@
 
                 localStorage.setItem('mosexpress_db', JSON.stringify(db.value));
 
-                // Refrescar la estación activa si aplica
-                if (config.value.estacion?.Estacion_Nombre) {
-                    const fresh = db.value.ZONAS_CONFIG.find(z =>
-                        String(z.Estacion_Nombre).trim().toUpperCase() ===
-                        String(config.value.estacion.Estacion_Nombre).trim().toUpperCase());
+                // Refrescar la estación activa si aplica — match por idEstacion o (nombre+zona)
+                if (config.value.estacion) {
+                    const eAct = config.value.estacion;
+                    let fresh = null;
+                    if (eAct.idEstacion) {
+                        fresh = db.value.ZONAS_CONFIG.find(z => String(z.idEstacion) === String(eAct.idEstacion));
+                    }
+                    if (!fresh && eAct.Estacion_Nombre && eAct.Zona_ID) {
+                        fresh = db.value.ZONAS_CONFIG.find(z =>
+                            String(z.Estacion_Nombre).trim().toUpperCase() ===
+                            String(eAct.Estacion_Nombre).trim().toUpperCase() &&
+                            String(z.Zona_ID).trim().toUpperCase() ===
+                            String(eAct.Zona_ID).trim().toUpperCase());
+                    }
                     if (fresh) {
                         config.value.estacion = { ...config.value.estacion, ...fresh };
                         localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
