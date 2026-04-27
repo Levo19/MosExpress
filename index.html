@@ -99,6 +99,12 @@
     .scan-preview-tag  { font-size: 9px; font-weight: 800; letter-spacing: 0.1em; opacity: 0.9; text-transform: uppercase; }
     .scan-preview-name { font-size: 14px; font-weight: 800; line-height: 1.15; }
     .scan-preview-meta { font-size: 11px; opacity: 0.9; margin-top: 2px; }
+    @keyframes productGridPulse {
+      0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+      30%  { transform: scale(1.06); box-shadow: 0 0 0 12px rgba(16,185,129,0.55); border-color:#10b981; }
+      100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+    }
+    .product-pulse { animation: productGridPulse 0.75s ease-out; z-index: 10; position: relative; border-color:#10b981 !important; }
   </style>
   <style>
     /* ── Update overlay ─────────────────────────────── */
@@ -674,7 +680,8 @@
                          <div v-if="!dbCargada" class="col-span-full py-10 text-center"><svg class="animate-spin w-8 h-8 mx-auto text-emerald-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                          
                          <!-- Productos Component -->
-                         <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)" class="bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative">
+                         <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
+                              :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '']">
                             <div v-if="prod.promoStr" class="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-bl-lg z-10 shadow-sm uppercase">PROMO</div>
                             <div class="prod-img w-full bg-gray-200">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
@@ -2878,6 +2885,23 @@
             }
         };
 
+        // ── Pulso del card del catálogo cuando match exacto (visual de confirmación) ─
+        const pulsingProductId = ref(null);
+        let _pulseTimer = null;
+        const pulseGridProduct = (idUnico) => {
+            if (!idUnico) return;
+            if (_pulseTimer) clearTimeout(_pulseTimer);
+            pulsingProductId.value = null;
+            nextTick(() => {
+                pulsingProductId.value = idUnico;
+                vibrate(45);
+                _pulseTimer = setTimeout(() => {
+                    if (pulsingProductId.value === idUnico) pulsingProductId.value = null;
+                    _pulseTimer = null;
+                }, 750);
+            });
+        };
+
         // ── Flash + badge "+1/-1" + scroll del item del carrito ─
         const flashCartItem = (idx, delta) => {
             if (idx < 0 || idx >= carrito.value.length) return;
@@ -3987,6 +4011,7 @@
               const baseMatch = productosCatalogo.value.find(p => String(p.sku).trim() === String(presMatch.SKU_Base).trim());
               if (baseMatch) {
                   feedbackSegunStock(baseMatch, eq ? 'EQUIVALENCIA' : 'CÓDIGO');
+                  pulseGridProduct(baseMatch.idUnico); // pulso visual en card del catálogo
                   elegirPresentacion(baseMatch, presMatch);
                   bBuscador.value = ''; filtrarCatalogo(); return;
               }
@@ -3996,6 +4021,7 @@
           const skuMatch = productosCatalogo.value.find(p => String(p.sku).toUpperCase() === searchCode);
           if (skuMatch) {
               feedbackSegunStock(skuMatch, 'SKU');
+              pulseGridProduct(skuMatch.idUnico); // pulso visual en card del catálogo
               agregarOVerDetalle(skuMatch);
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
@@ -5214,7 +5240,7 @@
           iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
-          scanPreview, scanningPending, onScanInput,
+          scanPreview, scanningPending, onScanInput, pulsingProductId,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
