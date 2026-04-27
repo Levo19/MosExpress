@@ -2,7 +2,7 @@
 // MOSexpress — Service Worker
 // Cambia VERSION en cada deploy para invalidar caché
 // ============================================================
-const VERSION = '1.3.12';
+const VERSION = '1.4.0';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',

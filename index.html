@@ -105,6 +105,156 @@
       100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16,185,129,0); }
     }
     .product-pulse { animation: productGridPulse 0.75s ease-out; z-index: 10; position: relative; border-color:#10b981 !important; }
+
+    /* ─── Welcome Overlay (arranque de turno) ──────────────────── */
+    @keyframes welcomeBgShift {
+      0%, 100% { background-position: 0% 50%; }
+      50%      { background-position: 100% 50%; }
+    }
+    .welcome-overlay {
+      position: fixed; inset: 0; z-index: 10000;
+      background: linear-gradient(135deg, #5b21b6, #ec4899, #f59e0b, #3b82f6, #5b21b6);
+      background-size: 300% 300%;
+      animation: welcomeBgShift 12s ease infinite;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; overflow: hidden;
+      cursor: pointer;
+      color: white;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .welcome-overlay.fading { animation: welcomeFade 0.4s ease forwards; }
+    @keyframes welcomeFade {
+      to { opacity: 0; transform: scale(1.05); }
+    }
+
+    /* Confetti — 60 partículas con animación independiente */
+    .confetti-piece {
+      position: absolute; top: -20px; width: 10px; height: 14px;
+      opacity: 0; will-change: transform;
+      animation: confettiFall 5.5s linear forwards;
+    }
+    @keyframes confettiFall {
+      0%   { transform: translate3d(0, -20px, 0) rotate(0deg); opacity: 1; }
+      100% { transform: translate3d(var(--cf-x, 0), 105vh, 0) rotate(720deg); opacity: 0.6; }
+    }
+
+    /* Sparkles — pequeños ✨ con tween */
+    .sparkle {
+      position: absolute; font-size: 22px; pointer-events: none;
+      animation: sparkleTwinkle 1.6s ease-in-out infinite;
+    }
+    @keyframes sparkleTwinkle {
+      0%, 100% { opacity: 0; transform: scale(0.6) rotate(0deg); }
+      50%      { opacity: 1; transform: scale(1.3) rotate(180deg); }
+    }
+
+    /* Avatar central con anillo pulsante */
+    .welcome-avatar {
+      width: 96px; height: 96px; border-radius: 50%;
+      background: linear-gradient(135deg, #fff, #fef3c7);
+      color: #5b21b6; font-weight: 900; font-size: 38px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 0 rgba(255,255,255,0.7);
+      animation: avatarPulse 2s ease-out infinite, avatarBounceIn 0.7s cubic-bezier(.34,1.56,.64,1);
+      margin-bottom: 16px;
+    }
+    @keyframes avatarPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.7); }
+      70%  { box-shadow: 0 0 0 24px rgba(255,255,255,0); }
+      100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
+    }
+    @keyframes avatarBounceIn {
+      0%   { transform: scale(0); opacity: 0; }
+      70%  { transform: scale(1.15); opacity: 1; }
+      100% { transform: scale(1); }
+    }
+
+    /* Saludo grande con bounce-in */
+    .welcome-hello {
+      font-size: clamp(28px, 6vw, 48px); font-weight: 900; text-align: center;
+      letter-spacing: -0.02em; line-height: 1.1;
+      text-shadow: 0 4px 24px rgba(0,0,0,0.35);
+      animation: helloBounce 0.8s cubic-bezier(.34,1.56,.64,1) 0.2s both;
+    }
+    @keyframes helloBounce {
+      0%   { opacity: 0; transform: scale(0.5) translateY(-30px); }
+      60%  { opacity: 1; transform: scale(1.08) translateY(0); }
+      100% { transform: scale(1); }
+    }
+    .welcome-brand {
+      font-size: 11px; font-weight: 800; letter-spacing: 0.3em; text-transform: uppercase;
+      opacity: 0.85; margin-top: 4px; animation: helloBounce 0.8s cubic-bezier(.34,1.56,.64,1) 0.4s both;
+    }
+
+    /* Etiqueta especial del día */
+    .welcome-tag {
+      display: inline-block; margin-top: 10px;
+      background: rgba(255,255,255,0.18); backdrop-filter: blur(8px);
+      padding: 6px 14px; border-radius: 999px;
+      font-size: 12px; font-weight: 800; letter-spacing: 0.05em;
+      border: 1px solid rgba(255,255,255,0.3);
+      animation: helloBounce 0.8s cubic-bezier(.34,1.56,.64,1) 0.55s both;
+    }
+
+    /* Frase motivacional con typewriter */
+    .welcome-quote {
+      max-width: 560px; margin: 28px 16px 0;
+      font-size: clamp(15px, 3vw, 19px); font-weight: 600;
+      text-align: center; line-height: 1.45; min-height: 56px;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    }
+    .welcome-quote .tw-cursor {
+      display: inline-block; width: 2px; height: 1.1em; margin-left: 2px;
+      background: #fef3c7; vertical-align: middle;
+      animation: cursorBlink 0.7s step-end infinite;
+    }
+    @keyframes cursorBlink { 50% { opacity: 0; } }
+
+    /* Stats grid */
+    .welcome-stats {
+      margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+      animation: helloBounce 0.7s cubic-bezier(.34,1.56,.64,1) 0.9s both;
+    }
+    .welcome-stat {
+      background: rgba(255,255,255,0.13); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.22);
+      padding: 14px 20px; border-radius: 16px;
+      text-align: center; min-width: 110px;
+    }
+    .welcome-stat-num   { font-size: 28px; font-weight: 900; line-height: 1; }
+    .welcome-stat-label { font-size: 10px; font-weight: 700; opacity: 0.85; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
+
+    /* CTA con shimmer */
+    .welcome-cta {
+      margin-top: 32px; padding: 16px 36px; border-radius: 999px;
+      background: white; color: #5b21b6;
+      font-weight: 900; font-size: 16px; letter-spacing: 0.05em;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.25);
+      position: relative; overflow: hidden;
+      animation: helloBounce 0.7s cubic-bezier(.34,1.56,.64,1) 1.1s both;
+    }
+    .welcome-cta::after {
+      content: ''; position: absolute; top: 0; left: -50%; width: 50%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+      animation: ctaShimmer 2.4s ease-in-out infinite;
+    }
+    @keyframes ctaShimmer { 100% { left: 130%; } }
+
+    /* Hint inferior */
+    .welcome-hint {
+      position: absolute; bottom: 20px; left: 0; right: 0; text-align: center;
+      font-size: 11px; opacity: 0.7; letter-spacing: 0.1em;
+      animation: hintFade 1.5s ease 1.4s both;
+    }
+    @keyframes hintFade { from { opacity: 0; } to { opacity: 0.7; } }
+
+    /* Indicador silencioso de sync de catálogo */
+    .welcome-syncing {
+      position: absolute; top: 18px; right: 18px;
+      font-size: 10px; opacity: 0.6; display: flex; align-items: center; gap: 6px;
+    }
+    .welcome-syncing .dot { width: 6px; height: 6px; border-radius: 50%; background: #10f5a9; box-shadow: 0 0 8px #10f5a9; animation: syncPulse 1.2s ease-in-out infinite; }
+    @keyframes syncPulse { 0%,100%{ opacity:.4 } 50% { opacity:1 } }
   </style>
   <style>
     /* ── Update overlay ─────────────────────────────── */
@@ -909,6 +1059,63 @@
             </div>
          </div>
     </div>
+    <!-- ╔══ WELCOME OVERLAY — arranque de turno con motivación ══╗ -->
+    <div v-if="welcomeOverlay.visible"
+         :class="['welcome-overlay', welcomeOverlay.fading ? 'fading' : '']"
+         @click="dismissWelcome">
+       <!-- Confetti dinámico -->
+       <span v-for="cf in welcomeOverlay.confetti" :key="cf.id"
+             class="confetti-piece"
+             :style="{ left: cf.left + '%', '--cf-x': cf.dx + 'px', background: cf.color, animationDelay: cf.delay + 's', animationDuration: cf.duration + 's' }"></span>
+       <!-- Sparkles -->
+       <span v-for="sp in welcomeOverlay.sparkles" :key="'sp-'+sp.id"
+             class="sparkle"
+             :style="{ left: sp.left + '%', top: sp.top + '%', animationDelay: sp.delay + 's' }">✨</span>
+
+       <!-- Indicador silencioso de sync de catálogo -->
+       <div v-if="procesandoCatalogo" class="welcome-syncing">
+          <span class="dot"></span> Actualizando catálogo
+       </div>
+
+       <!-- Avatar con iniciales -->
+       <div class="welcome-avatar">{{ welcomeOverlay.iniciales }}</div>
+
+       <!-- Saludo + nombre -->
+       <div class="welcome-hello">
+          {{ welcomeOverlay.saludo }}, {{ welcomeOverlay.nombre }}! {{ welcomeOverlay.emoji }}
+       </div>
+       <div class="welcome-brand">Inversiones MOS · {{ welcomeOverlay.rol }}</div>
+
+       <!-- Etiqueta del día (lunes/viernes/sábado/racha) -->
+       <div v-if="welcomeOverlay.tag" class="welcome-tag">{{ welcomeOverlay.tag }}</div>
+
+       <!-- Frase motivacional con typewriter -->
+       <div class="welcome-quote">
+          "{{ welcomeOverlay.quoteShown }}"<span v-if="welcomeOverlay.typing" class="tw-cursor"></span>
+       </div>
+
+       <!-- Stats -->
+       <div class="welcome-stats">
+          <div class="welcome-stat">
+             <div class="welcome-stat-num">🔥 {{ welcomeOverlay.streakShown }}</div>
+             <div class="welcome-stat-label">Racha días</div>
+          </div>
+          <div class="welcome-stat">
+             <div class="welcome-stat-num">📅 {{ welcomeOverlay.sessionShown }}</div>
+             <div class="welcome-stat-label">Sesión Nº</div>
+          </div>
+          <div v-if="welcomeOverlay.ventasHoy > 0" class="welcome-stat">
+             <div class="welcome-stat-num">S/ {{ welcomeOverlay.ventasShown }}</div>
+             <div class="welcome-stat-label">Ayer vendiste</div>
+          </div>
+       </div>
+
+       <!-- CTA -->
+       <div class="welcome-cta">VAMOS A CERRARLA →</div>
+
+       <div class="welcome-hint">tap en cualquier lado para continuar</div>
+    </div>
+
     <!-- Banner preview escaneo: aparece 1.2s al detectar producto -->
     <div v-if="scanPreview" :key="scanPreview.id" :class="['scan-preview', 'kind-' + (scanPreview.kind || 'ok')]">
        <img v-if="scanPreview.imagen" :src="scanPreview.imagen" class="scan-preview-img" alt="">
@@ -2885,6 +3092,211 @@
             }
         };
 
+        // ╔══════════════════════════════════════════════════════════════
+        // ║  WELCOME OVERLAY — pantalla motivacional al arrancar turno
+        // ╚══════════════════════════════════════════════════════════════
+        const _frasesMotivacion = [
+            'Cada cliente que entra es una historia esperando ser escuchada por ti.',
+            'Tu sonrisa cambia el día de alguien hoy.',
+            'El mejor vendedor no vende — ayuda a comprar.',
+            'Hoy alguien va a salir feliz porque tú estuviste ahí.',
+            'Los clientes difíciles son tus mejores maestros.',
+            'Vender es resolver problemas a personas reales.',
+            'El cliente no compra el producto, te compra a ti.',
+            'Cada NO te acerca al SÍ.',
+            'Tu actitud hoy define el día de muchas personas.',
+            'Eres el primer rostro de la tienda — y qué rostro.',
+            'No vendes cosas, ofreces soluciones.',
+            'Tu paciencia hoy es el éxito de mañana.',
+            'Detrás de cada venta hay alguien que necesitaba algo. Tú lo entregaste.',
+            'Hoy puedes ser la mejor parte del día de alguien.',
+            'Vender no es convencer, es conectar.',
+            'Tu energía vende más que cualquier descuento.',
+            'Ser cajero es ser embajador. Hoy representas a Inversiones MOS.',
+            'El cliente difícil es el que más te recuerda. Tú decides cómo.',
+            'Cada turno es una oportunidad de ser mejor que ayer.',
+            'No es solo una venta. Es confianza ganada.',
+            'Hoy alguien va a entrar nervioso y salir tranquilo gracias a ti.',
+            'La paciencia es la herramienta más poderosa del cajero.',
+            'Pequeños gestos generan grandes recuerdos.',
+            'Hoy vas a sorprender a alguien con tu atención.'
+        ];
+
+        const welcomeOverlay = ref({
+            visible: false, fading: false,
+            nombre: '', iniciales: '', rol: '', saludo: '', emoji: '',
+            tag: null,
+            quote: '', quoteShown: '', typing: false,
+            streak: 0, streakShown: 0,
+            session: 0, sessionShown: 0,
+            ventasHoy: 0, ventasShown: '0.00',
+            confetti: [], sparkles: []
+        });
+
+        const playWelcomeFanfare = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [
+                    { t: 0.00, f: 523,  v: 0.7,  d: 0.18 },  // C5
+                    { t: 0.15, f: 659,  v: 0.7,  d: 0.18 },  // E5
+                    { t: 0.30, f: 784,  v: 0.75, d: 0.20 },  // G5
+                    { t: 0.50, f: 1047, v: 0.85, d: 0.45 }   // C6 sostenida
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        const _calcStreakSession = () => {
+            const _now = new Date();
+            const _today = _now.toDateString();
+            const _yesterday = new Date(_now.getTime() - 86400000).toDateString();
+            const _lastDate = localStorage.getItem('mosexpress_last_welcome_date');
+            let _streak = parseInt(localStorage.getItem('mosexpress_streak') || '0');
+            if (_lastDate === _today) {
+                // mismo día → no incrementar racha
+            } else if (_lastDate === _yesterday) {
+                _streak = (_streak || 0) + 1;
+            } else {
+                _streak = 1;
+            }
+            localStorage.setItem('mosexpress_last_welcome_date', _today);
+            localStorage.setItem('mosexpress_streak', String(_streak));
+            const _sessions = parseInt(localStorage.getItem('mosexpress_sessions_total') || '0') + 1;
+            localStorage.setItem('mosexpress_sessions_total', String(_sessions));
+            return { streak: _streak, session: _sessions };
+        };
+
+        const _animateCount = (key, target, ms) => {
+            const start = Date.now();
+            const tick = () => {
+                const e = Math.min(1, (Date.now() - start) / ms);
+                const easeOut = 1 - Math.pow(1 - e, 3);
+                if (key === 'ventasShown') {
+                    welcomeOverlay.value.ventasShown = (target * easeOut).toFixed(2);
+                } else {
+                    welcomeOverlay.value[key] = Math.round(target * easeOut);
+                }
+                if (e < 1) requestAnimationFrame(tick);
+                else {
+                    if (key === 'ventasShown') welcomeOverlay.value.ventasShown = target.toFixed(2);
+                    else welcomeOverlay.value[key] = target;
+                }
+            };
+            requestAnimationFrame(tick);
+        };
+
+        const _typewriter = (texto, speed) => {
+            welcomeOverlay.value.quoteShown = '';
+            welcomeOverlay.value.typing = true;
+            let i = 0;
+            const tick = () => {
+                if (!welcomeOverlay.value.visible) return;
+                welcomeOverlay.value.quoteShown = texto.substring(0, i);
+                i++;
+                if (i <= texto.length) setTimeout(tick, speed);
+                else welcomeOverlay.value.typing = false;
+            };
+            tick();
+        };
+
+        const triggerWelcome = () => {
+            const nombre = (config.value.vendedor || 'Compañero').split(' ')[0];
+            const iniciales = (config.value.vendedor || 'M').split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
+            const rol = config.value.esCajero ? 'Cajero · Frente de batalla' : 'Vendedor · Frente de batalla';
+
+            const h = new Date().getHours();
+            let saludo, emoji;
+            if (h >= 5 && h < 12)        { saludo = '¡Buenos días';   emoji = '☀️'; }
+            else if (h >= 12 && h < 19)  { saludo = '¡Buenas tardes'; emoji = '🌤️'; }
+            else                          { saludo = '¡Buenas noches'; emoji = '🌙'; }
+
+            const dia = new Date().getDay();
+            const { streak, session } = _calcStreakSession();
+            let tag = null;
+            if (streak >= 7)        tag = '🔥 RACHA DE FUEGO · ' + streak + ' días seguidos';
+            else if (dia === 1)     tag = '💪 LUNES — empieza fuerte';
+            else if (dia === 5)     tag = '🏆 VIERNES — recta final';
+            else if (dia === 6)     tag = '⭐ SÁBADO — día de campeones';
+            else if (dia === 0)     tag = '🌟 DOMINGO — turno especial';
+
+            const quote = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
+            // Buscar último cierre — solo mostrar si fue ayer u hoy temprano
+            let ventasAyer = 0;
+            try {
+                const _last = JSON.parse(localStorage.getItem('mosexpress_ventas_ultimo_cierre') || 'null');
+                if (_last && _last.fecha) {
+                    const _yest = new Date(Date.now() - 86400000).toDateString();
+                    if (_last.fecha === _yest || _last.fecha === new Date().toDateString()) {
+                        ventasAyer = parseFloat(_last.total) || 0;
+                    }
+                }
+            } catch(e) {}
+
+            // Generar 60 piezas de confetti con posiciones/colores random
+            const palette = ['#fbbf24', '#10b981', '#3b82f6', '#ec4899', '#f97316', '#a78bfa', '#22d3ee', '#fef08a'];
+            const confetti = [];
+            for (let i = 0; i < 60; i++) {
+                confetti.push({
+                    id: i,
+                    left: Math.random() * 100,
+                    dx: (Math.random() - 0.5) * 200,
+                    color: palette[Math.floor(Math.random() * palette.length)],
+                    delay: Math.random() * 1.5,
+                    duration: 4 + Math.random() * 3
+                });
+            }
+            const sparkles = [];
+            for (let i = 0; i < 8; i++) {
+                sparkles.push({ id: i, left: 5 + Math.random() * 90, top: 8 + Math.random() * 80, delay: Math.random() * 1.2 });
+            }
+
+            welcomeOverlay.value = {
+                visible: true, fading: false,
+                nombre, iniciales, rol, saludo, emoji, tag,
+                quote, quoteShown: '', typing: true,
+                streak, streakShown: 0,
+                session, sessionShown: 0,
+                ventasHoy: ventasAyer, ventasShown: '0.00',
+                confetti, sparkles
+            };
+
+            playWelcomeFanfare();
+
+            // Lanzar typewriter después del bounce-in del saludo
+            setTimeout(() => _typewriter(quote, 28), 900);
+            // Animar contadores
+            setTimeout(() => {
+                _animateCount('streakShown', streak, 1100);
+                _animateCount('sessionShown', session, 1300);
+                if (ventasAyer > 0) _animateCount('ventasShown', ventasAyer, 1400);
+            }, 1100);
+
+            // Sync silencioso del catálogo en segundo plano
+            setTimeout(() => {
+                if (typeof sincronizarCatalogoBase === 'function') {
+                    sincronizarCatalogoBase().catch(() => {});
+                }
+            }, 300);
+        };
+
+        const dismissWelcome = () => {
+            if (!welcomeOverlay.value.visible || welcomeOverlay.value.fading) return;
+            welcomeOverlay.value.fading = true;
+            setTimeout(() => {
+                welcomeOverlay.value.visible = false;
+                welcomeOverlay.value.fading = false;
+                cambiarModulo('POS');
+            }, 380);
+        };
+
         // ── Pulso del card del catálogo cuando match exacto (visual de confirmación) ─
         const pulsingProductId = ref(null);
         let _pulseTimer = null;
@@ -3262,7 +3674,7 @@
                 localStorage.removeItem('mosexpress_cobrados_sesion');
                 localStorage.removeItem('mosexpress_extras_sesion');
                 procesandoCaja.value = false;
-                cambiarModulo('CAJA');
+                triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
                 // Ticket apertura cajero
                 let txt = "\x1b\x40\x1b\x61\x01";
                 txt += "\x1b\x21\x30MOSexpress\n\n";
@@ -3288,7 +3700,7 @@
                 localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
                 localStorage.removeItem('mosexpress_cobrados_sesion');
                 localStorage.removeItem('mosexpress_extras_sesion');
-                cambiarModulo('POS');
+                triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
                 // Ticket confirmación vendedor
                 let txtV = "\x1b\x40\x1b\x61\x01";
                 txtV += "\x1b\x21\x30MOSexpress\n\n";
@@ -3389,7 +3801,7 @@
             procesandoCaja.value = false;
             agregarToast("Éxito", "Caja Aperturada");
             iniciarPollingZona(); // Arrancar polling de zona en segundo plano
-            cambiarModulo('POS');
+            triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
         };
 
         const cerrarCaja = async () => {
@@ -3519,6 +3931,18 @@
              }
 
              // 4. Detener polling y limpiar estado local
+             // Guardar total vendido del turno (para stat "ayer vendiste" en próximo welcome)
+             try {
+                 const _totalDia = parseFloat((tEfectivo + tVirtual).toFixed(2));
+                 if (_totalDia > 0) {
+                     localStorage.setItem('mosexpress_ventas_ultimo_cierre', JSON.stringify({
+                         fecha: new Date().toDateString(),
+                         total: _totalDia,
+                         tickets: cobradosEnSesion.value.length
+                     }));
+                 }
+             } catch(e) {}
+
              detenerPollingZona();
              cajaAbierta.value = false;
              idCajaActual.value = '';
@@ -5241,6 +5665,7 @@
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
           scanPreview, scanningPending, onScanInput, pulsingProductId,
+          welcomeOverlay, dismissWelcome,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
