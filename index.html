@@ -54,6 +54,51 @@
     @media (max-height: 600px) {
       .modal-pago-inner { max-height: 98dvh !important; }
     }
+    /* ─── Feedback visual del POS ──────────────────────── */
+    @keyframes flashAdd {
+      0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16,185,129,0); border-color:#d1fae5; }
+      25%  { transform: scale(1.035); box-shadow: 0 0 0 8px rgba(16,185,129,0.45); border-color:#10b981; }
+      100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16,185,129,0); border-color:#d1fae5; }
+    }
+    .cart-flash { animation: flashAdd 0.65s ease-out; border-color:#10b981 !important; }
+    @keyframes badgePop {
+      0%   { opacity: 0; transform: translate(-50%, 4px) scale(0.5); }
+      18%  { opacity: 1; transform: translate(-50%, -10px) scale(1.15); }
+      55%  { opacity: 1; transform: translate(-50%, -22px) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -34px) scale(0.85); }
+    }
+    .qty-badge {
+      position: absolute; left: 50%; top: -2px; transform: translate(-50%, 0);
+      font-weight: 900; font-size: 16px; pointer-events: none; z-index: 5;
+      animation: badgePop 0.7s ease-out forwards;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+    @keyframes btnBump { 0%,100% { transform: scale(1); } 45% { transform: scale(1.18); } }
+    .btn-bump { animation: btnBump 0.18s ease-out; }
+    @keyframes scanPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+      50%      { box-shadow: 0 0 0 4px rgba(245,158,11,0.5); }
+    }
+    .scanner-pending { animation: scanPulse 0.85s ease-in-out infinite; }
+    @keyframes previewSlide {
+      0%   { opacity: 0; transform: translateY(-110%); }
+      12%  { opacity: 1; transform: translateY(0); }
+      82%  { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-110%); }
+    }
+    .scan-preview {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      color: white; padding: 10px 14px; box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      display: flex; align-items: center; gap: 12px;
+      animation: previewSlide 1.25s ease-in-out forwards;
+    }
+    .scan-preview.kind-ok    { background: linear-gradient(135deg, #10b981, #059669); }
+    .scan-preview.kind-name  { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .scan-preview.kind-stock { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+    .scan-preview-img  { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: rgba(255,255,255,0.15); }
+    .scan-preview-tag  { font-size: 9px; font-weight: 800; letter-spacing: 0.1em; opacity: 0.9; text-transform: uppercase; }
+    .scan-preview-name { font-size: 14px; font-weight: 800; line-height: 1.15; }
+    .scan-preview-meta { font-size: 11px; opacity: 0.9; margin-top: 2px; }
   </style>
   <style>
     /* ── Update overlay ─────────────────────────────── */
@@ -174,10 +219,10 @@
         <div class="flex-1 relative flex items-center">
           <input type="text" ref="scannerInput" v-model="bBuscador"
                  @focus="scannerFocused = true" @blur="scannerFocused = false"
-                 @keyup.enter="procesarEscaneoOBusqueda" @input="filtrarCatalogo"
+                 @keyup.enter="procesarEscaneoOBusqueda" @input="onScanInput"
                  placeholder="Buscar o Escanear..."
                  :inputmode="mostrarTeclado ? 'text' : 'none'"
-                 class="w-full text-base p-2.5 pl-10 pr-20 rounded-xl text-gray-800 focus:outline-none focus:ring-4 focus:ring-emerald-300 transition-shadow shadow-inner font-semibold bg-white">
+                 :class="['w-full text-base p-2.5 pl-10 pr-20 rounded-xl text-gray-800 focus:outline-none focus:ring-4 focus:ring-emerald-300 transition-shadow shadow-inner font-semibold bg-white', scanningPending ? 'scanner-pending' : '']">
           <svg class="w-5 h-5 text-gray-400 absolute left-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           <button @click="toggleTeclado" class="absolute right-11 p-2 rounded-lg transition-colors" :class="mostrarTeclado ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-400'">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="2" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 11h.01M9 11h.01M12 11h.01M15 11h.01M18 11h.01M8 14h8"/></svg>
@@ -666,18 +711,21 @@
                         <p class="text-sm font-semibold">Agregue productos</p>
                       </div>
 
-                      <div v-for="(item, index) in carrito" :key="item.idUnico" class="bg-white border border-gray-100 rounded-xl shadow-sm p-3 relative flex items-center space-x-3">
+                      <div v-for="(item, index) in carrito" :key="item.codBarras"
+                           :data-cart-idx="index"
+                           :class="['bg-white border rounded-xl shadow-sm p-3 relative flex items-center space-x-3 transition-colors', item.flashing ? 'cart-flash' : 'border-gray-100']">
                          <div class="flex-1 min-w-0 pr-4">
                            <h3 class="font-bold text-gray-800 text-xs leading-tight truncate">{{ item.nombre }}</h3>
                            <div v-if="item.ahorroPromo > 0" class="inline-flex items-center mt-1 bg-red-50 text-red-600 text-[9px] font-black px-1.5 py-0.5 rounded border border-red-100 uppercase">★ Ahorro S/ {{ item.ahorroPromo.toFixed(2) }}</div>
                            <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ item.precioUnitario.toFixed(2) }} ud.</div>
                          </div>
-                         <div class="flex flex-col items-end shrink-0 pl-2">
+                         <div class="flex flex-col items-end shrink-0 pl-2 relative">
                            <span class="font-black text-gray-800">S/ {{ item.subtotal.toFixed(2) }}</span>
-                           <div class="flex items-center mt-1 bg-gray-100 rounded-lg p-0.5">
-                              <button @click="cambiarCantidad(index, -1)" class="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-gray-700 font-black shadow-sm active:bg-gray-200">-</button>
+                           <div class="flex items-center mt-1 bg-gray-100 rounded-lg p-0.5 relative">
+                              <button @click="cambiarCantidad(index, -1)" :class="['w-8 h-8 rounded-lg bg-white flex items-center justify-center text-gray-700 font-black shadow-sm active:bg-gray-200', item.flashing && item.qtyBadge < 0 ? 'btn-bump' : '']">-</button>
                               <span class="w-8 text-center font-bold text-sm bg-transparent">{{ item.cantidad }}</span>
-                              <button @click="cambiarCantidad(index, 1)" class="w-8 h-8 rounded-lg bg-posPrimary flex items-center justify-center text-white font-black shadow-sm active:bg-emerald-600">+</button>
+                              <button @click="cambiarCantidad(index, 1)" :class="['w-8 h-8 rounded-lg bg-posPrimary flex items-center justify-center text-white font-black shadow-sm active:bg-emerald-600', item.flashing && item.qtyBadge > 0 ? 'btn-bump' : '']">+</button>
+                              <span v-if="item.qtyBadge" class="qty-badge" :style="{ color: item.qtyBadge > 0 ? '#10b981' : '#ef4444' }">{{ item.qtyBadge > 0 ? '+' : '' }}{{ item.qtyBadge }}</span>
                            </div>
                          </div>
                       </div>
@@ -853,6 +901,15 @@
                <button @click="agregarItemDesdePopover" class="flex-[2] bg-gray-800 text-white font-black py-4 rounded-xl shadow-lg active:scale-95">AGREGAR</button>
             </div>
          </div>
+    </div>
+    <!-- Banner preview escaneo: aparece 1.2s al detectar producto -->
+    <div v-if="scanPreview" :key="scanPreview.id" :class="['scan-preview', 'kind-' + (scanPreview.kind || 'ok')]">
+       <img v-if="scanPreview.imagen" :src="scanPreview.imagen" class="scan-preview-img" alt="">
+       <div class="flex-1 min-w-0">
+          <div class="scan-preview-tag">{{ scanPreview.label }}</div>
+          <div class="scan-preview-name truncate">{{ scanPreview.nombre }}</div>
+          <div class="scan-preview-meta">S/ {{ scanPreview.precio }}<span v-if="scanPreview.extra"> · {{ scanPreview.extra }}</span></div>
+       </div>
     </div>
     <div class="fixed top-4 right-4 z-[999] flex flex-col items-end space-y-2 pointer-events-none">
        <div v-for="t in toasts" :key="t.id"
@@ -2250,7 +2307,11 @@
               const carritoLocal = localStorage.getItem('mosexpress_carrito');
               if(carritoLocal) {
                   const items = JSON.parse(carritoLocal);
-                  if(Array.isArray(items) && items.length > 0) carrito.value = items;
+                  if(Array.isArray(items) && items.length > 0) {
+                      // Asegurar que items viejos tengan los campos de animación
+                      items.forEach(it => { if (it.flashing === undefined) it.flashing = false; if (it.qtyBadge === undefined) it.qtyBadge = 0; });
+                      carrito.value = items;
+                  }
               }
           } catch(e) { localStorage.removeItem('mosexpress_carrito'); }
 
@@ -2585,6 +2646,7 @@
         };
 
         const playBeepOK = () => {
+            try { if ('vibrate' in navigator) navigator.vibrate(40); } catch(e) {}
             if (!soundEnabled.value) return;
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2602,6 +2664,7 @@
         };
 
         const playBeepError = () => {
+            try { if ('vibrate' in navigator) navigator.vibrate([90, 50, 90]); } catch(e) {}
             if (!soundEnabled.value) return;
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2704,6 +2767,118 @@
                     osc.stop(ctx.currentTime + t + d + 0.01);
                 });
             } catch(e) {}
+        };
+
+        // ── Vibración háptica (Android/PWA) — siempre activa, silenciosa ───
+        const vibrate = (pattern) => {
+            try { if ('vibrate' in navigator) navigator.vibrate(pattern); } catch(e) {}
+        };
+
+        // Sonido de aviso "stock cero" — bip OK seguido de uno bajo
+        const playBeepStockZero = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [
+                    { t: 0.00, f: 1047, v: 0.8, d: 0.07 },
+                    { t: 0.10, f: 520,  v: 0.7, d: 0.16 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // Sonido distinto cuando matchea por nombre (no por barcode limpio)
+        const playBeepNameMatch = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [
+                    { t: 0.00, f: 700, v: 0.6, d: 0.05 },
+                    { t: 0.07, f: 700, v: 0.6, d: 0.05 },
+                    { t: 0.14, f: 900, v: 0.65, d: 0.07 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // Ding extra para promociones — campanada brillante después del beep OK
+        const playPromoDing = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                [
+                    { t: 0.00, f: 1568, v: 0.5, d: 0.18 },
+                    { t: 0.05, f: 2093, v: 0.45, d: 0.22 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'triangle'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // ── Preview banner (1.2s) ────────────────────────────
+        const scanPreview = ref(null);
+        const showScanPreview = (prod, label, kind, extra) => {
+            const id = Date.now();
+            scanPreview.value = {
+                id,
+                nombre: prod.nombreCorto || prod.nombre || 'Producto',
+                precio: (prod.precio !== undefined ? prod.precio : prod.precioUnitario || 0).toFixed(2),
+                imagen: prod.imagen || '',
+                label:  label || 'PRODUCTO',
+                kind:   kind  || 'ok',
+                extra:  extra || ''
+            };
+            setTimeout(() => {
+                if (scanPreview.value && scanPreview.value.id === id) scanPreview.value = null;
+            }, 1250);
+        };
+
+        // ── Estado "esperando Enter / escaneando" ─────────────
+        const scanningPending = ref(false);
+        let _scanIdleTimer = null;
+        const onScanInput = () => {
+            filtrarCatalogo();
+            scanningPending.value = false;
+            if (_scanIdleTimer) clearTimeout(_scanIdleTimer);
+            if (bBuscador.value && bBuscador.value.length > 0) {
+                _scanIdleTimer = setTimeout(() => { scanningPending.value = true; }, 250);
+            }
+        };
+
+        // ── Flash + badge "+1/-1" + scroll del item del carrito ─
+        const flashCartItem = (idx, delta) => {
+            if (idx < 0 || idx >= carrito.value.length) return;
+            const item = carrito.value[idx];
+            if (item._flashTimer) clearTimeout(item._flashTimer);
+            item.flashing = false; item.qtyBadge = 0;
+            nextTick(() => {
+                item.flashing = true;
+                item.qtyBadge = delta;
+                item._flashTimer = setTimeout(() => {
+                    item.flashing = false;
+                    item.qtyBadge = 0;
+                    item._flashTimer = null;
+                }, 700);
+                const el = document.querySelector('[data-cart-idx="' + idx + '"]');
+                if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
         };
 
         // --- MODO CAJERO ---
@@ -3761,20 +3936,33 @@
         const procesarEscaneoOBusqueda = () => {
           let code = bBuscador.value.trim().toUpperCase();
           if (!code) return;
-          
+          // limpiar estado "esperando"
+          scanningPending.value = false;
+          if (_scanIdleTimer) { clearTimeout(_scanIdleTimer); _scanIdleTimer = null; }
+
           // 1º Resolver Equivalencia si existe
           const eq = db.value.EQUIVALENCIAS?.find(e => String(e.Cod_Alias).toUpperCase() === code);
-          // Preservar el código original escaneado para grabarlo en VENTAS_DETALLE
           _codEscaneadoTemp = eq ? String(eq.Cod_Alias) : null;
           const searchCode = eq ? String(eq.Cod_Barras_Real).toUpperCase() : code;
+
+          // Helper local: feedback según stock — la venta NUNCA se bloquea
+          const feedbackSegunStock = (prod, label) => {
+              const sinStock = prod.stock !== null && prod.stock <= 0;
+              if (sinStock) {
+                  playBeepStockZero();
+                  showScanPreview(prod, label + ' · SIN STOCK', 'stock', 'sin existencias');
+              } else {
+                  playBeepOK();
+                  showScanPreview(prod, label, 'ok', eq ? 'equivalencia' : '');
+              }
+          };
 
           // 2º Buscar directamente en PRESENTACIONES
           const presMatch = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras).trim().toUpperCase() === searchCode);
           if (presMatch) {
               const baseMatch = productosCatalogo.value.find(p => String(p.sku).trim() === String(presMatch.SKU_Base).trim());
               if (baseMatch) {
-                  // Agrega directamente al carrito usando la presentación específica escaneada (salta el Modal)
-                  playBeepOK();
+                  feedbackSegunStock(baseMatch, eq ? 'EQUIVALENCIA' : 'CÓDIGO');
                   elegirPresentacion(baseMatch, presMatch);
                   bBuscador.value = ''; filtrarCatalogo(); return;
               }
@@ -3783,16 +3971,16 @@
           // 2.5 Buscar directamente por SKU_Base
           const skuMatch = productosCatalogo.value.find(p => String(p.sku).toUpperCase() === searchCode);
           if (skuMatch) {
-              playBeepOK();
+              feedbackSegunStock(skuMatch, 'SKU');
               agregarOVerDetalle(skuMatch);
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
 
-          // 3º Fallback de Búsqueda por Nombre de Producto Base
+          // 3º Fallback de Búsqueda por Nombre — sonido distinto: avisa al cajero que NO fue match limpio
           const pbObj = productosCatalogo.value.find(p => p.nombreCorto.toUpperCase().includes(code));
           if (pbObj) {
-              // Si buscó por nombre y tiene varias presentaciones, sí le abrirá el Modal
-              playBeepOK();
+              playBeepNameMatch();
+              showScanPreview(pbObj, 'POR NOMBRE', 'name', 'elige presentación');
               agregarOVerDetalle(pbObj);
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
@@ -3807,16 +3995,51 @@
           // Código escaneado (equivalencia) o canónico si no hubo equivalencia
           const codEsc = _codEscaneadoTemp || prodObj.codBarrasEsc || String(prodObj.codBarras);
           _codEscaneadoTemp = null;
-          // Avisar si no hay stock (no bloquea la venta)
-          if (prodObj.stock !== null && prodObj.stock === 0) {
+          // Avisar si stock <=0 o no registrado (no bloquea la venta)
+          if (prodObj.stock !== null && prodObj.stock <= 0) {
               agregarToast('Sin Stock', prodObj.nombreCorto + ' — Sin existencias en esta zona');
           }
           const idx = carrito.value.findIndex(i => i.codBarras === prodObj.codBarras);
-          if (idx > -1) { carrito.value[idx].cantidad++; calcularImportes(carrito.value[idx]); }
-          else {
-            const item = { sku: String(prodObj.skuProducto || prodObj.sku), skuBase: String(prodObj.skuBase || prodObj.sku), factor: prodObj.factor || 1, codBarras: String(prodObj.codBarras), codBarrasEsc: codEsc, nombre: prodObj.nombreCorto, codSunat: prodObj.codSunat || '', tipoIgv: prodObj.tipoIgv || 1, unidadMedida: prodObj.unidadMedida || 'NIU', precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio, ahorroPromo: 0, imagen: prodObj.imagen };
-            calcularImportes(item); carrito.value.unshift(item);
+          let finalIdx;
+          if (idx > -1) {
+            // Producto duplicado: sumar y mover al tope para que el cajero vea el feedback
+            const it = carrito.value[idx];
+            it.cantidad++;
+            calcularImportes(it);
+            if (idx > 0) {
+              carrito.value.splice(idx, 1);
+              carrito.value.unshift(it);
+            }
+            finalIdx = 0;
+            vibrate(30);
+          } else {
+            const item = {
+              sku: String(prodObj.skuProducto || prodObj.sku),
+              skuBase: String(prodObj.skuBase || prodObj.sku),
+              factor: prodObj.factor || 1,
+              codBarras: String(prodObj.codBarras), codBarrasEsc: codEsc,
+              nombre: prodObj.nombreCorto,
+              codSunat: prodObj.codSunat || '',
+              tipoIgv: prodObj.tipoIgv || 1,
+              unidadMedida: prodObj.unidadMedida || 'NIU',
+              precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio,
+              ahorroPromo: 0, imagen: prodObj.imagen,
+              flashing: false, qtyBadge: 0
+            };
+            calcularImportes(item);
+            carrito.value.unshift(item);
+            finalIdx = 0;
           }
+
+          // Disparar flash + badge + autoscroll
+          flashCartItem(finalIdx, 1);
+
+          // Ding extra si hay promo aplicada
+          const itPromo = carrito.value[finalIdx];
+          if (itPromo && itPromo.ahorroPromo > 0) {
+              setTimeout(() => playPromoDing(), 180);
+          }
+
           agregarToast('¡Añadido!', prodObj.nombreCorto);
           setTimeout(() => { if(scannerInput.value && !mostrarTeclado.value) scannerInput.value.focus({ preventScroll: true }); else if(scannerInput.value && mostrarTeclado.value) scannerInput.value.focus(); }, 100);
         };
@@ -3824,8 +4047,14 @@
         const cambiarCantidad = (idx, delta) => {
           if (idx < 0 || idx >= carrito.value.length) return;
           carrito.value[idx].cantidad += delta;
-          if (carrito.value[idx].cantidad < 1) eliminarItem(idx);
-          else calcularImportes(carrito.value[idx]);
+          if (carrito.value[idx].cantidad < 1) {
+              vibrate([15, 30, 15]);
+              eliminarItem(idx);
+          } else {
+              calcularImportes(carrito.value[idx]);
+              flashCartItem(idx, delta);
+              vibrate(20);
+          }
         };
         const eliminarItem = (idx) => {
           if (idx < 0 || idx >= carrito.value.length) return;
@@ -4951,6 +5180,7 @@
           iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
+          scanPreview, scanningPending, onScanInput,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
