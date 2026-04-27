@@ -3940,7 +3940,10 @@
           scanningPending.value = false;
           if (_scanIdleTimer) { clearTimeout(_scanIdleTimer); _scanIdleTimer = null; }
 
-          // 1º Resolver Equivalencia si existe
+          // Input puramente numérico = código de barras → match SOLO exacto, sin búsqueda parcial por nombre
+          const isBarcode = /^\d+$/.test(code);
+
+          // 1º Resolver Equivalencia si existe (siempre match exacto)
           const eq = db.value.EQUIVALENCIAS?.find(e => String(e.Cod_Alias).toUpperCase() === code);
           _codEscaneadoTemp = eq ? String(eq.Cod_Alias) : null;
           const searchCode = eq ? String(eq.Cod_Barras_Real).toUpperCase() : code;
@@ -3957,7 +3960,7 @@
               }
           };
 
-          // 2º Buscar directamente en PRESENTACIONES
+          // 2º Buscar directamente en PRESENTACIONES (exacto)
           const presMatch = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras).trim().toUpperCase() === searchCode);
           if (presMatch) {
               const baseMatch = productosCatalogo.value.find(p => String(p.sku).trim() === String(presMatch.SKU_Base).trim());
@@ -3968,7 +3971,7 @@
               }
           }
 
-          // 2.5 Buscar directamente por SKU_Base
+          // 2.5 Buscar directamente por SKU_Base (exacto)
           const skuMatch = productosCatalogo.value.find(p => String(p.sku).toUpperCase() === searchCode);
           if (skuMatch) {
               feedbackSegunStock(skuMatch, 'SKU');
@@ -3976,16 +3979,26 @@
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
 
-          // 3º Fallback de Búsqueda por Nombre — sonido distinto: avisa al cajero que NO fue match limpio
-          const pbObj = productosCatalogo.value.find(p => p.nombreCorto.toUpperCase().includes(code));
-          if (pbObj) {
-              playBeepNameMatch();
-              showScanPreview(pbObj, 'POR NOMBRE', 'name', 'elige presentación');
-              agregarOVerDetalle(pbObj);
-              bBuscador.value = ''; filtrarCatalogo(); return;
+          // 3º Búsqueda parcial por nombre — SOLO si el input NO es código de barras
+          // (evita que "123456" matchee parcialmente un nombre como "Producto 1234")
+          if (!isBarcode) {
+              const pbObj = productosCatalogo.value.find(p => p.nombreCorto.toUpperCase().includes(code));
+              if (pbObj) {
+                  playBeepNameMatch();
+                  showScanPreview(pbObj, 'POR NOMBRE', 'name', 'elige presentación');
+                  agregarOVerDetalle(pbObj);
+                  bBuscador.value = ''; filtrarCatalogo(); return;
+              }
           }
 
-          playBeepError(); agregarToast('NO ENCONTRADO', searchCode); bBuscador.value = ''; filtrarCatalogo();
+          // No encontrado: mensaje según contexto
+          playBeepError();
+          if (isBarcode) {
+              agregarToast('Código no registrado', searchCode + ' — avisar al supervisor', 'warning');
+          } else {
+              agregarToast('NO ENCONTRADO', searchCode);
+          }
+          bBuscador.value = ''; filtrarCatalogo();
         };
 
         const agregarCarritoObj = (prodObj) => {
