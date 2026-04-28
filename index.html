@@ -2754,13 +2754,23 @@
             productosCatalogo.value = prodsText;
             productosFiltrados.value = prodsText;
 
-            // Refrescar estacion desde ZONAS_CONFIG para que siempre tenga los campos actuales
-            // (cubre el caso donde se agregó Admin_PIN u otra columna después del primer login)
+            // Refrescar estacion desde ZONAS_CONFIG para que siempre tenga los campos actuales.
+            // Prioriza idEstacion (único). Fallback a (Zona_ID + Estacion_Nombre) con trim/upper
+            // para evitar colisiones por nombres duplicados entre zonas o casing inconsistente.
             if (config.value.completado && config.value.estacion && db.value.ZONAS_CONFIG?.length) {
-                const estFresh = db.value.ZONAS_CONFIG.find(z =>
-                    z.Zona_ID === config.value.zona &&
-                    z.Estacion_Nombre === config.value.estacion.Estacion_Nombre
-                );
+                const eAct = config.value.estacion;
+                let estFresh = null;
+                if (eAct.idEstacion) {
+                    estFresh = db.value.ZONAS_CONFIG.find(z =>
+                        String(z.idEstacion) === String(eAct.idEstacion));
+                }
+                if (!estFresh) {
+                    estFresh = db.value.ZONAS_CONFIG.find(z =>
+                        String(z.Zona_ID).trim().toUpperCase() ===
+                        String(config.value.zona || '').trim().toUpperCase() &&
+                        String(z.Estacion_Nombre).trim().toUpperCase() ===
+                        String(eAct.Estacion_Nombre || '').trim().toUpperCase());
+                }
                 if (estFresh) {
                     config.value.estacion = estFresh;
                     localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
