@@ -45,6 +45,62 @@
     }
     /* Panel derecho (carrito) siempre visible cuando está activo */
     .panel-transition { transition: width 0.2s ease; }
+
+    /* ── Promociones — estrella y franja dorada ─────────── */
+    .has-promo { box-shadow: 0 0 0 1.5px rgba(255,215,0,.45), 0 4px 14px rgba(255,215,0,.15) !important; }
+    .promo-star {
+      position: absolute; top: 4px; right: 6px; z-index: 10;
+      font-size: 16px;
+      filter: drop-shadow(0 0 4px rgba(255,215,0,.8));
+      animation: promoStarPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes promoStarPulse {
+      0%,100% { transform: scale(1)    rotate(0); }
+      50%     { transform: scale(1.25) rotate(-8deg); }
+    }
+    .promo-stripe {
+      background: linear-gradient(90deg,#fbbf24,#fcd34d,#fbbf24);
+      background-size: 200% 100%;
+      color: #422006; font-size: 9.5px; font-weight: 800;
+      padding: 3px 6px; text-align: center;
+      letter-spacing: .02em; line-height: 1.15;
+      animation: promoStripeShimmer 2.4s linear infinite;
+      border-top: 1px solid rgba(0,0,0,.08);
+    }
+    @keyframes promoStripeShimmer {
+      from { background-position: 200% 0; }
+      to   { background-position: -200% 0; }
+    }
+    /* Cart line incentivo (amarillo: cliente está cerca de promo) */
+    .cart-incentivo {
+      background: linear-gradient(90deg, rgba(251,191,36,.15), rgba(252,211,77,.08));
+      color: #92400e; font-size: 10px; font-weight: 700;
+      padding: 4px 8px; border-radius: 6px;
+      border-left: 3px solid #f59e0b;
+      margin-top: 4px;
+    }
+    /* Cart line promo aplicada (verde) */
+    .cart-aplicada {
+      background: linear-gradient(90deg, rgba(34,197,94,.12), rgba(74,222,128,.06));
+      color: #166534; font-size: 10px; font-weight: 700;
+      padding: 4px 8px; border-radius: 6px;
+      border-left: 3px solid #22c55e;
+      margin-top: 4px;
+    }
+    /* Combo banner */
+    .combo-banner {
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      border: 1.5px solid #f59e0b;
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin: 6px 4px;
+      box-shadow: 0 0 0 0 rgba(245,158,11,.5);
+      animation: comboBannerGlow 2s ease-in-out infinite;
+    }
+    @keyframes comboBannerGlow {
+      0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,.4); }
+      50%     { box-shadow: 0 0 0 5px rgba(245,158,11,0); }
+    }
     /* Ticket nuevo detectado en segundo plano */
     @keyframes pulseNuevo { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); } 70% { box-shadow: 0 0 0 14px rgba(16,185,129,0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
     .ticket-nuevo { animation: pulseNuevo 1s ease-out infinite; border-color: #10b981 !important; }
@@ -840,8 +896,8 @@
                          
                          <!-- Productos Component -->
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
-                              :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '']">
-                            <div v-if="prod.promoStr" class="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-bl-lg z-10 shadow-sm uppercase">PROMO</div>
+                              :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '']">
+                            <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
                             <div class="prod-img w-full bg-gray-200">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
                             </div>
@@ -850,6 +906,7 @@
                                <p class="text-posPrimary font-black text-sm mt-2">S/ {{ prod.precio.toFixed(2) }} <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
                                <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + ' uds' : 'Sin stock' }}</span>
                             </div>
+                            <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
                          </div>
                      </div>
                   </main>
@@ -879,9 +936,13 @@
 
                       <div v-for="(item, index) in carrito" :key="item.codBarras"
                            :data-cart-idx="index"
-                           :class="['bg-white border rounded-xl shadow-sm p-3 relative flex items-center space-x-3 transition-colors', item.flashing ? 'cart-flash' : 'border-gray-100']">
+                           :class="['bg-white border rounded-xl shadow-sm p-3 relative flex flex-col transition-colors', item.flashing ? 'cart-flash' : 'border-gray-100', item.enCombo ? 'border-amber-300' : '']">
+                         <div class="flex items-start space-x-3 w-full">
                          <div class="flex-1 min-w-0 pr-4">
-                           <h3 class="font-bold text-gray-800 text-xs leading-tight truncate">{{ item.nombre }}</h3>
+                           <h3 class="font-bold text-gray-800 text-xs leading-tight truncate">
+                             {{ item.nombre }}
+                             <span v-if="item.enCombo" class="text-amber-600 text-[9px] font-bold ml-1">[combo]</span>
+                           </h3>
                            <div v-if="item.ahorroPromo > 0" class="inline-flex items-center mt-1 bg-red-50 text-red-600 text-[9px] font-black px-1.5 py-0.5 rounded border border-red-100 uppercase">★ Ahorro S/ {{ item.ahorroPromo.toFixed(2) }}</div>
                            <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ item.precioUnitario.toFixed(2) }} ud.</div>
                          </div>
@@ -894,6 +955,21 @@
                               <span v-if="item.qtyBadge" class="qty-badge" :style="{ color: item.qtyBadge > 0 ? '#10b981' : '#ef4444' }">{{ item.qtyBadge > 0 ? '+' : '' }}{{ item.qtyBadge }}</span>
                            </div>
                          </div>
+                         </div><!-- /flex-row -->
+                         <!-- Líneas de promo (incentivo / aplicada / combo incentivo) -->
+                         <div v-if="item.promoAplicada" class="cart-aplicada">✅ {{ item.promoAplicada }}</div>
+                         <div v-else-if="item.promoIncentivo" class="cart-incentivo">💡 {{ item.promoIncentivo }}</div>
+                         <div v-if="item.comboIncentivo && !item.enCombo" class="cart-incentivo">🎁 {{ item.comboIncentivo }}</div>
+                      </div>
+
+                      <!-- Banner de combos detectados -->
+                      <div v-for="(cb, idx) in combosBanner" :key="'cb'+idx" class="combo-banner">
+                        <div class="text-xs font-black text-amber-900 mb-1">🎁 {{ cb.nombre }} aplicado{{ cb.aplicaciones > 1 ? ' ×' + cb.aplicaciones : '' }}</div>
+                        <div class="text-[10px] text-amber-800 flex justify-between">
+                          <span>Subtotal normal: S/ {{ cb.totalNormal.toFixed(2) }}</span>
+                          <span>Combo: S/ {{ cb.totalCombo.toFixed(2) }}</span>
+                        </div>
+                        <div class="text-[10px] text-emerald-700 font-bold mt-0.5">✨ Ahorro: S/ {{ cb.ahorro.toFixed(2) }}</div>
                       </div>
                    </main>
                    
@@ -2241,6 +2317,7 @@
             return [];
         });
         const granTotal = computed(() => carrito.value.reduce((acc, item) => acc + item.subtotal, 0));
+        const combosBanner = ref([]);  // Combos detectados en el carrito (se llena en aplicarPromosCarrito)
         const vuelto = computed(() => {
             if (pago.value.metodo === 'VIRTUAL') return 0;
             return pago.value.montoRecibido + (pago.value.montoVirtual || 0) - granTotal.value;
@@ -2308,6 +2385,10 @@
            } else {
               uiState.value.splitScreen = false;
               uiState.value.mobileView = 'catalog';
+           }
+           // Recalcular combos al cambiar el carrito
+           if (typeof aplicarPromosCarrito === 'function') {
+              try { aplicarPromosCarrito(); } catch(_){}
            }
            // Persistir carrito para sobrevivir refreshes accidentales
            try { localStorage.setItem('mosexpress_carrito', JSON.stringify(newVal)); } catch(e) {}
@@ -2716,6 +2797,21 @@
                     k.toLowerCase().startsWith('stock_') && _normZona(k.slice(6)) === zonaNorm
                 ) || null
             ) : null;
+
+            // Helper: ¿la promo está activa y dentro de su vigencia?
+            const _hoyStr = (() => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+            const _promoVigente = (pr) => {
+                if (!pr) return false;
+                // Activa
+                if (pr.Activa === false || String(pr.Activa) === '0' || String(pr.Activa).toLowerCase() === 'false') return false;
+                // Vigencia: si vacío, considerar vigente
+                const desde = pr.Vigencia_Desde ? String(pr.Vigencia_Desde).substring(0,10) : '';
+                const hasta = pr.Vigencia_Hasta ? String(pr.Vigencia_Hasta).substring(0,10) : '';
+                if (desde && _hoyStr < desde) return false;
+                if (hasta && _hoyStr > hasta) return false;
+                return true;
+            };
+
             db.value.PRODUCTO_BASE.forEach(base => {
                  try {
                      const _normSku = v => String(v === null || v === undefined ? '' : v).trim();
@@ -2728,11 +2824,29 @@
                      if(pres.length === 0) return;
                      // Representante del catálogo: presentación con factor=1 (fallback: menor factor)
                      const presBase = pres.find(p => p.Factor === 1) || pres[0];
-                     const promo = db.value.PROMOCIONES?.find(pr => pr.SKU_Base === base.SKU_Base);
+                     // Promo individual (GRUPO/PORCENTAJE) o COMBO — solo si vigente
+                     const skuActual = String(base.SKU_Base);
                      let pStr = '';
-                     if(promo) {
-                         if(promo.Tipo_Promo === 'GRUPO') pStr = `Lleva ${promo.Cant_Min} por S/ ${(promo.Cant_Min * promo.Valor_Promo).toFixed(2)}`;
+                     const promosAct = (db.value.PROMOCIONES || []).filter(pr => _promoVigente(pr));
+                     // Promo directa (1 SKU, GRUPO o PORCENTAJE)
+                     const promo = promosAct.find(pr => pr.SKU_Base === skuActual && pr.Tipo_Promo !== 'COMBO');
+                     if (promo) {
+                         if (promo.Tipo_Promo === 'GRUPO') pStr = `Lleva ${promo.Cant_Min} por S/ ${(promo.Cant_Min * promo.Valor_Promo).toFixed(2)}`;
                          else pStr = `-${promo.Valor_Promo}% Dcto desde ${promo.Cant_Min} u.`;
+                     } else {
+                         // Combo: ¿este SKU es parte de algún combo activo?
+                         const combo = promosAct.find(pr => {
+                             if (pr.Tipo_Promo !== 'COMBO') return false;
+                             let items = [];
+                             try { items = pr.Items_JSON ? JSON.parse(pr.Items_JSON) : (pr.items || []); } catch(_){ items = []; }
+                             return items.some(it => String(it.skuBase) === skuActual);
+                         });
+                         if (combo) {
+                             let items = [];
+                             try { items = combo.Items_JSON ? JSON.parse(combo.Items_JSON) : (combo.items || []); } catch(_){ items = []; }
+                             const otros = items.filter(it => String(it.skuBase) !== skuActual);
+                             pStr = `Combo S/${parseFloat(combo.Valor_Promo || 0).toFixed(2)} con ${otros.length} producto${otros.length !== 1 ? 's' : ''} más`;
+                         }
                      }
                      const term = encodeURIComponent(String(base.Nombre || 'N/A').split(' ')[0].toLowerCase());
                      const stockVal = (stockKey && base[stockKey] !== undefined && base[stockKey] !== '') ? (parseInt(base[stockKey]) || 0) : null;
@@ -4664,27 +4778,153 @@
           setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
         };
         
+        // Helper: ¿la promo está vigente?
+        const _promoIsVigente = (pr) => {
+          if (!pr) return false;
+          if (pr.Activa === false || String(pr.Activa) === '0' || String(pr.Activa).toLowerCase() === 'false') return false;
+          const hoy = (() => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+          const desde = pr.Vigencia_Desde ? String(pr.Vigencia_Desde).substring(0,10) : '';
+          const hasta = pr.Vigencia_Hasta ? String(pr.Vigencia_Hasta).substring(0,10) : '';
+          if (desde && hoy < desde) return false;
+          if (hasta && hoy > hasta) return false;
+          return true;
+        };
+        // Helper: parsear items de combo
+        const _comboItems = (pr) => {
+          if (!pr) return [];
+          try { return pr.Items_JSON ? JSON.parse(pr.Items_JSON) : (pr.items || []); } catch(_){ return []; }
+        };
+
         const calcularImportes = (item) => {
+          // Reset metadata de promo (se recalcula globalmente en aplicarPromosCarrito)
           let pNormal = item.cantidad * item.precioUnitario;
           let ttl = pNormal;
-          const promo = db.value.PROMOCIONES?.find(pr => pr.SKU_Base === (item.skuBase || item.sku));
+          const promo = (db.value.PROMOCIONES || []).find(pr =>
+            pr.Tipo_Promo !== 'COMBO' && pr.SKU_Base === (item.skuBase || item.sku) && _promoIsVigente(pr)
+          );
+          item.promoIncentivo = '';
+          item.promoAplicada = '';
           if (promo) {
              const cantMin    = parseInt(promo.Cant_Min) || 0;
              const valorPromo = parseFloat(promo.Valor_Promo) || 0;
              const factor     = item.factor || 1;
-             const efectiva   = item.cantidad * factor; // unidades base (ej: 300 bolsas × 0.01 = 3kg)
-             if (cantMin > 0 && valorPromo > 0 && efectiva >= cantMin) {
-                 if (promo.Tipo_Promo === 'GRUPO') {
-                     const g      = Math.floor(efectiva / cantMin);
-                     const sBase  = efectiva % cantMin;          // sobrante en unidades base
-                     const sUnits = sBase / factor;              // sobrante convertido a unidades de presentación
-                     ttl = (g * cantMin * valorPromo) + (sUnits * item.precioUnitario);
-                 } else if (promo.Tipo_Promo === 'PORCENTAJE') {
-                     ttl = pNormal * (1 - (valorPromo / 100));
+             const efectiva   = item.cantidad * factor;
+             if (cantMin > 0 && valorPromo > 0) {
+                 if (efectiva >= cantMin) {
+                     if (promo.Tipo_Promo === 'GRUPO') {
+                         const g      = Math.floor(efectiva / cantMin);
+                         const sBase  = efectiva % cantMin;
+                         const sUnits = sBase / factor;
+                         ttl = (g * cantMin * valorPromo) + (sUnits * item.precioUnitario);
+                         item.promoAplicada = `Promo aplicada · S/${valorPromo.toFixed(2)} c/u`;
+                     } else if (promo.Tipo_Promo === 'PORCENTAJE') {
+                         ttl = pNormal * (1 - (valorPromo / 100));
+                         item.promoAplicada = `${valorPromo}% dcto aplicado`;
+                     }
+                 } else {
+                     // Cerca de cumplir → mostrar incentivo
+                     const faltan = cantMin - efectiva;
+                     if (faltan > 0 && faltan <= cantMin) {
+                         if (promo.Tipo_Promo === 'GRUPO') {
+                             const totalConPromo = cantMin * valorPromo;
+                             item.promoIncentivo = `Lleva ${faltan} más y paga S/${totalConPromo.toFixed(2)} en total`;
+                         } else if (promo.Tipo_Promo === 'PORCENTAJE') {
+                             item.promoIncentivo = `Lleva ${faltan} más y obtén ${valorPromo}% de dcto`;
+                         }
+                     }
                  }
              }
           }
           item.subtotal = ttl; item.ahorroPromo = pNormal - ttl;
+        };
+
+        // ── Aplicar combos sobre el carrito (después de calcular individuales) ──
+        const aplicarPromosCarrito = () => {
+          const promosCombo = (db.value.PROMOCIONES || []).filter(pr =>
+            pr.Tipo_Promo === 'COMBO' && _promoIsVigente(pr)
+          );
+          // Reset combo metadata
+          carrito.value.forEach(it => {
+            it.enCombo = false;
+            it.comboNombre = '';
+            it.comboIncentivo = '';
+          });
+          // Build snapshot { skuBase: cantidad disponible }
+          const dispMap = {};
+          carrito.value.forEach(it => {
+            const sku = String(it.skuBase || it.sku);
+            dispMap[sku] = (dispMap[sku] || 0) + (parseFloat(it.cantidad) || 0);
+          });
+
+          window._combosBanner = window._combosBanner || [];
+          const banners = [];
+          promosCombo.forEach(promo => {
+            const items = _comboItems(promo);
+            if (!items.length) return;
+            // ¿Cuántas veces se puede aplicar?
+            let aplicaciones = Infinity;
+            items.forEach(req => {
+              const need = parseFloat(req.cantidad) || 1;
+              const have = dispMap[String(req.skuBase)] || 0;
+              const veces = Math.floor(have / need);
+              if (veces < aplicaciones) aplicaciones = veces;
+            });
+            // ¿Hay al menos 1 producto del combo en el carrito? (para incentivo)
+            const algunoEnCarrito = items.some(it => (dispMap[String(it.skuBase)] || 0) > 0);
+            const valorCombo = parseFloat(promo.Valor_Promo) || 0;
+
+            if (aplicaciones > 0 && aplicaciones !== Infinity) {
+              // Suma normal de los items del combo (por 1 aplicación, en precios unitarios)
+              let normalSumPorAplicacion = 0;
+              items.forEach(req => {
+                const need = parseFloat(req.cantidad) || 1;
+                const it = carrito.value.find(c => String(c.skuBase || c.sku) === String(req.skuBase));
+                if (it) normalSumPorAplicacion += need * (it.precioUnitario || 0);
+              });
+              const totalCombo  = aplicaciones * valorCombo;
+              const totalNormal = aplicaciones * normalSumPorAplicacion;
+              const ahorro = totalNormal - totalCombo;
+              const nombreCombo = promo.Descripcion || `Combo S/${valorCombo.toFixed(2)}`;
+
+              // Aplicar descuento proporcional + descontar dispMap + marcar items
+              items.forEach(req => {
+                const need = parseFloat(req.cantidad) || 1;
+                const it = carrito.value.find(c => String(c.skuBase || c.sku) === String(req.skuBase));
+                if (!it) return;
+                const totalNeed = need * aplicaciones;
+                const enCombo  = Math.min(it.cantidad, totalNeed);
+                const fueraCombo = Math.max(0, it.cantidad - enCombo);
+                const aportePorAplic = need * (it.precioUnitario || 0);
+                const proporcionAporte = normalSumPorAplicacion > 0 ? (aportePorAplic / normalSumPorAplicacion) : 0;
+                const subtotalEnCombo = proporcionAporte * valorCombo * aplicaciones;
+                const subtotalFuera   = fueraCombo * (it.precioUnitario || 0);
+                it.subtotal = Math.round((subtotalEnCombo + subtotalFuera) * 100) / 100;
+                it.enCombo  = true;
+                it.comboNombre = nombreCombo;
+                // Recalcular ahorro total del item
+                it.ahorroPromo = (it.cantidad * it.precioUnitario) - it.subtotal;
+                dispMap[String(req.skuBase)] -= totalNeed;
+              });
+              banners.push({ nombre: nombreCombo, aplicaciones, totalNormal, totalCombo, ahorro });
+            } else if (algunoEnCarrito) {
+              // Incentivo: cliente lleva al menos 1 del combo, mostrar qué falta
+              const faltantes = items.filter(req => {
+                const need = parseFloat(req.cantidad) || 1;
+                const have = dispMap[String(req.skuBase)] || 0;
+                return have < need;
+              });
+              if (faltantes.length) {
+                const detalle = faltantes.map(f => `${f.cantidad} ${f.descripcion || f.skuBase}`).join(' + ');
+                items.forEach(req => {
+                  const it = carrito.value.find(c => String(c.skuBase || c.sku) === String(req.skuBase));
+                  if (it && !it.comboIncentivo) {
+                    it.comboIncentivo = `Agrega ${detalle} y arma el combo S/${valorCombo.toFixed(2)}`;
+                  }
+                });
+              }
+            }
+          });
+          combosBanner.value = banners;
         };
 
         const getPosLeftClasses = () => {
@@ -5777,7 +6017,7 @@
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           procesandoCierre, cerrarCaja, cerrarSesion,
-          bBuscador, productosFiltrados, carrito, granTotal, scannerInput,
+          bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago,
           iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
