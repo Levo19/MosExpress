@@ -405,6 +405,53 @@
       _reg.update().catch(() => {});
 
     }).catch(e => console.warn('[SW]', e));
+
+    // ── FORCED UPDATE: compara version.json con la versión cargada ─────
+    // Algunos navegadores cachean el SW agresivamente y la actualización
+    // normal se atrasa horas/días. Este check fuerza la actualización
+    // sin opción del usuario cuando detecta que la versión del bundle
+    // local difiere de la versión publicada en version.json.
+    let _APP_VERSION = null; // se setea al cargar version.json la 1ra vez
+    let _forceUpdateTriggered = false;
+
+    async function _checkForcedUpdate() {
+      if (_forceUpdateTriggered) return;
+      try {
+        const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!j || !j.version) return;
+        if (_APP_VERSION === null) {
+          _APP_VERSION = j.version; // primera carga — guarda referencia
+          return;
+        }
+        if (j.version !== _APP_VERSION) {
+          _forceUpdateTriggered = true;
+          // Mostrar overlay no-dismissable
+          const el = document.getElementById('meUpdateOverlay');
+          if (el) {
+            el.classList.add('visible');
+            const sub = el.querySelector('.me-upd-sub');
+            if (sub) sub.textContent = 'Actualizando a v' + j.version + ' · obligatorio';
+          }
+          // Marcar resync de catálogo post-reload
+          try { localStorage.setItem('mosexpress_force_resync', '1'); } catch(e) {}
+          // Intentar update SW + skipWaiting
+          if (window._SWCheck) { try { await window._SWCheck(); } catch(e) {} }
+          // Forzar recarga si el SW no disparó controllerchange en 3s
+          setTimeout(() => { location.reload(true); }, 3000);
+        }
+      } catch(e) {}
+    }
+
+    // Primer check inmediato (guarda baseline)
+    _checkForcedUpdate();
+    // Revisar cada 3 minutos
+    setInterval(_checkForcedUpdate, 3 * 60 * 1000);
+    // Y cada vez que la app vuelve al foreground (cambio de pestaña / unlock)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _checkForcedUpdate();
+    });
   })();
   </script>
 </head>
