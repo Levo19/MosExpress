@@ -4135,73 +4135,97 @@
 
              procesandoCierre.value = true;
 
-             // 1. Anulación masiva de POR_COBRAR no cobrados
-             if (idsAnular.length > 0 && !_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                 try {
-                     await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION_MASIVA', ids: idsAnular }) });
-                 } catch(e) { agregarToast("Aviso Red", "Anulaciones en cola"); }
-             }
+             // Helper: fetch con AbortController para evitar awaits colgados infinitamente
+             const _fetchConTimeout = (url, opts, ms) => {
+                 const ctrl = new AbortController();
+                 const tid = setTimeout(() => ctrl.abort(), ms);
+                 return fetch(url, { ...opts, signal: ctrl.signal })
+                     .finally(() => clearTimeout(tid));
+             };
 
-             // 2. Registrar cierre en GAS (solo si el ID es real, no LOCAL)
-             if (!_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                 try {
-                     const reqCierre = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) });
-                     const resCierre = await reqCierre.json();
-                     if (resCierre.status !== 'success') {
-                         procesandoCierre.value = false;
-                         agregarToast('Error al cerrar caja', resCierre.mensaje || resCierre.message || 'GAS devolvió error — intenta de nuevo.', 'warning');
-                         return;
-                     }
-                 } catch(e) { agregarToast("Aviso Red", "Cierre local (sin conexión)"); }
-             }
-
-             // 3. Navegar la ventana ya reservada al reporte del turno
-             if (_turnoWin && !_turnoWin.closed) {
-               _turnoWin.location.href = _turnoUrl;
-             } else {
-               window.open(_turnoUrl, '_blank'); // fallback si fue bloqueada
-             }
-
-             // 4. Detener polling y limpiar estado local
-             // Guardar total vendido del turno (para stat "ayer vendiste" en próximo welcome)
              try {
-                 const _totalDia = parseFloat((tEfectivo + tVirtual).toFixed(2));
-                 if (_totalDia > 0) {
-                     localStorage.setItem('mosexpress_ventas_ultimo_cierre', JSON.stringify({
-                         fecha: new Date().toDateString(),
-                         total: _totalDia,
-                         tickets: cobradosEnSesion.value.length
-                     }));
+                 // 1. Anulación masiva de POR_COBRAR no cobrados (best-effort, no bloqueante)
+                 if (idsAnular.length > 0 && !_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                     try {
+                         await _fetchConTimeout(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION_MASIVA', ids: idsAnular }) }, 25000);
+                     } catch(e) { agregarToast("Aviso Red", "Anulaciones en cola"); }
                  }
-             } catch(e) {}
 
-             detenerPollingZona();
-             cajaAbierta.value = false;
-             idCajaActual.value = '';
-             montoAperturaMemoria.value = 0;
-             cobradosEnSesion.value = [];
-             extrasMovimientos.value = [];
-             sessionStartTime.value = null;
-             localStorage.removeItem('mosexpress_extras_sesion');
-             ventasZona.value = [];
-             localStorage.removeItem('mosexpress_caja_activa');
-             localStorage.removeItem('mosexpress_caja_payload'); // cancelar reintento de apertura
-             localStorage.removeItem('mosexpress_cobrados_sesion');
-             localStorage.removeItem('mosexpress_session_start');
-             ventasHoy.value = [];
-             localStorage.removeItem('mosexpress_ventas_hoy');
+                 // 2. Registrar cierre en GAS (CRÍTICO — si falla, caja queda abierta)
+                 if (!_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                     let cierreOk = false;
+                     try {
+                         const reqCierre = await _fetchConTimeout(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) }, 35000);
+                         const resCierre = await reqCierre.json();
+                         if (resCierre.status === 'success') {
+                             cierreOk = true;
+                         } else {
+                             agregarToast('Error al cerrar caja', resCierre.mensaje || resCierre.message || 'GAS devolvió error — intenta de nuevo.', 'warning');
+                         }
+                     } catch(e) {
+                         // Timeout / red caída / JSON inválido — la caja NO se cerró en GAS
+                         const msg = e.name === 'AbortError'
+                             ? 'GAS no respondió a tiempo. Reintenta el cierre.'
+                             : 'Sin conexión al servidor. Reintenta cuando vuelva la red.';
+                         agregarToast('Cierre no registrado', msg, 'warning');
+                     }
+                     if (!cierreOk) {
+                         // Cerrar la ventana del turno reservada y abortar limpieza local
+                         try { if (_turnoWin && !_turnoWin.closed) _turnoWin.close(); } catch(_e) {}
+                         return; // procesandoCierre se resetea en finally
+                     }
+                 }
 
-             // 5. Desloguear terminal
-             config.value.completado = false;
-             config.value.vendedor = '';
-             config.value.estacion = null;
-             localStorage.removeItem('mosexpress_config');
-             configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
-             cajeroWizardInfo.value = null;
-             wizardCajeroOcupado.value = false;
+                 // 3. Navegar la ventana ya reservada al reporte del turno
+                 if (_turnoWin && !_turnoWin.closed) {
+                   _turnoWin.location.href = _turnoUrl;
+                 } else {
+                   window.open(_turnoUrl, '_blank'); // fallback si fue bloqueada
+                 }
 
-             procesandoCierre.value = false;
-             agregarToast("Turno cerrado", "Hasta luego");
+                 // 4. Detener polling y limpiar estado local
+                 // Guardar total vendido del turno (para stat "ayer vendiste" en próximo welcome)
+                 try {
+                     const _totalDia = parseFloat((tEfectivo + tVirtual).toFixed(2));
+                     if (_totalDia > 0) {
+                         localStorage.setItem('mosexpress_ventas_ultimo_cierre', JSON.stringify({
+                             fecha: new Date().toDateString(),
+                             total: _totalDia,
+                             tickets: cobradosEnSesion.value.length
+                         }));
+                     }
+                 } catch(e) {}
+
+                 detenerPollingZona();
+                 cajaAbierta.value = false;
+                 idCajaActual.value = '';
+                 montoAperturaMemoria.value = 0;
+                 cobradosEnSesion.value = [];
+                 extrasMovimientos.value = [];
+                 sessionStartTime.value = null;
+                 localStorage.removeItem('mosexpress_extras_sesion');
+                 ventasZona.value = [];
+                 localStorage.removeItem('mosexpress_caja_activa');
+                 localStorage.removeItem('mosexpress_caja_payload'); // cancelar reintento de apertura
+                 localStorage.removeItem('mosexpress_cobrados_sesion');
+                 localStorage.removeItem('mosexpress_session_start');
+                 ventasHoy.value = [];
+                 localStorage.removeItem('mosexpress_ventas_hoy');
+
+                 // 5. Desloguear terminal
+                 config.value.completado = false;
+                 config.value.vendedor = '';
+                 config.value.estacion = null;
+                 localStorage.removeItem('mosexpress_config');
+                 configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
+                 cajeroWizardInfo.value = null;
+                 wizardCajeroOcupado.value = false;
+
+                 agregarToast("Turno cerrado", "Hasta luego");
+             } finally {
+                 // Garantiza que el botón siempre vuelve a estar disponible, pase lo que pase
+                 procesandoCierre.value = false;
+             }
         };
 
         // --- CAJERO: carga tickets de zona desde GAS ---
