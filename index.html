@@ -2623,13 +2623,26 @@
                   if (_parsed.completado && !_parsed.esCajero) currentModule.value = 'POS';
                   config.value = _parsed;
               }
-          } catch(e) { localStorage.removeItem('mosexpress_config'); }
+          } catch(e) {
+              // Diagnóstico: si la sesión se perdió por config corrupto, dejar registro
+              try {
+                  localStorage.setItem('mosexpress_last_session_loss', JSON.stringify({
+                      fecha: new Date().toISOString(),
+                      razon: 'JSON.parse fallo',
+                      detalle: String(e && e.message || e)
+                  }));
+              } catch(_e) {}
+              localStorage.removeItem('mosexpress_config');
+          }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
 
-          // Detectar nueva jornada con sesión sin cerrar
+          // Detectar nueva jornada con sesión sin cerrar.
+          // SOLO aplica a CAJEROS — ellos tienen caja física pendiente que debe cerrarse
+          // antes de iniciar un nuevo día. Los vendedores no tienen recursos pendientes;
+          // forzarles relogin causaba confusión (bloquean pantalla, vuelven, "se cerró sesión").
           const _hoyJornada = new Date().toDateString();
           const _fechaSesionGuardada = localStorage.getItem('mosexpress_session_date');
-          if (config.value.completado && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
+          if (config.value.completado && config.value.esCajero && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
               // Capturar info de la caja antes de limpiarla
               let _cajaAyer = null;
               try {
@@ -2649,6 +2662,9 @@
               localStorage.removeItem('mosexpress_config');
               localStorage.removeItem('mosexpress_session_date');
               localStorage.removeItem('mosexpress_caja_activa');
+          } else if (config.value.completado && !config.value.esCajero && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
+              // Vendedor de día anterior → renovar fecha sin cerrar sesión (no hay caja que cerrar)
+              localStorage.setItem('mosexpress_session_date', _hoyJornada);
           }
 
           // Restaurar carrito en curso (sobrevive refreshes accidentales)
