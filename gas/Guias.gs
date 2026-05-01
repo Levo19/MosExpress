@@ -4,6 +4,8 @@
 // ============================================================
 
 // Auto-genera una guía SALIDA_VENTAS al cerrar caja y descuenta STOCK_ZONAS
+// Optimizada: lee STOCK_ZONAS una sola vez, hace updates en memoria,
+// y escribe el GUIAS_DETALLE + STOCK_ZONAS modificado en batch.
 function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   var sheetVC    = ss.getSheetByName("VENTAS_CABECERA");
   var sheetVD    = ss.getSheetByName("VENTAS_DETALLE");
@@ -14,20 +16,20 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
 
   // 1. IDs de ventas no anuladas de esta caja
   var ventas = sheetVC.getDataRange().getValues();
-  var idsVenta = [];
+  var idsVentaSet = {};
   for (var i = 1; i < ventas.length; i++) {
     if (String(ventas[i][10]) === String(cajaId) && String(ventas[i][8]) !== 'ANULADO') {
-      idsVenta.push(String(ventas[i][0]));
+      idsVentaSet[String(ventas[i][0])] = true;
     }
   }
+  var idsVenta = Object.keys(idsVentaSet);
   if (!idsVenta.length) return;
 
   // 2. Sumar cantidades por Cod_Barras
-  // Col 7 (índice 6) = Cod_Barras; col 1 (índice 1) = SKU (fallback ventas antiguas)
   var detalle = sheetVD.getDataRange().getValues();
   var totales = {};
   for (var j = 1; j < detalle.length; j++) {
-    if (idsVenta.indexOf(String(detalle[j][0])) === -1) continue;
+    if (!idsVentaSet[String(detalle[j][0])]) continue;
     var cod = String(detalle[j][6] || detalle[j][1]).trim();
     if (!cod) continue;
     totales[cod] = (totales[cod] || 0) + (parseFloat(detalle[j][3]) || 0);
@@ -36,17 +38,47 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   var cods = Object.keys(totales);
   if (!cods.length) return;
 
-  // 3. Registrar guía y descontar stock
+  // 3. Registrar cabecera de guía
   var idGuia = "G-VENTAS-" + new Date().getTime();
-  // GUIAS_CABECERA: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
   sheetGC.appendRow([idGuia, new Date(), vendedor, zona, 'SALIDA_VENTAS',
     'Auto cierre de caja · ' + cajaId, '', 'CONFIRMADO']);
+
+  // 4. Detalle de guía — batch append en una sola escritura
+  var detalleRows = cods.map(function(cod) { return [idGuia, String(cod), totales[cod]]; });
+  var startRow = sheetGD.getLastRow() + 1;
+  sheetGD.getRange(startRow, 2, detalleRows.length, 1).setNumberFormat('@STRING@');
+  sheetGD.getRange(startRow, 1, detalleRows.length, 3).setValues(detalleRows);
+
+  // 5. Stock — leer una sola vez, modificar en memoria, escribir cambios en batch
+  var stockData = sheetStock.getDataRange().getValues();
+  var stockHdr  = stockData[0];
+  var stockMap  = {}; // "cod|zona" → indice de fila (0-based desde header)
+  for (var s = 1; s < stockData.length; s++) {
+    var key = String(stockData[s][0]) + '|' + String(stockData[s][1]);
+    stockMap[key] = s;
+  }
+
+  var nuevasFilas = [];
   cods.forEach(function(cod) {
-    var nextGD = sheetGD.getLastRow() + 1;
-    sheetGD.getRange(nextGD, 2).setNumberFormat('@STRING@');
-    sheetGD.getRange(nextGD, 1, 1, 3).setValues([[idGuia, String(cod), totales[cod]]]);
-    actualizarStockFila(sheetStock, cod, zona, -totales[cod]);
+    var key = String(cod) + '|' + String(zona);
+    var idx = stockMap[key];
+    if (idx !== undefined) {
+      stockData[idx][2] = (parseFloat(stockData[idx][2]) || 0) - totales[cod];
+    } else {
+      nuevasFilas.push([String(cod), String(zona), -totales[cod]]);
+    }
   });
+
+  // Re-escribir solo las filas modificadas (saltando header)
+  if (stockData.length > 1) {
+    sheetStock.getRange(2, 1, stockData.length - 1, stockHdr.length).setValues(stockData.slice(1));
+  }
+  // Append filas nuevas si hay
+  if (nuevasFilas.length > 0) {
+    var newStart = sheetStock.getLastRow() + 1;
+    sheetStock.getRange(newStart, 1, nuevasFilas.length, 1).setNumberFormat('@STRING@');
+    sheetStock.getRange(newStart, 1, nuevasFilas.length, 3).setValues(nuevasFilas);
+  }
 }
 
 function listarGuias(zona) {

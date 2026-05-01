@@ -85,12 +85,23 @@ function procesarCierreCaja(data) {
   var cajaEncontrada = false;
   var cajaVendedor = '';
   var cajaZona = '';
+  var yaCerrada = false;
 
   for (var i = 1; i < filas.length; i++) {
     if (String(filas[i][0]) === String(data.cajaId)) {
+      // Idempotencia: si ya está CERRADA, devolver éxito inmediato sin reprocesar.
+      // Permite que el frontend reintente tras timeout sin duplicar guía/stock.
+      if (String(filas[i][5]) === 'CERRADA') {
+        yaCerrada = true;
+        cajaEncontrada = true;
+        break;
+      }
       sheetCajas.getRange(i + 1, 6).setValue("CERRADA");
       sheetCajas.getRange(i + 1, 7).setValue(data.montoFinal);
       sheetCajas.getRange(i + 1, 8).setValue(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'));
+      // Flush garantiza que el "CERRADA" se commitee antes de generar la guía.
+      // Si la guía/push tardan o fallan, la caja igual queda marcada como cerrada.
+      SpreadsheetApp.flush();
       cajaVendedor = String(filas[i][1]);
       cajaZona = String(filas[i][8] || '');
       cajaEncontrada = true;
@@ -99,6 +110,13 @@ function procesarCierreCaja(data) {
   }
 
   if (!cajaEncontrada) return generarRespuestaError("Caja con ID " + data.cajaId + " no encontrada.");
+
+  // Idempotente: respuesta inmediata si ya estaba cerrada (no reprocesar guía/stock)
+  if (yaCerrada) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success", mensaje: "Caja ya estaba cerrada", yaCerrada: true
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 
   // Auto-generar guía SALIDA_VENTAS (no bloquea la respuesta si falla)
   if (cajaZona) {

@@ -4242,26 +4242,39 @@
                      } catch(e) { agregarToast("Aviso Red", "Anulaciones en cola"); }
                  }
 
-                 // 2. Registrar cierre en GAS (CRÍTICO — si falla, caja queda abierta)
+                 // 2. Registrar cierre en GAS (CRÍTICO — si falla, caja queda abierta).
+                 // Hasta 2 intentos: el primero puede timeoutear porque generarGuiaSalidaVentas
+                 // tarda con muchas ventas; el segundo aprovecha la idempotencia del GAS
+                 // (si ya marcó CERRADA, devuelve success inmediato sin reprocesar).
                  if (!_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                      let cierreOk = false;
-                     try {
-                         const reqCierre = await _fetchConTimeout(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) }, 35000);
-                         const resCierre = await reqCierre.json();
-                         if (resCierre.status === 'success') {
-                             cierreOk = true;
-                         } else {
-                             agregarToast('Error al cerrar caja', resCierre.mensaje || resCierre.message || 'GAS devolvió error — intenta de nuevo.', 'warning');
+                     let ultimoError = null;
+                     for (let intento = 0; intento < 2 && !cierreOk; intento++) {
+                         try {
+                             const reqCierre = await _fetchConTimeout(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) }, 60000);
+                             const resCierre = await reqCierre.json();
+                             if (resCierre.status === 'success') {
+                                 cierreOk = true;
+                             } else {
+                                 agregarToast('Error al cerrar caja', resCierre.mensaje || resCierre.message || 'GAS devolvió error — intenta de nuevo.', 'warning');
+                                 break; // error explícito del GAS no se reintenta
+                             }
+                         } catch(e) {
+                             ultimoError = e;
+                             // Si fue timeout en el primer intento, esperar 2s y reintentar.
+                             // El GAS pudo haber marcado CERRADA aunque la respuesta no llegó —
+                             // el 2do intento detectará idempotencia y devolverá success rápido.
+                             if (intento === 0 && e.name === 'AbortError') {
+                                 await new Promise(r => setTimeout(r, 2000));
+                                 continue;
+                             }
                          }
-                     } catch(e) {
-                         // Timeout / red caída / JSON inválido — la caja NO se cerró en GAS
-                         const msg = e.name === 'AbortError'
-                             ? 'GAS no respondió a tiempo. Reintenta el cierre.'
-                             : 'Sin conexión al servidor. Reintenta cuando vuelva la red.';
-                         agregarToast('Cierre no registrado', msg, 'warning');
                      }
                      if (!cierreOk) {
-                         // Cerrar la ventana del turno reservada y abortar limpieza local
+                         const msg = ultimoError && ultimoError.name === 'AbortError'
+                             ? 'GAS no respondió en 60s tras 2 intentos. La caja podría haberse marcado cerrada — refresca la app y verifica.'
+                             : 'Sin conexión al servidor. Reintenta cuando vuelva la red.';
+                         agregarToast('Cierre no registrado', msg, 'warning');
                          try { if (_turnoWin && !_turnoWin.closed) _turnoWin.close(); } catch(_e) {}
                          return; // procesandoCierre se resetea en finally
                      }
