@@ -3907,21 +3907,28 @@
                 localStorage.removeItem('mosexpress_extras_sesion');
                 procesandoCaja.value = false;
                 triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
-                // Ticket apertura cajero
-                let txt = "\x1b\x40\x1b\x61\x01";
-                txt += "\x1b\x21\x30MOSexpress\n\n";
-                txt += "\x1b\x21\x00================================================\n";
-                txt += "\x1b\x21\x10APERTURA DE CAJA\n";
-                txt += "\x1b\x21\x00================================================\n\n";
-                txt += "\x1b\x61\x00";
-                txt += "FECHA   : " + new Date().toLocaleString() + "\n";
-                txt += "CAJERO  : " + config.value.vendedor + "\n";
-                txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
-                txt += "CAJA ID : " + cid + "\n";
-                txt += "MONTO   : S/ " + monto.toFixed(2) + "\n\n";
-                txt += "\x1b\x61\x01*** TURNO INICIADO ***\n\n\n\n\n\x1d\x56\x00";
-                mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura Caja", b64ESC(txt))
-                    .catch(e => agregarToast('Error Impresión', e.message));
+
+                // Validar PrintNode_ID antes de intentar imprimir
+                const _cPrinterId = config.value.estacion?.PrintNode_ID;
+                if (!_cPrinterId || !/^\d+$/.test(String(_cPrinterId))) {
+                    agregarToast('Sin impresora', 'Tu estación no tiene impresora válida asignada en MOS. Avisa al supervisor.', 'warning');
+                } else {
+                    // Ticket apertura cajero
+                    let txt = "\x1b\x40\x1b\x61\x01";
+                    txt += "\x1b\x21\x30MOSexpress\n\n";
+                    txt += "\x1b\x21\x00================================================\n";
+                    txt += "\x1b\x21\x10APERTURA DE CAJA\n";
+                    txt += "\x1b\x21\x00================================================\n\n";
+                    txt += "\x1b\x61\x00";
+                    txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+                    txt += "CAJERO  : " + config.value.vendedor + "\n";
+                    txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+                    txt += "CAJA ID : " + cid + "\n";
+                    txt += "MONTO   : S/ " + monto.toFixed(2) + "\n\n";
+                    txt += "\x1b\x61\x01*** TURNO INICIADO ***\n\n\n\n\n\x1d\x56\x00";
+                    mandarImpresionPrintNode(_cPrinterId, "Apertura Caja", b64ESC(txt))
+                        .catch(e => agregarToast('Error Impresión', e.message));
+                }
             } else {
                 // ── VENDEDOR: sin entrada en CAJAS, usa idCaja del cajero activo ──
                 idCajaActual.value = '';
@@ -3932,21 +3939,41 @@
                 localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
                 localStorage.removeItem('mosexpress_cobrados_sesion');
                 localStorage.removeItem('mosexpress_extras_sesion');
+
+                // Refrescar PrintNode_ID desde ProyectoMOS_DB ANTES de imprimir.
+                // El cajero pasa por await(APERTURA_CAJA) que da tiempo al sync inicial,
+                // pero el vendedor imprime inmediatamente y caía con cache stale (sin
+                // PrintNode_ID válido) → ticket de bienvenida no se imprimía.
+                // Timeout 5s para no bloquear la UI si la red está lenta.
+                try {
+                    await Promise.race([
+                        _syncImpresorasFromProyectoMOS(),
+                        new Promise(r => setTimeout(r, 5000))
+                    ]);
+                } catch(e) {}
+
                 triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
-                // Ticket confirmación vendedor
-                let txtV = "\x1b\x40\x1b\x61\x01";
-                txtV += "\x1b\x21\x30MOSexpress\n\n";
-                txtV += "\x1b\x21\x00================================================\n";
-                txtV += "\x1b\x21\x10VENDEDOR LISTO\n";
-                txtV += "\x1b\x21\x00================================================\n\n";
-                txtV += "\x1b\x61\x00";
-                txtV += "FECHA   : " + new Date().toLocaleString() + "\n";
-                txtV += "VENDEDOR: " + config.value.vendedor + "\n";
-                txtV += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
-                txtV += "IMPRESORA: " + config.value.estacion.PrintNode_ID + "\n\n";
-                txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
-                mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Bienvenida Vendedor", b64ESC(txtV))
-                    .catch(e => agregarToast('Error Impresión', e.message));
+
+                // Validar PrintNode_ID antes de intentar imprimir
+                const _vPrinterId = config.value.estacion?.PrintNode_ID;
+                if (!_vPrinterId || !/^\d+$/.test(String(_vPrinterId))) {
+                    agregarToast('Sin impresora', 'Tu estación no tiene impresora válida asignada en MOS. Avisa al supervisor.', 'warning');
+                } else {
+                    // Ticket confirmación vendedor
+                    let txtV = "\x1b\x40\x1b\x61\x01";
+                    txtV += "\x1b\x21\x30MOSexpress\n\n";
+                    txtV += "\x1b\x21\x00================================================\n";
+                    txtV += "\x1b\x21\x10VENDEDOR LISTO\n";
+                    txtV += "\x1b\x21\x00================================================\n\n";
+                    txtV += "\x1b\x61\x00";
+                    txtV += "FECHA   : " + new Date().toLocaleString() + "\n";
+                    txtV += "VENDEDOR: " + config.value.vendedor + "\n";
+                    txtV += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+                    txtV += "IMPRESORA: " + _vPrinterId + "\n\n";
+                    txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
+                    mandarImpresionPrintNode(_vPrinterId, "Bienvenida Vendedor", b64ESC(txtV))
+                        .catch(e => agregarToast('Error Impresión', e.message));
+                }
             }
 
             // Verificar cajero activo en zona al entrar
