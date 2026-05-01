@@ -36,6 +36,15 @@ function procesarAperturaCaja(data) {
   // Auto-cerrar cajas de días anteriores y forzar escritura antes de re-leer
   var _cajasAutoCerradas = _autoCerrarCajasViejas(sheetCajas);
 
+  // Asegurar que la columna 'PrintNode_ID' existe (col 10) — auto-creación idempotente
+  // para que warehouseMos pueda leer a qué impresora mandar avisos de preingreso.
+  try {
+    var lastCol = sheetCajas.getLastColumn();
+    var headers = sheetCajas.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
+    var hasPrintNode = headers.some(function(h) { return String(h).trim() === 'PrintNode_ID'; });
+    if (!hasPrintNode) sheetCajas.getRange(1, lastCol + 1).setValue('PrintNode_ID');
+  } catch(e) { /* no-fatal */ }
+
   // Un solo cajero activo por zona a la vez
   if (data.zona) {
     var filasActualizadas = sheetCajas.getDataRange().getValues();
@@ -52,8 +61,12 @@ function procesarAperturaCaja(data) {
   var idCaja = "CAJA-" + new Date().getTime();
   var _tz    = Session.getScriptTimeZone();
   var _ahora = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd HH:mm:ss');
-  // Columnas: ID_Caja | Vendedor | Estacion | Fecha_Apertura | Monto_Inicial | Estado | Monto_Final | Fecha_Cierre | Zona_ID
-  sheetCajas.appendRow([idCaja, data.vendedor, data.estacion, _ahora, data.montoInicial || 0, "ABIERTA", "", "", data.zona || '']);
+  // Columnas: ID_Caja | Vendedor | Estacion | Fecha_Apertura | Monto_Inicial | Estado | Monto_Final | Fecha_Cierre | Zona_ID | PrintNode_ID
+  sheetCajas.appendRow([
+    idCaja, data.vendedor, data.estacion, _ahora,
+    data.montoInicial || 0, "ABIERTA", "", "", data.zona || '',
+    data.printNodeId || ''   // NUEVA: ID PrintNode de la impresora asignada a esta caja
+  ]);
   SpreadsheetApp.flush(); // garantiza que appendRow llegue a Sheets antes de retornar el ID al frontend
 
   return ContentService.createTextOutput(JSON.stringify({

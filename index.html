@@ -2467,7 +2467,8 @@
                     vendedor:   config.value.vendedor,
                     estacion:   config.value.estacion?.Estacion_Nombre || config.value.estacion || '',
                     montoInicial: montoAperturaMemoria.value || 0,
-                    zona:       config.value.zona || ''
+                    zona:       config.value.zona || '',
+                    printNodeId: config.value.estacion?.PrintNode_ID || ''
                 };
             }
 
@@ -3933,7 +3934,8 @@
                     vendedor:     config.value.vendedor,
                     estacion:     config.value.estacion?.Estacion_Nombre || '',
                     montoInicial: monto,
-                    zona:         config.value.zona || ''
+                    zona:         config.value.zona || '',
+                    printNodeId:  config.value.estacion?.PrintNode_ID || ''
                 };
                 let cid = 'CAJA-LOCAL-' + Date.now();
                 if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
@@ -4068,7 +4070,8 @@
             const payload = {
                 tipoEvento: 'APERTURA_CAJA',
                 vendedor: config.value.vendedor, estacion: config.value.estacion.Estacion_Nombre,
-                montoInicial: montoApertura.value, zona: config.value.zona
+                montoInicial: montoApertura.value, zona: config.value.zona,
+                printNodeId: config.value.estacion.PrintNode_ID || ''  // permite a warehouseMos saber dónde imprimir avisos
             };
 
             let cid = "CAJA-LOCAL-" + Date.now();
