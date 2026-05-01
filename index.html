@@ -1240,7 +1240,7 @@
                            <span class="text-xs text-white bg-gray-800 px-1.5 py-0.5 rounded-md align-middle ml-1">x{{ pres.Factor }}</span>
                            <span v-if="pres.Factor === 1" class="text-[9px] text-emerald-700 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded-md align-middle ml-1 font-bold uppercase tracking-wide">Base</span>
                        </p>
-                       <p class="text-[10px] text-gray-400 font-mono font-bold mt-0.5">{{ pres.SKU || pres.Cod_Barras }}</p>
+                       <p class="text-[10px] text-gray-400 font-mono font-bold mt-0.5">▌ {{ pres.Cod_Barras || pres.SKU }}</p>
                    </div>
                    <div class="text-emerald-500 font-black text-xl border-l border-gray-100 pl-4">
                        S/ {{ parseFloat(pres.Precio_Venta).toFixed(2) }}
