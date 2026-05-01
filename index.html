@@ -1898,10 +1898,9 @@
                     </div>
                     <p v-if="!guiaItems.length" class="text-gray-600 text-center py-6 text-sm">Sin productos aún. Escanea o escribe un código.</p>
                 </div>
-                <button @click="confirmarGuia" :disabled="procesandoGuia || !guiaItems.length || (guiaSubtipo==='SALIDA_MOVIMIENTO' && !guiaZonaDestino)"
+                <button @click="confirmarGuia" :disabled="!guiaItems.length || (guiaSubtipo==='SALIDA_MOVIMIENTO' && !guiaZonaDestino)"
                         class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500 disabled:bg-red-900/40 text-white active:scale-95 shrink-0">
-                    <svg v-if="procesandoGuia" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    {{ procesandoGuia ? 'Registrando...' : '↓ Confirmar Salida (' + guiaItems.length + ' items)' }}
+                    ↓ Confirmar Salida ({{ guiaItems.length }} items)
                 </button>
             </div>
         </div>
@@ -1969,10 +1968,9 @@
                     </div>
                     <p v-if="!guiaItems.length" class="text-gray-600 text-center py-6 text-sm">Escanea o escribe un código para agregar productos.</p>
                 </div>
-                <button @click="confirmarGuia" :disabled="procesandoGuia || !guiaItems.length"
+                <button @click="confirmarGuia" :disabled="!guiaItems.length"
                         class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 disabled:bg-emerald-900/40 text-white active:scale-95 shrink-0">
-                    <svg v-if="procesandoGuia" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    {{ procesandoGuia ? 'Registrando...' : '↑ Confirmar Entrada (' + guiaItems.length + ' items)' }}
+                    ↑ Confirmar Entrada ({{ guiaItems.length }} items)
                 </button>
             </div>
         </div>
@@ -5727,7 +5725,43 @@
 
         const quitarItemGuia = (idx) => { guiaItems.value.splice(idx, 1); };
 
-        const confirmarGuia = async () => {
+        // Contador de guías en vuelo (POST en background). procesandoGuia se mantiene
+        // true mientras haya >=1 guía sincronizándose, solo para el guard de
+        // sincronizarCatalogoBase. NO bloquea el botón — el form ya fue reseteado.
+        let _guiasInFlight = 0;
+        const _postGuiaBackground = async (payload, destinoSnap) => {
+            _guiasInFlight++;
+            procesandoGuia.value = true;
+            try {
+                let exito = false;
+                for (let intento = 0; intento <= 2 && !exito; intento++) {
+                    if (intento > 0) await new Promise(r => setTimeout(r, 6000 * intento));
+                    try {
+                        const ctrl = new AbortController();
+                        const tid  = setTimeout(() => ctrl.abort(), 25000);
+                        const res  = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
+                        clearTimeout(tid);
+                        const d = await res.json();
+                        if (d.status === 'success') {
+                            exito = true;
+                            const msg = d.idGuiaEntrada
+                                ? `${d.idGuia} + traslado a ${destinoSnap} confirmados`
+                                : `${d.idGuia} confirmada`;
+                            agregarToast('Guía registrada ✓', msg);
+                            if (modoGuias.value) listarGuiasHistorial();
+                        }
+                    } catch(e) { /* reintenta */ }
+                }
+                if (!exito) {
+                    agregarToast('Guía no sincronizada', 'Stock local actualizado pero GAS no respondió. Verifica en historial al reconectar.', 'warning', 8000);
+                }
+            } finally {
+                _guiasInFlight = Math.max(0, _guiasInFlight - 1);
+                if (_guiasInFlight === 0) procesandoGuia.value = false;
+            }
+        };
+
+        const confirmarGuia = () => {
             if (!guiaItems.value.length || !guiaZona.value) return;
             if (guiaSubtipo.value === 'SALIDA_MOVIMIENTO' && !guiaZonaDestino.value) {
                 agregarToast('Error', 'Selecciona la zona destino del movimiento');
@@ -5758,8 +5792,7 @@
             });
             localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
 
-            // 2. Liberar el form inmediatamente — usuario puede seguir operando
-            // Agregar entrada optimista al historial local para que se vea al instante
+            // 2. Entrada optimista al historial local (visible al instante)
             const _guiaOpt = {
                 id_guia: 'G-LOCAL-' + Date.now(),
                 fecha: new Date().toISOString(),
@@ -5773,33 +5806,12 @@
             guiaHistorial.value = [_guiaOpt, ...guiaHistorial.value];
             localStorage.setItem('mosexpress_guias_' + zonaSnap, JSON.stringify(guiaHistorial.value));
             agregarToast('Guía enviada', 'Registrando en segundo plano...');
+
+            // 3. Liberar el form inmediatamente — usuario puede agregar otra guía sin esperar
             _resetGuiaForm();
 
-            // 3. POST a GAS en background — 2 reintentos, 25 s timeout c/u
-            procesandoGuia.value = true;
-            let exito = false;
-            for (let intento = 0; intento <= 2 && !exito; intento++) {
-                if (intento > 0) await new Promise(r => setTimeout(r, 6000 * intento));
-                try {
-                    const ctrl = new AbortController();
-                    const tid  = setTimeout(() => ctrl.abort(), 25000);
-                    const res  = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
-                    clearTimeout(tid);
-                    const d = await res.json();
-                    if (d.status === 'success') {
-                        exito = true;
-                        const msg = d.idGuiaEntrada
-                            ? `${d.idGuia} + traslado a ${destinoSnap} confirmados`
-                            : `${d.idGuia} confirmada`;
-                        agregarToast('Guía registrada ✓', msg);
-                        if (modoGuias.value) listarGuiasHistorial();
-                    }
-                } catch(e) { /* reintenta */ }
-            }
-            if (!exito) {
-                agregarToast('Guía no sincronizada', 'Stock local actualizado pero GAS no respondió. Verifica en historial al reconectar.', 'warning', 8000);
-            }
-            procesandoGuia.value = false;
+            // 4. POST a GAS fire-and-forget (corre en background, no bloquea el form)
+            _postGuiaBackground(payload, destinoSnap);
         };
 
         const listarGuiasHistorial = async () => {
