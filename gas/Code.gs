@@ -204,6 +204,10 @@ function doPost(e) {
       var _r = limpiarGuiasDuplicadasCaja(data.cajaId);
       return ContentService.createTextOutput(JSON.stringify(_r)).setMimeType(ContentService.MimeType.JSON);
     }
+    if (data.tipoEvento === 'DIAGNOSTICAR_SALIDA_VENTAS') {
+      var _d = diagnosticarSalidaVentas();
+      return ContentService.createTextOutput(JSON.stringify(_d)).setMimeType(ContentService.MimeType.JSON);
+    }
     if (data.tipoEvento === 'COBRAR_VENTA')        return cobrarVentaExistente(data);
     if (data.tipoEvento === 'ANULACION_MASIVA')    return anulacionMasiva(data);
     if (data.tipoEvento === 'CREDITAR_VENTA')      return creditarVenta(data);

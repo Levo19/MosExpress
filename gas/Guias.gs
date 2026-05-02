@@ -116,23 +116,51 @@ function limpiarGuiasDuplicadasCaja(cajaIdParam) {
     return { ok: false, error: 'Hojas no encontradas' };
   }
 
+  Logger.log('limpiarGuiasDuplicadasCaja: buscando cajaId="' + cajaId + '"');
+
   // 1. Buscar todas las guías SALIDA_VENTAS para esta caja
+  // Match flexible: por si el cajaId no aparece en la observación, también
+  // matcheamos contra columna H (Caja_ID) si existe (índice 7).
   var gcData = sheetGC.getDataRange().getValues();
-  var guiasCaja = []; // {idGuia, rowSheet, fecha, zona}
+  var guiasCaja = []; // {idGuia, rowSheet, fecha, zona, obs}
+  var totalSalidaVentas = 0;
+  var primeras5Obs = []; // para debug si no encuentra match
+  var cajaIdNorm = String(cajaId).trim();
   for (var i = 1; i < gcData.length; i++) {
-    if (String(gcData[i][4]) === 'SALIDA_VENTAS' &&
-        String(gcData[i][5] || '').indexOf(String(cajaId)) >= 0) {
+    if (String(gcData[i][4]) !== 'SALIDA_VENTAS') continue;
+    totalSalidaVentas++;
+    var obs = String(gcData[i][5] || '').trim();
+    if (primeras5Obs.length < 5) primeras5Obs.push({ row: i + 1, obs: obs });
+    // Match: cajaId aparece en la observación
+    if (obs.indexOf(cajaIdNorm) >= 0) {
       guiasCaja.push({
         idGuia: String(gcData[i][0]),
         rowSheet: i + 1,
         fecha: gcData[i][1],
-        zona: String(gcData[i][3])
+        zona: String(gcData[i][3]),
+        obs: obs
       });
     }
   }
 
+  Logger.log('Total SALIDA_VENTAS en sheet: ' + totalSalidaVentas);
+  Logger.log('Match para cajaId "' + cajaIdNorm + '": ' + guiasCaja.length);
+  if (guiasCaja.length === 0 && totalSalidaVentas > 0) {
+    Logger.log('No matcheó. Primeras 5 observaciones encontradas:');
+    primeras5Obs.forEach(function(p) {
+      Logger.log('  Fila ' + p.row + ': "' + p.obs + '"');
+    });
+  }
+
   if (guiasCaja.length <= 1) {
-    return { ok: true, mensaje: 'Solo hay ' + guiasCaja.length + ' guía. Nada que limpiar.' };
+    return {
+      ok: true,
+      mensaje: 'Solo hay ' + guiasCaja.length + ' guía para "' + cajaIdNorm + '". Nada que limpiar.',
+      cajaIdBuscado: cajaIdNorm,
+      totalSalidaVentas: totalSalidaVentas,
+      ejemplosObservaciones: primeras5Obs,
+      hint: guiasCaja.length === 0 ? 'cajaId no encontrado — revisar formato exacto en columna F (Observacion) de GUIAS_CABECERA. Usar diagnosticarSalidaVentas() para ver cajaIds disponibles.' : ''
+    };
   }
 
   // 2. Conservar la PRIMERA (más antigua), eliminar las demás y revertir stock
@@ -189,6 +217,72 @@ function limpiarGuiasDuplicadasCaja(cajaIdParam) {
     cantidadGuiasEliminadas: idsAEliminar.length,
     productosRevertidos: Object.keys(revertStock).length,
     detalleRevertido: revertStock
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// DIAGNÓSTICO: lista todas las cajas que tienen guías SALIDA_VENTAS
+// y cuántas duplicadas hay por cada una. Útil cuando limpiarGuias...
+// no encuentra match y necesitas ver el cajaId exacto.
+//
+// USO MANUAL: ejecutar la función desde Apps Script editor → ver Logs
+// O Web App: GET ?accion=diagnosticar_salida_ventas
+// ════════════════════════════════════════════════════════════════════════
+function diagnosticarSalidaVentas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetGC = ss.getSheetByName('GUIAS_CABECERA');
+  if (!sheetGC) return { ok: false, error: 'GUIAS_CABECERA no encontrada' };
+
+  var gcData = sheetGC.getDataRange().getValues();
+  var porObservacion = {};   // observacion completa → count
+  var todasSalidaVentas = []; // lista completa con detalles
+  for (var i = 1; i < gcData.length; i++) {
+    if (String(gcData[i][4]) !== 'SALIDA_VENTAS') continue;
+    var obs = String(gcData[i][5] || '').trim();
+    porObservacion[obs] = (porObservacion[obs] || 0) + 1;
+    todasSalidaVentas.push({
+      row: i + 1,
+      idGuia: String(gcData[i][0]),
+      fecha: gcData[i][1] instanceof Date
+        ? Utilities.formatDate(gcData[i][1], Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')
+        : String(gcData[i][1] || ''),
+      vendedor: String(gcData[i][2]),
+      zona: String(gcData[i][3]),
+      obs: obs,
+      estado: String(gcData[i][7] || '')
+    });
+  }
+
+  // Detectar duplicados (misma observación = misma caja)
+  var duplicados = [];
+  Object.keys(porObservacion).forEach(function(obs) {
+    if (porObservacion[obs] > 1) {
+      // Extraer cajaId de la observación si tiene patrón "Auto cierre de caja · CAJA-..."
+      var m = obs.match(/CAJA-[\d-]+/);
+      duplicados.push({
+        observacion: obs,
+        cantidad: porObservacion[obs],
+        cajaId: m ? m[0] : null
+      });
+    }
+  });
+
+  Logger.log('=== DIAGNÓSTICO SALIDA_VENTAS ===');
+  Logger.log('Total guías SALIDA_VENTAS: ' + todasSalidaVentas.length);
+  Logger.log('Cajas con duplicados: ' + duplicados.length);
+  duplicados.forEach(function(d) {
+    Logger.log('  - "' + d.observacion + '" → ' + d.cantidad + ' guías' + (d.cajaId ? ' [cajaId: ' + d.cajaId + ']' : ''));
+  });
+  Logger.log('--- Últimas 10 guías SALIDA_VENTAS ---');
+  todasSalidaVentas.slice(-10).forEach(function(g) {
+    Logger.log('  Fila ' + g.row + ' | ' + g.fecha + ' | ' + g.idGuia + ' | obs: "' + g.obs + '"');
+  });
+
+  return {
+    ok: true,
+    total: todasSalidaVentas.length,
+    duplicados: duplicados,
+    ultimas10: todasSalidaVentas.slice(-10)
   };
 }
 
