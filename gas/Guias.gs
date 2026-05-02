@@ -230,47 +230,122 @@ function limpiarGuiasDuplicadasCaja(cajaIdParam) {
 // ════════════════════════════════════════════════════════════════════════
 function limpiarTodasGuiasDuplicadas() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetGC = ss.getSheetByName('GUIAS_CABECERA');
-  if (!sheetGC) return { ok: false, error: 'GUIAS_CABECERA no encontrada' };
+  var sheetGC    = ss.getSheetByName('GUIAS_CABECERA');
+  var sheetGD    = ss.getSheetByName('GUIAS_DETALLE');
+  var sheetStock = ss.getSheetByName('STOCK_ZONAS');
+  if (!sheetGC || !sheetGD || !sheetStock) return { ok: false, error: 'Hojas no encontradas' };
 
-  // Detectar cajas con duplicados via diagnóstico
-  var diag = diagnosticarSalidaVentas();
-  if (!diag.ok || !diag.duplicados || diag.duplicados.length === 0) {
-    return { ok: true, mensaje: 'No hay duplicados que limpiar.', diagnostico: diag };
+  // Leer TODO una sola vez (evita 5x re-lecturas en versión anterior)
+  var gcData    = sheetGC.getDataRange().getValues();
+  var gdData    = sheetGD.getDataRange().getValues();
+  var stockData = sheetStock.getDataRange().getValues();
+  var stockHdr  = stockData[0];
+
+  // 1. Agrupar guías SALIDA_VENTAS por observación (cajaId)
+  var grupos = {}; // obs → array de {idGuia, rowSheet, fecha, zona}
+  for (var i = 1; i < gcData.length; i++) {
+    if (String(gcData[i][4]) !== 'SALIDA_VENTAS') continue;
+    var obs = String(gcData[i][5] || '').trim();
+    if (!obs) continue;
+    if (!grupos[obs]) grupos[obs] = [];
+    grupos[obs].push({
+      idGuia:   String(gcData[i][0]),
+      rowSheet: i + 1,
+      fecha:    gcData[i][1],
+      zona:     String(gcData[i][3]),
+      obs:      obs
+    });
   }
 
-  Logger.log('=== LIMPIEZA MASIVA: ' + diag.duplicados.length + ' cajas con duplicados ===');
+  // 2. Identificar duplicados y marcar las que se conservan vs las que se eliminan
+  var idsAEliminarSet = {}; // idGuia → true
+  var grupoStats = []; // para logging
+  var zonaPorIdGuia = {}; // idGuia → zona (para reverter stock)
 
-  var resultados = [];
-  var totalEliminadas = 0;
-  var totalProductosRevertidos = 0;
-
-  diag.duplicados.forEach(function(dup) {
-    if (!dup.cajaId) {
-      Logger.log('SALTANDO: observación "' + dup.observacion + '" sin cajaId extraíble');
-      resultados.push({ observacion: dup.observacion, status: 'skip_no_cajaid' });
-      return;
-    }
-    Logger.log('Limpiando ' + dup.cajaId + ' (' + dup.cantidad + ' guías)...');
-    var r = limpiarGuiasDuplicadasCaja(dup.cajaId);
-    if (r.ok && r.cantidadGuiasEliminadas) {
-      totalEliminadas += r.cantidadGuiasEliminadas;
-      totalProductosRevertidos += (r.productosRevertidos || 0);
-      Logger.log('  → eliminadas: ' + r.cantidadGuiasEliminadas + ', productos revertidos: ' + r.productosRevertidos);
-    } else {
-      Logger.log('  → ' + (r.mensaje || r.error || 'sin cambios'));
-    }
-    resultados.push(Object.assign({ cajaId: dup.cajaId }, r));
+  Object.keys(grupos).forEach(function(obs) {
+    var lista = grupos[obs];
+    if (lista.length <= 1) return; // sin duplicados
+    // Conservar la más antigua
+    lista.sort(function(a, b){ return new Date(a.fecha) - new Date(b.fecha); });
+    var conservada = lista[0];
+    var aEliminar = lista.slice(1);
+    aEliminar.forEach(function(g) {
+      idsAEliminarSet[g.idGuia] = true;
+      zonaPorIdGuia[g.idGuia] = g.zona;
+    });
+    grupoStats.push({
+      obs: obs,
+      total: lista.length,
+      conservada: conservada.idGuia,
+      eliminadas: aEliminar.map(function(g){ return g.idGuia; })
+    });
   });
 
-  Logger.log('=== TOTAL: ' + totalEliminadas + ' guías eliminadas, ' + totalProductosRevertidos + ' productos revertidos en stock ===');
+  if (grupoStats.length === 0) {
+    return { ok: true, mensaje: 'No hay duplicados que limpiar.' };
+  }
+
+  Logger.log('=== LIMPIEZA MASIVA: ' + grupoStats.length + ' cajas con duplicados ===');
+  grupoStats.forEach(function(s) {
+    Logger.log('  - "' + s.obs + '" → conservar ' + s.conservada + ', eliminar ' + s.eliminadas.length);
+  });
+
+  // 3. Calcular stock a revertir en una sola pasada de GUIAS_DETALLE
+  var revertStockPorZona = {}; // "cod|zona" → cantidad a sumar
+  var detalleRowsAEliminar = []; // filas de GD a borrar
+  for (var j = 1; j < gdData.length; j++) {
+    var idG = String(gdData[j][0]);
+    if (!idsAEliminarSet[idG]) continue;
+    var cod = String(gdData[j][1]);
+    var cant = parseFloat(gdData[j][2]) || 0;
+    var zonaG = zonaPorIdGuia[idG] || '';
+    var key = cod + '|' + zonaG;
+    revertStockPorZona[key] = (revertStockPorZona[key] || 0) + cant;
+    detalleRowsAEliminar.push(j + 1);
+  }
+
+  // 4. Aplicar reversión al stock en memoria
+  var stockMap = {};
+  for (var s = 1; s < stockData.length; s++) {
+    stockMap[String(stockData[s][0]) + '|' + String(stockData[s][1])] = s;
+  }
+  var productosRevertidos = 0;
+  Object.keys(revertStockPorZona).forEach(function(key) {
+    var idx = stockMap[key];
+    if (idx !== undefined) {
+      stockData[idx][2] = (parseFloat(stockData[idx][2]) || 0) + revertStockPorZona[key];
+      productosRevertidos++;
+    }
+  });
+
+  // 5. Escribir stock UNA vez (batch)
+  if (stockData.length > 1) {
+    sheetStock.getRange(2, 1, stockData.length - 1, stockHdr.length).setValues(stockData.slice(1));
+  }
+
+  // 6. Eliminar filas de GUIAS_DETALLE (ordenadas descendente para no descuadrar índices)
+  detalleRowsAEliminar.sort(function(a, b){ return b - a; });
+  detalleRowsAEliminar.forEach(function(r){ sheetGD.deleteRow(r); });
+
+  // 7. Eliminar filas de GUIAS_CABECERA (ordenadas descendente)
+  var cabRowsAEliminar = [];
+  for (var ii = 1; ii < gcData.length; ii++) {
+    if (String(gcData[ii][4]) === 'SALIDA_VENTAS' && idsAEliminarSet[String(gcData[ii][0])]) {
+      cabRowsAEliminar.push(ii + 1);
+    }
+  }
+  cabRowsAEliminar.sort(function(a, b){ return b - a; });
+  cabRowsAEliminar.forEach(function(r){ sheetGC.deleteRow(r); });
+
+  var totalEliminadas = Object.keys(idsAEliminarSet).length;
+  Logger.log('=== TOTAL: ' + totalEliminadas + ' guías eliminadas, ' + productosRevertidos + ' productos revertidos en stock ===');
 
   return {
     ok: true,
-    cajasLimpiadas: resultados.length,
+    cajasLimpiadas: grupoStats.length,
     totalGuiasEliminadas: totalEliminadas,
-    totalProductosRevertidos: totalProductosRevertidos,
-    detalles: resultados
+    totalProductosRevertidos: productosRevertidos,
+    detalles: grupoStats
   };
 }
 
