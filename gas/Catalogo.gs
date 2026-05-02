@@ -47,6 +47,11 @@ function descargarCatalogo() {
 
     // PRODUCTO_BASE: solo grupos que tengan AL MENOS un miembro vendible.
     // El representante se elige entre los vendibles (preferir factor=1).
+    // Si el de factor=1 (producto base "nominal") es envasable y estamos
+    // mostrando una presentación huérfana, concatenamos el nombre del granel
+    // original + el nombre de la presentación para no perder contexto al buscar.
+    // Ej: "Nakamito a granel" (factor=1 envasable) + "25kg saco" (vendible)
+    //     → Nombre: "Nakamito a granel 25kg saco"
     catalogo['PRODUCTO_BASE'] = [];
     Object.keys(grupos).forEach(function(sku) {
       var members = grupos[sku];
@@ -55,10 +60,20 @@ function descargarCatalogo() {
         skusOcultos++;
         return; // todo el grupo es envasable → no mostrar
       }
+      var miembroFactor1 = members.find(function(p) { return _pf(p.factorConversion) === 1; });
       var base = vendibles.find(function(p) { return _pf(p.factorConversion) === 1; }) || vendibles[0];
+      var nombre;
+      if (miembroFactor1 && !_esVendible(miembroFactor1) && base !== miembroFactor1) {
+        // Producto "base nominal" envasable + presentación huérfana vendible
+        var nomGranel = String(miembroFactor1.descripcion || '').trim();
+        var nomPres   = String(base.descripcion || '').trim();
+        nombre = nomGranel ? (nomGranel + ' ' + nomPres).trim() : nomPres;
+      } else {
+        nombre = String(base.descripcion || '').trim();
+      }
       catalogo['PRODUCTO_BASE'].push({
         SKU_Base:      sku,
-        Nombre:        base.descripcion || '',
+        Nombre:        nombre,
         Tipo_IGV:      _convertirTipoIGV(base.Tipo_IGV),
         Unidad_Medida: base.Unidad_Medida || 'NIU',
         Cod_SUNAT:     base.Cod_SUNAT || ''
