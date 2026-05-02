@@ -221,6 +221,60 @@ function limpiarGuiasDuplicadasCaja(cajaIdParam) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// LIMPIEZA MASIVA: detecta TODAS las cajas con guías SALIDA_VENTAS duplicadas
+// y las limpia en una sola ejecución. Conserva la guía más antigua de cada
+// caja, elimina las demás, y revierte el stock descontado de más.
+//
+// USO MANUAL: ejecutar desde Apps Script editor → ver Logs
+// O Web App: POST { tipoEvento: 'LIMPIAR_TODAS_DUPLICADAS' }
+// ════════════════════════════════════════════════════════════════════════
+function limpiarTodasGuiasDuplicadas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetGC = ss.getSheetByName('GUIAS_CABECERA');
+  if (!sheetGC) return { ok: false, error: 'GUIAS_CABECERA no encontrada' };
+
+  // Detectar cajas con duplicados via diagnóstico
+  var diag = diagnosticarSalidaVentas();
+  if (!diag.ok || !diag.duplicados || diag.duplicados.length === 0) {
+    return { ok: true, mensaje: 'No hay duplicados que limpiar.', diagnostico: diag };
+  }
+
+  Logger.log('=== LIMPIEZA MASIVA: ' + diag.duplicados.length + ' cajas con duplicados ===');
+
+  var resultados = [];
+  var totalEliminadas = 0;
+  var totalProductosRevertidos = 0;
+
+  diag.duplicados.forEach(function(dup) {
+    if (!dup.cajaId) {
+      Logger.log('SALTANDO: observación "' + dup.observacion + '" sin cajaId extraíble');
+      resultados.push({ observacion: dup.observacion, status: 'skip_no_cajaid' });
+      return;
+    }
+    Logger.log('Limpiando ' + dup.cajaId + ' (' + dup.cantidad + ' guías)...');
+    var r = limpiarGuiasDuplicadasCaja(dup.cajaId);
+    if (r.ok && r.cantidadGuiasEliminadas) {
+      totalEliminadas += r.cantidadGuiasEliminadas;
+      totalProductosRevertidos += (r.productosRevertidos || 0);
+      Logger.log('  → eliminadas: ' + r.cantidadGuiasEliminadas + ', productos revertidos: ' + r.productosRevertidos);
+    } else {
+      Logger.log('  → ' + (r.mensaje || r.error || 'sin cambios'));
+    }
+    resultados.push(Object.assign({ cajaId: dup.cajaId }, r));
+  });
+
+  Logger.log('=== TOTAL: ' + totalEliminadas + ' guías eliminadas, ' + totalProductosRevertidos + ' productos revertidos en stock ===');
+
+  return {
+    ok: true,
+    cajasLimpiadas: resultados.length,
+    totalGuiasEliminadas: totalEliminadas,
+    totalProductosRevertidos: totalProductosRevertidos,
+    detalles: resultados
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // DIAGNÓSTICO: lista todas las cajas que tienen guías SALIDA_VENTAS
 // y cuántas duplicadas hay por cada una. Útil cuando limpiarGuias...
 // no encuentra match y necesitas ver el cajaId exacto.
