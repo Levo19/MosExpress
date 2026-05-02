@@ -25,6 +25,26 @@ function descargarCatalogo() {
     var _esVendible = function(p) {
       return String(p.esEnvasable || '').trim() !== '1';
     };
+    // Normalizar Unidad_Medida (código SUNAT). PRODUCTOS_MASTER tiene 2 columnas:
+    //   - `unidad`         → libre (KGM, UND, KG, etc.)
+    //   - `Unidad_Medida`  → código SUNAT autoritativo
+    // Si `unidad` indica peso/granel, ese gana sobre `Unidad_Medida` (que puede
+    // estar mal poblado con 'NIU' default por una migración previa).
+    var _normUnidadMedida = function(p) {
+      var u  = String(p.unidad || '').toUpperCase().trim();
+      var um = String(p.Unidad_Medida || '').toUpperCase().trim();
+      // Sinónimos de granel → KGM
+      if (u === 'KGM' || u === 'KG' || u === 'KILO' || u === 'KILOS' ||
+          u === 'GR'  || u === 'G'  || u === 'GRAMO' || u === 'GRAMOS') return 'KGM';
+      // Sinónimos de litro → LTR
+      if (u === 'LTR' || u === 'LT' || u === 'L' || u === 'LITRO' || u === 'LITROS') return 'LTR';
+      // Sinónimos de metro → MTR
+      if (u === 'MTR' || u === 'MT' || u === 'M' || u === 'METRO' || u === 'METROS') return 'MTR';
+      // Si la col SUNAT tiene un código válido, usarlo
+      if (um) return um;
+      // Default
+      return 'NIU';
+    };
 
     // Agrupar por skuBase (todos los activos, sin filtrar por esEnvasable aún —
     // necesitamos el grupo completo para saber si HAY al menos un vendible)
@@ -75,7 +95,7 @@ function descargarCatalogo() {
         SKU_Base:      sku,
         Nombre:        nombre,
         Tipo_IGV:      _convertirTipoIGV(base.Tipo_IGV),
-        Unidad_Medida: base.Unidad_Medida || 'NIU',
+        Unidad_Medida: _normUnidadMedida(base),
         Cod_SUNAT:     base.Cod_SUNAT || ''
       });
     });
