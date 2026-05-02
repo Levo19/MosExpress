@@ -18,8 +18,16 @@ function descargarCatalogo() {
 
     var _normKey = function(v) { return String(v === null || v === undefined ? '' : v).trim(); };
     var _activo  = function(p) { return String(p.estado) !== '0'; };
+    // esEnvasable=1 → producto a granel destinado a envasar (no se vende directo).
+    // Solo se ocultan estas presentaciones; si dentro del mismo grupo SKU hay otra
+    // presentación con esEnvasable=0/vacío, esa SÍ se muestra como "presentación
+    // huérfana del grupo".
+    var _esVendible = function(p) {
+      return String(p.esEnvasable || '').trim() !== '1';
+    };
 
-    // Agrupar por skuBase
+    // Agrupar por skuBase (todos los activos, sin filtrar por esEnvasable aún —
+    // necesitamos el grupo completo para saber si HAY al menos un vendible)
     var grupos = {};
     prodRows.forEach(function(p) {
       if (!_activo(p)) return;
@@ -34,25 +42,34 @@ function descargarCatalogo() {
       grupos[sku].sort(function(a, b) { return _pf(a.factorConversion) - _pf(b.factorConversion); });
     });
 
+    var skusOcultos = 0;
     Logger.log('MOS bridge — filas: ' + prodRows.length + ' | grupos: ' + Object.keys(grupos).length);
 
-    // PRODUCTO_BASE: representante con factor=1 por grupo
-    catalogo['PRODUCTO_BASE'] = Object.keys(grupos).map(function(sku) {
+    // PRODUCTO_BASE: solo grupos que tengan AL MENOS un miembro vendible.
+    // El representante se elige entre los vendibles (preferir factor=1).
+    catalogo['PRODUCTO_BASE'] = [];
+    Object.keys(grupos).forEach(function(sku) {
       var members = grupos[sku];
-      var base = members.find(function(p) { return _pf(p.factorConversion) === 1; }) || members[0];
-      return {
+      var vendibles = members.filter(_esVendible);
+      if (vendibles.length === 0) {
+        skusOcultos++;
+        return; // todo el grupo es envasable → no mostrar
+      }
+      var base = vendibles.find(function(p) { return _pf(p.factorConversion) === 1; }) || vendibles[0];
+      catalogo['PRODUCTO_BASE'].push({
         SKU_Base:      sku,
         Nombre:        base.descripcion || '',
         Tipo_IGV:      _convertirTipoIGV(base.Tipo_IGV),
         Unidad_Medida: base.Unidad_Medida || 'NIU',
         Cod_SUNAT:     base.Cod_SUNAT || ''
-      };
+      });
     });
 
-    // PRESENTACIONES: todos los miembros del grupo
+    // PRESENTACIONES: solo miembros vendibles (esEnvasable !== '1')
     catalogo['PRESENTACIONES'] = [];
     Object.keys(grupos).forEach(function(sku) {
       grupos[sku].forEach(function(p) {
+        if (!_esVendible(p)) return; // saltar envasables individuales
         catalogo['PRESENTACIONES'].push({
           SKU_Base:     sku,
           SKU:          _normKey(p.idProducto),
@@ -63,6 +80,10 @@ function descargarCatalogo() {
         });
       });
     });
+
+    Logger.log('MOS bridge — grupos vendibles: ' + catalogo['PRODUCTO_BASE'].length +
+               ' | grupos ocultos (todo envasable): ' + skusOcultos +
+               ' | presentaciones vendibles: ' + catalogo['PRESENTACIONES'].length);
 
     // EQUIVALENCIAS: { Cod_Alias, Cod_Barras_Real }
     catalogo['EQUIVALENCIAS'] = equivRows
