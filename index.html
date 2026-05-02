@@ -945,13 +945,14 @@
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
                               :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '']">
                             <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
+                            <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="absolute top-1.5 left-1.5 z-10 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md uppercase" title="Producto a granel — vendido por kilo">⚖️ kg</span>
                             <div class="prod-img w-full bg-gray-200">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
                             </div>
                             <div class="p-2.5 flex-1 flex flex-col justify-between bg-white">
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
-                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ prod.precio.toFixed(2) }} <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
-                               <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + ' uds' : 'Sin stock' }}</span>
+                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ prod.precio.toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
+                               <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : ' uds') : 'Sin stock' }}</span>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
                          </div>
@@ -988,14 +989,33 @@
                          <div class="flex-1 min-w-0 pr-4">
                            <h3 class="font-bold text-gray-800 text-xs leading-tight truncate">
                              {{ item.nombre }}
+                             <span v-if="esGranel(item)" class="ml-1 inline-block bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider align-middle">⚖️ kg</span>
                              <span v-if="item.enCombo" class="text-amber-600 text-[9px] font-bold ml-1">[combo]</span>
                            </h3>
                            <div v-if="item.ahorroPromo > 0" class="inline-flex items-center mt-1 bg-red-50 text-red-600 text-[9px] font-black px-1.5 py-0.5 rounded border border-red-100 uppercase">★ Ahorro S/ {{ item.ahorroPromo.toFixed(2) }}</div>
-                           <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ item.precioUnitario.toFixed(2) }} ud.</div>
+                           <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ item.precioUnitario.toFixed(2) }} {{ esGranel(item) ? '/ kg' : 'ud.' }}</div>
                          </div>
                          <div class="flex flex-col items-end shrink-0 pl-2 relative">
                            <span class="font-black text-gray-800">S/ {{ item.subtotal.toFixed(2) }}</span>
-                           <div class="flex items-center mt-1 bg-gray-100 rounded-lg p-0.5 relative">
+                           <!-- GRANEL: input de gramos + atajos -->
+                           <template v-if="esGranel(item)">
+                             <div class="flex items-center mt-1 gap-1">
+                               <input type="number" inputmode="decimal" step="1" min="1"
+                                      class="gramos-input w-20 text-center font-bold text-sm bg-gray-50 border border-gray-300 rounded-lg py-1 px-2 focus:border-amber-500 focus:outline-none"
+                                      :value="Math.round(item.cantidad * 1000)"
+                                      @focus="$event.target.select()"
+                                      @change="setCantidadGramos(index, $event.target.value)"
+                                      @keyup.enter="$event.target.blur()">
+                               <span class="text-[10px] font-bold text-gray-500">g</span>
+                             </div>
+                             <div class="flex items-center mt-1 gap-0.5">
+                               <button @click="setCantidadKg(index, 0.25)" class="text-[9px] font-black bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded active:bg-amber-200">¼</button>
+                               <button @click="setCantidadKg(index, 0.5)"  class="text-[9px] font-black bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded active:bg-amber-200">½</button>
+                               <button @click="setCantidadKg(index, 1)"    class="text-[9px] font-black bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded active:bg-amber-200">1kg</button>
+                             </div>
+                           </template>
+                           <!-- UNIDAD: -/+ tradicional -->
+                           <div v-else class="flex items-center mt-1 bg-gray-100 rounded-lg p-0.5 relative">
                               <button @click="cambiarCantidad(index, -1)" :class="['w-8 h-8 rounded-lg bg-white flex items-center justify-center text-gray-700 font-black shadow-sm active:bg-gray-200', item.flashing && item.qtyBadge < 0 ? 'btn-bump' : '']">-</button>
                               <span class="w-8 text-center font-bold text-sm bg-transparent">{{ item.cantidad }}</span>
                               <button @click="cambiarCantidad(index, 1)" :class="['w-8 h-8 rounded-lg bg-posPrimary flex items-center justify-center text-white font-black shadow-sm active:bg-emerald-600', item.flashing && item.qtyBadge > 0 ? 'btn-bump' : '']">+</button>
@@ -4843,20 +4863,39 @@
           if (prodObj.stock !== null && prodObj.stock <= 0) {
               agregarToast('Sin Stock', prodObj.nombreCorto + ' — Sin existencias en esta zona');
           }
+          const _esGranelProd = String(prodObj.unidadMedida || '').toUpperCase() === 'KGM';
           const idx = carrito.value.findIndex(i => i.codBarras === prodObj.codBarras);
           let finalIdx;
           if (idx > -1) {
-            // Producto duplicado: sumar y mover al tope para que el cajero vea el feedback
             const it = carrito.value[idx];
-            it.cantidad++;
-            calcularImportes(it);
-            if (idx > 0) {
-              carrito.value.splice(idx, 1);
-              carrito.value.unshift(it);
+            if (_esGranelProd) {
+              // Granel duplicado: NO sumar, solo dar foco al input para editar peso.
+              // El cajero pesó otra bolsa o quiere corregir el peso.
+              if (idx > 0) {
+                carrito.value.splice(idx, 1);
+                carrito.value.unshift(it);
+              }
+              finalIdx = 0;
+              vibrate(30);
+              setTimeout(() => {
+                const inp = document.querySelector('[data-cart-idx="0"] .gramos-input');
+                if (inp) { inp.focus(); inp.select(); }
+              }, 150);
+            } else {
+              // Unidad: sumar +1 como siempre
+              it.cantidad++;
+              calcularImportes(it);
+              if (idx > 0) {
+                carrito.value.splice(idx, 1);
+                carrito.value.unshift(it);
+              }
+              finalIdx = 0;
+              vibrate(30);
             }
-            finalIdx = 0;
-            vibrate(30);
           } else {
+            // Granel: cantidad inicial 0.001 kg (1g) — el cajero edita el peso real
+            // Unidad: cantidad inicial 1
+            const cantInicial = _esGranelProd ? 0.001 : 1;
             const item = {
               sku: String(prodObj.skuProducto || prodObj.sku),
               skuBase: String(prodObj.skuBase || prodObj.sku),
@@ -4866,13 +4905,21 @@
               codSunat: prodObj.codSunat || '',
               tipoIgv: prodObj.tipoIgv || 1,
               unidadMedida: prodObj.unidadMedida || 'NIU',
-              precioUnitario: prodObj.precio, cantidad: 1, subtotal: prodObj.precio,
+              precioUnitario: prodObj.precio, cantidad: cantInicial, subtotal: 0,
               ahorroPromo: 0, imagen: prodObj.imagen,
               flashing: false, qtyBadge: 0
             };
             calcularImportes(item);
             carrito.value.unshift(item);
             finalIdx = 0;
+            // Granel nuevo: dar focus al input de gramos para que el cajero
+            // ingrese el peso de la balanza inmediatamente
+            if (_esGranelProd) {
+              setTimeout(() => {
+                const inp = document.querySelector('[data-cart-idx="0"] .gramos-input');
+                if (inp) { inp.focus(); inp.select(); }
+              }, 150);
+            }
           }
 
           // Disparar flash + badge + autoscroll
@@ -4900,6 +4947,31 @@
               vibrate(20);
           }
         };
+
+        // Granel: setear cantidad desde gramos del input. Convierte a kg.
+        // Mínimo 1g; si <1g → eliminar item del carrito.
+        const setCantidadGramos = (idx, gramosStr) => {
+          if (idx < 0 || idx >= carrito.value.length) return;
+          const gramos = parseFloat(String(gramosStr).replace(',', '.')) || 0;
+          if (gramos < 1) {
+              vibrate([15, 30, 15]);
+              eliminarItem(idx);
+              return;
+          }
+          carrito.value[idx].cantidad = Math.round(gramos) / 1000; // kg con 3 decimales
+          calcularImportes(carrito.value[idx]);
+          flashCartItem(idx, 1);
+          vibrate(20);
+        };
+
+        // Atajos rápidos para granel: ¼ kg, ½ kg, 1 kg
+        const setCantidadKg = (idx, kg) => {
+          if (idx < 0 || idx >= carrito.value.length) return;
+          carrito.value[idx].cantidad = parseFloat(kg);
+          calcularImportes(carrito.value[idx]);
+          flashCartItem(idx, 1);
+          vibrate(20);
+        };
         const eliminarItem = (idx) => {
           if (idx < 0 || idx >= carrito.value.length) return;
           carrito.value.splice(idx, 1);
@@ -4922,6 +4994,12 @@
           if (!pr) return [];
           try { return pr.Items_JSON ? JSON.parse(pr.Items_JSON) : (pr.items || []); } catch(_){ return []; }
         };
+
+        // Helper: ¿el item es granel (vendido por kg)? → permite cantidad decimal
+        // y subtotal redondeado a 1 decimal (mostrado con 2) para evitar
+        // céntimos sueltos que generan problemas con el vuelto.
+        const esGranel = (item) => String(item && item.unidadMedida || '').toUpperCase() === 'KGM';
+        const _round1Dec = (n) => Math.round((parseFloat(n) || 0) * 10) / 10;
 
         const calcularImportes = (item) => {
           // Reset metadata de promo (se recalcula globalmente en aplicarPromosCarrito)
@@ -4962,6 +5040,12 @@
                      }
                  }
              }
+          }
+          // Granel: redondear subtotal a 1 decimal para evitar centavos sueltos
+          // (ej: 0.520 × 6.50 = 3.38 → 3.4). El display muestra .toFixed(2) → "3.40".
+          if (esGranel(item)) {
+            ttl = _round1Dec(ttl);
+            pNormal = _round1Dec(pNormal);
           }
           item.subtotal = ttl; item.ahorroPromo = pNormal - ttl;
         };
@@ -6164,6 +6248,7 @@
           iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
+          esGranel, setCantidadGramos, setCantidadKg,
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
