@@ -2537,6 +2537,13 @@
 
           _intervalFocus = setInterval(() => {
             if(config.value.completado && currentModule.value === 'POS' && !modalPago.value && !camaraAbierta.value && !popover.value.visible && scannerInput.value) {
+                // No robar foco si el usuario está editando un input de gramos del carrito
+                // (productos a granel) — sino el cajero no puede tipear el peso.
+                const _active = document.activeElement;
+                if (_active && (_active.classList?.contains('gramos-input') ||
+                    (_active.tagName === 'INPUT' && _active.type === 'number'))) {
+                    return;
+                }
                 if (mostrarTeclado.value) {
                     if (document.activeElement !== scannerInput.value) scannerInput.value.focus();
                 } else {
