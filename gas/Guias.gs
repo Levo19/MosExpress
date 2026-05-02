@@ -6,6 +6,9 @@
 // Auto-genera una guía SALIDA_VENTAS al cerrar caja y descuenta STOCK_ZONAS
 // Optimizada: lee STOCK_ZONAS una sola vez, hace updates en memoria,
 // y escribe el GUIAS_DETALLE + STOCK_ZONAS modificado en batch.
+// DEFENSA EN PROFUNDIDAD: chequea si ya existe una guía SALIDA_VENTAS para
+// esta caja antes de generar — evita duplicación incluso si la idempotencia
+// de procesarCierreCaja falla por algún motivo.
 function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   var sheetVC    = ss.getSheetByName("VENTAS_CABECERA");
   var sheetVD    = ss.getSheetByName("VENTAS_DETALLE");
@@ -13,6 +16,17 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   var sheetGD    = ss.getSheetByName("GUIAS_DETALLE");
   var sheetStock = ss.getSheetByName("STOCK_ZONAS");
   if (!sheetVC || !sheetVD || !sheetGC || !sheetGD || !sheetStock) return;
+
+  // 0. DEFENSA: ¿ya existe guía SALIDA_VENTAS para esta caja? Si sí, abortar.
+  // Identificamos la guía por: Tipo='SALIDA_VENTAS' + Observacion contiene cajaId
+  var gcData = sheetGC.getDataRange().getValues();
+  for (var g = 1; g < gcData.length; g++) {
+    if (String(gcData[g][4]) === 'SALIDA_VENTAS' &&
+        String(gcData[g][5] || '').indexOf(String(cajaId)) >= 0) {
+      Logger.log('generarGuiaSalidaVentas: ya existe guía para caja ' + cajaId + ' (id=' + gcData[g][0] + ') — saltando.');
+      return;
+    }
+  }
 
   // 1. IDs de ventas no anuladas de esta caja
   var ventas = sheetVC.getDataRange().getValues();
@@ -79,6 +93,103 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
     sheetStock.getRange(newStart, 1, nuevasFilas.length, 1).setNumberFormat('@STRING@');
     sheetStock.getRange(newStart, 1, nuevasFilas.length, 3).setValues(nuevasFilas);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// HERRAMIENTA DE LIMPIEZA: borra guías SALIDA_VENTAS duplicadas para una caja
+// y revierte el stock descontado de más.
+//
+// USO MANUAL desde el editor de Apps Script:
+//   1. Abrir el archivo Guias.gs
+//   2. Seleccionar función "limpiarGuiasDuplicadasCaja"
+//   3. Ejecutar (▶) — debes editar el cajaId hardcoded primero
+// O invocar como Web App:
+//   POST { tipoEvento: 'LIMPIAR_DUPLICADOS', cajaId: 'CAJA-XXX' }
+// ════════════════════════════════════════════════════════════════════════
+function limpiarGuiasDuplicadasCaja(cajaIdParam) {
+  var cajaId = cajaIdParam || 'CAJA-EDITAR-AQUI'; // editar antes de correr manual
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetGC    = ss.getSheetByName('GUIAS_CABECERA');
+  var sheetGD    = ss.getSheetByName('GUIAS_DETALLE');
+  var sheetStock = ss.getSheetByName('STOCK_ZONAS');
+  if (!sheetGC || !sheetGD || !sheetStock) {
+    return { ok: false, error: 'Hojas no encontradas' };
+  }
+
+  // 1. Buscar todas las guías SALIDA_VENTAS para esta caja
+  var gcData = sheetGC.getDataRange().getValues();
+  var guiasCaja = []; // {idGuia, rowSheet, fecha, zona}
+  for (var i = 1; i < gcData.length; i++) {
+    if (String(gcData[i][4]) === 'SALIDA_VENTAS' &&
+        String(gcData[i][5] || '').indexOf(String(cajaId)) >= 0) {
+      guiasCaja.push({
+        idGuia: String(gcData[i][0]),
+        rowSheet: i + 1,
+        fecha: gcData[i][1],
+        zona: String(gcData[i][3])
+      });
+    }
+  }
+
+  if (guiasCaja.length <= 1) {
+    return { ok: true, mensaje: 'Solo hay ' + guiasCaja.length + ' guía. Nada que limpiar.' };
+  }
+
+  // 2. Conservar la PRIMERA (más antigua), eliminar las demás y revertir stock
+  guiasCaja.sort(function(a, b){ return new Date(a.fecha) - new Date(b.fecha); });
+  var guiaConservada = guiasCaja[0];
+  var guiasAEliminar = guiasCaja.slice(1);
+  var idsAEliminar = guiasAEliminar.map(function(g){ return g.idGuia; });
+  var zona = guiaConservada.zona;
+
+  // 3. Leer GUIAS_DETALLE de las guías a eliminar y sumar al stock de vuelta
+  var gdData = sheetGD.getDataRange().getValues();
+  var revertStock = {}; // codBarras → cantidad a sumar de vuelta
+  var detalleRowsAEliminar = []; // filas a borrar de GUIAS_DETALLE
+  for (var j = gdData.length - 1; j >= 1; j--) {
+    if (idsAEliminar.indexOf(String(gdData[j][0])) >= 0) {
+      var cod = String(gdData[j][1]);
+      var cant = parseFloat(gdData[j][2]) || 0;
+      revertStock[cod] = (revertStock[cod] || 0) + cant;
+      detalleRowsAEliminar.push(j + 1);
+    }
+  }
+
+  // 4. Sumar de vuelta al stock (todo en memoria + un setValues batch)
+  var stockData = sheetStock.getDataRange().getValues();
+  var stockHdr  = stockData[0];
+  var stockMap  = {};
+  for (var s = 1; s < stockData.length; s++) {
+    stockMap[String(stockData[s][0]) + '|' + String(stockData[s][1])] = s;
+  }
+  Object.keys(revertStock).forEach(function(cod) {
+    var key = String(cod) + '|' + String(zona);
+    var idx = stockMap[key];
+    if (idx !== undefined) {
+      stockData[idx][2] = (parseFloat(stockData[idx][2]) || 0) + revertStock[cod];
+    }
+  });
+  if (stockData.length > 1) {
+    sheetStock.getRange(2, 1, stockData.length - 1, stockHdr.length).setValues(stockData.slice(1));
+  }
+
+  // 5. Eliminar filas de GUIAS_DETALLE (de mayor a menor para no descuadrar índices)
+  detalleRowsAEliminar.sort(function(a, b){ return b - a; });
+  detalleRowsAEliminar.forEach(function(r){ sheetGD.deleteRow(r); });
+
+  // 6. Eliminar filas de GUIAS_CABECERA (de mayor a menor)
+  var cabRows = guiasAEliminar.map(function(g){ return g.rowSheet; }).sort(function(a, b){ return b - a; });
+  cabRows.forEach(function(r){ sheetGC.deleteRow(r); });
+
+  return {
+    ok: true,
+    mensaje: 'Limpieza exitosa',
+    conservada: guiaConservada.idGuia,
+    eliminadas: idsAEliminar,
+    cantidadGuiasEliminadas: idsAEliminar.length,
+    productosRevertidos: Object.keys(revertStock).length,
+    detalleRevertido: revertStock
+  };
 }
 
 function listarGuias(zona) {
