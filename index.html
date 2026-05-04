@@ -5373,9 +5373,21 @@
               vibrate(30);
             }
           } else {
-            // Granel: cantidad inicial 0.001 kg (1g) — el cajero edita el peso real
-            // Unidad: cantidad inicial 1
-            const cantInicial = _esGranelProd ? 0.001 : 1;
+            // Cantidad inicial:
+            //   · Unidad (NIU): 1
+            //   · Granel con presentación específica (factor: 0.25/0.5/1/25/etc): el factor en kg
+            //     (ej: presentación 500g → factor=0.5 → cantidad inicial = 0.5 kg)
+            //   · Granel sin factor o factor=0: 0.001 kg (1g) por default — el cajero pesa
+            //
+            // Si el cajero está pesando, simplemente edita el input que abre con focus auto.
+            // Esto evita el bug previo donde elegir una presentación 500g terminaba con 1g.
+            let cantInicial;
+            if (_esGranelProd) {
+                const f = parseFloat(prodObj.factor) || 0;
+                cantInicial = f > 0 ? f : 0.001;
+            } else {
+                cantInicial = 1;
+            }
             const item = {
               sku: String(prodObj.skuProducto || prodObj.sku),
               skuBase: String(prodObj.skuBase || prodObj.sku),
