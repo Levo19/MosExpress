@@ -259,6 +259,39 @@
     /* Indicador de wake lock (debug — opcional) */
     .idle-wakelock { position: absolute; top: 16px; right: 18px; font-size: 10px; opacity: 0.3; letter-spacing: 0.15em; }
 
+    /* Meta diaria */
+    .idle-meta {
+      margin-top: 28px; max-width: 460px; width: 90%;
+      padding: 16px 22px;
+      background: rgba(255,255,255,0.06); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+    }
+    .idle-meta-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 700; opacity: 0.85; margin-bottom: 10px; }
+    .idle-meta-pct  { font-size: 18px; font-weight: 900; color: #c7d2fe; font-variant-numeric: tabular-nums; }
+    .idle-meta-pct.superada { color: #6ee7b7; }
+    .idle-meta-bar  { height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; margin-bottom: 10px; }
+    .idle-meta-fill {
+      height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, #818cf8, #c084fc);
+      transition: width 0.6s ease;
+      box-shadow: 0 0 12px rgba(192, 132, 252, 0.4);
+    }
+    .idle-meta-fill.superada {
+      background: linear-gradient(90deg, #34d399, #10b981, #6ee7b7);
+      box-shadow: 0 0 16px rgba(52, 211, 153, 0.5);
+      animation: metaGlow 2s ease-in-out infinite;
+    }
+    @keyframes metaGlow {
+      0%,100% { box-shadow: 0 0 16px rgba(52, 211, 153, 0.4); }
+      50%     { box-shadow: 0 0 24px rgba(52, 211, 153, 0.7); }
+    }
+    .idle-meta-msg {
+      font-size: 12px; opacity: 0.7; text-align: center;
+      letter-spacing: 0.02em;
+    }
+    .idle-meta-msg strong { color: #fcd34d; font-weight: 700; }
+
     /* ─── Welcome Overlay (arranque de turno) ──────────────────── */
     @keyframes welcomeBgShift {
       0%, 100% { background-position: 0% 50%; }
@@ -1287,6 +1320,24 @@
                           </button>
                        </div>
                     </div>
+                    <!-- Meta diaria personal -->
+                    <div class="flex items-center justify-between px-4 py-3">
+                       <div class="flex items-center gap-3">
+                          <span class="text-xl">🎯</span>
+                          <div>
+                             <p class="text-sm font-bold text-gray-700">Meta diaria</p>
+                             <p class="text-xs text-gray-400">Se muestra en el salvapantalla con barra de progreso</p>
+                          </div>
+                       </div>
+                       <div class="flex items-center gap-1">
+                          <span class="text-xs font-mono text-gray-400">S/</span>
+                          <input type="number" min="0" step="50"
+                                 :value="idleConfig.metaDiaria"
+                                 @change="setMetaDiaria($event.target.value)"
+                                 @focus="$event.target.select()"
+                                 class="w-24 text-right font-bold text-sm bg-gray-50 border border-gray-200 rounded-lg py-1 px-2 focus:border-posPrimary focus:outline-none">
+                       </div>
+                    </div>
                  </div>
 
             </div>
@@ -1378,15 +1429,37 @@
          "{{ idleScreen.quote }}"
        </div>
 
-       <!-- Stats del día -->
+       <!-- Stats del día (personales) -->
        <div class="idle-stats">
          <div class="idle-stat">
            <span class="idle-stat-icon">🛒</span>
-           <span><span class="idle-stat-num">{{ idleScreen.tickets }}</span> ventas hoy</span>
+           <span><span class="idle-stat-num">{{ idleScreen.tickets }}</span> tus ventas</span>
          </div>
          <div class="idle-stat">
            <span class="idle-stat-icon">💰</span>
            <span>S/ <span class="idle-stat-num">{{ idleScreen.totalHoy }}</span></span>
+         </div>
+       </div>
+
+       <!-- Meta diaria -->
+       <div v-if="parseFloat(idleScreen.meta) > 0" class="idle-meta">
+         <div class="idle-meta-head">
+           <span>🎯 Meta diaria · S/ {{ idleScreen.meta }}</span>
+           <span :class="['idle-meta-pct', idleScreen.metaSuperada ? 'superada' : '']">
+             {{ Math.round(idleScreen.metaPct) }}%
+           </span>
+         </div>
+         <div class="idle-meta-bar">
+           <div :class="['idle-meta-fill', idleScreen.metaSuperada ? 'superada' : '']"
+                :style="{ width: Math.min(100, idleScreen.metaPct) + '%' }"></div>
+         </div>
+         <div class="idle-meta-msg">
+           <template v-if="idleScreen.metaSuperada">
+             🎉 ¡Meta superada! Vas {{ Math.round(idleScreen.metaPct - 100) }}% sobre tu objetivo
+           </template>
+           <template v-else>
+             Faltan <strong>S/ {{ idleScreen.metaFalta }}</strong> para tu meta
+           </template>
          </div>
        </div>
 
@@ -3648,6 +3721,7 @@
             cajero: '', zona: '',
             quote: '', quoteFading: false,
             tickets: 0, totalHoy: '0.00',
+            meta: '0.00', metaPct: 0, metaFalta: '0.00', metaSuperada: false,
             wakeLockActivo: false,
             particles: []
         });
@@ -3656,7 +3730,8 @@
         const idleConfig = ref({
             wakeLockEnabled: localStorage.getItem('mosexpress_wakelock') !== '0',
             saverEnabled:    localStorage.getItem('mosexpress_saver') !== '0',
-            saverMinutos:    parseInt(localStorage.getItem('mosexpress_saver_min') || '2', 10)
+            saverMinutos:    parseInt(localStorage.getItem('mosexpress_saver_min') || '2', 10),
+            metaDiaria:      parseFloat(localStorage.getItem('mosexpress_meta_diaria') || '1000') || 1000
         });
 
         let _wakeLockSentinel = null;
@@ -3717,12 +3792,11 @@
             const _mm = String(_now.getMinutes()).padStart(2, '0');
             const _ss = String(_now.getSeconds()).padStart(2, '0');
 
-            // Stats del turno — la app ya tiene el patrón establecido:
-            //   · Cajero: ventasZona (polling de la zona, fuente autoritativa)
-            //   · Vendedor: ventasHoy (tickets que el vendedor emitió en este device)
-            // Si ventasZona aún no cargó (polling no inició), fallback a ventasHoy
-            // para no mostrar ceros cuando sí hubo ventas.
+            // Stats del turno PERSONALES — solo del usuario actual (no toda la zona).
+            // Filtro: solo ventas EFE/VIRTUAL/MIXTO (con dinero real), del cajero/vendedor
+            // logueado, no anuladas, dentro de su sesión actual.
             const _startTs = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
+            const _miNombre = String(config.value.vendedor || '').trim().toUpperCase();
             const _fuente = config.value.esCajero
                 ? (ventasZona.value && ventasZona.value.length ? ventasZona.value : (ventasHoy.value || []))
                 : (ventasHoy.value || []);
@@ -3730,16 +3804,21 @@
             _fuente.forEach(v => {
                 if ((v.timestamp || 0) < _startTs) return;
                 if (v.anulada) return;
+                // Filtrar por vendedor logueado (raw_data.auth.vendedor)
+                const vendV = String(v.raw_data?.auth?.vendedor || '').trim().toUpperCase();
+                if (_miNombre && vendV && vendV !== _miNombre) return;
+                // Solo métodos con dinero real
                 const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
-                if (m === 'ANULADO') return;
-                if (config.value.esCajero) {
-                    // Cajero: solo ventas con dinero real (no POR_COBRAR ni CREDITO)
-                    if (!m || m === 'POR_COBRAR' || m === 'CREDITO') return;
-                }
-                // Vendedor: cuenta todas sus ventas emitidas (POR_COBRAR incluido — eso muestra su productividad)
+                if (!m || m === 'ANULADO' || m === 'POR_COBRAR' || m === 'CREDITO') return;
                 _ticks++;
                 _total += parseFloat(v.total) || 0;
             });
+
+            // Cálculo de progreso hacia meta
+            const _meta = parseFloat(idleConfig.value.metaDiaria) || 0;
+            const _pct  = _meta > 0 ? Math.min(200, (_total / _meta) * 100) : 0;
+            const _falta = Math.max(0, _meta - _total);
+            const _superada = _total >= _meta;
 
             // Frase aleatoria
             const _q = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
@@ -3766,6 +3845,10 @@
                 quote: _q, quoteFading: false,
                 tickets: _ticks,
                 totalHoy: _total.toFixed(2),
+                meta: _meta.toFixed(2),
+                metaPct: _pct,
+                metaFalta: _falta.toFixed(2),
+                metaSuperada: _superada,
                 particles: _parts
             };
 
@@ -3834,6 +3917,11 @@
             idleConfig.value.saverMinutos = parseInt(m, 10) || 2;
             localStorage.setItem('mosexpress_saver_min', String(idleConfig.value.saverMinutos));
             _resetIdleTimer();
+        };
+        const setMetaDiaria = (n) => {
+            const v = Math.max(0, parseFloat(String(n).replace(',', '.')) || 0);
+            idleConfig.value.metaDiaria = v;
+            localStorage.setItem('mosexpress_meta_diaria', String(v));
         };
 
         const playWelcomeFanfare = () => {
@@ -6644,7 +6732,7 @@
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
-          toggleWakeLock, toggleSaver, setSaverMinutos,
+          toggleWakeLock, toggleSaver, setSaverMinutos, setMetaDiaria,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
