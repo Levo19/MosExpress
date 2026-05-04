@@ -2989,6 +2989,12 @@
           if (config.value.completado && config.value.zona) {
               verificarCajeroActivo();
               verificarTrasladosEntrantes();
+              // Reiniciar polling de zona si es cajero con caja abierta
+              // (al restaurar sesión tras reload, el polling no se auto-inicia)
+              if (config.value.esCajero && cajaAbierta.value) {
+                  iniciarPollingZona();
+                  cargarVentasZona(); // primera carga inmediata
+              }
           }
         };
 
@@ -3711,19 +3717,29 @@
             const _mm = String(_now.getMinutes()).padStart(2, '0');
             const _ss = String(_now.getSeconds()).padStart(2, '0');
 
-            // Stats del turno: ventas COBRADAS (no POR_COBRAR, no CREDITO, no anuladas).
-            // Filtra solo métodos con dinero real: EFECTIVO, VIRTUAL, MIXTO.
-            // Misma fuente autoritativa que usa cerrarCaja → ventasZona filtrado por timestamp.
+            // Stats del turno — la app ya tiene el patrón establecido:
+            //   · Cajero: ventasZona (polling de la zona, fuente autoritativa)
+            //   · Vendedor: ventasHoy (tickets que el vendedor emitió en este device)
+            // Si ventasZona aún no cargó (polling no inició), fallback a ventasHoy
+            // para no mostrar ceros cuando sí hubo ventas.
             const _startTs = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
-            const _cobradas = (ventasZona.value || []).filter(v => {
-                if ((v.timestamp || 0) < _startTs) return false;
-                if (v.anulada) return false;
+            const _fuente = config.value.esCajero
+                ? (ventasZona.value && ventasZona.value.length ? ventasZona.value : (ventasHoy.value || []))
+                : (ventasHoy.value || []);
+            let _ticks = 0, _total = 0;
+            _fuente.forEach(v => {
+                if ((v.timestamp || 0) < _startTs) return;
+                if (v.anulada) return;
                 const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
-                if (!m || m === 'POR_COBRAR' || m === 'CREDITO') return false;
-                return true; // EFECTIVO / VIRTUAL / MIXTO
+                if (m === 'ANULADO') return;
+                if (config.value.esCajero) {
+                    // Cajero: solo ventas con dinero real (no POR_COBRAR ni CREDITO)
+                    if (!m || m === 'POR_COBRAR' || m === 'CREDITO') return;
+                }
+                // Vendedor: cuenta todas sus ventas emitidas (POR_COBRAR incluido — eso muestra su productividad)
+                _ticks++;
+                _total += parseFloat(v.total) || 0;
             });
-            const _ticks = _cobradas.length;
-            const _total = _cobradas.reduce((s, v) => s + (parseFloat(v.total) || 0), 0);
 
             // Frase aleatoria
             const _q = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
