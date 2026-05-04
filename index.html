@@ -3711,9 +3711,19 @@
             const _mm = String(_now.getMinutes()).padStart(2, '0');
             const _ss = String(_now.getSeconds()).padStart(2, '0');
 
-            // Stats del día (de cobradosEnSesion del cajero/vendedor)
-            const _ticks = (cobradosEnSesion.value || []).length;
-            const _total = (cobradosEnSesion.value || []).reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
+            // Stats del turno: ventas COBRADAS (no POR_COBRAR, no CREDITO, no anuladas).
+            // Filtra solo métodos con dinero real: EFECTIVO, VIRTUAL, MIXTO.
+            // Misma fuente autoritativa que usa cerrarCaja → ventasZona filtrado por timestamp.
+            const _startTs = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
+            const _cobradas = (ventasZona.value || []).filter(v => {
+                if ((v.timestamp || 0) < _startTs) return false;
+                if (v.anulada) return false;
+                const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
+                if (!m || m === 'POR_COBRAR' || m === 'CREDITO') return false;
+                return true; // EFECTIVO / VIRTUAL / MIXTO
+            });
+            const _ticks = _cobradas.length;
+            const _total = _cobradas.reduce((s, v) => s + (parseFloat(v.total) || 0), 0);
 
             // Frase aleatoria
             const _q = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
