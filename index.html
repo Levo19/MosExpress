@@ -165,6 +165,100 @@
     /* ─── Espaciado bottom-nav que respeta safe-area (iPhone home indicator, Android gesture bar) ─── */
     .pb-nav { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 8px); }
 
+    /* ─── Salvapantalla / Idle screen ─────────────────────────── */
+    @keyframes idleBgShift {
+      0%, 100% { background-position: 0% 50%; }
+      50%      { background-position: 100% 50%; }
+    }
+    .idle-overlay {
+      position: fixed; inset: 0; z-index: 9000;
+      background: linear-gradient(135deg, #0a0a14, #1a103a, #0a0a14, #1a1a3a, #0a0a14);
+      background-size: 300% 300%;
+      animation: idleBgShift 30s ease infinite;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px;
+      cursor: pointer;
+      color: #f1f5f9;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+    }
+    .idle-overlay.fade-out { animation: idleFadeOut 0.4s ease forwards; }
+    @keyframes idleFadeOut { to { opacity: 0; } }
+
+    /* Reloj */
+    .idle-clock {
+      font-size: clamp(72px, 18vw, 160px);
+      font-weight: 200;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 4px 32px rgba(99, 102, 241, 0.3);
+      animation: clockBreathe 4s ease-in-out infinite;
+    }
+    @keyframes clockBreathe {
+      0%, 100% { opacity: 0.95; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.01); }
+    }
+    .idle-clock-sec { font-size: 0.4em; opacity: 0.5; margin-left: 0.15em; animation: secBlink 1s steps(1) infinite; font-weight: 300; }
+    @keyframes secBlink { 50% { opacity: 0.2; } }
+
+    /* Identidad cajero */
+    .idle-cajero  { font-size: clamp(20px, 4vw, 28px); font-weight: 700; margin-top: 24px; opacity: 0.92; }
+    .idle-empresa { font-size: clamp(11px, 2vw, 13px); font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.55; margin-top: 6px; }
+
+    /* Divisor */
+    .idle-divider { width: 80px; height: 1px; background: rgba(255,255,255,0.15); margin: 32px 0; }
+
+    /* Frase motivacional */
+    .idle-quote {
+      max-width: 600px;
+      font-size: clamp(15px, 2.5vw, 19px);
+      font-weight: 500;
+      line-height: 1.5;
+      text-align: center;
+      opacity: 0.85;
+      font-style: italic;
+      letter-spacing: 0.01em;
+      transition: opacity 0.5s ease;
+      min-height: 56px; padding: 0 24px;
+    }
+    .idle-quote.fading { opacity: 0; }
+
+    /* Stats del día */
+    .idle-stats {
+      display: flex; gap: 28px; margin-top: 36px;
+      font-size: clamp(13px, 2.2vw, 16px); opacity: 0.6;
+    }
+    .idle-stat { display: flex; align-items: center; gap: 8px; }
+    .idle-stat-icon { font-size: 1.1em; }
+    .idle-stat-num  { font-weight: 800; color: #c7d2fe; }
+
+    /* Hint inferior */
+    .idle-hint {
+      position: absolute; bottom: 24px; left: 0; right: 0; text-align: center;
+      font-size: 11px; opacity: 0.4; letter-spacing: 0.1em;
+      animation: hintPulse 3s ease-in-out infinite;
+    }
+    @keyframes hintPulse { 50% { opacity: 0.6; } }
+
+    /* Partículas sutiles flotando */
+    .idle-particle {
+      position: absolute; width: 3px; height: 3px; border-radius: 50%;
+      background: rgba(199, 210, 254, 0.4);
+      box-shadow: 0 0 8px rgba(199, 210, 254, 0.3);
+      animation: particleFloat 18s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes particleFloat {
+      0%   { transform: translate(0, 100vh); opacity: 0; }
+      10%  { opacity: 0.8; }
+      90%  { opacity: 0.6; }
+      100% { transform: translate(var(--p-dx, 30px), -10vh); opacity: 0; }
+    }
+
+    /* Indicador de wake lock (debug — opcional) */
+    .idle-wakelock { position: absolute; top: 16px; right: 18px; font-size: 10px; opacity: 0.3; letter-spacing: 0.15em; }
+
     /* ─── Welcome Overlay (arranque de turno) ──────────────────── */
     @keyframes welcomeBgShift {
       0%, 100% { background-position: 0% 50%; }
@@ -1150,6 +1244,51 @@
                     </div>
                  </div>
 
+                 <!-- Sección: Comodidad (wake lock + salvapantalla) -->
+                 <h3 class="text-xs font-black text-gray-500 uppercase tracking-wider mb-2 mt-6 px-1">Comodidad</h3>
+                 <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden divide-y divide-gray-100 mb-6">
+                    <!-- Wake lock -->
+                    <div class="flex items-center justify-between px-4 py-3">
+                       <div class="flex items-center gap-3">
+                          <span class="text-xl">⚡</span>
+                          <div>
+                             <p class="text-sm font-bold text-gray-700">Mantener pantalla activa</p>
+                             <p class="text-xs text-gray-400">No se apaga mientras la sesión esté abierta</p>
+                          </div>
+                       </div>
+                       <button @click="toggleWakeLock" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="idleConfig.wakeLockEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
+                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="idleConfig.wakeLockEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                       </button>
+                    </div>
+                    <!-- Salvapantalla -->
+                    <div class="flex items-center justify-between px-4 py-3">
+                       <div class="flex items-center gap-3">
+                          <span class="text-xl">💤</span>
+                          <div>
+                             <p class="text-sm font-bold text-gray-700">Salvapantalla</p>
+                             <p class="text-xs text-gray-400">Vista oscura con reloj y frase tras inactividad</p>
+                          </div>
+                       </div>
+                       <button @click="toggleSaver" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="idleConfig.saverEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
+                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="idleConfig.saverEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                       </button>
+                    </div>
+                    <!-- Tiempo del salvapantalla -->
+                    <div v-if="idleConfig.saverEnabled" class="flex items-center justify-between px-4 py-3">
+                       <div class="flex items-center gap-3">
+                          <span class="text-xl opacity-50">⏱</span>
+                          <p class="text-sm font-bold text-gray-700">Activar tras</p>
+                       </div>
+                       <div class="flex items-center gap-1">
+                          <button v-for="m in [1,2,5,10]" :key="m" @click="setSaverMinutos(m)"
+                                  :class="['px-3 py-1.5 rounded-xl text-xs font-black transition-colors',
+                                           idleConfig.saverMinutos === m ? 'bg-posPrimary text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200']">
+                             {{ m }} min
+                          </button>
+                       </div>
+                    </div>
+                 </div>
+
             </div>
         </div>
 
@@ -1211,6 +1350,49 @@
             </div>
          </div>
     </div>
+    <!-- ╔══ SALVAPANTALLA / IDLE SCREEN ══╗ -->
+    <div v-if="idleScreen.visible"
+         :class="['idle-overlay', idleScreen.fading ? 'fade-out' : '']"
+         @click="ocultarSalvapantalla"
+         @touchstart="ocultarSalvapantalla">
+       <!-- Partículas sutiles -->
+       <span v-for="p in idleScreen.particles" :key="'idle-p-'+p.id"
+             class="idle-particle"
+             :style="{ left: p.left + '%', '--p-dx': p.dx + 'px', animationDelay: p.delay + 's', animationDuration: p.duration + 's' }"></span>
+
+       <span v-if="idleScreen.wakeLockActivo" class="idle-wakelock">⚡ pantalla activa</span>
+
+       <!-- Reloj central -->
+       <div class="idle-clock">
+         {{ idleScreen.hora }}<span class="idle-clock-sec">:{{ idleScreen.seg }}</span>
+       </div>
+
+       <!-- Identidad -->
+       <div class="idle-cajero">{{ idleScreen.cajero }}</div>
+       <div class="idle-empresa">Inversiones MOS · {{ idleScreen.zona }}</div>
+
+       <div class="idle-divider"></div>
+
+       <!-- Frase motivacional rotante -->
+       <div :class="['idle-quote', idleScreen.quoteFading ? 'fading' : '']">
+         "{{ idleScreen.quote }}"
+       </div>
+
+       <!-- Stats del día -->
+       <div class="idle-stats">
+         <div class="idle-stat">
+           <span class="idle-stat-icon">🛒</span>
+           <span><span class="idle-stat-num">{{ idleScreen.tickets }}</span> ventas hoy</span>
+         </div>
+         <div class="idle-stat">
+           <span class="idle-stat-icon">💰</span>
+           <span>S/ <span class="idle-stat-num">{{ idleScreen.totalHoy }}</span></span>
+         </div>
+       </div>
+
+       <div class="idle-hint">tap en cualquier lado para volver</div>
+    </div>
+
     <!-- ╔══ WELCOME OVERLAY — arranque de turno con motivación ══╗ -->
     <div v-if="welcomeOverlay.visible"
          :class="['welcome-overlay', welcomeOverlay.fading ? 'fading' : '']"
@@ -3450,6 +3632,183 @@
             ventasHoy: 0, ventasShown: '0.00',
             confetti: [], sparkles: []
         });
+
+        // ╔══════════════════════════════════════════════════════════════
+        // ║  WAKE LOCK + SALVAPANTALLA por inactividad
+        // ╚══════════════════════════════════════════════════════════════
+        const idleScreen = ref({
+            visible: false, fading: false,
+            hora: '00:00', seg: '00',
+            cajero: '', zona: '',
+            quote: '', quoteFading: false,
+            tickets: 0, totalHoy: '0.00',
+            wakeLockActivo: false,
+            particles: []
+        });
+
+        // Configuración persistida (default ON, 2 min)
+        const idleConfig = ref({
+            wakeLockEnabled: localStorage.getItem('mosexpress_wakelock') !== '0',
+            saverEnabled:    localStorage.getItem('mosexpress_saver') !== '0',
+            saverMinutos:    parseInt(localStorage.getItem('mosexpress_saver_min') || '2', 10)
+        });
+
+        let _wakeLockSentinel = null;
+        let _idleTimer = null;
+        let _idleClockInterval = null;
+        let _idleQuoteInterval = null;
+
+        // ── Wake Lock ────────────────────────────────────────
+        const _activarWakeLock = async () => {
+            if (!idleConfig.value.wakeLockEnabled) return;
+            if (!('wakeLock' in navigator)) return;
+            if (_wakeLockSentinel) return; // ya activo
+            try {
+                _wakeLockSentinel = await navigator.wakeLock.request('screen');
+                idleScreen.value.wakeLockActivo = true;
+                _wakeLockSentinel.addEventListener('release', () => {
+                    _wakeLockSentinel = null;
+                    idleScreen.value.wakeLockActivo = false;
+                });
+            } catch(e) { /* dispositivo no soporta o tab en background */ }
+        };
+        const _liberarWakeLock = async () => {
+            if (_wakeLockSentinel) {
+                try { await _wakeLockSentinel.release(); } catch(e) {}
+                _wakeLockSentinel = null;
+                idleScreen.value.wakeLockActivo = false;
+            }
+        };
+
+        // Re-activar wake lock cuando la app vuelve al foreground
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && config.value.completado) {
+                _activarWakeLock();
+            }
+        });
+
+        // ── Detector de inactividad ──────────────────────────
+        const _resetIdleTimer = () => {
+            if (idleScreen.value.visible) ocultarSalvapantalla();
+            if (_idleTimer) clearTimeout(_idleTimer);
+            if (!idleConfig.value.saverEnabled) return;
+            if (!config.value.completado) return;
+            const ms = (parseInt(idleConfig.value.saverMinutos, 10) || 2) * 60 * 1000;
+            _idleTimer = setTimeout(mostrarSalvapantalla, ms);
+        };
+
+        // ── Mostrar salvapantalla ────────────────────────────
+        const mostrarSalvapantalla = () => {
+            // No interrumpir tareas críticas
+            if (modalPago.value) return;
+            if (camaraAbierta.value) return;
+            if (welcomeOverlay.value.visible) return;
+            if (!config.value.completado) return;
+
+            // Inicializar datos
+            const _now = new Date();
+            const _hh = String(_now.getHours()).padStart(2, '0');
+            const _mm = String(_now.getMinutes()).padStart(2, '0');
+            const _ss = String(_now.getSeconds()).padStart(2, '0');
+
+            // Stats del día (de cobradosEnSesion del cajero/vendedor)
+            const _ticks = (cobradosEnSesion.value || []).length;
+            const _total = (cobradosEnSesion.value || []).reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
+
+            // Frase aleatoria
+            const _q = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
+
+            // Partículas (8 sutiles)
+            const _parts = [];
+            for (let i = 0; i < 8; i++) {
+                _parts.push({
+                    id: i,
+                    left: Math.random() * 100,
+                    dx: (Math.random() - 0.5) * 100,
+                    delay: Math.random() * 18,
+                    duration: 14 + Math.random() * 8
+                });
+            }
+
+            idleScreen.value = {
+                ...idleScreen.value,
+                visible: true, fading: false,
+                hora: _hh + ':' + _mm,
+                seg: _ss,
+                cajero: (config.value.vendedor || '') + (config.value.esCajero ? ' · Cajero' : ' · Vendedor'),
+                zona: config.value.zona || config.value.estacion?.Estacion_Nombre || '',
+                quote: _q, quoteFading: false,
+                tickets: _ticks,
+                totalHoy: _total.toFixed(2),
+                particles: _parts
+            };
+
+            // Actualizar reloj cada segundo
+            if (_idleClockInterval) clearInterval(_idleClockInterval);
+            _idleClockInterval = setInterval(() => {
+                const n = new Date();
+                idleScreen.value.hora = String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0');
+                idleScreen.value.seg  = String(n.getSeconds()).padStart(2, '0');
+            }, 1000);
+
+            // Rotar frase cada 8s con fade
+            if (_idleQuoteInterval) clearInterval(_idleQuoteInterval);
+            _idleQuoteInterval = setInterval(() => {
+                idleScreen.value.quoteFading = true;
+                setTimeout(() => {
+                    idleScreen.value.quote = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
+                    idleScreen.value.quoteFading = false;
+                }, 500);
+            }, 8000);
+        };
+
+        // ── Ocultar salvapantalla ────────────────────────────
+        const ocultarSalvapantalla = () => {
+            if (!idleScreen.value.visible || idleScreen.value.fading) return;
+            idleScreen.value.fading = true;
+            if (_idleClockInterval) { clearInterval(_idleClockInterval); _idleClockInterval = null; }
+            if (_idleQuoteInterval) { clearInterval(_idleQuoteInterval); _idleQuoteInterval = null; }
+            setTimeout(() => {
+                idleScreen.value.visible = false;
+                idleScreen.value.fading = false;
+                _resetIdleTimer(); // arrancar countdown de nuevo
+            }, 380);
+        };
+
+        // ── Listeners de actividad ───────────────────────────
+        ['touchstart', 'click', 'keydown', 'mousemove', 'scroll'].forEach(ev => {
+            window.addEventListener(ev, _resetIdleTimer, { passive: true });
+        });
+
+        // ── Watchers para reactivar wake lock + idle al cambiar sesión
+        watch(() => config.value.completado, (val) => {
+            if (val) {
+                _activarWakeLock();
+                _resetIdleTimer();
+            } else {
+                _liberarWakeLock();
+                if (idleScreen.value.visible) ocultarSalvapantalla();
+                if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+            }
+        }, { immediate: true });
+
+        // ── Toggles persistentes ─────────────────────────────
+        const toggleWakeLock = () => {
+            idleConfig.value.wakeLockEnabled = !idleConfig.value.wakeLockEnabled;
+            localStorage.setItem('mosexpress_wakelock', idleConfig.value.wakeLockEnabled ? '1' : '0');
+            if (idleConfig.value.wakeLockEnabled && config.value.completado) _activarWakeLock();
+            else _liberarWakeLock();
+        };
+        const toggleSaver = () => {
+            idleConfig.value.saverEnabled = !idleConfig.value.saverEnabled;
+            localStorage.setItem('mosexpress_saver', idleConfig.value.saverEnabled ? '1' : '0');
+            _resetIdleTimer();
+        };
+        const setSaverMinutos = (m) => {
+            idleConfig.value.saverMinutos = parseInt(m, 10) || 2;
+            localStorage.setItem('mosexpress_saver_min', String(idleConfig.value.saverMinutos));
+            _resetIdleTimer();
+        };
 
         const playWelcomeFanfare = () => {
             if (!soundEnabled.value) return;
@@ -6258,6 +6617,8 @@
           esGranel, setCantidadGramos, setCantidadKg,
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
+          idleScreen, idleConfig, ocultarSalvapantalla,
+          toggleWakeLock, toggleSaver, setSaverMinutos,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
