@@ -1260,6 +1260,20 @@
                        </button>
                     </div>
 
+                    <!-- Fila: Voz (anuncia precio al escanear y total al cobrar) -->
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                       <div class="flex items-center gap-3">
+                          <span class="text-xl">🔊</span>
+                          <div>
+                             <p class="text-sm font-bold text-gray-700">Anuncios de voz</p>
+                             <p class="text-xs text-gray-400">"2 soles" al escanear · "Gracias por su compra" al cobrar</p>
+                          </div>
+                       </div>
+                       <button @click="toggleVoice" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="voiceEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
+                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="voiceEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                       </button>
+                    </div>
+
                     <!-- Fila: Actualizar catálogo -->
                     <div class="flex items-center justify-between px-4 py-3">
                        <div class="flex items-center gap-3">
@@ -2475,6 +2489,60 @@
         const pendingSales = ref([]);
         const isSyncing = ref(false);
         const soundEnabled = ref(localStorage.getItem('mosexpress_sound') !== 'false');
+        // Voz / Text-to-Speech para anunciar precios al escanear y total al cobrar.
+        // Default OFF — el cajero lo activa cuando quiera la experiencia "vendedor anuncia"
+        const voiceEnabled = ref(localStorage.getItem('mosexpress_voice') === '1');
+        const toggleVoice = () => {
+            voiceEnabled.value = !voiceEnabled.value;
+            localStorage.setItem('mosexpress_voice', voiceEnabled.value ? '1' : '0');
+            // Test al activar
+            if (voiceEnabled.value) speakES('Voz activada');
+        };
+
+        // Helpers TTS — Web Speech API (nativo, soporta es-PE / es-ES)
+        let _voiceCache = null;
+        const _seleccionarVoz = () => {
+            if (!('speechSynthesis' in window)) return null;
+            if (_voiceCache) return _voiceCache;
+            const voces = speechSynthesis.getVoices() || [];
+            // Preferir es-PE, sino es-419/es-MX/es-AR/es-CL, sino cualquier es-*
+            const buscarPor = (test) => voces.find(v => test(v));
+            _voiceCache = buscarPor(v => /es-PE/i.test(v.lang))
+                       || buscarPor(v => /es-419|es-MX|es-AR|es-CL|es-CO/i.test(v.lang))
+                       || buscarPor(v => /^es/i.test(v.lang))
+                       || null;
+            return _voiceCache;
+        };
+        // Las voces se cargan async — limpiar cache cuando cambien
+        if ('speechSynthesis' in window) {
+            speechSynthesis.addEventListener('voiceschanged', () => { _voiceCache = null; });
+        }
+
+        const speakES = (texto) => {
+            if (!voiceEnabled.value) return;
+            if (!('speechSynthesis' in window)) return;
+            try {
+                speechSynthesis.cancel(); // cortar lo que esté hablando (no encolar)
+                const u = new SpeechSynthesisUtterance(String(texto));
+                u.lang   = 'es-PE';
+                u.rate   = 1.05;
+                u.pitch  = 1.0;
+                u.volume = 1.0;
+                const voz = _seleccionarVoz();
+                if (voz) u.voice = voz;
+                speechSynthesis.speak(u);
+            } catch(e) {}
+        };
+
+        // Formatea un monto a frase natural en español:
+        // 2.00 → "2 soles" · 2.50 → "2 con 50 soles" · 12.05 → "12 con 5 soles"
+        const _precioVoz = (n) => {
+            const num = Math.max(0, parseFloat(n) || 0);
+            const entero = Math.floor(num);
+            const cent   = Math.round((num - entero) * 100);
+            if (cent === 0)  return entero === 1 ? '1 sol' : entero + ' soles';
+            return entero + ' con ' + cent + (entero === 1 ? ' sol' : ' soles');
+        };
         
         // --- SEGURIDAD: DISPOSITIVOS ---
         const deviceId = ref('');
@@ -3461,6 +3529,7 @@
             if (!soundEnabled.value) return;
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_e) {} }
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.connect(gain); gain.connect(ctx.destination);
@@ -3471,7 +3540,7 @@
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
                 osc.start(ctx.currentTime);
                 osc.stop(ctx.currentTime + 0.19);
-            } catch(e) {}
+            } catch(e) { console.warn('beepError fail:', e); }
         };
 
         // Dos notas ascendentes — confirma venta completada o cobro recibido
@@ -5447,6 +5516,15 @@
           }
 
           agregarToast('¡Añadido!', prodObj.nombreCorto);
+          // Voz: anuncia precio del item recién agregado (subtotal del item, no carrito total)
+          // Para granel anuncia el subtotal calculado; para unidad anuncia el precio unitario.
+          const _itemFinal = carrito.value[finalIdx];
+          if (_itemFinal && voiceEnabled.value) {
+              const _montoVoz = _esGranelProd
+                  ? _itemFinal.subtotal
+                  : _itemFinal.precioUnitario;
+              setTimeout(() => speakES(_precioVoz(_montoVoz)), 250);
+          }
           setTimeout(() => { if(scannerInput.value && !mostrarTeclado.value) scannerInput.value.focus({ preventScroll: true }); else if(scannerInput.value && mostrarTeclado.value) scannerInput.value.focus(); }, 100);
         };
 
@@ -5907,7 +5985,7 @@
            });
 
            // 3. Cerrar modal y limpiar carrito inmediatamente — no esperar impresión
-           finalizarPostPago();
+           finalizarPostPago(totalVenta);
 
            // Helper: construir y enviar ticket ESC/POS con el correlativo final
            const imprimirTicketVenta = (correlativo, esSincronizado) => {
@@ -6040,7 +6118,22 @@
            }
         };
 
-        const finalizarPostPago = () => { playVentaOK(); procesando.value = false; modalPago.value = false; carrito.value = []; pago.value.montoRecibido = 0; pago.value.montoVirtual = 0; limpiarCliente(); pago.value.tipoDoc = 'NOTA_DE_VENTA'; pago.value.metodo = 'EFECTIVO'; setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100); };
+        const finalizarPostPago = (totalCobrado = 0) => {
+          playVentaOK();
+          // Voz: anuncia total + gracias por su compra (ceremonial — refuerza atención al cliente)
+          if (voiceEnabled.value && totalCobrado > 0) {
+              setTimeout(() => speakES(_precioVoz(totalCobrado) + ', gracias por su compra'), 350);
+          }
+          procesando.value = false;
+          modalPago.value = false;
+          carrito.value = [];
+          pago.value.montoRecibido = 0;
+          pago.value.montoVirtual = 0;
+          limpiarCliente();
+          pago.value.tipoDoc = 'NOTA_DE_VENTA';
+          pago.value.metodo = 'EFECTIVO';
+          setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
+        };
 
         const anularVenta = (venta) => {
             pedirPin(() => _ejecutarAnulacion(venta));
@@ -6754,6 +6847,7 @@
           cajaAbierta, idCajaActual, montoAperturaMemoria, montoApertura, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
           ventasZona, cargandoZona, cargarVentasZona, cobradosEnSesion, sessionStartTime, playCoinSound,
           soundEnabled, toggleSound,
+          voiceEnabled, toggleVoice,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
