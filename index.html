@@ -5236,6 +5236,29 @@
         const elegirPresentacion = (prodBase, pres) => {
             const codEsc = _codEscaneadoTemp || String(pres.Cod_Barras);
             _codEscaneadoTemp = null;
+
+            // Determinar precio:
+            //   · Producto NIU (unidad): usar precio de la presentación tal cual
+            //   · Producto KGM (granel): el sistema cobra precio × kg. Usar precio
+            //     del CANÓNICO (factor=1) — el "precio por kg" del producto.
+            //     Si no hay factor=1 en el grupo (caso huérfano), derivar el precio
+            //     por kg dividiendo precio/factor de la presentación elegida.
+            //   Ej: maní 12/kg, presentación 250g a 3 soles. Click 250g →
+            //       cantidad = 0.25 kg, precio = 12, subtotal = 3.00 ✓
+            //       (antes usaba precio=3 → subtotal 0.75, redondeado 0.8 ❌)
+            const _esGranel = String(prodBase.unidadMedida || '').toUpperCase() === 'KGM';
+            let precioFinal = parseFloat(pres.Precio_Venta) || 0;
+            if (_esGranel) {
+                const presCanonica = (prodBase.presentaciones || []).find(p => parseFloat(p.Factor) === 1);
+                if (presCanonica) {
+                    precioFinal = parseFloat(presCanonica.Precio_Venta) || precioFinal;
+                } else {
+                    // Sin factor=1 en el grupo → derivar precio por kg implícito
+                    const f = parseFloat(pres.Factor) || 1;
+                    precioFinal = (parseFloat(pres.Precio_Venta) || 0) / f;
+                }
+            }
+
             const item = {
                 sku:          String(pres.SKU || prodBase.skuBase || prodBase.sku), // idProducto de esta presentación
                 skuBase:      String(prodBase.skuBase || prodBase.sku),             // SKU_Base del grupo
@@ -5246,7 +5269,7 @@
                 codSunat:     prodBase.codSunat,
                 tipoIgv:      prodBase.tipoIgv,
                 unidadMedida: prodBase.unidadMedida,
-                precio:       parseFloat(pres.Precio_Venta),
+                precio:       precioFinal,
                 imagen:       prodBase.imagen,
                 promoStr:     prodBase.promoStr
             };
