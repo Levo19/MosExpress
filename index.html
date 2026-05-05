@@ -2518,6 +2518,12 @@
             speechSynthesis.addEventListener('voiceschanged', () => { _voiceCache = null; });
         }
 
+        // Flag interno: solo true cuando el siguiente agregar al carrito viene de
+        // un match EXACTO por código (escaneo físico, cámara, o tipeo en buscador
+        // que coincide exactamente con un Cod_Barras / SKU_Base). Click en card
+        // del catálogo o búsqueda parcial por nombre NO lo activa.
+        let _voiceNextAdd = false;
+
         const speakES = (texto) => {
             if (!voiceEnabled.value) return;
             if (!('speechSynthesis' in window)) return;
@@ -5388,6 +5394,7 @@
               if (baseMatch) {
                   feedbackSegunStock(baseMatch, eq ? 'EQUIVALENCIA' : 'CÓDIGO');
                   pulseGridProduct(baseMatch.idUnico); // pulso visual en card del catálogo
+                  _voiceNextAdd = true; // match exacto por barcode → habilita voz al agregar
                   elegirPresentacion(baseMatch, presMatch);
                   bBuscador.value = ''; filtrarCatalogo(); return;
               }
@@ -5398,6 +5405,7 @@
           if (skuMatch) {
               feedbackSegunStock(skuMatch, 'SKU');
               pulseGridProduct(skuMatch.idUnico); // pulso visual en card del catálogo
+              _voiceNextAdd = true; // match exacto por SKU → habilita voz al agregar
               agregarOVerDetalle(skuMatch);
               bBuscador.value = ''; filtrarCatalogo(); return;
           }
@@ -5516,15 +5524,18 @@
           }
 
           agregarToast('¡Añadido!', prodObj.nombreCorto);
-          // Voz: anuncia precio del item recién agregado (subtotal del item, no carrito total)
-          // Para granel anuncia el subtotal calculado; para unidad anuncia el precio unitario.
+          // Voz: SOLO cuando el item vino de escaneo / código de barras exacto.
+          // _voiceNextAdd se setea true únicamente en los matches exactos de
+          // procesarEscaneoOBusqueda (PRESENTACIONES.Cod_Barras o SKU_Base).
+          // Click en card del catálogo o búsqueda parcial por nombre → no habla.
           const _itemFinal = carrito.value[finalIdx];
-          if (_itemFinal && voiceEnabled.value) {
+          if (_itemFinal && voiceEnabled.value && _voiceNextAdd) {
               const _montoVoz = _esGranelProd
                   ? _itemFinal.subtotal
                   : _itemFinal.precioUnitario;
               setTimeout(() => speakES(_precioVoz(_montoVoz)), 250);
           }
+          _voiceNextAdd = false; // siempre resetear tras agregar
           setTimeout(() => { if(scannerInput.value && !mostrarTeclado.value) scannerInput.value.focus({ preventScroll: true }); else if(scannerInput.value && mostrarTeclado.value) scannerInput.value.focus(); }, 100);
         };
 
