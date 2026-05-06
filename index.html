@@ -712,8 +712,8 @@
                  @keyup.enter="intentarDesbloqueoTemporal"
                  type="password"
                  inputmode="numeric"
-                 maxlength="20"
-                 placeholder="Clave de admin"
+                 maxlength="8"
+                 placeholder="Clave global (4) + tu PIN (4)"
                  class="w-full bg-gray-900 border-2 border-gray-700 focus:border-amber-500 rounded-xl px-4 py-4 text-center text-2xl font-black tracking-widest text-white placeholder:text-gray-600 outline-none">
           <p v-if="desbloqueoError" class="text-red-400 text-sm font-bold">{{ desbloqueoError }}</p>
           <button @click="intentarDesbloqueoTemporal"
@@ -2049,26 +2049,32 @@
         </div>
     </div>
 
-    <!-- ===== MODAL: PIN DE ADMINISTRADOR ===== -->
+    <!-- ===== MODAL: PIN DE ADMINISTRADOR (clave 8 dígitos = global+tu PIN) ===== -->
     <div v-if="modalPin" class="fixed inset-0 bg-gray-900/80 z-[60] flex items-end justify-center backdrop-blur-sm">
         <div class="bg-white rounded-t-3xl p-6 w-full max-w-sm shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]">
-            <div class="flex justify-between items-center mb-5">
+            <div class="flex justify-between items-center mb-4">
                 <div>
-                    <h2 class="text-xl font-black text-gray-800">Clave de Administrador</h2>
-                    <p class="text-xs text-gray-400 font-bold mt-0.5">Acción protegida — ingresa la clave</p>
+                    <h2 class="text-xl font-black text-gray-800">Autorización Admin</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">Clave global (4) + tu PIN admin (4)</p>
                 </div>
                 <button @click="modalPin = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
-            <input v-model="pinInput" @keyup.enter="confirmarPin" type="password" inputmode="numeric" maxlength="20"
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+                <p class="text-amber-800 text-[11px] font-semibold leading-relaxed">
+                    🔐 Ingresa <strong>8 dígitos</strong>: los 4 de la clave global (la verifica el master en MOS) seguidos de tu PIN personal de admin.
+                </p>
+            </div>
+            <input v-model="pinInput" @keyup.enter="confirmarPin" type="password" inputmode="numeric" maxlength="8"
                    :class="pinError ? 'border-red-400 bg-red-50' : 'border-gray-200'"
                    class="w-full border-2 rounded-2xl px-4 py-4 text-center text-3xl font-black tracking-widest outline-none focus:border-amber-400 mb-2"
-                   placeholder="••••" autofocus>
+                   placeholder="••••••••" autofocus>
             <p v-if="pinError" class="text-red-500 text-xs font-bold text-center mb-3">{{ pinError }}</p>
-            <button @click="confirmarPin" :disabled="!pinInput.trim()"
-                    class="w-full mt-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
-                CONFIRMAR
+            <button @click="confirmarPin" :disabled="!pinInput.trim() || pinValidando"
+                    class="w-full mt-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                <svg v-if="pinValidando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                {{ pinValidando ? 'VALIDANDO...' : 'CONFIRMAR' }}
             </button>
         </div>
     </div>
@@ -3478,6 +3484,8 @@
                     agregarToast("Éxito", "Catálogo actualizado");
                     // Sincronizar impresoras desde ProyectoMOS_DB después del catálogo
                     _syncImpresorasFromProyectoMOS();
+                    // Sincronizar caché admin (clave global + PINs admins)
+                    _sincronizarAdminCache();
                 } else {
                     throw new Error("Formato inválido");
                 }
@@ -5095,26 +5103,110 @@
             return m + ':' + (s < 10 ? '0' : '') + s;
         };
 
-        // --- ADMIN PIN: pedir clave antes de acciones protegidas ---
-        const pedirPin = (callback) => {
-            const pin = String(config.value.estacion?.Admin_PIN || '').trim();
-            if (!pin) { agregarToast('Sin configurar', 'Agrega Admin_PIN en ZONAS_CONFIG'); return; }
+        // ── ADMIN PIN UNIFICADO — clave 8 dígitos = global(4) + admin(4) ──
+        // Caché offline: { globalPin, adminPins:[{pin,nombre,idPersonal}] }
+        const _pinAccion = ref({ accion: 'GENERICA', refDocumento: '' });
+        const pinValidando = ref(false);
+
+        const _cargarAdminCache = () => {
+            try {
+                const raw = localStorage.getItem('mosexpress_admin_cache');
+                return raw ? JSON.parse(raw) : null;
+            } catch(e) { return null; }
+        };
+        const _guardarAdminCache = (data) => {
+            try { localStorage.setItem('mosexpress_admin_cache', JSON.stringify(data)); } catch(e) {}
+        };
+        const _sincronizarAdminCache = async () => {
+            if (offlineMode.value || !navigator.onLine) return;
+            try {
+                const r = await fetch(MOS_GAS_URL + '?action=getAdminPinsCache');
+                const j = await r.json();
+                if (j?.ok && j.data?.globalPin) {
+                    _guardarAdminCache({
+                        globalPin: String(j.data.globalPin),
+                        adminPins: Array.isArray(j.data.adminPins) ? j.data.adminPins : [],
+                        sincronizadoEn: Date.now()
+                    });
+                }
+            } catch(e) { /* tolerar */ }
+        };
+
+        const _validarLocalmente = (clave) => {
+            const cache = _cargarAdminCache();
+            if (!cache || !cache.globalPin) return null;
+            if (clave.length !== 8 || !/^\d{8}$/.test(clave)) return { ok: false, error: 'Clave debe ser de 8 dígitos' };
+            const globalPart = clave.substring(0, 4);
+            const userPart = clave.substring(4, 8);
+            if (globalPart !== cache.globalPin) return { ok: false, error: 'Clave incorrecta' };
+            const admin = (cache.adminPins || []).find(a => String(a.pin) === userPart);
+            if (!admin) return { ok: false, error: 'Clave incorrecta' };
+            return { ok: true, validadoPor: 'admin:' + admin.nombre + ' (offline)', idPersonal: admin.idPersonal };
+        };
+
+        const pedirPin = (callback, opciones) => {
             _pinCallback.value = callback;
+            _pinAccion.value = {
+                accion: opciones?.accion || 'GENERICA',
+                refDocumento: opciones?.refDocumento || ''
+            };
             pinInput.value = '';
             pinError.value = '';
             modalPin.value = true;
+            // Refrescar caché en background para próxima vez
+            _sincronizarAdminCache();
         };
-        const confirmarPin = () => {
-            const pin = String(config.value.estacion?.Admin_PIN || '').trim();
-            if (pinInput.value.trim() !== pin) {
-                pinError.value = 'Clave incorrecta';
+
+        const confirmarPin = async () => {
+            const clave = String(pinInput.value || '').trim();
+            if (!/^\d{8}$/.test(clave)) {
+                pinError.value = 'Ingresa los 8 dígitos: clave global (4) + tu PIN (4)';
+                return;
+            }
+            pinValidando.value = true;
+            pinError.value = '';
+            const accion = _pinAccion.value.accion;
+            const ref = _pinAccion.value.refDocumento;
+
+            // Intentar online primero
+            let resultado = null;
+            if (navigator.onLine && !offlineMode.value) {
+                try {
+                    const r = await fetch(MOS_GAS_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action: 'verificarClaveAdmin',
+                            clave: clave,
+                            accion: accion,
+                            refDocumento: ref,
+                            appOrigen: 'mosExpress',
+                            dispositivo: deviceId.value || ''
+                        })
+                    });
+                    const j = await r.json();
+                    if (j?.ok && j.data) resultado = j.data;
+                } catch(e) { /* fallback offline */ }
+            }
+            // Fallback offline o error de red
+            if (!resultado) {
+                const local = _validarLocalmente(clave);
+                if (local) resultado = local.ok
+                    ? { autorizado: true, validadoPor: local.validadoPor, idPersonal: local.idPersonal }
+                    : { autorizado: false, error: local.error };
+                else resultado = { autorizado: false, error: 'Sin caché. Conecta a internet primero.' };
+            }
+
+            pinValidando.value = false;
+            if (!resultado.autorizado) {
+                pinError.value = resultado.error || 'Clave incorrecta';
                 pinInput.value = '';
                 return;
             }
+
             modalPin.value = false;
             pinInput.value = '';
             pinError.value = '';
-            if (_pinCallback.value) { _pinCallback.value(); _pinCallback.value = null; }
+            if (_pinCallback.value) { _pinCallback.value(resultado); _pinCallback.value = null; }
         };
 
         // --- CAJERO: Marcar ticket como CRÉDITO (requiere PIN admin) ---
@@ -5123,7 +5215,7 @@
                 ticketParaCredito.value = venta;
                 obsCredito.value = venta.obs || '';
                 modalCredito.value = true;
-            });
+            }, { accion: 'CREDITO', refDocumento: venta.correlativo || venta.id });
         };
 
         // --- CAJERO: Cambiar forma de pago posterior (MONEDA, requiere PIN admin) ---
@@ -5132,7 +5224,7 @@
                 ticketParaMoneda.value = venta;
                 pagoMoneda.value = { metodo: 'EFECTIVO', montoVirtual: 0 };
                 modalMoneda.value = true;
-            });
+            }, { accion: 'CAMBIO_METODO', refDocumento: venta.correlativo || venta.id });
         };
         const confirmarMoneda = async () => {
             if (!ticketParaMoneda.value) return;
@@ -5186,7 +5278,7 @@
                     }) }).catch(() => {});
                 }
                 agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
-            });
+            }, { accion: 'REVERTIR_COBRO', refDocumento: venta.correlativo || venta.id });
         };
 
         // Versión desde modal Moneda: cierra el modal después del PIN+confirm
@@ -5214,7 +5306,7 @@
                     }) }).catch(() => {});
                 }
                 agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
-            });
+            }, { accion: 'REVERTIR_COBRO', refDocumento: venta.correlativo || venta.id });
         };
 
         const confirmarCredito = async () => {
@@ -6333,7 +6425,7 @@
         };
 
         const anularVenta = (venta) => {
-            pedirPin(() => _ejecutarAnulacion(venta));
+            pedirPin(() => _ejecutarAnulacion(venta), { accion: 'ANULACION', refDocumento: venta.correlativo || venta.id });
         };
         const _ejecutarAnulacion = (venta) => {
             // Cajero: ticket viene de ventasZona. Vendedor: ticket viene de ventasHoy.
@@ -7092,7 +7184,7 @@
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
-          modalPin, pinInput, pinError, confirmarPin,
+          modalPin, pinInput, pinError, confirmarPin, pinValidando,
           modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro, revertirCobroDesdeModal,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra,
           usuarioBloqueado, modalDesbloqueo, desbloqueoPin, desbloqueoError, desbloqueoCargando,
