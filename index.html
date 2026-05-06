@@ -677,13 +677,34 @@
       </div>
     </header>
 
-    <!-- BLOQUEO DE DISPOSITIVO NO AUTORIZADO -->
-    <div v-if="dispositivoAutorizado === false" class="absolute inset-0 z-[100] bg-gray-900 flex flex-col items-center justify-center p-6 text-center text-white">
+    <!-- BLOQUEO: Dispositivo PENDIENTE de aprobación (recién detectado por MOS) -->
+    <div v-if="dispositivoAutorizado === false && dispositivoEstadoMos === 'PENDIENTE_APROBACION'" class="absolute inset-0 z-[100] bg-gray-900 flex flex-col items-center justify-center p-6 text-center text-white">
+      <div class="bg-gray-800 p-8 rounded-3xl shadow-2xl border-2 border-amber-500 w-full max-w-md relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+        <div class="w-24 h-24 mx-auto mb-6 rounded-full bg-amber-500/20 flex items-center justify-center">
+          <svg class="w-14 h-14 text-amber-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <h2 class="text-2xl font-black mb-2 uppercase tracking-wide">Esperando aprobación</h2>
+        <p class="text-amber-200 font-bold mb-2">📨 Solicitud enviada al administrador</p>
+        <p class="text-gray-400 text-sm mb-6">Recibirás acceso automáticamente cuando el admin apruebe este dispositivo desde el panel MOS. La pantalla se actualizará sola.</p>
+        <div class="bg-gray-900 p-4 rounded-xl border border-amber-700">
+           <p class="text-xs text-amber-400 font-bold uppercase tracking-wider mb-1">📱 ID de este dispositivo</p>
+           <p class="font-mono text-amber-300 text-xs break-all select-all">{{ deviceId }}</p>
+        </div>
+        <div class="mt-4 flex items-center justify-center gap-2 text-xs text-amber-400 font-bold">
+          <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          Verificando cada 15s...
+        </div>
+      </div>
+    </div>
+
+    <!-- BLOQUEO DE DISPOSITIVO NO AUTORIZADO / INACTIVO -->
+    <div v-else-if="dispositivoAutorizado === false" class="absolute inset-0 z-[100] bg-gray-900 flex flex-col items-center justify-center p-6 text-center text-white">
       <div class="bg-gray-800 p-8 rounded-3xl shadow-2xl border border-red-500 w-full max-w-md relative overflow-hidden">
         <div class="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
         <svg class="w-24 h-24 text-red-500 mx-auto mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-        <h2 class="text-3xl font-black mb-2 uppercase tracking-wide">Acceso Denegado</h2>
-        <p class="text-gray-400 font-bold mb-6">Este dispositivo no está autorizado para operar el sistema POS.</p>
+        <h2 class="text-3xl font-black mb-2 uppercase tracking-wide">{{ dispositivoEstadoMos === 'INACTIVO' ? 'Dispositivo Bloqueado' : 'Acceso Denegado' }}</h2>
+        <p class="text-gray-400 font-bold mb-6">{{ dispositivoEstadoMos === 'INACTIVO' ? 'El administrador desactivó este dispositivo. Contáctalo para reactivarlo.' : 'Este dispositivo no está autorizado para operar el sistema POS.' }}</p>
         <div class="bg-gray-900 p-4 rounded-xl border border-gray-700">
            <p class="text-xs text-gray-500 font-bold uppercase tracking-wider mb-1">ID del Dispositivo (Proveer al Admin)</p>
            <p class="font-mono text-emerald-400 text-sm break-all select-all">{{ deviceId }}</p>
@@ -2604,6 +2625,7 @@
         const deviceId = ref('');
         const dispositivoAutorizado = ref(null); // null = cargando, true/false
         const verificandoDispositivo = ref(false);
+        const dispositivoEstadoMos = ref(null); // null | 'ACTIVO' | 'INACTIVO' | 'PENDIENTE_APROBACION'
         
         // NAVIGATION
         const currentModule = ref('CAJA'); // CAJA | POS | TOOLS
@@ -3218,6 +3240,54 @@
                return true;
            }
            if (!silencioso) verificandoDispositivo.value = true;
+
+           // ── 1) Consultar MOS primero (fuente de verdad central) ──
+           // Si MOS retorna INACTIVO o PENDIENTE_APROBACION, MOS prioritiza.
+           // Si MOS retorna ACTIVO, autorizamos sin consultar ME.
+           // Si MOS no responde, fallback al GAS de ME (legacy).
+           let mosOK = false, mosBloqueado = false;
+           try {
+               const _ctrl = new AbortController();
+               const _tid  = setTimeout(() => _ctrl.abort(), 8000);
+               const url = `${MOS_GAS_URL}?action=registrarSesionDispositivo&ID_Dispositivo=${encodeURIComponent(deviceId.value)}&app=mosExpress`;
+               const r = await fetch(url, { signal: _ctrl.signal });
+               clearTimeout(_tid);
+               if (r.ok) {
+                   const j = await r.json();
+                   if (j?.ok && j.data) {
+                       if (j.data.estado === 'INACTIVO') {
+                           dispositivoAutorizado.value = false;
+                           dispositivoEstadoMos.value  = 'INACTIVO';
+                           if (!silencioso) verificandoDispositivo.value = false;
+                           return false;
+                       }
+                       if (j.data.estado === 'PENDIENTE_APROBACION') {
+                           dispositivoAutorizado.value = false;
+                           dispositivoEstadoMos.value  = 'PENDIENTE_APROBACION';
+                           if (!silencioso) verificandoDispositivo.value = false;
+                           // Iniciar polling para detectar aprobación
+                           _arrancarPollingAprobacion();
+                           return false;
+                       }
+                       if (j.data.autorizado === true) {
+                           // ACTIVO en MOS — autorizar sin consultar ME
+                           dispositivoAutorizado.value = true;
+                           dispositivoEstadoMos.value  = 'ACTIVO';
+                           lsSet('mosexpress_device_auth_date', String(Date.now()));
+                           lsSet('mosexpress_device_auth_id', deviceId.value);
+                           mosOK = true;
+                       }
+                   }
+               }
+           } catch(e) {
+               console.warn('[verifDevice] MOS sin respuesta, fallback a ME:', e.message);
+           }
+           if (mosOK) {
+               if (!silencioso) verificandoDispositivo.value = false;
+               return true;
+           }
+
+           // ── 2) Fallback: GAS de ME (compat con dispositivos no migrados a MOS) ──
            try {
              const _ctrl = new AbortController();
              const _tid  = setTimeout(() => _ctrl.abort(), 10000);
@@ -3232,11 +3302,9 @@
                      lsSet('mosexpress_device_auth_date', String(Date.now()));
                      lsSet('mosexpress_device_auth_id', deviceId.value);
                  } else if (!silencioso) {
-                     // Dispositivo desactivado — bloquear UI inmediatamente
                      agregarToast("Acceso bloqueado", "Este dispositivo fue desactivado por el administrador", "error");
                  }
              } else {
-                 // Respuesta inesperada — no bloquear por error de formato
                  if (!dispositivoAutorizado.value) dispositivoAutorizado.value = true;
                  lsSet('mosexpress_device_auth_date', String(Date.now()));
                  lsSet('mosexpress_device_auth_id', deviceId.value);
@@ -3245,12 +3313,35 @@
            } catch(e) {
              console.error("Error validando dispositivo:", e);
              if (!silencioso && !offlineMode.value) agregarToast("Aviso", "Verificación sin conexión — modo local");
-             // Error de red — no revocar acceso si ya estaba autorizado
              if (!dispositivoAutorizado.value) dispositivoAutorizado.value = true;
              return true;
            } finally {
              if (!silencioso) verificandoDispositivo.value = false;
            }
+        };
+
+        // Polling para detectar aprobación cuando estamos en PENDIENTE_APROBACION
+        let _intervalAprobacion = null;
+        const _arrancarPollingAprobacion = () => {
+           if (_intervalAprobacion) return;
+           _intervalAprobacion = setInterval(async () => {
+               try {
+                   const url = `${MOS_GAS_URL}?action=registrarSesionDispositivo&ID_Dispositivo=${encodeURIComponent(deviceId.value)}&app=mosExpress`;
+                   const r = await fetch(url);
+                   const j = await r.json();
+                   if (j?.ok && j.data?.autorizado === true) {
+                       clearInterval(_intervalAprobacion);
+                       _intervalAprobacion = null;
+                       dispositivoEstadoMos.value = 'ACTIVO';
+                       agregarToast('✅ Aprobado', 'El administrador autorizó el dispositivo. Recargando...', 'ok');
+                       setTimeout(() => location.reload(), 1500);
+                   } else if (j?.ok && j.data?.estado === 'INACTIVO') {
+                       clearInterval(_intervalAprobacion);
+                       _intervalAprobacion = null;
+                       dispositivoEstadoMos.value = 'INACTIVO';
+                   }
+               } catch(_) {}
+           }, 15 * 1000);
         };
 
         const verificarDispositivoActivo = async () => {
@@ -7166,7 +7257,7 @@
           bHerramientas, imprimirMembrete, procesandoMembrete,
           camaraHerramientasAbierta, toggleCamaraHerramientas,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente,
-          deviceId, dispositivoAutorizado, verificandoDispositivo, verificarDispositivoActivo,
+          deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo,
           sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
           flashNuevosTickets,
           sincronizarDatos, isSyncing, pendingSales,
