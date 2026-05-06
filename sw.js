@@ -2,7 +2,32 @@
 // MOSexpress — Service Worker
 // Cambia VERSION en cada deploy para invalidar caché
 // ============================================================
-const VERSION = '1.4.31';
+
+// ── Firebase Cloud Messaging (background push) ─────────────
+importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey:            'AIzaSyA_gfynRxAmlbGgHWoioaj5aeaxnnywP88',
+  projectId:         'proyectomos-push',
+  messagingSenderId: '328735199478',
+  appId:             '1:328735199478:web:947f338ae9716a7c049cd7'
+});
+
+const _fcmMsg = firebase.messaging();
+_fcmMsg.onBackgroundMessage(payload => {
+  const title = payload.notification?.title || 'MosExpress';
+  const body  = payload.notification?.body  || '';
+  self.registration.showNotification(title, {
+    body,
+    icon:    'https://levo19.github.io/MOS/icon-192.png',
+    badge:   'https://levo19.github.io/MOS/icon-192.png',
+    tag:     'me-push',
+    vibrate: [200, 100, 200]
+  });
+});
+
+const VERSION = '1.4.32';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
