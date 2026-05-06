@@ -695,6 +695,50 @@
       </div>
     </div>
 
+    <!-- BLOQUEO REMOTO DEL USUARIO (admin desactivó la cuenta) -->
+    <div v-if="usuarioBloqueado.bloqueado && !usuarioBloqueado.unlockVigente && config.completado && dispositivoAutorizado === true"
+         class="fixed inset-0 z-[105] bg-gradient-to-br from-amber-950 via-gray-900 to-gray-900 flex flex-col items-center justify-center p-6 text-center text-white">
+      <div class="bg-gray-800 p-8 rounded-3xl shadow-2xl border-2 border-amber-500 w-full max-w-md relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+        <div class="w-24 h-24 rounded-full bg-amber-500/20 flex items-center justify-center mx-auto mb-6">
+          <svg class="w-14 h-14 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+        <h2 class="text-3xl font-black mb-2 uppercase tracking-wide">Cuenta suspendida</h2>
+        <p class="text-gray-300 font-bold mb-1">{{ config.vendedor }}</p>
+        <p class="text-gray-400 text-sm mb-6">El administrador ha pausado tu acceso. Pide la clave para acceso temporal de 15 min.</p>
+
+        <div class="space-y-3">
+          <input v-model="desbloqueoPin"
+                 @keyup.enter="intentarDesbloqueoTemporal"
+                 type="password"
+                 inputmode="numeric"
+                 maxlength="20"
+                 placeholder="Clave de admin"
+                 class="w-full bg-gray-900 border-2 border-gray-700 focus:border-amber-500 rounded-xl px-4 py-4 text-center text-2xl font-black tracking-widest text-white placeholder:text-gray-600 outline-none">
+          <p v-if="desbloqueoError" class="text-red-400 text-sm font-bold">{{ desbloqueoError }}</p>
+          <button @click="intentarDesbloqueoTemporal"
+                  :disabled="!desbloqueoPin.trim() || desbloqueoCargando"
+                  class="w-full bg-amber-500 hover:bg-amber-600 text-gray-900 font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-600 disabled:text-gray-400 transition-colors flex justify-center items-center gap-2">
+            <svg v-if="desbloqueoCargando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            DESBLOQUEAR 15 MIN
+          </button>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <p class="text-xs text-gray-500 font-bold uppercase tracking-wider">Si tenías una venta en curso</p>
+          <p class="text-xs text-gray-400 mt-1">Tu carrito se guardó. Volverá al desbloquear.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- BANNER FLOTANTE: acceso temporal vigente con countdown -->
+    <div v-if="usuarioBloqueado.unlockVigente && desbloqueoCountdown > 0"
+         class="fixed top-2 left-1/2 -translate-x-1/2 z-[95] bg-amber-500/95 backdrop-blur-sm text-gray-900 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-black uppercase tracking-wider animate-pulse"
+         :class="{ 'bg-red-500/95 text-white': desbloqueoCountdown <= 60 }">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Acceso temporal · {{ _fmtCountdown(desbloqueoCountdown) }}
+    </div>
+
     <!-- PANTALLA CARGANDO INICIAL -->
     <div v-if="dispositivoAutorizado === null" class="absolute inset-0 z-[90] bg-posBg flex flex-col items-center justify-center p-6 text-center text-white">
         <svg class="animate-spin w-16 h-16 text-emerald-500 mb-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -2597,6 +2641,17 @@
         const ticketParaMoneda = ref(null);
         const pagoMoneda = ref({ metodo: 'EFECTIVO', montoVirtual: 0 });
         const procesandoMoneda = ref(false);
+
+        // ── Bloqueo remoto del usuario (MOS desactiva al vendedor) ──
+        const usuarioBloqueado = ref({ bloqueado: false, unlockVigente: false, unlockHasta: 0, msRestantes: 0, motivo: '' });
+        const modalDesbloqueo = ref(false);
+        const desbloqueoPin = ref('');
+        const desbloqueoError = ref('');
+        const desbloqueoCargando = ref(false);
+        const desbloqueoCountdown = ref(0); // segundos hasta auto-relock cuando hay unlock vigente
+        let _intervalBloqueoPoll = null;
+        let _intervalBloqueoCountdown = null;
+        let _bloqueoWarningShown = false;
         // Estado EXTRAS de caja (movimientos que afectan el saldo: ingresos/egresos extra)
         const extrasMovimientos = ref([]);
         const modalExtra = ref(false);
@@ -2903,6 +2958,10 @@
               // Verificar nueva versión del frontend en cada ciclo de sync
               if (navigator.onLine && window._SWCheck) window._SWCheck();
           }, 5 * 60 * 1000); // Chequear cada 5 min
+
+          // Bloqueo remoto del usuario — polling cada 30s + check inicial al cargar
+          setTimeout(_checkBloqueoUsuario, 4000);
+          _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 30 * 1000);
         });
 
         onUnmounted(() => {
@@ -2914,6 +2973,8 @@
           clearInterval(_intervalMidnight);
           clearInterval(_intervalCajaRetry);
           clearInterval(_intervalVendedorCajeroCheck);
+          if (_intervalBloqueoPoll) { clearInterval(_intervalBloqueoPoll); _intervalBloqueoPoll = null; }
+          if (_intervalBloqueoCountdown) { clearInterval(_intervalBloqueoCountdown); _intervalBloqueoCountdown = null; }
           _intervalVendedorCajeroCheck = null;
           if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
           detenerPollingZona();
@@ -4908,6 +4969,131 @@
         };
 
         // --- CAJERO: carga tickets de zona desde GAS ---
+
+        // ── BLOQUEO REMOTO: polling y desbloqueo temporal ─────────────
+        const _persistirCarritoBloqueo = () => {
+            try {
+                if (carrito.value && carrito.value.length > 0) {
+                    localStorage.setItem('mosexpress_carrito_locked', JSON.stringify({
+                        carrito: carrito.value,
+                        fecha: Date.now(),
+                        vendedor: config.value.vendedor || ''
+                    }));
+                }
+            } catch(e) { /* tolerar */ }
+        };
+
+        const _checkBloqueoUsuario = async () => {
+            if (!config.value.completado || !config.value.vendedor) return;
+            if (offlineMode.value || !navigator.onLine) return;
+            try {
+                const url = MOS_GAS_URL + '?action=getEstadoBloqueoUsuario'
+                          + '&nombre=' + encodeURIComponent(config.value.vendedor)
+                          + '&appOrigen=mosExpress';
+                const r = await fetch(url);
+                const j = await r.json();
+                if (!j || !j.ok || !j.data) return;
+                const prev = usuarioBloqueado.value;
+                usuarioBloqueado.value = {
+                    bloqueado: !!j.data.bloqueado,
+                    unlockVigente: !!j.data.unlockVigente,
+                    unlockHasta: parseInt(j.data.unlockHasta, 10) || 0,
+                    msRestantes: parseInt(j.data.msRestantes, 10) || 0,
+                    motivo: j.data.motivo || ''
+                };
+                // Transición: pasó a bloqueado → guardar carrito + abrir lock
+                if (!prev.bloqueado && usuarioBloqueado.value.bloqueado) {
+                    _persistirCarritoBloqueo();
+                    modalDesbloqueo.value = true;
+                    desbloqueoPin.value = '';
+                    desbloqueoError.value = '';
+                }
+                // Transición: estaba bloqueado, ahora unlock vigente → cerrar modal
+                if (prev.bloqueado && usuarioBloqueado.value.unlockVigente) {
+                    modalDesbloqueo.value = false;
+                    _bloqueoWarningShown = false;
+                    _arrancarCountdownUnlock();
+                }
+                // Transición: estaba inactivo y ahora reactivado en MOS (estado=1)
+                if (prev.bloqueado && !usuarioBloqueado.value.bloqueado && !usuarioBloqueado.value.unlockVigente) {
+                    modalDesbloqueo.value = false;
+                    _bloqueoWarningShown = false;
+                    agregarToast('Cuenta reactivada', 'El administrador te ha reactivado.');
+                }
+            } catch(e) { /* tolerar errores transitorios de red */ }
+        };
+
+        const _arrancarCountdownUnlock = () => {
+            if (_intervalBloqueoCountdown) clearInterval(_intervalBloqueoCountdown);
+            const tick = () => {
+                const ms = (usuarioBloqueado.value.unlockHasta || 0) - Date.now();
+                desbloqueoCountdown.value = Math.max(0, Math.floor(ms / 1000));
+                // Warning a 60s del fin
+                if (ms > 0 && ms <= 60000 && !_bloqueoWarningShown) {
+                    _bloqueoWarningShown = true;
+                    agregarToast('⚠ Acceso temporal por vencer', 'Quedan menos de 1 min — pide al admin un nuevo desbloqueo.', 'warning');
+                }
+                // Si se vence y sigue inactivo, se reactiva el lock automáticamente
+                if (ms <= 0 && usuarioBloqueado.value.unlockVigente) {
+                    usuarioBloqueado.value = Object.assign({}, usuarioBloqueado.value, {
+                        unlockVigente: false,
+                        msRestantes: 0,
+                        bloqueado: true
+                    });
+                    _persistirCarritoBloqueo();
+                    modalDesbloqueo.value = true;
+                    _bloqueoWarningShown = false;
+                    clearInterval(_intervalBloqueoCountdown);
+                    _intervalBloqueoCountdown = null;
+                }
+            };
+            tick();
+            _intervalBloqueoCountdown = setInterval(tick, 1000);
+        };
+
+        const intentarDesbloqueoTemporal = async () => {
+            const clave = String(desbloqueoPin.value || '').trim();
+            if (!clave) { desbloqueoError.value = 'Ingresa la clave de admin'; return; }
+            desbloqueoCargando.value = true;
+            desbloqueoError.value = '';
+            try {
+                const r = await fetch(MOS_GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'desbloquearUsuarioTemporal',
+                        nombre: config.value.vendedor,
+                        appOrigen: 'mosExpress',
+                        claveAdmin: clave
+                    })
+                });
+                const j = await r.json();
+                if (!j || !j.ok) { desbloqueoError.value = j?.error || 'Error de conexión'; return; }
+                if (!j.data?.autorizado) { desbloqueoError.value = j.data?.error || 'Clave incorrecta'; desbloqueoPin.value = ''; return; }
+                // Aprobado
+                usuarioBloqueado.value = {
+                    bloqueado: false,
+                    unlockVigente: true,
+                    unlockHasta: parseInt(j.data.unlockHasta, 10),
+                    msRestantes: parseInt(j.data.msRestantes, 10) || (15 * 60 * 1000),
+                    motivo: ''
+                };
+                modalDesbloqueo.value = false;
+                desbloqueoPin.value = '';
+                _bloqueoWarningShown = false;
+                _arrancarCountdownUnlock();
+                agregarToast('Acceso otorgado', '15 minutos · validado por ' + (j.data.validadoPor || 'admin'));
+            } catch(e) {
+                desbloqueoError.value = 'Sin conexión con MOS';
+            } finally {
+                desbloqueoCargando.value = false;
+            }
+        };
+
+        const _fmtCountdown = (segs) => {
+            const m = Math.floor(segs / 60);
+            const s = segs % 60;
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        };
 
         // --- ADMIN PIN: pedir clave antes de acciones protegidas ---
         const pedirPin = (callback) => {
@@ -6908,7 +7094,9 @@
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
           modalPin, pinInput, pinError, confirmarPin,
           modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro, revertirCobroDesdeModal,
-          extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra
+          extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra,
+          usuarioBloqueado, modalDesbloqueo, desbloqueoPin, desbloqueoError, desbloqueoCargando,
+          desbloqueoCountdown, intentarDesbloqueoTemporal, _fmtCountdown
         };
       }
     });
