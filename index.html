@@ -2994,7 +2994,21 @@
           setTimeout(_checkBloqueoUsuario, 4000);
           _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 30 * 1000);
 
-          // Push notifications — registrar token tras 3s con el nombre del vendedor
+          // Push notifications — registrar token cuando wizard esté completo
+          // Reintenta cada 30s hasta lograr registro (cubre el caso de que la app
+          // arranque antes de que el cajero/vendedor termine el wizard inicial).
+          let _pushIntentos = 0;
+          const _pushTimer = setInterval(() => {
+              _pushIntentos++;
+              if (_pushIntentos > 20) { clearInterval(_pushTimer); return; } // 10 min max
+              if (config.value.completado && config.value.vendedor) {
+                  _pushInit().then(() => {
+                      // Si se registró exitosamente, dejar de reintentar
+                      if (_pushTokenRegistrado) clearInterval(_pushTimer);
+                  });
+              }
+          }, 30 * 1000);
+          // Primer intento a los 3s (cubre usuarios ya logueados)
           setTimeout(() => _pushInit(), 3000);
         });
 
@@ -5218,6 +5232,7 @@
             appId:             '1:328735199478:web:947f338ae9716a7c049cd7'
         };
         let _pushHandlerSet = false;
+        let _pushTokenRegistrado = false;
 
         const _pushInit = async () => {
             try {
@@ -5256,7 +5271,7 @@
                 if (!token) return;
 
                 // Registrar en MOS GAS con usuario=nombre del vendedor (clave para targeted)
-                fetch(MOS_GAS_URL, {
+                await fetch(MOS_GAS_URL, {
                     method: 'POST',
                     body: JSON.stringify({
                         action: 'registrarPushToken',
@@ -5266,6 +5281,7 @@
                         dispositivo: (config.value.estacion?.Estacion_Nombre || 'MosExpress') + ' · ' + navigator.userAgent.substring(0, 80)
                     })
                 }).catch(() => {});
+                _pushTokenRegistrado = true;
             } catch(e) {
                 console.warn('[Push] init error:', e?.message);
             }
