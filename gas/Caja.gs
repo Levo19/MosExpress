@@ -69,6 +69,16 @@ function procesarAperturaCaja(data) {
   ]);
   SpreadsheetApp.flush(); // garantiza que appendRow llegue a Sheets antes de retornar el ID al frontend
 
+  // Notificar a admins/master en MOS — solo a ellos, no al cajero mismo
+  try {
+    var horaStr = Utilities.formatDate(new Date(), _tz, 'HH:mm');
+    _notificarMOS(
+      '🛒 ' + (data.vendedor || 'Cajero') + ' aperturó caja',
+      (data.estacion || data.zona || '') + ' · ' + horaStr,
+      data.vendedor || null
+    );
+  } catch(eP) { Logger.log('Push apertura caja: ' + eP.message); }
+
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", idCaja: idCaja,
     mensaje: "Caja aperturada exitosamente",
