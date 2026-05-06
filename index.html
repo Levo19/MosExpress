@@ -4995,9 +4995,16 @@
             if (!config.value.completado || !config.value.vendedor) return;
             if (offlineMode.value || !navigator.onLine) return;
             try {
+                // Round 2: enviar contexto de sesión para que MOS actualice
+                // Ultima_Conexion + Ultima_Zona/Estacion/Sesion en DISPOSITIVOS
+                // (sin round-trip extra, aprovechamos esta llamada que ya corre cada 30s)
+                const est = config.value.estacion || {};
                 const url = MOS_GAS_URL + '?action=getEstadoBloqueoUsuario'
                           + '&nombre=' + encodeURIComponent(config.value.vendedor)
-                          + '&appOrigen=mosExpress';
+                          + '&appOrigen=mosExpress'
+                          + '&deviceId=' + encodeURIComponent(deviceId.value || '')
+                          + '&idZona=' + encodeURIComponent(est.Zona_ID || '')
+                          + '&idEstacion=' + encodeURIComponent(est.idEstacion || '');
                 const r = await fetch(url);
                 const j = await r.json();
                 if (!j || !j.ok || !j.data) return;
