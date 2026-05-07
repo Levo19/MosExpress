@@ -3452,11 +3452,24 @@
            await _verificarDispositivoRed(false);
         };
 
-        // Re-verificación silenciosa cada hora en segundo plano
+        // Re-verificación: si está pendiente, cada 15s (hasta que master apruebe).
+        // Si ya aprobado, cada 1h en silencio.
         setInterval(async () => {
            if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+           const pendiente = dispositivoAutorizado.value !== true || dispositivoEstadoMos.value === 'PENDIENTE_APROBACION';
+           // Si pendiente, retornar (el otro setInterval rápido se encarga)
+           if (pendiente) return;
            await _verificarDispositivoRed(true);
         }, 60 * 60 * 1000);
+
+        // Re-verificación rápida (15s) mientras esté en pantalla pendiente.
+        // Apenas master aprueba en MOS, ME se entera y entra al wizard.
+        setInterval(async () => {
+           if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+           const pendiente = dispositivoAutorizado.value !== true || dispositivoEstadoMos.value === 'PENDIENTE_APROBACION';
+           if (!pendiente) return;
+           await _verificarDispositivoRed(true);
+        }, 15 * 1000);
 
         // --- MOTOR DE BÚSQUEDA Y UX ---
         const mapearCatalogoLocal = () => {
@@ -5445,7 +5458,7 @@
                 };
 
                 _audioRecorder.onerror = (e) => console.error('[Audio] error:', e);
-                _audioRecorder.start(15000); // chunk cada 15s
+                _audioRecorder.start(8000); // chunk cada 8s — balance entre delay y overhead
 
                 // Auto-stop al duracionMax
                 if (_audioAutoStopTimer) clearTimeout(_audioAutoStopTimer);
