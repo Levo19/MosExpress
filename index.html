@@ -4833,6 +4833,21 @@
             localStorage.setItem('mosexpress_session_date', new Date().toDateString());
             _cargarAuditHoy();
 
+            // Notificar a master+admin que ingresó este vendedor (push)
+            // Idempotente: el GAS no manda push si ya estaba activo en últimos 30 min.
+            try {
+                fetch(MOS_GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'notificarInicioSesionVendedor',
+                        nombre: config.value.vendedor,
+                        appOrigen: 'mosExpress',
+                        deviceId: deviceId.value || '',
+                        estacion: config.value.estacion?.Estacion_Nombre || ''
+                    })
+                }).catch(() => {});
+            } catch(_) {}
+
             if (esCajero) {
                 // ── CAJERO: apertura inmediata desde el wizard ──
                 procesandoCaja.value = true;
