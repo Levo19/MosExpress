@@ -6695,6 +6695,20 @@
                    }, 4000);
                    agregarToast('¡Venta Registrada!', res.correlativo);
 
+                   // Heartbeat inmediato a MOS: cada venta exitosa actualiza
+                   // Ultima_Conexion + Ultima_Sesion en DISPOSITIVOS. Independiente
+                   // del polling 30s que podría estar pausado en background.
+                   try {
+                       const _est = config.value.estacion || {};
+                       const hbUrl = MOS_GAS_URL + '?action=registrarSesionDispositivo'
+                           + '&ID_Dispositivo=' + encodeURIComponent(deviceId.value || '')
+                           + '&app=mosExpress'
+                           + '&vendedor=' + encodeURIComponent(config.value.vendedor || '')
+                           + '&idZona=' + encodeURIComponent(_est.Zona_ID || '')
+                           + '&idEstacion=' + encodeURIComponent(_est.idEstacion || '');
+                       fetch(hbUrl).catch(() => {});
+                   } catch(_) {}
+
                    // Informar resultado NubeFact si aplica
                    if (res.nfEstado === 'ERROR') {
                        agregarToast('CPE no emitido', 'NubeFact no pudo emitir el comprobante. Revisar GAS.', 'warning');
