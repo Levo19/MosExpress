@@ -34,7 +34,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '1.4.37';
+const VERSION = '1.4.38';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
