@@ -1317,31 +1317,6 @@
                        </button>
                     </div>
 
-                    <!-- Fila: Sonidos -->
-                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                       <div class="flex items-center gap-3">
-                          <svg class="w-5 h-5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9 9H5a2 2 0 00-2 2v2a2 2 0 002 2h4l5 5V4L9 9z"></path></svg>
-                          <span class="text-sm font-bold text-gray-700">Sonidos</span>
-                       </div>
-                       <button @click="toggleSound" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="soundEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
-                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="soundEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
-                       </button>
-                    </div>
-
-                    <!-- Fila: Voz (anuncia precio al escanear y total al cobrar) -->
-                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                       <div class="flex items-center gap-3">
-                          <span class="text-xl">🔊</span>
-                          <div>
-                             <p class="text-sm font-bold text-gray-700">Anuncios de voz</p>
-                             <p class="text-xs text-gray-400">"2 soles" al escanear · "Gracias por su compra" al cobrar</p>
-                          </div>
-                       </div>
-                       <button @click="toggleVoice" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="voiceEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
-                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="voiceEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
-                       </button>
-                    </div>
-
                     <!-- Fila: Actualizar catálogo -->
                     <div class="flex items-center justify-between px-4 py-3">
                        <div class="flex items-center gap-3">
@@ -1356,69 +1331,6 @@
                           <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                           {{ procesandoCatalogo ? 'Sync...' : 'Sync' }}
                        </button>
-                    </div>
-                 </div>
-
-                 <!-- Sección: Comodidad (wake lock + salvapantalla) -->
-                 <h3 class="text-xs font-black text-gray-500 uppercase tracking-wider mb-2 mt-6 px-1">Comodidad</h3>
-                 <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden divide-y divide-gray-100 mb-6">
-                    <!-- Wake lock -->
-                    <div class="flex items-center justify-between px-4 py-3">
-                       <div class="flex items-center gap-3">
-                          <span class="text-xl">⚡</span>
-                          <div>
-                             <p class="text-sm font-bold text-gray-700">Mantener pantalla activa</p>
-                             <p class="text-xs text-gray-400">No se apaga mientras la sesión esté abierta</p>
-                          </div>
-                       </div>
-                       <button @click="toggleWakeLock" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="idleConfig.wakeLockEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
-                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="idleConfig.wakeLockEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
-                       </button>
-                    </div>
-                    <!-- Salvapantalla -->
-                    <div class="flex items-center justify-between px-4 py-3">
-                       <div class="flex items-center gap-3">
-                          <span class="text-xl">💤</span>
-                          <div>
-                             <p class="text-sm font-bold text-gray-700">Salvapantalla</p>
-                             <p class="text-xs text-gray-400">Vista oscura con reloj y frase tras inactividad</p>
-                          </div>
-                       </div>
-                       <button @click="toggleSaver" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="idleConfig.saverEnabled ? 'bg-posPrimary' : 'bg-gray-300'">
-                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="idleConfig.saverEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
-                       </button>
-                    </div>
-                    <!-- Tiempo del salvapantalla -->
-                    <div v-if="idleConfig.saverEnabled" class="flex items-center justify-between px-4 py-3">
-                       <div class="flex items-center gap-3">
-                          <span class="text-xl opacity-50">⏱</span>
-                          <p class="text-sm font-bold text-gray-700">Activar tras</p>
-                       </div>
-                       <div class="flex items-center gap-1">
-                          <button v-for="m in [1,2,5,10]" :key="m" @click="setSaverMinutos(m)"
-                                  :class="['px-3 py-1.5 rounded-xl text-xs font-black transition-colors',
-                                           idleConfig.saverMinutos === m ? 'bg-posPrimary text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200']">
-                             {{ m }} min
-                          </button>
-                       </div>
-                    </div>
-                    <!-- Meta diaria personal -->
-                    <div class="flex items-center justify-between px-4 py-3">
-                       <div class="flex items-center gap-3">
-                          <span class="text-xl">🎯</span>
-                          <div>
-                             <p class="text-sm font-bold text-gray-700">Meta diaria</p>
-                             <p class="text-xs text-gray-400">Se muestra en el salvapantalla con barra de progreso</p>
-                          </div>
-                       </div>
-                       <div class="flex items-center gap-1">
-                          <span class="text-xs font-mono text-gray-400">S/</span>
-                          <input type="number" min="0" step="50"
-                                 :value="idleConfig.metaDiaria"
-                                 @change="setMetaDiaria($event.target.value)"
-                                 @focus="$event.target.select()"
-                                 class="w-24 text-right font-bold text-sm bg-gray-50 border border-gray-200 rounded-lg py-1 px-2 focus:border-posPrimary focus:outline-none">
-                       </div>
                     </div>
                  </div>
 
@@ -2562,16 +2474,12 @@
         const dbCargada = ref(false);
         const pendingSales = ref([]);
         const isSyncing = ref(false);
-        const soundEnabled = ref(localStorage.getItem('mosexpress_sound') !== 'false');
-        // Voz / Text-to-Speech para anunciar precios al escanear y total al cobrar.
-        // Default OFF — el cajero lo activa cuando quiera la experiencia "vendedor anuncia"
-        const voiceEnabled = ref(localStorage.getItem('mosexpress_voice') === '1');
-        const toggleVoice = () => {
-            voiceEnabled.value = !voiceEnabled.value;
-            localStorage.setItem('mosexpress_voice', voiceEnabled.value ? '1' : '0');
-            // Test al activar
-            if (voiceEnabled.value) speakES('Voz activada');
-        };
+        // Sonidos y voz: SIEMPRE activos por política — el cajero no puede desactivarlos.
+        // (Antes eran toggles editables; ahora forzados a true para garantizar feedback
+        // sonoro y voz "X soles, gracias por su compra" en todas las terminales.)
+        const soundEnabled = ref(true);
+        const voiceEnabled = ref(true);
+        const toggleVoice  = () => {}; // no-op (ya no se usa en UI)
 
         // Helpers TTS — Web Speech API (nativo, soporta es-PE / es-ES)
         let _voiceCache = null;
@@ -3705,10 +3613,7 @@
             );
         };
 
-        const toggleSound = () => {
-            soundEnabled.value = !soundEnabled.value;
-            localStorage.setItem('mosexpress_sound', String(soundEnabled.value));
-        };
+        const toggleSound = () => { /* no-op: sonidos siempre activos por política */ };
 
         const playBeepOK = () => {
             try { if ('vibrate' in navigator) navigator.vibrate(40); } catch(e) {}
@@ -3999,11 +3904,13 @@
             particles: []
         });
 
-        // Configuración persistida (default ON, 2 min)
+        // Wake lock y salvapantalla: SIEMPRE activos por política — el cajero no
+        // puede desactivarlos. Tiempo del salvapantalla fijo en 2 min.
+        // Meta diaria fija (no editable por el cajero — la define el supervisor).
         const idleConfig = ref({
-            wakeLockEnabled: localStorage.getItem('mosexpress_wakelock') !== '0',
-            saverEnabled:    localStorage.getItem('mosexpress_saver') !== '0',
-            saverMinutos:    parseInt(localStorage.getItem('mosexpress_saver_min') || '2', 10),
+            wakeLockEnabled: true,
+            saverEnabled:    true,
+            saverMinutos:    2,
             metaDiaria:      parseFloat(localStorage.getItem('mosexpress_meta_diaria') || '1000') || 1000
         });
 
