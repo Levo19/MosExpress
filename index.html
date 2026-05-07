@@ -169,6 +169,114 @@
     /* h-16 (4rem) del nav + safe-area-inset-bottom + 24px de buffer extra para celulares con barra de gestos generosa */
     .pb-nav { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 24px); }
 
+    /* ─── Sync overlay — pantalla de carga elegante al sincronizar catálogo ─── */
+    @keyframes syncBgShift {
+      0%,100% { background-position: 0% 50%; }
+      50%     { background-position: 100% 50%; }
+    }
+    .sync-overlay {
+      position: fixed; inset: 0; z-index: 9500;
+      background: linear-gradient(135deg, #0f172a, #1e3a8a, #6366f1, #0f172a);
+      background-size: 300% 300%;
+      animation: syncBgShift 8s ease infinite;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; color: #f1f5f9;
+      font-family: system-ui, -apple-system, sans-serif;
+      opacity: 0; pointer-events: none; transition: opacity 0.35s ease;
+    }
+    .sync-overlay.visible { opacity: 1; pointer-events: all; }
+
+    /* Logo central con doble anillo girando */
+    .sync-logo-wrap {
+      position: relative; width: 120px; height: 120px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 32px;
+    }
+    .sync-ring {
+      position: absolute; border-radius: 50%; border-style: solid;
+      border-color: transparent;
+    }
+    .sync-ring-1 {
+      inset: 0;
+      border-width: 3px;
+      border-top-color: #38bdf8; border-right-color: #818cf8;
+      animation: syncRingSpin 1.6s linear infinite;
+      filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.5));
+    }
+    .sync-ring-2 {
+      inset: 14px;
+      border-width: 2px;
+      border-bottom-color: #c084fc; border-left-color: #38bdf8;
+      animation: syncRingSpin 2.2s linear infinite reverse;
+      filter: drop-shadow(0 0 8px rgba(192, 132, 252, 0.4));
+    }
+    @keyframes syncRingSpin { to { transform: rotate(360deg); } }
+    .sync-logo-text {
+      font-size: 28px; font-weight: 900; letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #38bdf8, #c084fc, #38bdf8);
+      background-size: 200% 100%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: syncTextShimmer 3s ease infinite;
+    }
+    @keyframes syncTextShimmer { 0%,100%{background-position:0% center} 50%{background-position:100% center} }
+
+    /* Título y mensaje */
+    .sync-title {
+      font-size: clamp(20px, 4vw, 26px); font-weight: 800;
+      margin-bottom: 8px; letter-spacing: -0.01em;
+    }
+    .sync-subtitle {
+      font-size: 13px; opacity: 0.7; font-weight: 600; letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* Barra de progreso indeterminada */
+    .sync-progress {
+      width: 240px; max-width: 70%; height: 4px;
+      background: rgba(255,255,255,0.1); border-radius: 999px;
+      overflow: hidden; margin-top: 28px;
+    }
+    .sync-progress-bar {
+      height: 100%; width: 30%; border-radius: 999px;
+      background: linear-gradient(90deg, transparent, #38bdf8, #c084fc, transparent);
+      animation: syncProgressMove 1.6s ease-in-out infinite;
+    }
+    @keyframes syncProgressMove {
+      0%   { transform: translateX(-150%); }
+      100% { transform: translateX(450%); }
+    }
+
+    /* Frase divertida rotante */
+    .sync-quote {
+      max-width: 380px; margin-top: 32px;
+      font-size: 13px; opacity: 0.6; text-align: center; font-style: italic;
+      line-height: 1.5; min-height: 36px;
+      transition: opacity 0.4s ease;
+    }
+    .sync-quote.fading { opacity: 0; }
+
+    /* Partículas orbitales pequeñas */
+    .sync-particle {
+      position: absolute; width: 4px; height: 4px; border-radius: 50%;
+      background: rgba(199, 210, 254, 0.6);
+      box-shadow: 0 0 8px rgba(199, 210, 254, 0.5);
+      pointer-events: none;
+    }
+    .sync-particle.p1 { top: 20%; left: 15%; animation: syncFloatA 4s ease-in-out infinite; }
+    .sync-particle.p2 { top: 70%; left: 80%; animation: syncFloatB 5s ease-in-out infinite; }
+    .sync-particle.p3 { top: 30%; right: 10%; animation: syncFloatA 3.5s ease-in-out infinite reverse; }
+    .sync-particle.p4 { bottom: 25%; left: 20%; animation: syncFloatB 6s ease-in-out infinite reverse; }
+    .sync-particle.p5 { top: 50%; right: 25%; animation: syncFloatA 4.5s ease-in-out infinite; }
+    @keyframes syncFloatA {
+      0%,100% { transform: translate(0,0); opacity: 0.6; }
+      50%     { transform: translate(20px, -30px); opacity: 1; }
+    }
+    @keyframes syncFloatB {
+      0%,100% { transform: translate(0,0); opacity: 0.5; }
+      50%     { transform: translate(-25px, 20px); opacity: 1; }
+    }
+
     /* ─── Salvapantalla / Idle screen ─────────────────────────── */
     @keyframes idleBgShift {
       0%, 100% { background-position: 0% 50%; }
@@ -1396,6 +1504,32 @@
             </div>
          </div>
     </div>
+    <!-- ╔══ SYNC OVERLAY — pantalla de carga al sincronizar catálogo ══╗ -->
+    <div :class="['sync-overlay', procesandoCatalogo ? 'visible' : '']">
+       <span class="sync-particle p1"></span>
+       <span class="sync-particle p2"></span>
+       <span class="sync-particle p3"></span>
+       <span class="sync-particle p4"></span>
+       <span class="sync-particle p5"></span>
+
+       <div class="sync-logo-wrap">
+         <div class="sync-ring sync-ring-1"></div>
+         <div class="sync-ring sync-ring-2"></div>
+         <div class="sync-logo-text">ME</div>
+       </div>
+
+       <div class="sync-title">Sincronizando catálogo</div>
+       <div class="sync-subtitle">Trayendo lo último del servidor…</div>
+
+       <div class="sync-progress">
+         <div class="sync-progress-bar"></div>
+       </div>
+
+       <div :class="['sync-quote', syncQuoteFading ? 'fading' : '']">
+         "{{ syncQuote }}"
+       </div>
+    </div>
+
     <!-- ╔══ SALVAPANTALLA / IDLE SCREEN ══╗ -->
     <div v-if="idleScreen.visible"
          :class="['idle-overlay', idleScreen.fading ? 'fade-out' : '']"
@@ -3431,6 +3565,37 @@
         };
 
         const procesandoCatalogo = ref(false);
+        // Frase rotante para el sync overlay (se cambia cada 2.8s mientras sincroniza)
+        const _syncFrases = [
+            'Buscando lo último del catálogo…',
+            'Refrescando precios y promociones…',
+            'Trayendo nuevos productos del almacén…',
+            'Actualizando equivalencias de códigos…',
+            'Sincronizando series y estaciones…',
+            'Casi listo, un momento más…',
+            'Limpiando duplicados y normalizando datos…',
+            'Cargando catálogo fresco para tu turno…',
+            'Conectando con InversionMos…',
+        ];
+        const syncQuote = ref(_syncFrases[0]);
+        const syncQuoteFading = ref(false);
+        let _syncQuoteTimer = null;
+        watch(procesandoCatalogo, (val) => {
+            if (val) {
+                // Empezó sincronización → frase inicial random + ciclo cada 2.8s
+                syncQuote.value = _syncFrases[Math.floor(Math.random() * _syncFrases.length)];
+                if (_syncQuoteTimer) clearInterval(_syncQuoteTimer);
+                _syncQuoteTimer = setInterval(() => {
+                    syncQuoteFading.value = true;
+                    setTimeout(() => {
+                        syncQuote.value = _syncFrases[Math.floor(Math.random() * _syncFrases.length)];
+                        syncQuoteFading.value = false;
+                    }, 400);
+                }, 2800);
+            } else {
+                if (_syncQuoteTimer) { clearInterval(_syncQuoteTimer); _syncQuoteTimer = null; }
+            }
+        });
         // ── Sync ZONAS_CONFIG desde ProyectoMOS_DB (fuente autoritativa) ─────────────
         // ESTACIONES, IMPRESORAS y SERIES_DOCUMENTALES viven en ProyectoMOS_DB.
         // Si ZONAS_CONFIG viene vacío del catálogo MosExpress (bridge falló o appOrigen
@@ -7478,6 +7643,7 @@
           flashNuevosTickets,
           sincronizarDatos, isSyncing, pendingSales,
           procesandoCatalogo, sincronizarCatalogoBase,
+          syncQuote, syncQuoteFading,
           modalPresentaciones, prodSeleccionado, elegirPresentacion, cerrarModalPres,
           mostrarTeclado, toggleTeclado,
           esPantallaVertical,
