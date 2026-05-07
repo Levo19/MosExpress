@@ -3121,9 +3121,18 @@
                   db.value = JSON.parse(dbLocal);
                   dbCargada.value = true;
                   mapearCatalogoLocal();
-                  // Sincronizar impresoras desde ProyectoMOS_DB cada vez que la app inicia
-                  // (independiente del catálogo — tablas IMPRESORAS/ESTACIONES son ligeras)
+                  // Restaurar config de MOS desde cache local (instant)
+                  try {
+                      const _cfgCache = localStorage.getItem('mosexpress_mos_config');
+                      if (_cfgCache) {
+                          mosConfig.value = JSON.parse(_cfgCache);
+                          const _metaCache = parseFloat(mosConfig.value.evalMetaCajero) || 0;
+                          if (_metaCache > 0) idleConfig.value.metaDiaria = _metaCache;
+                      }
+                  } catch(_e) {}
+                  // Sincronizar impresoras + config MOS desde ProyectoMOS_DB
                   _syncImpresorasFromProyectoMOS();
+                  _cargarConfigMos(); // refresca meta y otros parametros del ecosistema
                   // Si el SW acaba de actualizar la app → forzar resync del catálogo
                   // para traer cambios de productos/precios/series del nuevo deploy
                   const forceResync = localStorage.getItem('mosexpress_force_resync') === '1';
@@ -3426,6 +3435,33 @@
         // Si ZONAS_CONFIG viene vacío del catálogo MosExpress (bridge falló o appOrigen
         // mismatch), lo poblamos completo desde el endpoint getEstacionesParaApp.
         // Si viene con datos, sobreescribimos PrintNode_ID, idEstacion y series.
+        // Config global desde ProyectoMOS_DB → tabla CONFIG_MOS (clave/valor).
+        // Trae metas, PINs, parametros del ecosistema. Cacheado en localStorage.
+        const mosConfig = ref({});
+        const _cargarConfigMos = async () => {
+            try {
+                if (offlineMode.value) return;
+                const r = await fetch(MOS_GAS_URL + '?action=getConfig');
+                const j = await r.json();
+                if (j && j.ok && j.data) {
+                    mosConfig.value = j.data;
+                    localStorage.setItem('mosexpress_mos_config', JSON.stringify(j.data));
+                    // Sincronizar meta diaria desde evalMetaCajero (CONFIG_MOS)
+                    const _meta = parseFloat(j.data.evalMetaCajero) || 0;
+                    if (_meta > 0) {
+                        idleConfig.value.metaDiaria = _meta;
+                        localStorage.setItem('mosexpress_meta_diaria', String(_meta));
+                    }
+                }
+            } catch(e) {
+                // Si falla, intentar restaurar de cache local
+                try {
+                    const cached = localStorage.getItem('mosexpress_mos_config');
+                    if (cached) mosConfig.value = JSON.parse(cached);
+                } catch(_e) {}
+            }
+        };
+
         const _syncImpresorasFromProyectoMOS = async () => {
             try {
                 if (offlineMode.value) return;
@@ -3521,6 +3557,8 @@
                     agregarToast("Éxito", "Catálogo actualizado");
                     // Sincronizar impresoras desde ProyectoMOS_DB después del catálogo
                     _syncImpresorasFromProyectoMOS();
+                    // Refrescar config global MOS (metas, parametros)
+                    _cargarConfigMos();
                     // Sincronizar caché admin (clave global + PINs admins)
                     _sincronizarAdminCache();
                 } else {
