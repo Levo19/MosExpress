@@ -1570,10 +1570,10 @@
          </div>
        </div>
 
-       <!-- Meta diaria -->
+       <!-- Meta diaria — colectiva de la zona -->
        <div v-if="parseFloat(idleScreen.meta) > 0" class="idle-meta">
          <div class="idle-meta-head">
-           <span>🎯 Meta diaria · S/ {{ idleScreen.meta }}</span>
+           <span>🎯 Meta de zona · S/ {{ idleScreen.meta }}</span>
            <span :class="['idle-meta-pct', idleScreen.metaSuperada ? 'superada' : '']">
              {{ Math.round(idleScreen.metaPct) }}%
            </span>
@@ -1584,10 +1584,10 @@
          </div>
          <div class="idle-meta-msg">
            <template v-if="idleScreen.metaSuperada">
-             🎉 ¡Meta superada! Vas {{ Math.round(idleScreen.metaPct - 100) }}% sobre tu objetivo
+             🎉 ¡Meta superada! La zona va {{ Math.round(idleScreen.metaPct - 100) }}% sobre el objetivo
            </template>
            <template v-else>
-             Faltan <strong>S/ {{ idleScreen.metaFalta }}</strong> para tu meta
+             La zona lleva <strong>S/ {{ idleScreen.totalZona }}</strong> · Faltan <strong>S/ {{ idleScreen.metaFalta }}</strong>
            </template>
          </div>
        </div>
@@ -3315,9 +3315,11 @@
           if (config.value.completado && config.value.zona) {
               verificarCajeroActivo();
               verificarTrasladosEntrantes();
-              // Reiniciar polling de zona si es cajero con caja abierta
-              // (al restaurar sesión tras reload, el polling no se auto-inicia)
-              if (config.value.esCajero && cajaAbierta.value) {
+              // Iniciar polling de zona para CUALQUIER rol con sesión activa.
+              // - Cajero: ve sus ventas y las pendientes que dejó el vendedor
+              // - Vendedor: necesita ventasZona para mostrar progreso de la meta
+              //   colectiva en el salvapantalla (la meta es de la zona, no individual)
+              if ((config.value.esCajero && cajaAbierta.value) || !config.value.esCajero) {
                   iniciarPollingZona();
                   cargarVentasZona(); // primera carga inmediata
               }
@@ -4103,6 +4105,7 @@
             cajero: '', zona: '',
             quote: '', quoteFading: false,
             tickets: 0, totalHoy: '0.00',
+            totalZona: '0.00',
             meta: '0.00', metaPct: 0, metaFalta: '0.00', metaSuperada: false,
             wakeLockActivo: false,
             particles: []
@@ -4176,33 +4179,53 @@
             const _mm = String(_now.getMinutes()).padStart(2, '0');
             const _ss = String(_now.getSeconds()).padStart(2, '0');
 
-            // Stats del turno PERSONALES — solo del usuario actual (no toda la zona).
-            // Filtro: solo ventas EFE/VIRTUAL/MIXTO (con dinero real), del cajero/vendedor
-            // logueado, no anuladas, dentro de su sesión actual.
+            // Dos cálculos distintos:
+            //   1) PERSONAL (tickets + total propio del usuario): ventasHoy o filtrado por vendedor
+            //   2) ZONA (progreso hacia meta — colectivo): SUMA de toda ventasZona,
+            //      sin filtro de vendedor. La meta diaria es de la zona, no individual.
+            // Solo cuenta EFE/VIRTUAL/MIXTO en ambos casos (no POR_COBRAR / CREDITO / ANULADO).
             const _startTs = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
             const _miNombre = String(config.value.vendedor || '').trim().toUpperCase();
-            const _fuente = config.value.esCajero
+            const _esConDinero = (m) => m && m !== 'ANULADO' && m !== 'POR_COBRAR' && m !== 'CREDITO';
+
+            // 1. STATS PERSONALES (lo que TÚ has hecho en tu sesión)
+            const _fuentePers = config.value.esCajero
                 ? (ventasZona.value && ventasZona.value.length ? ventasZona.value : (ventasHoy.value || []))
                 : (ventasHoy.value || []);
             let _ticks = 0, _total = 0;
-            _fuente.forEach(v => {
+            _fuentePers.forEach(v => {
                 if ((v.timestamp || 0) < _startTs) return;
                 if (v.anulada) return;
-                // Filtrar por vendedor logueado (raw_data.auth.vendedor)
                 const vendV = String(v.raw_data?.auth?.vendedor || '').trim().toUpperCase();
                 if (_miNombre && vendV && vendV !== _miNombre) return;
-                // Solo métodos con dinero real
                 const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
-                if (!m || m === 'ANULADO' || m === 'POR_COBRAR' || m === 'CREDITO') return;
+                if (!_esConDinero(m)) return;
                 _ticks++;
                 _total += parseFloat(v.total) || 0;
             });
 
-            // Cálculo de progreso hacia meta
+            // 2. STATS DE ZONA (suma colectiva de todos los vendedores de la zona, hoy)
+            // ventasZona ya viene filtrado por timestamp >= sessionStart en el polling con `desde`.
+            // Aún así filtramos por timestamp para sumar solo del día actual.
+            const _hoy0 = new Date(); _hoy0.setHours(0, 0, 0, 0);
+            const _hoyTs = _hoy0.getTime();
+            let _totalZona = 0;
+            (ventasZona.value || []).forEach(v => {
+                if ((v.timestamp || 0) < _hoyTs) return;
+                if (v.anulada) return;
+                const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
+                if (!_esConDinero(m)) return;
+                _totalZona += parseFloat(v.total) || 0;
+            });
+            // Si por algún motivo no hay polling (vendedor sin polling activo),
+            // fallback al total personal para que la barra muestre algo en lugar de cero.
+            if (_totalZona === 0 && _total > 0) _totalZona = _total;
+
+            // Cálculo de progreso hacia meta — usa el total DE ZONA (colectivo)
             const _meta = parseFloat(idleConfig.value.metaDiaria) || 0;
-            const _pct  = _meta > 0 ? Math.min(200, (_total / _meta) * 100) : 0;
-            const _falta = Math.max(0, _meta - _total);
-            const _superada = _total >= _meta;
+            const _pct  = _meta > 0 ? Math.min(200, (_totalZona / _meta) * 100) : 0;
+            const _falta = Math.max(0, _meta - _totalZona);
+            const _superada = _totalZona >= _meta;
 
             // Frase aleatoria
             const _q = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
@@ -4229,6 +4252,7 @@
                 quote: _q, quoteFading: false,
                 tickets: _ticks,
                 totalHoy: _total.toFixed(2),
+                totalZona: _totalZona.toFixed(2),
                 meta: _meta.toFixed(2),
                 metaPct: _pct,
                 metaFalta: _falta.toFixed(2),
@@ -4886,6 +4910,10 @@
                 localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
                 localStorage.removeItem('mosexpress_cobrados_sesion');
                 localStorage.removeItem('mosexpress_extras_sesion');
+                // Iniciar polling de zona para que el salvapantalla muestre el
+                // progreso de la meta COLECTIVA de la zona (no individual)
+                iniciarPollingZona();
+                cargarVentasZona();
 
                 // Refrescar PrintNode_ID desde ProyectoMOS_DB ANTES de imprimir.
                 // El cajero pasa por await(APERTURA_CAJA) que da tiempo al sync inicial,
