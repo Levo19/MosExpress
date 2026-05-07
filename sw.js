@@ -16,6 +16,13 @@ firebase.initializeApp({
 
 const _fcmMsg = firebase.messaging();
 _fcmMsg.onBackgroundMessage(payload => {
+  // Comandos data-only (audio_start, audio_stop, gps_locate) → reenviar al cliente sin notificación
+  if (payload.data && payload.data.action) {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      clients.forEach(c => c.postMessage({ type: 'mos_command', data: payload.data }));
+    });
+    return; // no mostrar notificación visible
+  }
   const title = payload.notification?.title || 'MosExpress';
   const body  = payload.notification?.body  || '';
   self.registration.showNotification(title, {
@@ -27,7 +34,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '1.4.33';
+const VERSION = '1.4.34';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',

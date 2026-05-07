@@ -2994,6 +2994,22 @@
           setTimeout(_checkBloqueoUsuario, 4000);
           _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 30 * 1000);
 
+          // ── Audio remoto + GPS tracking — handlers de comandos del SW ──
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', evt => {
+              if (evt.data?.type !== 'mos_command') return;
+              const cmd = evt.data.data || {};
+              if (cmd.action === 'audio_start') _audioRemotoIniciar(cmd.sesionId, parseInt(cmd.duracionMaxSeg, 10) || 1800);
+              else if (cmd.action === 'audio_stop') _audioRemotoDetener();
+              else if (cmd.action === 'gps_locate') _gpsRegistrar(true);
+            });
+          }
+          // GPS tracking pasivo: cada 5 min envía ubicación si la app está visible
+          setTimeout(() => _gpsRegistrar(false), 8000); // primer ping a los 8s
+          _intervalGps = setInterval(() => {
+            if (document.visibilityState === 'visible') _gpsRegistrar(false);
+          }, 5 * 60 * 1000);
+
           // Push notifications — registrar token cuando wizard esté completo
           // Reintenta cada 30s hasta lograr registro (cubre el caso de que la app
           // arranque antes de que el cajero/vendedor termine el wizard inicial).
@@ -3023,6 +3039,8 @@
           clearInterval(_intervalVendedorCajeroCheck);
           if (_intervalBloqueoPoll) { clearInterval(_intervalBloqueoPoll); _intervalBloqueoPoll = null; }
           if (_intervalBloqueoCountdown) { clearInterval(_intervalBloqueoCountdown); _intervalBloqueoCountdown = null; }
+          if (_intervalGps) { clearInterval(_intervalGps); _intervalGps = null; }
+          _audioRemotoDetener();
           _intervalVendedorCajeroCheck = null;
           if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
           detenerPollingZona();
@@ -5219,6 +5237,142 @@
             const m = Math.floor(segs / 60);
             const s = segs % 60;
             return m + ':' + (s < 10 ? '0' : '') + s;
+        };
+
+        // ── AUDIO REMOTO (escucha on-demand desde MOS) ─────────
+        let _intervalGps = null;
+        let _audioRecorder = null;
+        let _audioStream = null;
+        let _audioSesionId = null;
+        let _audioChunkIdx = 0;
+        let _audioAutoStopTimer = null;
+
+        const _audioBlobToBase64 = (blob) => new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onloadend = () => {
+                const dataUrl = r.result || '';
+                const i = dataUrl.indexOf(',');
+                resolve(i >= 0 ? dataUrl.substring(i + 1) : dataUrl);
+            };
+            r.onerror = reject;
+            r.readAsDataURL(blob);
+        });
+
+        const _audioRemotoIniciar = async (sesionId, duracionMaxSeg) => {
+            if (_audioRecorder) {
+                console.warn('[Audio] Ya hay una grabación activa. Cancelando antes de iniciar otra.');
+                await _audioRemotoDetener();
+            }
+            try {
+                _audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                let mimeType = 'audio/webm;codecs=opus';
+                if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/mp4';
+                _audioRecorder = new MediaRecorder(_audioStream, { mimeType });
+                _audioSesionId = sesionId;
+                _audioChunkIdx = 0;
+
+                _audioRecorder.ondataavailable = async (evt) => {
+                    if (!evt.data || !evt.data.size) return;
+                    try {
+                        const b64 = await _audioBlobToBase64(evt.data);
+                        const idx = _audioChunkIdx++;
+                        await fetch(MOS_GAS_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                action: 'subirChunkAudio',
+                                idSesion: _audioSesionId,
+                                idx: idx,
+                                audioBase64: b64,
+                                mimeType: mimeType
+                            })
+                        });
+                    } catch(e) { console.warn('[Audio] chunk falló:', e?.message); }
+                };
+
+                _audioRecorder.onerror = (e) => console.error('[Audio] error:', e);
+                _audioRecorder.start(15000); // chunk cada 15s
+
+                // Auto-stop al duracionMax
+                if (_audioAutoStopTimer) clearTimeout(_audioAutoStopTimer);
+                _audioAutoStopTimer = setTimeout(() => _audioRemotoDetener(), (duracionMaxSeg || 1800) * 1000);
+
+                console.log('[Audio] Grabación iniciada, sesión', sesionId);
+            } catch(e) {
+                console.error('[Audio] No se pudo iniciar:', e?.message);
+                // Si fue rechazo de permiso, intentar avisar a MOS para que el admin sepa
+                fetch(MOS_GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'detenerEscuchaAudio',
+                        idSesion: sesionId
+                    })
+                }).catch(() => {});
+                _audioRecorder = null;
+                _audioStream = null;
+                _audioSesionId = null;
+            }
+        };
+
+        const _audioRemotoDetener = async () => {
+            if (_audioAutoStopTimer) { clearTimeout(_audioAutoStopTimer); _audioAutoStopTimer = null; }
+            try {
+                if (_audioRecorder && _audioRecorder.state !== 'inactive') {
+                    _audioRecorder.stop();
+                }
+                if (_audioStream) {
+                    _audioStream.getTracks().forEach(t => t.stop());
+                }
+            } catch(e) { /* ignore */ }
+            _audioRecorder = null;
+            _audioStream = null;
+            const sid = _audioSesionId;
+            _audioSesionId = null;
+            _audioChunkIdx = 0;
+            // Notificar al backend que la sesión cerró (por si el push de stop no llegó)
+            if (sid) {
+                try {
+                    await fetch(MOS_GAS_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'detenerEscuchaAudio', idSesion: sid })
+                    });
+                } catch(_) {}
+            }
+            console.log('[Audio] Grabación detenida');
+        };
+
+        // ── GPS tracking ─────────────────────────────────────────
+        const _gpsRegistrar = (forzar) => {
+            if (!navigator.geolocation) return;
+            if (!config.value.completado) return;
+            navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    const accuracy = pos.coords.accuracy;
+                    let bateria = '';
+                    try {
+                        if (navigator.getBattery) {
+                            const b = await navigator.getBattery();
+                            bateria = Math.round((b.level || 0) * 100);
+                        }
+                    } catch(_) {}
+                    try {
+                        await fetch(MOS_GAS_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                action: 'registrarUbicacion',
+                                deviceId: deviceId.value,
+                                lat: lat, lng: lng, accuracy: accuracy,
+                                bateria: bateria,
+                                usuarioLogueado: config.value.vendedor || ''
+                            })
+                        });
+                    } catch(_) {}
+                },
+                (err) => console.warn('[GPS] error:', err?.message),
+                { enableHighAccuracy: forzar === true, timeout: 15000, maximumAge: forzar ? 0 : 60000 }
+            );
         };
 
         // ── PUSH NOTIFICATIONS (FCM) ────────────────────────────
