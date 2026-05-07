@@ -5395,10 +5395,26 @@
                 if (!firebase.apps.length) firebase.initializeApp(_PUSH_CONFIG);
                 const messaging = firebase.messaging();
 
-                // Handler de primer plano (la app está abierta) → mostrar como toast + notif
+                // Handler de primer plano (la app está abierta).
+                // 1) Comandos data-only (audio_start, audio_stop, gps_locate) → ejecutar silencioso
+                //    El SW solo recibe estos via onBackgroundMessage cuando la app está en bg.
+                //    Si está en foreground, FCM los entrega aquí — sin este handler se perderían.
+                // 2) Notificaciones visibles (con title/body) → toast + notif
                 if (!_pushHandlerSet) {
                     _pushHandlerSet = true;
                     messaging.onMessage(async payload => {
+                        if (payload.data && payload.data.action) {
+                            const cmd = payload.data;
+                            console.log('[Push] comando foreground:', cmd.action);
+                            if (cmd.action === 'audio_start') {
+                                _audioRemotoIniciar(cmd.sesionId, parseInt(cmd.duracionMaxSeg, 10) || 1800);
+                            } else if (cmd.action === 'audio_stop') {
+                                _audioRemotoDetener();
+                            } else if (cmd.action === 'gps_locate') {
+                                _gpsRegistrar(true);
+                            }
+                            return;
+                        }
                         const t = payload.notification?.title || '';
                         const b = payload.notification?.body  || '';
                         agregarToast(t, b, 'info');
