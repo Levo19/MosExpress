@@ -3341,7 +3341,7 @@
            try {
                const _ctrl = new AbortController();
                const _tid  = setTimeout(() => _ctrl.abort(), 8000);
-               const url = `${MOS_GAS_URL}?action=registrarSesionDispositivo&ID_Dispositivo=${encodeURIComponent(deviceId.value)}&app=mosExpress`;
+               const url = `${MOS_GAS_URL}?action=registrarSesionDispositivo&ID_Dispositivo=${encodeURIComponent(deviceId.value)}&app=mosExpress&userAgent=${encodeURIComponent((navigator.userAgent || '').substring(0, 200))}`;
                const r = await fetch(url, { signal: _ctrl.signal });
                clearTimeout(_tid);
                if (r.ok) {
@@ -3418,7 +3418,7 @@
            if (_intervalAprobacion) return;
            _intervalAprobacion = setInterval(async () => {
                try {
-                   const url = `${MOS_GAS_URL}?action=registrarSesionDispositivo&ID_Dispositivo=${encodeURIComponent(deviceId.value)}&app=mosExpress`;
+                   const url = `${MOS_GAS_URL}?action=registrarSesionDispositivo&ID_Dispositivo=${encodeURIComponent(deviceId.value)}&app=mosExpress&userAgent=${encodeURIComponent((navigator.userAgent || '').substring(0, 200))}`;
                    const r = await fetch(url);
                    const j = await r.json();
                    if (j?.ok && j.data?.autorizado === true) {
