@@ -3418,10 +3418,11 @@
            if (_intervalAprobacion) return;
            _intervalAprobacion = setInterval(async () => {
                try {
-                   const url = `${MOS_GAS_URL}?action=registrarSesionDispositivo&ID_Dispositivo=${encodeURIComponent(deviceId.value)}&app=mosExpress&userAgent=${encodeURIComponent((navigator.userAgent || '').substring(0, 200))}`;
+                   // Consultar estado (también actualiza heartbeat → master ve actividad en vivo)
+                   const url = `${MOS_GAS_URL}?action=consultarEstadoDispositivo&deviceId=${encodeURIComponent(deviceId.value)}`;
                    const r = await fetch(url);
                    const j = await r.json();
-                   if (j?.ok && j.data?.autorizado === true) {
+                   if (j?.ok && j.data?.estado === 'ACTIVO') {
                        clearInterval(_intervalAprobacion);
                        _intervalAprobacion = null;
                        dispositivoEstadoMos.value = 'ACTIVO';
