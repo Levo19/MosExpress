@@ -151,3 +151,63 @@ function emitirNubeFact(data, correlativo) {
     return { ok: false, error: e.toString() };
   }
 }
+
+// ============================================================
+// BAJA DEL CPE — Comunicación de baja a SUNAT vía NubeFact.
+// SUNAT permite anular boletas/facturas dentro de las 72h con
+// comunicación de baja (resumen diario). NubeFact lo gestiona.
+// ============================================================
+function bajaCPENubeFact(serie, numero, motivo, tipoDoc) {
+  var props  = PropertiesService.getScriptProperties();
+  var token  = props.getProperty('NUBEFACT_TOKEN');
+  var ruc    = props.getProperty('NUBEFACT_RUC');
+
+  if (!token || !ruc) {
+    return { ok: false, error: 'NubeFact no configurado (token/ruc)' };
+  }
+  if (!serie || !numero || !motivo) {
+    return { ok: false, error: 'Faltan parámetros: serie, numero o motivo' };
+  }
+
+  var tipoComprobante = (String(tipoDoc).toUpperCase() === 'FACTURA') ? 1 : 2;
+
+  var payload = {
+    operacion:           'generar_anulacion',
+    tipo_de_comprobante: tipoComprobante,
+    serie:               String(serie),
+    numero:              parseInt(numero, 10),
+    motivo:              String(motivo).substring(0, 250)  // SUNAT limita el motivo
+  };
+
+  var endpoint = 'https://api.nubefact.com/api/v1/' + ruc + '/anular-comprobante';
+
+  try {
+    var resp = UrlFetchApp.fetch(endpoint, {
+      method:             'post',
+      headers:            { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
+      payload:            JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    var body = {};
+    try { body = JSON.parse(resp.getContentText() || '{}'); } catch(pe) {}
+
+    if (code === 200 || code === 201) {
+      return {
+        ok:        true,
+        aceptada:  body.aceptada_por_sunat === true,
+        ticketSunat: String(body.numero_ticket_sunat || ''),
+        enlace:    String(body.enlace_del_pdf || ''),
+        hash:      String(body.codigo_hash || ''),
+        body:      body
+      };
+    }
+    var errMsg = (body.errors || body.message || resp.getContentText() || '').toString().substring(0, 250);
+    Logger.log('NubeFact BAJA HTTP ' + code + ': ' + errMsg);
+    return { ok: false, error: 'HTTP ' + code + ': ' + errMsg };
+
+  } catch (e) {
+    Logger.log('NubeFact BAJA excepcion: ' + e.toString());
+    return { ok: false, error: e.toString() };
+  }
+}

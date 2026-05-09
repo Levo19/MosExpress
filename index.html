@@ -1211,6 +1211,13 @@
                                 <button @click="reimprimirTicket(venta)" class="flex-1 min-w-[80px] bg-posSecondary text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center">
                                     Imprimir
                                 </button>
+                                <!-- F3: Acciones admin (PIN admin gated) -->
+                                <button v-if="venta.id_venta_gas && !venta.anulada"
+                                        @click="abrirAccionesAdmin(venta)"
+                                        class="flex-1 min-w-[80px] bg-gradient-to-br from-gray-700 to-gray-900 text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center gap-1"
+                                        title="Acciones que requieren autorización admin">
+                                    🔐 Admin
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1447,6 +1454,37 @@
         </div>
 
     </main>
+
+    <!-- F3: BANNER PERSISTENTE — cola de pendientes con auto-reimpresión -->
+    <div v-if="config.completado && dispositivoAutorizado === true && pendingSales.length > 0"
+         class="fixed bottom-16 left-0 right-0 z-30 px-3 pb-2 pointer-events-none">
+        <div class="bg-amber-500 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3 pointer-events-auto border-2 border-amber-600 animate-[slideUp_0.3s]">
+            <div class="shrink-0 relative">
+                <svg class="w-7 h-7" :class="{'animate-spin': isSyncing}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-amber-500">{{ pendingSales.length }}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-black text-sm leading-tight">
+                    {{ isSyncing ? 'Sincronizando...' : (offlineMode ? 'Offline · ' + pendingSales.length + ' en cola' : pendingSales.length + ' pendiente' + (pendingSales.length > 1 ? 's' : '') + ' de subir') }}
+                </div>
+                <div class="text-[10px] opacity-90 leading-tight mt-0.5">
+                    {{ offlineMode ? 'Se subirán al recuperar conexión' : (reimpAuto ? '🖨 Reimpresión auto al subir' : 'Sin reimpresión automática') }}
+                </div>
+            </div>
+            <button v-if="!isSyncing && !offlineMode" @click="sincronizarDatos"
+                    class="shrink-0 bg-white text-amber-700 px-3 py-2 rounded-xl font-black text-xs active:scale-95 shadow">
+                Subir ahora
+            </button>
+            <button @click="reimpAuto = !reimpAuto; lsSet('mosexpress_reimp_auto', JSON.stringify(reimpAuto))"
+                    :title="reimpAuto ? 'Desactivar reimpresión auto' : 'Activar reimpresión auto'"
+                    class="shrink-0 px-2 py-2 rounded-xl text-xs active:scale-95"
+                    :class="reimpAuto ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white opacity-60'">
+                🖨
+            </button>
+        </div>
+    </div>
 
     <!-- BOTTOM NAVIGATION -->
     <nav v-if="config.completado && dispositivoAutorizado === true" class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0">
@@ -1713,15 +1751,20 @@
                <div>
                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Comprobante</label>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
-                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; limpiarCliente()" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
+                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios()" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
                       <button @click="pago.tipoDoc = 'BOLETA'; limpiarCliente()" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
                       <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente()" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
                   </div>
                </div>
-    
-               <!-- ── CLIENTE: buscador unificado ── -->
-               <div v-if="pago.tipoDoc !== 'NOTA_DE_VENTA'">
-                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Cliente {{ pago.tipoDoc === 'FACTURA' ? '(RUC)' : '(DNI / RUC)' }}</label>
+
+               <!-- ── CLIENTE: buscador unificado (visible siempre, opcional en NV) ── -->
+               <div>
+                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
+                   Cliente
+                   <span v-if="pago.tipoDoc === 'FACTURA'">(RUC)</span>
+                   <span v-else-if="pago.tipoDoc === 'BOLETA'">(DNI / RUC)</span>
+                   <span v-else class="text-gray-300 normal-case font-medium">— opcional · default VARIOS</span>
+                 </label>
 
                  <!-- Estado A: cliente confirmado → chip verde -->
                  <div v-if="pago.nombreCliente" class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
@@ -1791,10 +1834,21 @@
                <div v-if="config.esCajero">
                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Método de Pago</label>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl mb-4">
-                      <button @click="pago.metodo = 'EFECTIVO'; pago.montoVirtual = 0" :class="pago.metodo === 'EFECTIVO' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">EFECTIVO</button>
-                      <button @click="pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal; pago.montoVirtual = 0" :class="pago.metodo === 'VIRTUAL' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">VIRTUAL</button>
-                      <button @click="pago.metodo = 'MIXTO'; pago.montoRecibido = 0; pago.montoVirtual = 0" :class="pago.metodo === 'MIXTO' ? 'bg-white text-posSecondary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">MIXTO</button>
+                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'EFECTIVO'; pago.montoVirtual = 0" :class="pago.metodo === 'EFECTIVO' && !pago.ventaCreditoDirecto ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">EFECTIVO</button>
+                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal; pago.montoVirtual = 0" :class="pago.metodo === 'VIRTUAL' && !pago.ventaCreditoDirecto ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">VIRTUAL</button>
+                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'MIXTO'; pago.montoRecibido = 0; pago.montoVirtual = 0" :class="pago.metodo === 'MIXTO' && !pago.ventaCreditoDirecto ? 'bg-white text-posSecondary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">MIXTO</button>
                   </div>
+                  <!-- ☑ Vender directo a crédito (admin) -->
+                  <button @click="toggleVentaCreditoDirecto"
+                          :class="pago.ventaCreditoDirecto ? 'bg-orange-50 border-orange-400 text-orange-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-400'"
+                          class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 transition-all text-left mb-3">
+                      <span class="text-base shrink-0">{{ pago.ventaCreditoDirecto ? '☑' : '☐' }}</span>
+                      <div class="flex-1 min-w-0">
+                          <div class="text-xs font-black uppercase tracking-wider">Vender directo a crédito</div>
+                          <div class="text-[10px] font-medium opacity-70 mt-0.5">📋 Requiere clave admin · queda como deuda formal</div>
+                      </div>
+                      <span v-if="pago.ventaCreditoDirecto" class="text-[10px] font-bold bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full shrink-0">CREDITO</span>
+                  </button>
                </div>
 
                <!-- EFECTIVO: monto recibido + vuelto -->
@@ -1834,9 +1888,10 @@
                </div>
             </div>
     
-            <button @click="procesarPago" :disabled="((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0) || (pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente) || !!errorDocumento" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide">
+            <button @click="procesarPago" :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente) || !!errorDocumento" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
+                    :class="pago.ventaCreditoDirecto ? '!bg-orange-500 shadow-orange-200' : ''">
                <svg v-if="procesando" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-               <span>{{ procesando ? 'IMPRIMIENDO...' : 'IMPRIMIR TICKET' }}</span>
+               <span>{{ procesando ? 'IMPRIMIENDO...' : (pago.ventaCreditoDirecto ? '📋 EMITIR A CRÉDITO' : 'IMPRIMIR TICKET') }}</span>
             </button>
         </div>
     </div>
@@ -2201,6 +2256,291 @@
                     class="mt-2 w-full bg-white border-2 border-red-300 text-red-600 font-black text-sm py-3 rounded-2xl active:scale-95 transition-all shrink-0 flex items-center justify-center gap-2 hover:bg-red-50">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
                 Quitar cobro — pasar a Sin Pagar
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== F3: MODAL ACCIONES ADMIN (menú contextual con PIN) ===== -->
+    <div v-if="modalAdminAcc && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] max-h-[85dvh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">🔐 Acciones admin</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaAdmin.correlativo || ticketParaAdmin.id }} · S/ {{ ticketParaAdmin.total.toFixed(2) }}</p>
+                </div>
+                <button @click="modalAdminAcc = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
+                <p class="text-amber-800 text-[11px] font-semibold leading-relaxed">
+                    🔐 Cada acción requiere los <strong>8 dígitos</strong> de admin (clave global + PIN). Quedará registrado quién la autorizó.
+                </p>
+            </div>
+            <div class="space-y-2">
+                <!-- Cobrar crédito (POR_COBRAR / CREDITO) -->
+                <button v-if="adminPuedeCobrar(ticketParaAdmin)"
+                        @click="adminAbrirCobrarCredito(ticketParaAdmin)"
+                        class="w-full flex items-center gap-3 p-3 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-200 rounded-xl text-left active:scale-95 transition-all">
+                    <span class="text-2xl">💵</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-black text-sm text-emerald-900">Cobrar deuda / pendiente</div>
+                        <div class="text-[10px] text-emerald-700 font-semibold">Crea ingreso en caja receptora · marca como cobrado</div>
+                    </div>
+                </button>
+                <!-- Convertir NV → CPE -->
+                <button v-if="adminPuedeConvertir(ticketParaAdmin)"
+                        @click="adminAbrirConvertir(ticketParaAdmin)"
+                        class="w-full flex items-center gap-3 p-3 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 rounded-xl text-left active:scale-95 transition-all">
+                    <span class="text-2xl">📑</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-black text-sm text-blue-900">Convertir NV → Boleta/Factura</div>
+                        <div class="text-[10px] text-blue-700 font-semibold">Emite CPE retroactivo en SUNAT</div>
+                    </div>
+                </button>
+                <!-- Editar cliente -->
+                <button v-if="adminPuedeEditarCliente(ticketParaAdmin)"
+                        @click="adminAbrirEditarCliente(ticketParaAdmin)"
+                        class="w-full flex items-center gap-3 p-3 bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 rounded-xl text-left active:scale-95 transition-all">
+                    <span class="text-2xl">👤</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-black text-sm text-indigo-900">Editar cliente</div>
+                        <div class="text-[10px] text-indigo-700 font-semibold">Cambiar DNI/RUC y nombre del NV</div>
+                    </div>
+                </button>
+                <!-- Baja CPE -->
+                <button v-if="adminPuedeBajaCPE(ticketParaAdmin)"
+                        @click="adminAbrirBajaCPE(ticketParaAdmin)"
+                        class="w-full flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 border-2 border-red-200 rounded-xl text-left active:scale-95 transition-all">
+                    <span class="text-2xl">📋</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-black text-sm text-red-900">Baja del CPE (SUNAT)</div>
+                        <div class="text-[10px] text-red-700 font-semibold">Comunicación de baja · irreversible</div>
+                    </div>
+                </button>
+                <!-- Sin opciones -->
+                <p v-if="!adminPuedeCobrar(ticketParaAdmin) && !adminPuedeConvertir(ticketParaAdmin) && !adminPuedeEditarCliente(ticketParaAdmin) && !adminPuedeBajaCPE(ticketParaAdmin)"
+                   class="text-center text-xs text-gray-400 italic py-4">
+                    Sin acciones admin disponibles para este ticket.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== F3: MODAL COBRAR CRÉDITO (caja receptora + método) ===== -->
+    <div v-if="modalAdminCobrar && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[90dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">💵 Cobrar deuda</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaAdmin.correlativo }} · S/ {{ ticketParaAdmin.total.toFixed(2) }}</p>
+                </div>
+                <button @click="modalAdminCobrar = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto space-y-3 scrollbar-hide">
+                <!-- Selector de caja receptora -->
+                <div>
+                    <label class="block text-xs font-black text-gray-500 uppercase mb-1.5">Caja receptora</label>
+                    <div v-if="adminCobrarEstado.cajas.length === 0" class="text-center text-xs text-amber-600 italic py-3">
+                        No hay cajas abiertas. Abre una primero.
+                    </div>
+                    <div v-else class="space-y-1.5">
+                        <label v-for="k in adminCobrarEstado.cajas" :key="k.idCaja"
+                               class="flex items-center gap-2 p-2.5 rounded-xl border-2 cursor-pointer transition-all"
+                               :class="adminCobrarEstado.cajaSel === k.idCaja ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white'">
+                            <input type="radio" v-model="adminCobrarEstado.cajaSel" :value="k.idCaja" class="accent-emerald-600">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-black text-sm text-gray-800">{{ k.vendedor || k.idCaja }}</div>
+                                <div class="text-[10px] text-gray-400">{{ k.estacion }} · {{ k.zona }}</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <!-- Método -->
+                <div>
+                    <label class="block text-xs font-black text-gray-500 uppercase mb-1.5">Forma de pago</label>
+                    <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
+                        <button @click="adminCobrarEstado.metodo = 'EFECTIVO'" :class="adminCobrarEstado.metodo === 'EFECTIVO' ? 'bg-white text-emerald-600 shadow' : 'text-gray-500'" class="flex-1 py-2.5 rounded-lg font-black text-xs">EFECTIVO</button>
+                        <button @click="adminCobrarEstado.metodo = 'VIRTUAL'"  :class="adminCobrarEstado.metodo === 'VIRTUAL'  ? 'bg-white text-emerald-600 shadow' : 'text-gray-500'" class="flex-1 py-2.5 rounded-lg font-black text-xs">VIRTUAL</button>
+                        <button @click="adminCobrarEstado.metodo = 'MIXTO'"    :class="adminCobrarEstado.metodo === 'MIXTO'    ? 'bg-white text-emerald-600 shadow' : 'text-gray-500'" class="flex-1 py-2.5 rounded-lg font-black text-xs">MIXTO</button>
+                    </div>
+                </div>
+                <!-- Mixto: dos inputs -->
+                <div v-if="adminCobrarEstado.metodo === 'MIXTO'" class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[10px] text-gray-400 mb-0.5">💵 Efectivo</label>
+                        <input v-model.number="adminCobrarEstado.montoEf" type="number" step="0.01" placeholder="0.00" class="w-full p-3 text-center text-lg font-black bg-emerald-50 border-2 border-emerald-200 rounded-xl outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-gray-400 mb-0.5">📱 Virtual</label>
+                        <input v-model.number="adminCobrarEstado.montoVi" type="number" step="0.01" placeholder="0.00" class="w-full p-3 text-center text-lg font-black bg-blue-50 border-2 border-blue-200 rounded-xl outline-none">
+                    </div>
+                    <p class="col-span-2 text-[10px] text-gray-500 text-center font-bold">
+                        Suma S/ {{ ((adminCobrarEstado.montoEf||0) + (adminCobrarEstado.montoVi||0)).toFixed(2) }} · Total S/ {{ ticketParaAdmin.total.toFixed(2) }}
+                    </p>
+                </div>
+                <!-- Observación -->
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">Observación (opcional)</label>
+                    <input v-model="adminCobrarEstado.obs" type="text" placeholder="ej: cliente pagó en efectivo" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                </div>
+            </div>
+            <button @click="adminConfirmarCobrar"
+                    :disabled="adminProcesando || !adminCobrarEstado.cajaSel || (adminCobrarEstado.metodo === 'MIXTO' && Math.abs((adminCobrarEstado.montoEf||0)+(adminCobrarEstado.montoVi||0) - ticketParaAdmin.total) > 0.01)"
+                    class="mt-3 w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-300 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 shrink-0">
+                <svg v-if="adminProcesando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                {{ adminProcesando ? 'PROCESANDO...' : '✓ CONFIRMAR COBRO' }}
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== F3: MODAL CONVERTIR NV → CPE ===== -->
+    <div v-if="modalAdminConv && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 max-h-[90dvh] flex flex-col shadow-2xl animate-[slideUp_0.3s]">
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">📑 Convertir a CPE</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaAdmin.correlativo }} · S/ {{ ticketParaAdmin.total.toFixed(2) }}</p>
+                </div>
+                <button @click="modalAdminConv = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto space-y-3 scrollbar-hide">
+                <div class="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                    <p class="text-blue-800 text-[11px] font-semibold leading-relaxed">
+                        📑 La NV actual se anulará y se emitirá un nuevo CPE en SUNAT.
+                    </p>
+                </div>
+                <!-- Tipo -->
+                <div>
+                    <label class="block text-xs font-black text-gray-500 uppercase mb-1.5">Tipo de comprobante</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button @click="adminConvEstado.tipo = 'BOLETA'"  :class="adminConvEstado.tipo === 'BOLETA'  ? 'bg-blue-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📄 Boleta (DNI)</button>
+                        <button @click="adminConvEstado.tipo = 'FACTURA'" :class="adminConvEstado.tipo === 'FACTURA' ? 'bg-purple-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📋 Factura (RUC)</button>
+                    </div>
+                </div>
+                <!-- Doc + buscar -->
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">{{ adminConvEstado.tipo === 'BOLETA' ? 'DNI (8 dígitos)' : 'RUC (11 dígitos)' }}</label>
+                    <div class="flex gap-2">
+                        <input v-model="adminConvEstado.doc" @input="adminConvEstado.clienteOK = false" type="text" :maxlength="adminConvEstado.tipo === 'BOLETA' ? 8 : 11" inputmode="numeric"
+                               class="flex-1 p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
+                        <button @click="adminBuscarCliente"
+                                :disabled="adminConvEstado.tipo === 'BOLETA' ? adminConvEstado.doc.length !== 8 : adminConvEstado.doc.length !== 11"
+                                class="px-4 bg-amber-500 disabled:bg-gray-200 text-white font-black text-xs rounded-xl active:scale-95">🔎 Buscar</button>
+                    </div>
+                </div>
+                <!-- Nombre -->
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">{{ adminConvEstado.tipo === 'FACTURA' ? 'Razón social' : 'Nombre' }}</label>
+                    <input v-model="adminConvEstado.nombre" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                </div>
+                <!-- Dirección (FACTURA) -->
+                <div v-if="adminConvEstado.tipo === 'FACTURA'">
+                    <label class="block text-[10px] text-gray-400 mb-0.5">Dirección fiscal <span class="text-red-500">*</span></label>
+                    <input v-model="adminConvEstado.direccion" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                </div>
+                <!-- Serie -->
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">Serie</label>
+                    <input v-model="adminConvEstado.serie" type="text" :placeholder="adminConvEstado.tipo === 'BOLETA' ? 'B001' : 'F001'" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
+                </div>
+            </div>
+            <button @click="adminConfirmarConvertir"
+                    :disabled="adminProcesando || !adminConvEstado.nombre.trim() || !adminConvEstado.serie.trim() || (adminConvEstado.tipo === 'BOLETA' ? adminConvEstado.doc.length !== 8 : adminConvEstado.doc.length !== 11) || (adminConvEstado.tipo === 'FACTURA' && !adminConvEstado.direccion.trim())"
+                    class="mt-3 w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 shrink-0">
+                <svg v-if="adminProcesando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                {{ adminProcesando ? 'EMITIENDO...' : '📤 Emitir CPE en SUNAT' }}
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== F3: MODAL BAJA CPE ===== -->
+    <div v-if="modalAdminBaja && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s] max-h-[85dvh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">📋 Baja del CPE</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaAdmin.correlativo }} · {{ ticketParaAdmin.tipo }}</p>
+                </div>
+                <button @click="modalAdminBaja = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="bg-red-50 border border-red-200 rounded-xl p-3 mb-3">
+                <p class="text-red-800 text-[11px] font-semibold leading-relaxed">
+                    ⚠ Se enviará una <strong>Comunicación de Baja</strong> a NubeFact → SUNAT. El CPE quedará inválido oficialmente. Acción <strong>irreversible</strong>.
+                </p>
+            </div>
+            <label class="block text-xs font-black text-gray-500 uppercase mb-2">Motivo (SUNAT lo requiere)</label>
+            <div class="space-y-1.5 mb-3">
+                <label class="flex items-start gap-2 cursor-pointer text-xs text-gray-700">
+                    <input type="radio" v-model="adminBajaEstado.motivo" value="Error en el documento" class="mt-1 accent-red-600">
+                    <span>Error en el documento (datos cliente, monto, etc)</span>
+                </label>
+                <label class="flex items-start gap-2 cursor-pointer text-xs text-gray-700">
+                    <input type="radio" v-model="adminBajaEstado.motivo" value="Devolucion total de la operacion" class="mt-1 accent-red-600">
+                    <span>Devolución total · cliente devolvió el producto</span>
+                </label>
+                <label class="flex items-start gap-2 cursor-pointer text-xs text-gray-700">
+                    <input type="radio" v-model="adminBajaEstado.motivo" value="" class="mt-1 accent-red-600">
+                    <span>Otro (especificar)</span>
+                </label>
+            </div>
+            <input v-model="adminBajaEstado.motivoTxt" type="text" placeholder="Detalle del motivo..." class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none mb-3">
+            <button @click="adminConfirmarBaja"
+                    :disabled="adminProcesando || ((adminBajaEstado.motivo || adminBajaEstado.motivoTxt).trim().length < 3)"
+                    class="w-full bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                <svg v-if="adminProcesando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                {{ adminProcesando ? 'ENVIANDO...' : '📤 Enviar baja a SUNAT' }}
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== F3: MODAL EDITAR CLIENTE ===== -->
+    <div v-if="modalAdminEditCli && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s] max-h-[85dvh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">👤 Editar cliente</h2>
+                    <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaAdmin.correlativo }} · {{ ticketParaAdmin.tipo }}</p>
+                </div>
+                <button @click="modalAdminEditCli = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">DNI/RUC (vacío para sin doc)</label>
+                    <div class="flex gap-2">
+                        <input v-model="adminEditCliEstado.doc" type="text" maxlength="11" inputmode="numeric"
+                               class="flex-1 p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
+                        <button @click="adminEditCliBuscar"
+                                :disabled="adminEditCliEstado.doc.length !== 8 && adminEditCliEstado.doc.length !== 11"
+                                class="px-4 bg-amber-500 disabled:bg-gray-200 text-white font-black text-xs rounded-xl active:scale-95">🔎 Buscar</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">Nombre / Razón social</label>
+                    <input v-model="adminEditCliEstado.nombre" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">Dirección (opcional)</label>
+                    <input v-model="adminEditCliEstado.direccion" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">Motivo del cambio <span class="text-red-500">*</span></label>
+                    <input v-model="adminEditCliEstado.motivo" type="text" placeholder="ej: cliente corrigió DNI" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                </div>
+            </div>
+            <button @click="adminConfirmarEditarCliente"
+                    :disabled="adminProcesando || adminEditCliEstado.motivo.trim().length < 3"
+                    class="mt-4 w-full bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-300 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+                <svg v-if="adminProcesando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                {{ adminProcesando ? 'GUARDANDO...' : '✓ Guardar cambios' }}
             </button>
         </div>
     </div>
@@ -2716,6 +3056,25 @@
         const pagoMoneda = ref({ metodo: 'EFECTIVO', montoVirtual: 0 });
         const procesandoMoneda = ref(false);
 
+        // ── F3: Acciones admin sobre tickets (PIN admin gated) ─────
+        const modalAdminAcc      = ref(false);    // menú de acciones admin
+        const ticketParaAdmin    = ref(null);
+        const modalAdminCobrar   = ref(false);    // cobrar crédito → caja receptora
+        const adminCobrarEstado  = ref({ metodo: 'EFECTIVO', cajaSel: '', cajas: [], montoEf: 0, montoVi: 0, obs: '' });
+        const modalAdminConv     = ref(false);    // convertir NV → CPE
+        const adminConvEstado    = ref({ tipo: 'BOLETA', doc: '', nombre: '', direccion: '', serie: '', clienteOK: false });
+        const modalAdminBaja     = ref(false);    // baja CPE
+        const adminBajaEstado    = ref({ motivo: '', motivoTxt: '' });
+        const modalAdminEditCli  = ref(false);    // editar cliente
+        const adminEditCliEstado = ref({ doc: '', nombre: '', direccion: '', motivo: '' });
+        const adminProcesando    = ref(false);
+        const adminAuthCache     = ref(null);     // último PIN admin validado (se reusa entre flujos)
+
+        // ── F3: Cola de pendientes con auto-reimpresión tras sync ──
+        const ultimosSincronizados = ref([]);     // tickets sincronizados en la última corrida (efímero)
+        const reimpAuto            = ref(JSON.parse(localStorage.getItem('mosexpress_reimp_auto') || 'true'));
+        const ultimaSyncAt         = ref(parseInt(localStorage.getItem('mosexpress_ultima_sync') || '0', 10));
+
         // ── Bloqueo remoto del usuario (MOS desactiva al vendedor) ──
         const usuarioBloqueado = ref({ bloqueado: false, unlockVigente: false, unlockHasta: 0, msRestantes: 0, motivo: '' });
         const modalDesbloqueo = ref(false);
@@ -2824,7 +3183,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0 });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
         const clienteNombreManual = ref('');
@@ -3763,6 +4122,7 @@
            isSyncing.value = true;
            let exitos = 0;
            const ventasAProcesar = [...pendingSales.value];
+           const reimprimirCola = [];   // F3: tickets a reimprimir tras sync (CPEs con QR SUNAT)
 
            for (let venta of ventasAProcesar) {
                let intentos = 0;
@@ -3775,9 +4135,20 @@
                            pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
                            const historiaIdx = ventasHoy.value.findIndex(v => v.id === venta.id);
                            if (historiaIdx > -1) {
-                               ventasHoy.value[historiaIdx].syncStatus = 'synced';
-                               ventasHoy.value[historiaIdx].raw_data.status = 'synced';
-                               ventasHoy.value[historiaIdx].correlativo = res.correlativo;
+                               const tk = ventasHoy.value[historiaIdx];
+                               tk.syncStatus     = 'synced';
+                               tk.raw_data.status = 'synced';
+                               tk.correlativo    = res.correlativo;
+                               tk.id_venta_gas   = res.idVenta || tk.id_venta_gas;
+                               // Datos SUNAT/NubeFact (si vino emitido)
+                               if (res.nfEstado)   tk.nfEstado   = res.nfEstado;
+                               if (res.nfHash)     tk.nfHash     = res.nfHash;
+                               if (res.nfEnlace)   tk.nfEnlace   = res.nfEnlace;
+                               if (res.nfQrString) tk.nfQrString = res.nfQrString;
+                               // F3: encolar para auto-reimpresión si es CPE EMITIDO + reimpAuto activado
+                               if (reimpAuto.value && res.nfEstado === 'EMITIDO' && (tk.tipo === 'BOLETA' || tk.tipo === 'FACTURA')) {
+                                   reimprimirCola.push(tk);
+                               }
                            }
                            exitos++;
                            exito = true;
@@ -3796,10 +4167,25 @@
                lsSet('pending_sales', JSON.stringify(pendingSales.value));
                lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                playSyncOK();
-               agregarToast('Sincronización', `${exitos} comprobante(s) subidos a la Nube`);
+               ultimosSincronizados.value = ventasAProcesar.map(v => v.id);
+               ultimaSyncAt.value = Date.now();
+               lsSet('mosexpress_ultima_sync', String(ultimaSyncAt.value));
+               agregarToast('✓ Sincronización', `${exitos} comprobante(s) subidos`,
+                            reimprimirCola.length > 0 ? 'success' : 'info');
            }
            localStorage.removeItem('_mos_syncing');
            isSyncing.value = false;
+
+           // F3: auto-reimpresión de CPEs emitidos (después de soltar el flag isSyncing)
+           if (reimprimirCola.length > 0) {
+               agregarToast('🖨 Reimprimiendo', `${reimprimirCola.length} CPE(s) con datos SUNAT`);
+               for (const tk of reimprimirCola) {
+                   try { await reimprimirTicket(tk); }
+                   catch(e) { console.warn('Reimpresión auto falló:', e.message); }
+                   // Pequeño delay entre impresiones para no saturar la cola PrintNode
+                   await new Promise(r => setTimeout(r, 500));
+               }
+           }
         };
 
         const generarBaseDatosMock = () => {
@@ -5732,6 +6118,28 @@
             if (_pinCallback.value) { _pinCallback.value(resultado); _pinCallback.value = null; }
         };
 
+        // --- Marcar la venta actual como CRÉDITO directo (requiere PIN admin) ---
+        // Si ya está marcado, desmarca sin pedir PIN (cancelación libre).
+        // Si no está marcado, pide PIN y al validar guarda { adminAuth } para enviar
+        // junto con la venta y registrar quién autorizó en el log.
+        const toggleVentaCreditoDirecto = () => {
+            if (pago.value.ventaCreditoDirecto) {
+                pago.value.ventaCreditoDirecto = false;
+                pago.value.adminAuth = null;
+                return;
+            }
+            pedirPin((resultado) => {
+                pago.value.ventaCreditoDirecto = true;
+                pago.value.adminAuth = {
+                    nombre: String(resultado.validadoPor || resultado.nombre || ''),
+                    rol:    String(resultado.rol || 'ADMIN'),
+                    via:    'PIN_8DIG',
+                    idPersonal: String(resultado.idPersonal || '')
+                };
+                agregarToast('Crédito autorizado', 'Por ' + (pago.value.adminAuth.nombre || 'admin'));
+            }, { accion: 'VENTA_CREDITO_DIRECTO', refDocumento: 'venta-pendiente' });
+        };
+
         // --- CAJERO: Marcar ticket como CRÉDITO (requiere PIN admin) ---
         const abrirModalCredito = (venta) => {
             pedirPin(() => {
@@ -5854,6 +6262,307 @@
             ticketParaCredito.value = null;
             obsCredito.value = '';
             agregarToast('Crédito registrado', 'El ticket fue marcado como CRÉDITO');
+        };
+
+        // ════════════════════════════════════════════════════════════
+        // F3: ACCIONES ADMIN sobre tickets (PIN admin gated)
+        // ════════════════════════════════════════════════════════════
+        // Detección de elegibilidad por estado del ticket:
+        const adminPuedeCobrar = (v) => {
+            if (!v) return false;
+            const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase();
+            return !v.anulada && (m === 'POR_COBRAR' || m === 'CREDITO' || v.credito);
+        };
+        const adminPuedeConvertir = (v) => v && !v.anulada && v.tipo === 'NOTA_DE_VENTA' && v.id_venta_gas;
+        const adminPuedeBajaCPE = (v) => {
+            if (!v || v.anulada || !v.id_venta_gas) return false;
+            if (v.tipo !== 'BOLETA' && v.tipo !== 'FACTURA') return false;
+            // Solo si está EMITIDO (puede no estar disponible offline)
+            return (v.nfEstado || v.raw_data?.nfEstado) === 'EMITIDO' || !v.nfEstado; // permitir intento si desconocido
+        };
+        const adminPuedeEditarCliente = (v) => {
+            if (!v || v.anulada || !v.id_venta_gas) return false;
+            // Solo NV o pre-CPE
+            const cpeEmitido = (v.nfEstado || v.raw_data?.nfEstado) === 'EMITIDO';
+            return v.tipo === 'NOTA_DE_VENTA' || !cpeEmitido;
+        };
+
+        // Abrir el menú de acciones admin
+        const abrirAccionesAdmin = (venta) => {
+            ticketParaAdmin.value = venta;
+            modalAdminAcc.value = true;
+        };
+
+        // Helper: pide PIN admin y guarda { adminAuth } para enviar al backend
+        const _pinAdminThen = (accionLabel, refDoc, callback) => {
+            pedirPin((resultado) => {
+                adminAuthCache.value = {
+                    nombre:     String(resultado.validadoPor || resultado.nombre || ''),
+                    rol:        String(resultado.rol || 'ADMIN'),
+                    via:        'PIN_8DIG',
+                    idPersonal: resultado.idPersonal || null,
+                    timestamp:  Date.now()
+                };
+                callback(resultado);
+            }, { accion: accionLabel, refDocumento: refDoc });
+        };
+
+        // ── COBRAR CRÉDITO (caja receptora + método) ──
+        const adminAbrirCobrarCredito = async (venta) => {
+            modalAdminAcc.value = false;
+            _pinAdminThen('COBRAR_CREDITO_DESDE_LISTA', venta.correlativo || venta.id, async () => {
+                ticketParaAdmin.value = venta;
+                adminCobrarEstado.value = {
+                    metodo:  'EFECTIVO',
+                    cajaSel: '',
+                    cajas:   [],
+                    montoEf: 0,
+                    montoVi: 0,
+                    obs:     ''
+                };
+                modalAdminCobrar.value = true;
+                // Cargar cajas abiertas
+                try {
+                    const r = await fetch(`${API_URL}?accion=estado_cajas`);
+                    const j = await r.json();
+                    const cajas = (j?.data?.cajas || j?.abiertas || []).filter(c => c.estado === 'ABIERTA' || c.activa);
+                    adminCobrarEstado.value.cajas = cajas.map(c => ({
+                        idCaja:   c.idCaja || c.ID_Caja || '',
+                        vendedor: c.vendedor || c.Vendedor || c.cajero || '',
+                        estacion: c.estacion || c.Estacion || '',
+                        zona:     c.zona || c.Zona || ''
+                    }));
+                    if (adminCobrarEstado.value.cajas.length === 1) {
+                        adminCobrarEstado.value.cajaSel = adminCobrarEstado.value.cajas[0].idCaja;
+                    }
+                } catch(e) {
+                    agregarToast('Error', 'No se pudieron cargar las cajas: ' + e.message, 'warning');
+                }
+            });
+        };
+
+        const adminConfirmarCobrar = async () => {
+            const venta = ticketParaAdmin.value;
+            const c = adminCobrarEstado.value;
+            if (!venta?.id_venta_gas) { agregarToast('Error', 'Ticket no sincronizado'); return; }
+            if (!c.cajaSel) { agregarToast('Error', 'Selecciona caja receptora'); return; }
+            let metodoFinal = c.metodo;
+            let monEf, monVi;
+            if (c.metodo === 'MIXTO') {
+                monEf = parseFloat(c.montoEf || 0);
+                monVi = parseFloat(c.montoVi || 0);
+                if (Math.abs((monEf + monVi) - venta.total) > 0.01) {
+                    agregarToast('Error', 'Suma EFE+VIR debe igualar el total'); return;
+                }
+                metodoFinal = `MIXTO (EFE:${monEf.toFixed(2)}/VIR:${monVi.toFixed(2)})`;
+            }
+            adminProcesando.value = true;
+            try {
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                    tipoEvento:    'COBRAR_CREDITO_CON_EXTRA',
+                    idVenta:       venta.id_venta_gas,
+                    cajaReceptora: c.cajaSel,
+                    metodo:        metodoFinal,
+                    montoEfectivo: monEf,
+                    montoVirtual:  monVi,
+                    obs:           c.obs || '',
+                    auth:          { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
+                    adminAuth:     adminAuthCache.value
+                })});
+                const j = await r.json();
+                if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
+                // Actualizar local
+                const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+                if (idx !== -1) {
+                    ventasZona.value[idx].cobrado = true;
+                    ventasZona.value[idx].cobradoMetodo = metodoFinal;
+                    ventasZona.value[idx].credito = false;
+                    if (ventasZona.value[idx].raw_data?.header) {
+                        ventasZona.value[idx].raw_data.header.metodo = metodoFinal;
+                    }
+                }
+                modalAdminCobrar.value = false;
+                ticketParaAdmin.value = null;
+                playVentaOK?.();
+                agregarToast('✓ Cobrado', `S/ ${venta.total.toFixed(2)} ingresó a caja`, 'success');
+            } catch(e) {
+                agregarToast('Error', e.message, 'error');
+            } finally {
+                adminProcesando.value = false;
+            }
+        };
+
+        // ── CONVERTIR NV → CPE ──
+        const adminAbrirConvertir = (venta) => {
+            modalAdminAcc.value = false;
+            _pinAdminThen('CONVERTIR_NV_A_CPE_DESDE_LISTA', venta.correlativo || venta.id, () => {
+                ticketParaAdmin.value = venta;
+                adminConvEstado.value = {
+                    tipo: 'BOLETA',
+                    doc: venta.cliente_doc || '',
+                    nombre: venta.cliente_nombre || '',
+                    direccion: '',
+                    serie: '',
+                    clienteOK: false
+                };
+                modalAdminConv.value = true;
+            });
+        };
+
+        const adminBuscarCliente = async () => {
+            const doc = (adminConvEstado.value.doc || '').trim();
+            if (doc.length !== 8 && doc.length !== 11) return;
+            try {
+                const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}`);
+                const j = await r.json();
+                if (j?.status === 'success' && j.nombre) {
+                    adminConvEstado.value.nombre = j.nombre;
+                    adminConvEstado.value.direccion = j.direccion || '';
+                    adminConvEstado.value.clienteOK = true;
+                    agregarToast('✓ Cliente encontrado', j.nombre, 'success');
+                } else {
+                    agregarToast('No encontrado', 'Ingresa los datos manualmente', 'warning');
+                }
+            } catch(e) { agregarToast('Error', e.message, 'error'); }
+        };
+
+        const adminConfirmarConvertir = async () => {
+            const venta = ticketParaAdmin.value;
+            const e = adminConvEstado.value;
+            if (!venta?.id_venta_gas) { agregarToast('Error', 'Ticket no sincronizado'); return; }
+            if (!confirm(`¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`)) return;
+            adminProcesando.value = true;
+            try {
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                    tipoEvento:        'CONVERTIR_NV_A_CPE',
+                    idVenta:           venta.id_venta_gas,
+                    tipoDocNuevo:      e.tipo,
+                    serieNueva:        e.serie.trim(),
+                    clienteDoc:        e.doc.trim(),
+                    clienteNombre:     e.nombre.trim(),
+                    clienteDireccion:  e.direccion.trim(),
+                    auth:              { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
+                    adminAuth:         adminAuthCache.value
+                })});
+                const j = await r.json();
+                if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
+                modalAdminConv.value = false;
+                ticketParaAdmin.value = null;
+                agregarToast('✓ CPE emitido', `Nuevo: ${j?.correlativo || ''}`, 'success');
+                // Refrescar lista en background
+                if (config.value.esCajero) cargarVentasZona();
+            } catch(err) {
+                agregarToast('Error', err.message, 'error');
+            } finally {
+                adminProcesando.value = false;
+            }
+        };
+
+        // ── BAJA CPE ──
+        const adminAbrirBajaCPE = (venta) => {
+            modalAdminAcc.value = false;
+            _pinAdminThen('BAJA_CPE_DESDE_LISTA', venta.correlativo || venta.id, () => {
+                ticketParaAdmin.value = venta;
+                adminBajaEstado.value = { motivo: '', motivoTxt: '' };
+                modalAdminBaja.value = true;
+            });
+        };
+
+        const adminConfirmarBaja = async () => {
+            const venta = ticketParaAdmin.value;
+            const motivo = (adminBajaEstado.value.motivo || adminBajaEstado.value.motivoTxt || '').trim();
+            if (!venta?.id_venta_gas || motivo.length < 3) return;
+            if (!confirm(`¿Comunicar baja del ${venta.tipo} ${venta.correlativo} a SUNAT?\n\nEsta acción es irreversible.`)) return;
+            adminProcesando.value = true;
+            try {
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                    tipoEvento: 'BAJA_CPE',
+                    idVenta:    venta.id_venta_gas,
+                    motivo:     motivo,
+                    auth:       { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
+                    adminAuth:  adminAuthCache.value
+                })});
+                const j = await r.json();
+                if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
+                modalAdminBaja.value = false;
+                ticketParaAdmin.value = null;
+                agregarToast('✓ Baja enviada', j?.nuevoEstado || 'aceptada', 'success');
+                // Marcar local como anulado defensivamente (queda pendiente la confirmación SUNAT)
+                const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+                if (idx !== -1) {
+                    ventasZona.value[idx].nfEstado = j?.nuevoEstado || 'BAJA_SOLICITADA';
+                }
+            } catch(err) {
+                agregarToast('Error', err.message, 'error');
+            } finally {
+                adminProcesando.value = false;
+            }
+        };
+
+        // ── EDITAR CLIENTE ──
+        const adminAbrirEditarCliente = (venta) => {
+            modalAdminAcc.value = false;
+            _pinAdminThen('EDITAR_CLIENTE_DESDE_LISTA', venta.correlativo || venta.id, () => {
+                ticketParaAdmin.value = venta;
+                adminEditCliEstado.value = {
+                    doc:       venta.cliente_doc || '',
+                    nombre:    venta.cliente_nombre || '',
+                    direccion: '',
+                    motivo:    ''
+                };
+                modalAdminEditCli.value = true;
+            });
+        };
+
+        const adminEditCliBuscar = async () => {
+            const doc = (adminEditCliEstado.value.doc || '').trim();
+            if (doc.length !== 8 && doc.length !== 11) return;
+            try {
+                const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}`);
+                const j = await r.json();
+                if (j?.status === 'success' && j.nombre) {
+                    adminEditCliEstado.value.nombre = j.nombre;
+                    adminEditCliEstado.value.direccion = j.direccion || '';
+                    agregarToast('✓ Cliente encontrado', j.nombre, 'success');
+                } else {
+                    agregarToast('No encontrado', 'Ingresa los datos manualmente', 'warning');
+                }
+            } catch(e) { agregarToast('Error', e.message, 'error'); }
+        };
+
+        const adminConfirmarEditarCliente = async () => {
+            const venta = ticketParaAdmin.value;
+            const e = adminEditCliEstado.value;
+            if (!venta?.id_venta_gas) { agregarToast('Error', 'Ticket no sincronizado'); return; }
+            if (e.motivo.trim().length < 3) { agregarToast('Error', 'Motivo obligatorio'); return; }
+            adminProcesando.value = true;
+            try {
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                    tipoEvento:        'EDITAR_CLIENTE_VENTA',
+                    idVenta:           venta.id_venta_gas,
+                    clienteDoc:        e.doc.trim(),
+                    clienteNombre:     e.nombre.trim(),
+                    clienteDireccion:  e.direccion.trim(),
+                    motivo:            e.motivo.trim(),
+                    auth:              { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
+                    adminAuth:         adminAuthCache.value
+                })});
+                const j = await r.json();
+                if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
+                // Actualizar local
+                const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+                if (idx !== -1) {
+                    ventasZona.value[idx].cliente_doc = e.doc.trim();
+                    ventasZona.value[idx].cliente_nombre = e.nombre.trim();
+                }
+                modalAdminEditCli.value = false;
+                ticketParaAdmin.value = null;
+                agregarToast('✓ Cliente actualizado', e.nombre, 'success');
+            } catch(err) {
+                agregarToast('Error', err.message, 'error');
+            } finally {
+                adminProcesando.value = false;
+            }
         };
 
         // --- CAJERO: Registrar movimiento EXTRA de caja ---
@@ -6580,6 +7289,18 @@
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
         };
+        // Cliente VARIOS por defecto en Nota de Venta cuando el cajero no quiere
+        // tipear nada (el cliente "anónimo"). DNI 66666 ya existe en CLIENTES_FRECUENTES.
+        const cargarClienteVarios = () => {
+            // Si ya hay un cliente seleccionado por el cajero, no sobreescribir
+            if (pago.value.nombreCliente && pago.value.docCliente && pago.value.docCliente !== '66666') return;
+            pago.value.docCliente       = '66666';
+            pago.value.nombreCliente    = 'VARIOS';
+            pago.value.direccionCliente = '';
+            busquedaNombre.value        = '';
+            clienteModoManual.value     = false;
+            clienteNombreManual.value   = '';
+        };
         // Convierte un número entero a texto en español (para TTS del monto)
         const numALetras = (n) => {
             if (n === 0) return 'cero';
@@ -6627,7 +7348,9 @@
             pago.value.metodo = (config.value.esCajero && cajaAbierta.value) ? 'EFECTIVO' : 'POR_COBRAR';
             pago.value.montoRecibido = granTotal.value;
             pago.value.montoVirtual = 0;
+            // En NV: cargar cliente VARIOS por default. Cajero puede cambiarlo.
             limpiarCliente();
+            cargarClienteVarios();
             modalPago.value = true;
         };
         const setMonto = (m) => { pago.value.montoRecibido = parseFloat(m); };
@@ -6692,8 +7415,14 @@
 
            // Capturar todo antes de limpiar el carrito
            const tipoDocVenta        = pago.value.tipoDoc;
-           // Seguridad de rol: vendedor o cajero sin caja abierta → siempre POR_COBRAR
-           const metodoVenta         = (config.value.esCajero && cajaAbierta.value) ? pago.value.metodo : 'POR_COBRAR';
+           // Reglas de FormaPago:
+           //  - Si admin marcó "vender directo a crédito" + PIN → CREDITO
+           //  - Si vendedor (no cajero) o cajero sin caja abierta → POR_COBRAR
+           //  - Caso normal cajero → método elegido (EFE/VIR/MIX)
+           const metodoVenta         = pago.value.ventaCreditoDirecto && pago.value.adminAuth
+                                       ? 'CREDITO'
+                                       : (config.value.esCajero && cajaAbierta.value) ? pago.value.metodo : 'POR_COBRAR';
+           const adminAuthVenta      = pago.value.ventaCreditoDirecto ? pago.value.adminAuth : null;
            const montoRecibidoVenta  = parseFloat(pago.value.montoRecibido);
            const montoVirtualVenta   = parseFloat(pago.value.montoVirtual || 0);
            const nombreClienteVenta  = pago.value.nombreCliente;
@@ -6709,7 +7438,9 @@
 
            const IGV_RATE = 0.18;
 
-           const metodoLabel = metodoVenta === 'MIXTO'
+           // Si va directo a CREDITO (admin) ignoramos el desglose MIXTO en el label
+           const metodoLabel = metodoVenta === 'CREDITO' ? 'CREDITO'
+               : metodoVenta === 'MIXTO'
                ? `MIXTO (VIR:${montoVirtualVenta.toFixed(2)}/EFE:${(totalVenta - montoVirtualVenta).toFixed(2)})`
                : metodoVenta;
 
@@ -6753,8 +7484,11 @@
                   vendedor:  config.value.vendedor,
                   estacion:  _est.Estacion_Nombre || '',
                   deviceId:  deviceId.value,
-                  esCajero:  config.value.esCajero
+                  esCajero:  config.value.esCajero,
+                  rol:       config.value.esCajero ? 'CAJERO' : 'VENDEDOR'
               },
+              // Si la venta fue autorizada por admin para crédito directo → adjuntar
+              adminAuth: adminAuthVenta,
               pos_config: {
                   cajaId:        config.value.esCajero ? idCajaActual.value : (cajeroActivoEnZona.value?.idCaja || ''),
                   serieActual:   serieElegida,
@@ -6799,8 +7533,9 @@
            // 3. Cerrar modal y limpiar carrito inmediatamente — no esperar impresión
            finalizarPostPago(totalVenta);
 
-           // Helper: construir y enviar ticket ESC/POS con el correlativo final
-           const imprimirTicketVenta = (correlativo, esSincronizado) => {
+           // Helper: construir y enviar ticket ESC/POS con el correlativo final.
+           // nfData (opcional): {hash, enlace, qrString} — si viene, se usa QR de SUNAT
+           const imprimirTicketVenta = (correlativo, esSincronizado, nfData) => {
                const titulo = tipoDocVenta !== 'NOTA_DE_VENTA' ? tipoDocVenta : 'NOTA_DE_VENTA';
                let txt = "\x1b\x40\x1b\x61\x01";
                txt += "\x1b\x21\x30MOSexpress\n";
@@ -6810,8 +7545,10 @@
                txt += "================================================\n";
                txt += "\x1b\x61\x00";
                txt += "FECHA   : " + new Date().toLocaleString() + "\n";
-               if (nombreClienteVenta) txt += "CLIENTE : " + nombreClienteVenta + "\n";
-               if (docClienteVenta) txt += "DOC     : " + docClienteVenta + "\n";
+               if (nombreClienteVenta && nombreClienteVenta !== 'VARIOS') {
+                   txt += "CLIENTE : " + nombreClienteVenta + "\n";
+                   if (docClienteVenta && docClienteVenta !== '66666') txt += "DOC     : " + docClienteVenta + "\n";
+               }
                txt += (config.value.esCajero ? "CAJERO  " : "VENDEDOR") + ": " + config.value.vendedor + "\n";
                txt += "================================================\n";
                txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
@@ -6832,6 +7569,13 @@
                    txt += "VIRTUAL : S/ " + montoVirtualVenta.toFixed(2) + "\n";
                    txt += "EFECTIVO: S/ " + (totalVenta - montoVirtualVenta).toFixed(2) + "\n";
                    if (vueltoVenta > 0) { txt += "PAGO EFE: S/ " + montoRecibidoVenta.toFixed(2) + "\n"; txt += "VUELTO  : S/ " + vueltoVenta.toFixed(2) + "\n"; }
+               } else if (metodoVenta === 'CREDITO') {
+                   txt += "METODO: CREDITO (Aut. admin)\n";
+                   if (adminAuthVenta && adminAuthVenta.nombre) {
+                       txt += "AUTORIZA: " + adminAuthVenta.nombre + "\n";
+                   }
+               } else if (metodoVenta === 'POR_COBRAR') {
+                   txt += "METODO: POR COBRAR (cajero)\n";
                } else {
                    txt += "METODO: " + metodoVenta + "\n";
                    if (metodoVenta === 'EFECTIVO' && montoRecibidoVenta > 0) {
@@ -6839,27 +7583,77 @@
                        txt += "VUELTO: S/ " + vueltoVenta.toFixed(2) + "\n";
                    }
                }
+               // CPE emitido: agregar info SUNAT (hash + enlace) y QR de SUNAT
+               if (nfData && nfData.hash && (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA')) {
+                   txt += "\x1b\x61\x01\n";
+                   txt += "\x1b\x21\x00Comprobante electronico SUNAT\n";
+                   if (nfData.hash) txt += String(nfData.hash).substring(0, 32) + "\n";
+               }
                txt += "\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n";
                if (!esSincronizado) txt += "(Sin conexion - N° sujeto a cambio)\n";
-               txt += qrESCPOS(correlativo);
+               // QR: si CPE emitido, usar la cadena oficial SUNAT; si NV, el correlativo
+               var qrPayload = (nfData && nfData.qrString) ? nfData.qrString : correlativo;
+               txt += qrESCPOS(qrPayload);
                txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-               mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, titulo, b64ESC(txt))
+               // Timeout 8s para PrintNode (no bloquear UI si la impresora está caída)
+               const printPromise = mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, titulo, b64ESC(txt));
+               const timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('PrintNode timeout 8s')), 8000));
+               Promise.race([printPromise, timeoutP])
                    .catch(e => agregarToast('Error Impresión', e.message));
            };
 
-           // 4. Sync con GAS — un solo round-trip: guarda + imprime internamente
+           // ── Helper: fetch con timeout (no quedar colgado en redes lentas) ──
+           const _fetchConTimeout = async (url, opts, ms) => {
+               const ctrl = new AbortController();
+               const t = setTimeout(() => ctrl.abort('timeout'), ms || 20000);
+               try { return await fetch(url, Object.assign({}, opts, { signal: ctrl.signal })); }
+               finally { clearTimeout(t); }
+           };
+
+           // ── Helper: enviar venta con reintento backoff ──
+           // Reintenta si el GAS retorna RESERVA_OCUPADA (lock saturado).
+           // Backoff: 1s → 2s → 5s. Total ≤ 8s antes de caer a cola offline.
+           const _enviarVentaConReintentos = async (payload) => {
+               const delays = [0, 1000, 2000, 5000];
+               let ultimoError = null;
+               for (var attempt = 0; attempt < delays.length; attempt++) {
+                   if (delays[attempt] > 0) await new Promise(r => setTimeout(r, delays[attempt]));
+                   try {
+                       const r = await _fetchConTimeout(API_URL, {
+                           method: 'POST',
+                           body: JSON.stringify(payload)
+                       }, 20000);
+                       const res = await r.json();
+                       if (res.status === 'success') return res;
+                       // Error lógico: distinguir RESERVA_OCUPADA (reintentable) de otros (fatales)
+                       const msg = String(res.mensaje || '');
+                       if (msg.indexOf('RESERVA_OCUPADA') >= 0) {
+                           ultimoError = new Error(msg);
+                           continue; // reintentar
+                       }
+                       // Error fatal de GAS (no de race condition): no reintentar
+                       throw new Error(msg || 'Error GAS');
+                   } catch(e) {
+                       // Errores de red o timeout: reintentar también
+                       ultimoError = e;
+                       const errMsg = String(e.message || e);
+                       if (errMsg.indexOf('RESERVA_OCUPADA') >= 0 ||
+                           errMsg.indexOf('timeout') >= 0 ||
+                           errMsg.indexOf('Failed to fetch') >= 0 ||
+                           errMsg.indexOf('NetworkError') >= 0 ||
+                           errMsg === 'aborted') {
+                           continue;
+                       }
+                       throw e;  // otro error fatal
+                   }
+               }
+               throw ultimoError || new Error('Sin respuesta tras 3 reintentos');
+           };
+
+           // 4. Sync con GAS — un solo round-trip con reintentos backoff
            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                try {
-                   const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(ventaBase) });
-                   const res = await r.json();
-                   if (res.status !== 'success') {
-                       // Error lógico de GAS (no de red): restaurar stock local y mostrar error
-                       itemsParaImprimir.forEach(item => {
-                           const prod = productosCatalogo.value.find(p => p.sku === (item.skuBase || item.sku));
-                           if (prod && prod.stock !== null) prod.stock += item.cantidad;
-                       });
-                       throw new Error(res.mensaje || 'Error GAS');
-                   }
+                   const res = await _enviarVentaConReintentos(ventaBase);
 
                    // Actualizar correlativo real en historial local
                    const idx = ventasHoy.value.findIndex(v => v.id === localId);
@@ -6903,7 +7697,10 @@
 
                    // GAS ya imprimió — solo fallback si reporta que no pudo
                    if (!res.printDispatched) {
-                       imprimirTicketVenta(res.correlativo, true);
+                       const nfData = res.nfEstado === 'EMITIDO'
+                           ? { hash: res.nfHash || '', enlace: res.nfEnlace || '', qrString: res.nfQrString || '' }
+                           : null;
+                       imprimirTicketVenta(res.correlativo, true, nfData);
                    }
 
                    // Insertar en ventasZona instantáneamente (sin esperar polling)
@@ -6958,6 +7755,9 @@
           limpiarCliente();
           pago.value.tipoDoc = 'NOTA_DE_VENTA';
           pago.value.metodo = 'EFECTIVO';
+          // Reset autorización crédito directo para próxima venta
+          pago.value.ventaCreditoDirecto = false;
+          pago.value.adminAuth = null;
           setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
         };
 
@@ -7695,7 +8495,7 @@
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,
           camaraHerramientasAbierta, toggleCamaraHerramientas,
-          db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente,
+          db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, toggleVentaCreditoDirecto,
           deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo,
           sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
           flashNuevosTickets,
@@ -7724,6 +8524,14 @@
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
           modalPin, pinInput, pinError, confirmarPin, pinValidando,
           modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro, revertirCobroDesdeModal,
+          // F3 — Acciones admin sobre tickets + cola pendientes
+          modalAdminAcc, ticketParaAdmin, abrirAccionesAdmin,
+          adminPuedeCobrar, adminPuedeConvertir, adminPuedeBajaCPE, adminPuedeEditarCliente,
+          modalAdminCobrar, adminCobrarEstado, adminAbrirCobrarCredito, adminConfirmarCobrar,
+          modalAdminConv, adminConvEstado, adminAbrirConvertir, adminBuscarCliente, adminConfirmarConvertir,
+          modalAdminBaja, adminBajaEstado, adminAbrirBajaCPE, adminConfirmarBaja,
+          modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminEditCliBuscar, adminConfirmarEditarCliente,
+          adminProcesando, reimpAuto, lsSet,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra,
           usuarioBloqueado, modalDesbloqueo, desbloqueoPin, desbloqueoError, desbloqueoCargando,
           desbloqueoCountdown, intentarDesbloqueoTemporal, _fmtCountdown

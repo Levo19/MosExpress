@@ -34,6 +34,9 @@ function doGet(e) {
     if (accion === 'consultar_cliente')     return consultarCliente(e.parameter.doc);
     if (accion === 'extras_caja')           return getExtrasCaja(e.parameter.cajaId);
     if (accion === 'estado_cajas')          return estadoCajas();
+    if (accion === 'historial_venta')       return getHistorialEndpoint('VENTAS_CABECERA', e.parameter.idVenta);
+    if (accion === 'historial_extra')       return getHistorialEndpoint('MOVIMIENTOS_EXTRA', e.parameter.idExtra);
+    if (accion === 'historial_cliente')     return getHistorialEndpoint('CLIENTES_FRECUENTES', e.parameter.doc);
     return generarRespuestaError('Acción no válida: ' + accion);
   } catch(err) {
     return generarRespuestaError('Error interno [' + accion + ']: ' + err.message);
@@ -215,8 +218,14 @@ function doPost(e) {
     if (data.tipoEvento === 'COBRAR_VENTA')        return cobrarVentaExistente(data);
     if (data.tipoEvento === 'ANULACION_MASIVA')    return anulacionMasiva(data);
     if (data.tipoEvento === 'CREDITAR_VENTA')      return creditarVenta(data);
-    if (data.tipoEvento === 'EXTRA_CAJA')          return registrarExtraCaja(data);
+    if (data.tipoEvento === 'EXTRA_CAJA')          return registrarExtraCajaConLog(data);
     if (data.tipoEvento === 'ANULACION')           return anularVentaIndividual(data);
+    // Endpoints nuevos de edición posterior
+    if (data.tipoEvento === 'COBRAR_CREDITO_CON_EXTRA')  return cobrarCreditoConExtra(data);
+    if (data.tipoEvento === 'EDITAR_FORMA_PAGO_VENTA')   return editarFormaPagoVenta(data);
+    if (data.tipoEvento === 'EDITAR_CLIENTE_VENTA')      return editarClienteVenta(data);
+    if (data.tipoEvento === 'CONVERTIR_NV_A_CPE')        return convertirNVaCPE(data);
+    if (data.tipoEvento === 'BAJA_CPE')                  return bajaCPEVenta(data);
     if (data.tipoEvento === 'REGISTRAR_GUIA')      return registrarGuia(data);
     if (data.tipoEvento === 'REGISTRAR_AUDITORIA') return registrarAuditoria(data);
     if (data.accion === 'imprimir')                return procesarImpresion(data);
@@ -231,6 +240,7 @@ function doPost(e) {
       nfEstado:       response.nfEstado || 'NA',
       nfHash:         response.nfHash   || '',
       nfEnlace:       response.nfEnlace || '',
+      nfQrString:     response.nfQrString || '',
       mensaje:        "Venta procesada con éxito"
     })).setMimeType(ContentService.MimeType.JSON);
 

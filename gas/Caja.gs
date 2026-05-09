@@ -173,10 +173,30 @@ function cobrarVentaExistente(data) {
   if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
 
   var filas = sheet.getDataRange().getValues();
-  for (var i = 1; i < filas.length; i++) {
+  for (var i = filas.length - 1; i > 0; i--) {  // buscar desde el final (más probable)
     if (String(filas[i][0]) === String(data.idVenta)) {
+      var formaAnt = String(filas[i][8] || '');
+      var cajaAnt  = String(filas[i][10] || '');
       sheet.getRange(i + 1, 9).setValue(data.metodo);
       if (data.cajaId) sheet.getRange(i + 1, 11).setValue(String(data.cajaId));
+
+      // Log de auditoría
+      try {
+        var actor = _audExtraerActor(data);
+        var cambios = [{ campo:'FormaPago', antes: formaAnt, despues: String(data.metodo) }];
+        if (data.cajaId && data.cajaId !== cajaAnt) {
+          cambios.push({ campo:'ID_Caja', antes: cajaAnt, despues: String(data.cajaId) });
+        }
+        auditarLog('VENTAS_CABECERA', data.idVenta, {
+          usuario: actor.usuario, rol: actor.rol,
+          source: 'ME_COBRAR_VENTA',
+          accion: 'cobrar_venta',
+          cambios: cambios,
+          autorizadoPor: actor.autorizadoPor || null,
+          motivo: data.motivo || ''
+        });
+      } catch(_){}
+
       return ContentService.createTextOutput(JSON.stringify({
         status: "success", mensaje: "Venta cobrada correctamente"
       })).setMimeType(ContentService.MimeType.JSON);
@@ -191,10 +211,28 @@ function creditarVenta(data) {
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
   if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
   var filas = sheet.getDataRange().getValues();
-  for (var i = 1; i < filas.length; i++) {
+  for (var i = filas.length - 1; i > 0; i--) {
     if (String(filas[i][0]) === String(data.idVenta)) {
+      var formaAnt = String(filas[i][8] || '');
+      var obsAnt   = String(filas[i][14] || '');
       sheet.getRange(i + 1, 9).setValue('CREDITO');
       sheet.getRange(i + 1, 15).setValue(String(data.obs || ''));
+
+      try {
+        var actor = _audExtraerActor(data);
+        auditarLog('VENTAS_CABECERA', data.idVenta, {
+          usuario: actor.usuario, rol: actor.rol,
+          source: 'ME_CREDITAR_VENTA',
+          accion: 'convertir_a_credito',
+          cambios: [
+            { campo:'FormaPago', antes: formaAnt, despues:'CREDITO' },
+            { campo:'Obs',       antes: obsAnt,   despues: String(data.obs || '') }
+          ],
+          autorizadoPor: actor.autorizadoPor || null,
+          motivo: data.motivo || data.obs || ''
+        });
+      } catch(_){}
+
       return ContentService.createTextOutput(JSON.stringify({
         status: "success", mensaje: "Crédito registrado"
       })).setMimeType(ContentService.MimeType.JSON);
@@ -209,9 +247,23 @@ function anularVentaIndividual(data) {
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
   if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada.");
   var filas = sheet.getDataRange().getValues();
-  for (var i = 1; i < filas.length; i++) {
+  for (var i = filas.length - 1; i > 0; i--) {
     if (String(filas[i][0]) === String(data.ventaId)) {
+      var formaAnt = String(filas[i][8] || '');
       sheet.getRange(i + 1, 9).setValue('ANULADO');
+
+      try {
+        var actor = _audExtraerActor(data);
+        auditarLog('VENTAS_CABECERA', data.ventaId, {
+          usuario: actor.usuario, rol: actor.rol,
+          source: 'ME_ANULAR_VENTA',
+          accion: 'anular_venta_interna',
+          cambios: [{ campo:'FormaPago', antes: formaAnt, despues:'ANULADO' }],
+          autorizadoPor: actor.autorizadoPor || null,
+          motivo: data.motivo || ''
+        });
+      } catch(_){}
+
       return ContentService.createTextOutput(JSON.stringify({
         status: "success", mensaje: "Venta anulada correctamente"
       })).setMimeType(ContentService.MimeType.JSON);

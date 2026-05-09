@@ -114,6 +114,7 @@ function procesarVenta(data) {
     sheetCabecera.getRange(nfRow, 17, 1, 3).setValues([[nfEstado, nfHash, nfEnlace]]);
     if (!nfResult.ok) Logger.log('NubeFact error venta ' + idVenta + ': ' + (nfResult.error || ''));
   }
+  var nfQrString = (nfResult && nfResult.qrString) ? nfResult.qrString : '';
 
   // ── Imprimir si el browser lo pidió explícitamente ───────────────────────
   // pos.print_request=true: solo index.html v39+. Sin este flag → browser imprime por su cuenta.
@@ -122,13 +123,33 @@ function procesarVenta(data) {
     printDispatched = imprimirTicketInternamente(data, correlativoFinal, pos.printerId, nfResult);
   }
 
+  // ── Log de auditoría: creación de venta ────────────────────────────────────
+  try {
+    var actor = _audExtraerActor(data);
+    auditarLog('VENTAS_CABECERA', idVenta, {
+      usuario: actor.usuario, rol: actor.rol,
+      source: 'ME_CREAR_VENTA',
+      accion: 'crear',
+      autorizadoPor: actor.autorizadoPor || null,
+      ref: {
+        correlativo: correlativoFinal,
+        tipoDoc:     header.tipoDoc,
+        formaPago:   header.metodo || 'EFECTIVO',
+        total:       header.total,
+        nfEstado:    nfEstado,
+        idCaja:      pos.cajaId || ''
+      },
+      motivo: ''
+    });
+  } catch(_){}
+
   // ── Auto-registro de jornada en MOS (idempotente por nombre + fecha) ───────
   try { _registrarJornadaEnMOS(String(auth.vendedor || '')); } catch(eJ) {
     Logger.log('Auto-jornada MOS: ' + eJ.message);
   }
 
   return { idVenta: idVenta, correlativo: correlativoFinal, printDispatched: printDispatched,
-           nfEstado: nfEstado, nfHash: nfHash, nfEnlace: nfEnlace };
+           nfEstado: nfEstado, nfHash: nfHash, nfEnlace: nfEnlace, nfQrString: nfQrString };
 }
 
 // Registra la jornada del vendedor en ProyectoMOS al procesar su primera venta del día.
@@ -269,6 +290,11 @@ function verificarYAgregaCliente(doc, nombre, tipoDoc, direccion) {
 // ── Correlativo O(1) con LockService ─────────────────────────────────────────
 // Hoja CORRELATIVOS: encabezados Serie | Siguiente
 // Crea la hoja automáticamente si no existe.
+//
+// IMPORTANTE — Anti race condition:
+// Timeout subido a 30s y SIN fallback Math.max() (peligroso: bajo carga simultánea
+// dos requests podían retornar el mismo número). Si timeout, se LANZA EXCEPCIÓN
+// con código RESERVA_OCUPADA para que el frontend reintente con backoff exponencial.
 function obtenerSiguienteCorrelativoRapido(ss, serie) {
   var sheet = ss.getSheetByName('CORRELATIVOS');
   if (!sheet) {
@@ -281,20 +307,11 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
   }
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(6000); } catch (e) {
-    // Contención: tomar el mayor entre CORRELATIVOS y O(n) para no retroceder
-    var sheetCabFb = ss.getSheetByName('VENTAS_CABECERA');
-    var numON = sheetCabFb ? obtenerSiguienteCorrelativo(sheetCabFb, serie) : 1;
-    try {
-      var dataFb = sheet.getDataRange().getValues();
-      for (var fi = 1; fi < dataFb.length; fi++) {
-        if (String(dataFb[fi][0]) === serie) {
-          numON = Math.max(numON, parseInt(dataFb[fi][1], 10) || 1);
-          break;
-        }
-      }
-    } catch(e2) {}
-    return numON;
+  var lockOK = false;
+  try { lock.waitLock(30000); lockOK = true; }  // 30s timeout
+  catch (e) {
+    // NO fallback Math.max() — propaga error explícito para que frontend reintente.
+    throw new Error('RESERVA_OCUPADA: no se pudo obtener correlativo tras 30s. Reintenta.');
   }
 
   try {
@@ -302,9 +319,11 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][0]) === serie) {
         var siguiente = parseInt(data[i][1], 10) || 1;
-        // Anti-duplicado: si CORRELATIVOS quedó detrás de la realidad, avanzar
+        // Anti-duplicado defensivo: si CORRELATIVOS quedó detrás (ej. por edición
+        // manual de la hoja), avanzar hasta encontrar uno libre.
         while (correlativoYaExiste(ss, serie, siguiente)) { siguiente++; }
         sheet.getRange(i + 1, 2).setValue(siguiente + 1);
+        SpreadsheetApp.flush();  // garantiza commit antes de soltar el lock
         return siguiente;
       }
     }
@@ -312,9 +331,10 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
     var sheetCab2 = ss.getSheetByName('VENTAS_CABECERA');
     var initial2  = sheetCab2 ? obtenerSiguienteCorrelativo(sheetCab2, serie) : 1;
     sheet.appendRow([serie, initial2 + 1]);
+    SpreadsheetApp.flush();
     return initial2;
   } finally {
-    lock.releaseLock();
+    if (lockOK) lock.releaseLock();
   }
 }
 
