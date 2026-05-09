@@ -104,65 +104,99 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
 // por skuBase y enviarla a WH para que el operador despache.
 // ════════════════════════════════════════════════════════════════════════
 function enviarPickupAWH(ss, idGuia, cajaId, vendedor, zona, totalesPorCodBarras) {
-  var sheetPres = ss.getSheetByName('PRESENTACIONES');
-  if (!sheetPres) { Logger.log('PRESENTACIONES no existe — skip pickup'); return; }
+  // El catálogo de productos NO vive en MosExpress. Vive en ProyectoMOS_DB
+  // (PRODUCTOS_MASTER + EQUIVALENCIAS), accesible vía Script Property MOS_SS_ID.
+  // MosExpress siempre lee desde ahí (ver Catalogo.gs:descargarCatalogo).
+  var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID') || '';
+  if (!mosSsId) { Logger.log('MOS_SS_ID no configurado — skip pickup'); return; }
 
-  // 1. Resolver cod_barras → skuBase + nombre vía PRESENTACIONES
-  //    También consideramos EQUIVALENCIAS para mapear códigos alternativos.
-  var presData = sheetPres.getDataRange().getValues();
-  var hdrsP    = presData[0];
-  var iCodP    = hdrsP.indexOf('Cod_Barras');
-  var iSkuP    = hdrsP.indexOf('SKU_Base');
-  var iDescP   = hdrsP.indexOf('Descripcion');
-  if (iCodP < 0 || iSkuP < 0) { Logger.log('Columnas PRESENTACIONES incompletas'); return; }
+  var mosSS;
+  try { mosSS = SpreadsheetApp.openById(mosSsId); }
+  catch(e) { Logger.log('No se pudo abrir MOS_SS_ID: ' + e.message); return; }
 
-  var codASku = {};   // cod_barras → skuBase
-  var skuANombre = {}; // skuBase → descripción más larga (representativa)
-  for (var p = 1; p < presData.length; p++) {
-    var cod = String(presData[p][iCodP] || '').trim();
-    var sku = String(presData[p][iSkuP] || '').trim();
-    var desc = iDescP >= 0 ? String(presData[p][iDescP] || '').trim() : '';
-    if (cod && sku) codASku[cod] = sku;
-    if (sku && desc && (!skuANombre[sku] || desc.length > skuANombre[sku].length)) {
-      skuANombre[sku] = desc;
+  var sheetProds = mosSS.getSheetByName('PRODUCTOS_MASTER');
+  if (!sheetProds) { Logger.log('PRODUCTOS_MASTER no existe en MOS — skip pickup'); return; }
+
+  // 1. Resolver cod_barras → skuBase + nombre vía PRODUCTOS_MASTER (de MOS).
+  //    Schema MOS: cada presentación es una fila con idProducto, skuBase,
+  //    codigoBarra, descripcion. skuBase agrupa el grupo canónico.
+  var prodData = sheetProds.getDataRange().getValues();
+  var hdrsP    = prodData[0].map(function(h){ return String(h); });
+  // Búsqueda flexible por nombre — soporta variaciones por si el schema migra
+  function _findCol(targets) {
+    for (var t = 0; t < targets.length; t++) {
+      var idx = hdrsP.indexOf(targets[t]); if (idx >= 0) return idx;
     }
+    return -1;
+  }
+  var iIdP   = _findCol(['idProducto', 'Id_Producto', 'ID_Producto']);
+  var iSkuP  = _findCol(['skuBase', 'SKU_Base', 'sku']);
+  var iCodP  = _findCol(['codigoBarra', 'Cod_Barras', 'codigo_barra']);
+  var iDescP = _findCol(['descripcion', 'Descripcion', 'nombre']);
+  if (iCodP < 0 && iIdP < 0) { Logger.log('Columnas PRODUCTOS_MASTER incompletas (sin codigoBarra/idProducto)'); return; }
+
+  var codASku    = {}; // cod_barras (o idProducto) → skuBase
+  var skuANombre = {}; // skuBase → descripción más larga (representativa)
+  var skuACodigos = {}; // skuBase → set de codigosOriginales conocidos del catálogo
+  for (var p = 1; p < prodData.length; p++) {
+    var idP  = iIdP   >= 0 ? String(prodData[p][iIdP]   || '').trim() : '';
+    var sku  = iSkuP  >= 0 ? String(prodData[p][iSkuP]  || '').trim() : '';
+    var cod  = iCodP  >= 0 ? String(prodData[p][iCodP]  || '').trim() : '';
+    var desc = iDescP >= 0 ? String(prodData[p][iDescP] || '').trim() : '';
+    var skuFinal = sku || idP; // si no hay skuBase, usar idProducto como agrupador
+    if (!skuFinal) continue;
+    // Cualquier código identificador apunta al mismo skuFinal
+    if (cod) codASku[cod] = skuFinal;
+    if (idP) codASku[idP] = skuFinal;
+    if (desc && (!skuANombre[skuFinal] || desc.length > skuANombre[skuFinal].length)) {
+      skuANombre[skuFinal] = desc;
+    }
+    if (!skuACodigos[skuFinal]) skuACodigos[skuFinal] = {};
+    if (cod) skuACodigos[skuFinal][cod] = true;
+    if (idP) skuACodigos[skuFinal][idP] = true;
   }
 
-  // EQUIVALENCIAS: mapear códigos alternativos al mismo skuBase
-  var sheetEq = ss.getSheetByName('EQUIVALENCIAS');
+  // EQUIVALENCIAS (también en MOS): codigoBarra alternativo → skuBase del producto
+  var sheetEq = mosSS.getSheetByName('EQUIVALENCIAS');
   if (sheetEq) {
     var eqData = sheetEq.getDataRange().getValues();
-    var hdrsE  = eqData[0];
+    var hdrsE  = eqData[0].map(function(h){ return String(h); });
     var iCodE  = hdrsE.indexOf('codigoBarra') >= 0 ? hdrsE.indexOf('codigoBarra') : hdrsE.indexOf('Cod_Alias');
     var iSkuE  = hdrsE.indexOf('skuBase')    >= 0 ? hdrsE.indexOf('skuBase')    : hdrsE.indexOf('Cod_Barras_Real');
     if (iCodE >= 0 && iSkuE >= 0) {
       for (var e = 1; e < eqData.length; e++) {
         var ca = String(eqData[e][iCodE] || '').trim();
         var sb = String(eqData[e][iSkuE] || '').trim();
-        if (ca && sb && !codASku[ca]) codASku[ca] = sb;
+        if (ca && sb) {
+          if (!codASku[ca]) codASku[ca] = sb;
+          if (!skuACodigos[sb]) skuACodigos[sb] = {};
+          skuACodigos[sb][ca] = true;
+        }
       }
     }
   }
 
   // 2. Agrupar totales por skuBase
-  var porSku = {}; // sku → { solicitado, codigosOriginales: [] }
+  var porSku = {}; // sku → { solicitado, codigosOriginales: Set }
   Object.keys(totalesPorCodBarras).forEach(function(cod) {
-    var sku = codASku[cod] || cod; // fallback: usar el cod_barras como sku si no se resuelve
-    if (!porSku[sku]) porSku[sku] = { solicitado: 0, codigosOriginales: [] };
+    var sku = codASku[cod] || cod; // fallback: usar el cod como sku si no se resuelve
+    if (!porSku[sku]) porSku[sku] = { solicitado: 0, codigosOriginales: {} };
     porSku[sku].solicitado += parseFloat(totalesPorCodBarras[cod]) || 0;
-    if (porSku[sku].codigosOriginales.indexOf(cod) < 0) {
-      porSku[sku].codigosOriginales.push(cod);
-    }
+    porSku[sku].codigosOriginales[cod] = true;
   });
 
-  // 3. Construir array items con nombre legible
+  // 3. Construir items. codigosOriginales = los códigos efectivamente vendidos
+  //    + TODOS los equivalentes conocidos del catálogo. Así el operador WH
+  //    puede despachar escaneando cualquier presentación/alias y cuenta.
   var items = Object.keys(porSku).map(function(sku) {
+    var codsConocidos = skuACodigos[sku] || {};
+    Object.keys(codsConocidos).forEach(function(c){ porSku[sku].codigosOriginales[c] = true; });
     return {
       skuBase:           sku,
       nombre:            skuANombre[sku] || sku,
       solicitado:        porSku[sku].solicitado,
       despachado:        0,
-      codigosOriginales: porSku[sku].codigosOriginales
+      codigosOriginales: Object.keys(porSku[sku].codigosOriginales)
     };
   });
   if (!items.length) return;
