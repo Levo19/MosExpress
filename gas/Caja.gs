@@ -264,6 +264,10 @@ function anularVentaIndividual(data) {
         });
       } catch(_){}
 
+      // Avisar a WH que descuente del pickup origen (si existe y no está cerrado).
+      // No bloquea ni rompe la anulación si falla.
+      try { notificarAnulacionPickupAWH(data.ventaId); } catch(_){}
+
       return ContentService.createTextOutput(JSON.stringify({
         status: "success", mensaje: "Venta anulada correctamente"
       })).setMimeType(ContentService.MimeType.JSON);
@@ -281,12 +285,16 @@ function anulacionMasiva(data) {
 
   var filas = sheet.getDataRange().getValues();
   var anulados = 0;
+  var idsAnulados = [];
   for (var i = 1; i < filas.length; i++) {
     if (data.ids.indexOf(String(filas[i][0])) !== -1) {
       sheet.getRange(i + 1, 9).setValue('ANULADO');
       anulados++;
+      idsAnulados.push(String(filas[i][0]));
     }
   }
+  // Notificar WH para descontar de pickups origen (no bloquea)
+  try { idsAnulados.forEach(function(id){ notificarAnulacionPickupAWH(id); }); } catch(_){}
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", anulados: anulados
   })).setMimeType(ContentService.MimeType.JSON);

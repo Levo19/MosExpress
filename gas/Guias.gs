@@ -190,25 +190,201 @@ function enviarPickupAWH(ss, idGuia, cajaId, vendedor, zona, totalesPorCodBarras
     return JSON.parse(res.getContentText());
   }
 
+  // Intentar 2 caminos. Si AMBOS fallan, persistir en cola para reintento horario.
+  var entregado = false;
+  var ultimoError = '';
   if (whUrl) {
-    try { _postJson(whUrl); Logger.log('Pickup → WH directo OK · idGuia=' + idGuia); return; }
-    catch(e1) { Logger.log('Pickup → WH directo falló: ' + e1.message + ' — intento MOS bridge'); }
-  }
-  if (mosUrl) {
-    // MOS no tiene endpoint propio para esto — pasamos vía generico que MOS proxy
-    var mosPayload = Object.assign({ action: 'forwardWHPickup' }, payload);
-    delete mosPayload.action; mosPayload.action = 'forwardWHPickup';
     try {
-      var resM = UrlFetchApp.fetch(mosUrl, {
+      var r1 = _postJson(whUrl);
+      if (r1 && r1.ok !== false) { entregado = true; Logger.log('Pickup → WH directo OK · idGuia=' + idGuia); }
+      else { ultimoError = 'WH directo: ' + (r1 && r1.error || 'sin ok'); Logger.log(ultimoError); }
+    } catch(e1) { ultimoError = 'WH directo: ' + e1.message; Logger.log(ultimoError); }
+  }
+  if (!entregado && mosUrl) {
+    var mosPayload = Object.assign({}, payload, { action: 'forwardWHPickup' });
+    try {
+      var r2 = UrlFetchApp.fetch(mosUrl, {
         method: 'post', contentType: 'text/plain',
         payload: JSON.stringify(mosPayload),
         muteHttpExceptions: true, followRedirects: true
       });
-      Logger.log('Pickup → MOS bridge OK · idGuia=' + idGuia);
-    } catch(e2) { Logger.log('Pickup → MOS bridge falló: ' + e2.message); }
-  } else {
-    Logger.log('Pickup: sin WH_GAS_URL ni MOS_WEB_APP_URL — saltando envío');
+      var jr2 = JSON.parse(r2.getContentText() || '{}');
+      if (jr2.ok !== false) { entregado = true; Logger.log('Pickup → MOS bridge OK · idGuia=' + idGuia); }
+      else { ultimoError = 'MOS bridge: ' + (jr2.error || 'sin ok'); Logger.log(ultimoError); }
+    } catch(e2) { ultimoError = 'MOS bridge: ' + e2.message; Logger.log(ultimoError); }
   }
+  if (!entregado) {
+    if (!whUrl && !mosUrl) ultimoError = 'sin WH_GAS_URL ni MOS_WEB_APP_URL';
+    _persistirPickupPendienteEnvio(payload, ultimoError);
+  }
+}
+
+// ── Cola de pickups que NO se pudieron enviar a WH ────────────
+// Se guardan en hoja PICKUPS_PENDIENTES_ENVIO para reintento por trigger.
+// Cols: idGuiaME, payload (JSON), intentos, ultimoIntento, ultimoError, estado.
+function _getColaPickupsPendientes() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('PICKUPS_PENDIENTES_ENVIO');
+  if (!sheet) {
+    sheet = ss.insertSheet('PICKUPS_PENDIENTES_ENVIO');
+    sheet.appendRow(['idGuiaME','payload','intentos','ultimoIntento','ultimoError','estado']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function _persistirPickupPendienteEnvio(payload, error) {
+  try {
+    var sheet = _getColaPickupsPendientes();
+    // Idempotencia: si ya existe esa idGuiaME en cola, solo incrementa intentos
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(payload.idGuiaME)) {
+        sheet.getRange(i + 1, 3).setValue((parseInt(data[i][2]) || 0) + 1);
+        sheet.getRange(i + 1, 4).setValue(new Date());
+        sheet.getRange(i + 1, 5).setValue(error || '');
+        return;
+      }
+    }
+    sheet.appendRow([
+      String(payload.idGuiaME), JSON.stringify(payload),
+      1, new Date(), error || '', 'PENDIENTE'
+    ]);
+    Logger.log('Pickup persistido en cola · idGuiaME=' + payload.idGuiaME);
+  } catch(e) {
+    Logger.log('Falló persistencia cola pickup: ' + e.message);
+  }
+}
+
+// Trigger horario: lee PENDIENTES, reintenta envío, marca ENVIADO si éxito.
+// Se rinde tras 8 intentos para no spammear.
+function reintentarPickupsPendientes() {
+  var sheet = _getColaPickupsPendientes();
+  if (sheet.getLastRow() < 2) return { ok: true, mensaje: 'Cola vacía' };
+  var data = sheet.getDataRange().getValues();
+  var props  = PropertiesService.getScriptProperties();
+  var whUrl  = props.getProperty('WH_GAS_URL') || '';
+  var mosUrl = props.getProperty('MOS_WEB_APP_URL') || '';
+  var enviados = 0, intentados = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    var estado   = String(data[i][5] || '');
+    var intentos = parseInt(data[i][2]) || 0;
+    if (estado !== 'PENDIENTE') continue;
+    if (intentos >= 8) {
+      sheet.getRange(i + 1, 6).setValue('ABANDONADO');
+      continue;
+    }
+    var payload; try { payload = JSON.parse(data[i][1]); } catch(_){ continue; }
+    intentados++;
+    var ok = false, err = '';
+    if (whUrl) {
+      try {
+        var r1 = UrlFetchApp.fetch(whUrl, {
+          method:'post', contentType:'text/plain',
+          payload: JSON.stringify(payload), muteHttpExceptions:true, followRedirects:true
+        });
+        var j1 = JSON.parse(r1.getContentText() || '{}');
+        if (j1.ok !== false) ok = true; else err = 'WH: ' + (j1.error || 'sin ok');
+      } catch(e1) { err = 'WH: ' + e1.message; }
+    }
+    if (!ok && mosUrl) {
+      try {
+        var mp = Object.assign({}, payload, { action: 'forwardWHPickup' });
+        var r2 = UrlFetchApp.fetch(mosUrl, {
+          method:'post', contentType:'text/plain',
+          payload: JSON.stringify(mp), muteHttpExceptions:true, followRedirects:true
+        });
+        var j2 = JSON.parse(r2.getContentText() || '{}');
+        if (j2.ok !== false) ok = true; else err = 'MOS: ' + (j2.error || 'sin ok');
+      } catch(e2) { err = 'MOS: ' + e2.message; }
+    }
+    sheet.getRange(i + 1, 3).setValue(intentos + 1);
+    sheet.getRange(i + 1, 4).setValue(new Date());
+    if (ok) {
+      sheet.getRange(i + 1, 6).setValue('ENVIADO');
+      enviados++;
+    } else {
+      sheet.getRange(i + 1, 5).setValue(err);
+    }
+  }
+  return { ok: true, intentados: intentados, enviados: enviados };
+}
+
+// Ejecutar 1 vez desde editor para activar reintentos automáticos cada 5min.
+function setupPickupRetryTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(t){
+    if (t.getHandlerFunction() === 'reintentarPickupsPendientes') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('reintentarPickupsPendientes').timeBased().everyMinutes(5).create();
+  return { ok: true, mensaje: 'Trigger 5min reintentarPickupsPendientes creado' };
+}
+
+// ── Hook anulación: avisar a WH que descuente del pickup ───────
+// Llamado desde anularVentaIndividual. Lee VENTAS_DETALLE de la venta y
+// notifica a WH. No bloquea — solo loggea si falla.
+function notificarAnulacionPickupAWH(idVenta) {
+  if (!idVenta) return;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var shVC = ss.getSheetByName('VENTAS_CABECERA');
+    var shVD = ss.getSheetByName('VENTAS_DETALLE');
+    if (!shVC || !shVD) return;
+    var vcData = shVC.getDataRange().getValues();
+    var idCaja = '';
+    for (var v = 1; v < vcData.length; v++) {
+      if (String(vcData[v][0]) === String(idVenta)) { idCaja = String(vcData[v][10] || ''); break; }
+    }
+    if (!idCaja) { Logger.log('notificarAnulacionPickup: caja no encontrada para ' + idVenta); return; }
+
+    // Acumular cantidades por código
+    var vdData = shVD.getDataRange().getValues();
+    var porCod = {};
+    for (var d = 1; d < vdData.length; d++) {
+      if (String(vdData[d][0]) !== String(idVenta)) continue;
+      // VENTAS_DETALLE estructura — col 1=Cod_Barras, col 2=Cantidad (ajusta si difiere)
+      var cod = String(vdData[d][1] || '').trim();
+      var qty = parseFloat(vdData[d][2]) || 0;
+      if (!cod || qty <= 0) continue;
+      porCod[cod] = (porCod[cod] || 0) + qty;
+    }
+    var itemsAnulados = Object.keys(porCod).map(function(c){
+      return { codigoBarra: c, cantidad: porCod[c] };
+    });
+    if (!itemsAnulados.length) return;
+
+    var props  = PropertiesService.getScriptProperties();
+    var whUrl  = props.getProperty('WH_GAS_URL') || '';
+    var mosUrl = props.getProperty('MOS_WEB_APP_URL') || '';
+    var payload = {
+      action: 'pickupDescontarVenta',
+      idCaja: idCaja, itemsAnulados: itemsAnulados
+    };
+
+    if (whUrl) {
+      try {
+        UrlFetchApp.fetch(whUrl, {
+          method:'post', contentType:'text/plain',
+          payload: JSON.stringify(payload), muteHttpExceptions:true
+        });
+        Logger.log('Anulación → WH OK · venta=' + idVenta);
+        return;
+      } catch(e1) { Logger.log('Anulación → WH falló: ' + e1.message); }
+    }
+    if (mosUrl) {
+      try {
+        // Bridge vía MOS: usa la action genérica forwardWHPickup pero con otro action interno
+        var bridge = { action: 'forwardWHAction', whAction: 'pickupDescontarVenta',
+                       idCaja: idCaja, itemsAnulados: itemsAnulados };
+        UrlFetchApp.fetch(mosUrl, {
+          method:'post', contentType:'text/plain',
+          payload: JSON.stringify(bridge), muteHttpExceptions:true
+        });
+        Logger.log('Anulación → MOS bridge OK · venta=' + idVenta);
+      } catch(e2) { Logger.log('Anulación → MOS bridge falló: ' + e2.message); }
+    }
+  } catch(e) { Logger.log('notificarAnulacionPickup: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════════════════
