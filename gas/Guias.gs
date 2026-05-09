@@ -93,6 +93,122 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
     sheetStock.getRange(newStart, 1, nuevasFilas.length, 1).setNumberFormat('@STRING@');
     sheetStock.getRange(newStart, 1, nuevasFilas.length, 3).setValues(nuevasFilas);
   }
+
+  // 6. Enviar pickup a WH (no bloquea — si falla solo loggea)
+  try { enviarPickupAWH(ss, idGuia, cajaId, vendedor, zona, totales); }
+  catch(e) { Logger.log('Pickup → WH falló: ' + e.message); }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// PICKUP A WH — al cerrar caja, generar lista de reposición agrupada
+// por skuBase y enviarla a WH para que el operador despache.
+// ════════════════════════════════════════════════════════════════════════
+function enviarPickupAWH(ss, idGuia, cajaId, vendedor, zona, totalesPorCodBarras) {
+  var sheetPres = ss.getSheetByName('PRESENTACIONES');
+  if (!sheetPres) { Logger.log('PRESENTACIONES no existe — skip pickup'); return; }
+
+  // 1. Resolver cod_barras → skuBase + nombre vía PRESENTACIONES
+  //    También consideramos EQUIVALENCIAS para mapear códigos alternativos.
+  var presData = sheetPres.getDataRange().getValues();
+  var hdrsP    = presData[0];
+  var iCodP    = hdrsP.indexOf('Cod_Barras');
+  var iSkuP    = hdrsP.indexOf('SKU_Base');
+  var iDescP   = hdrsP.indexOf('Descripcion');
+  if (iCodP < 0 || iSkuP < 0) { Logger.log('Columnas PRESENTACIONES incompletas'); return; }
+
+  var codASku = {};   // cod_barras → skuBase
+  var skuANombre = {}; // skuBase → descripción más larga (representativa)
+  for (var p = 1; p < presData.length; p++) {
+    var cod = String(presData[p][iCodP] || '').trim();
+    var sku = String(presData[p][iSkuP] || '').trim();
+    var desc = iDescP >= 0 ? String(presData[p][iDescP] || '').trim() : '';
+    if (cod && sku) codASku[cod] = sku;
+    if (sku && desc && (!skuANombre[sku] || desc.length > skuANombre[sku].length)) {
+      skuANombre[sku] = desc;
+    }
+  }
+
+  // EQUIVALENCIAS: mapear códigos alternativos al mismo skuBase
+  var sheetEq = ss.getSheetByName('EQUIVALENCIAS');
+  if (sheetEq) {
+    var eqData = sheetEq.getDataRange().getValues();
+    var hdrsE  = eqData[0];
+    var iCodE  = hdrsE.indexOf('codigoBarra') >= 0 ? hdrsE.indexOf('codigoBarra') : hdrsE.indexOf('Cod_Alias');
+    var iSkuE  = hdrsE.indexOf('skuBase')    >= 0 ? hdrsE.indexOf('skuBase')    : hdrsE.indexOf('Cod_Barras_Real');
+    if (iCodE >= 0 && iSkuE >= 0) {
+      for (var e = 1; e < eqData.length; e++) {
+        var ca = String(eqData[e][iCodE] || '').trim();
+        var sb = String(eqData[e][iSkuE] || '').trim();
+        if (ca && sb && !codASku[ca]) codASku[ca] = sb;
+      }
+    }
+  }
+
+  // 2. Agrupar totales por skuBase
+  var porSku = {}; // sku → { solicitado, codigosOriginales: [] }
+  Object.keys(totalesPorCodBarras).forEach(function(cod) {
+    var sku = codASku[cod] || cod; // fallback: usar el cod_barras como sku si no se resuelve
+    if (!porSku[sku]) porSku[sku] = { solicitado: 0, codigosOriginales: [] };
+    porSku[sku].solicitado += parseFloat(totalesPorCodBarras[cod]) || 0;
+    if (porSku[sku].codigosOriginales.indexOf(cod) < 0) {
+      porSku[sku].codigosOriginales.push(cod);
+    }
+  });
+
+  // 3. Construir array items con nombre legible
+  var items = Object.keys(porSku).map(function(sku) {
+    return {
+      skuBase:           sku,
+      nombre:            skuANombre[sku] || sku,
+      solicitado:        porSku[sku].solicitado,
+      despachado:        0,
+      codigosOriginales: porSku[sku].codigosOriginales
+    };
+  });
+  if (!items.length) return;
+
+  // 4. POST a WH — directo si WH_GAS_URL está, sino vía MOS bridge
+  var props   = PropertiesService.getScriptProperties();
+  var whUrl   = props.getProperty('WH_GAS_URL') || '';
+  var mosUrl  = props.getProperty('MOS_WEB_APP_URL') || '';
+  var payload = {
+    action:    'recibirPickupDeME',
+    idGuiaME:  idGuia,
+    idCaja:    cajaId,
+    idZona:    zona,
+    cajero:    vendedor,
+    items:     items
+  };
+
+  function _postJson(url) {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'text/plain',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+    return JSON.parse(res.getContentText());
+  }
+
+  if (whUrl) {
+    try { _postJson(whUrl); Logger.log('Pickup → WH directo OK · idGuia=' + idGuia); return; }
+    catch(e1) { Logger.log('Pickup → WH directo falló: ' + e1.message + ' — intento MOS bridge'); }
+  }
+  if (mosUrl) {
+    // MOS no tiene endpoint propio para esto — pasamos vía generico que MOS proxy
+    var mosPayload = Object.assign({ action: 'forwardWHPickup' }, payload);
+    delete mosPayload.action; mosPayload.action = 'forwardWHPickup';
+    try {
+      var resM = UrlFetchApp.fetch(mosUrl, {
+        method: 'post', contentType: 'text/plain',
+        payload: JSON.stringify(mosPayload),
+        muteHttpExceptions: true, followRedirects: true
+      });
+      Logger.log('Pickup → MOS bridge OK · idGuia=' + idGuia);
+    } catch(e2) { Logger.log('Pickup → MOS bridge falló: ' + e2.message); }
+  } else {
+    Logger.log('Pickup: sin WH_GAS_URL ni MOS_WEB_APP_URL — saltando envío');
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════
