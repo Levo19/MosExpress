@@ -1326,6 +1326,57 @@
       }
     }
 
+    // ── Wake Lock · mantener pantalla activa durante la sesión de caja ──
+    let _meWakeSentinel = null;
+    let _meWakeShouldBeOn = false;
+
+    function _meWakeRenderChip() {
+      let chip = document.getElementById('meWakeChip');
+      if (!_meWakeShouldBeOn) {
+        if (chip) chip.remove();
+        return;
+      }
+      if (!chip) {
+        chip = document.createElement('div');
+        chip.id = 'meWakeChip';
+        chip.style.cssText = 'position:fixed;top:8px;right:8px;z-index:9998;display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:9999px;background:linear-gradient(135deg,rgba(251,191,36,0.18),rgba(245,158,11,0.12));border:1px solid rgba(251,191,36,0.5);color:#fcd34d;font-size:11px;font-weight:800;backdrop-filter:blur(4px);box-shadow:0 2px 6px rgba(0,0,0,0.3);pointer-events:none;font-family:system-ui,sans-serif';
+        chip.innerHTML = '<span>🔆</span><span>Pantalla activa</span>';
+        document.body.appendChild(chip);
+      }
+    }
+
+    async function _meAcquireWakeLock() {
+      _meWakeShouldBeOn = true;
+      _meWakeRenderChip();
+      try {
+        if (!('wakeLock' in navigator)) return;
+        if (_meWakeSentinel && !_meWakeSentinel.released) return;
+        _meWakeSentinel = await navigator.wakeLock.request('screen');
+        _meWakeSentinel.addEventListener('release', () => {
+          // Si seguimos queriendo, reacquire al volver visible
+          if (_meWakeShouldBeOn && document.visibilityState === 'visible') {
+            setTimeout(_meAcquireWakeLock, 200);
+          }
+        });
+      } catch(_){ /* el SO podría rechazar (modo ahorro) */ }
+    }
+
+    async function _meReleaseWakeLock() {
+      _meWakeShouldBeOn = false;
+      _meWakeRenderChip();
+      try {
+        if (_meWakeSentinel && !_meWakeSentinel.released) await _meWakeSentinel.release();
+      } catch(_){}
+      _meWakeSentinel = null;
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && _meWakeShouldBeOn) _meAcquireWakeLock();
+    });
+
+    window._meAcquireWakeLock = _meAcquireWakeLock;
+    window._meReleaseWakeLock = _meReleaseWakeLock;
+
     // Persistent Storage · pide al SO no borrar localStorage. Silencioso.
     async function _pedirPersistentStorageME() {
       try {
@@ -4379,6 +4430,7 @@
                      cajaAbierta.value = true;
                      idCajaActual.value = cr.idCaja;
                      montoAperturaMemoria.value = cr.monto;
+                     try { window._meAcquireWakeLock && _meAcquireWakeLock(); } catch(_){}
                  } else {
                      // Caja de ayer: notificar cierre al GAS antes de descartar
                      if (cr.idCaja && !cr.idCaja.startsWith('CAJA-LOCAL-') &&
@@ -6252,6 +6304,7 @@
             localStorage.removeItem('mosexpress_cobrados_sesion');
             localStorage.removeItem('mosexpress_extras_sesion');
             localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto: montoAperturaMemoria.value, fecha: Date.now() }));
+            try { window._meAcquireWakeLock && _meAcquireWakeLock(); } catch(_){}
             procesandoCaja.value = false;
             agregarToast("Éxito", "Caja Aperturada");
             iniciarPollingZona(); // Arrancar polling de zona en segundo plano
@@ -6432,6 +6485,7 @@
                  } catch(e) {}
 
                  detenerPollingZona();
+                 try { window._meReleaseWakeLock && _meReleaseWakeLock(); } catch(_){}
                  cajaAbierta.value = false;
                  idCajaActual.value = '';
                  montoAperturaMemoria.value = 0;
