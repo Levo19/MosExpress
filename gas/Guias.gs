@@ -117,87 +117,131 @@ function enviarPickupAWH(ss, idGuia, cajaId, vendedor, zona, totalesPorCodBarras
   var sheetProds = mosSS.getSheetByName('PRODUCTOS_MASTER');
   if (!sheetProds) { Logger.log('PRODUCTOS_MASTER no existe en MOS — skip pickup'); return; }
 
-  // 1. Resolver cod_barras → skuBase + nombre vía PRODUCTOS_MASTER (de MOS).
-  //    Schema MOS: cada presentación es una fila con idProducto, skuBase,
-  //    codigoBarra, descripcion. skuBase agrupa el grupo canónico.
+  // 1. Indexar PRODUCTOS_MASTER + EQUIVALENCIAS.
+  //    Reglas WH (acordadas con el usuario):
+  //    - WH solo maneja CANÓNICOS (factorConversion=1). Las presentaciones
+  //      existen en MOS solo para que ME venda packs/cajas, pero al despacho
+  //      del almacén siempre se piden unidades del canónico.
+  //    - Códigos válidos para escanear en WH: codigoBarra del canónico +
+  //      codigoBarra de las EQUIVALENCIAS apuntando al mismo skuBase.
+  //      idProducto NO es escaneable (es solo ID de fila).
+  //      codigoBarra de presentaciones tampoco se acepta (factor != 1).
+  //    - Si la venta ME fue de una presentación con factor F, la cantidad
+  //      en el pickup se multiplica por F (ej: 2 packs de 12u → 24 unidades).
   var prodData = sheetProds.getDataRange().getValues();
   var hdrsP    = prodData[0].map(function(h){ return String(h); });
-  // Búsqueda flexible por nombre — soporta variaciones por si el schema migra
   function _findCol(targets) {
     for (var t = 0; t < targets.length; t++) {
       var idx = hdrsP.indexOf(targets[t]); if (idx >= 0) return idx;
     }
     return -1;
   }
-  var iIdP   = _findCol(['idProducto', 'Id_Producto', 'ID_Producto']);
-  var iSkuP  = _findCol(['skuBase', 'SKU_Base', 'sku']);
-  var iCodP  = _findCol(['codigoBarra', 'Cod_Barras', 'codigo_barra']);
-  var iDescP = _findCol(['descripcion', 'Descripcion', 'nombre']);
-  if (iCodP < 0 && iIdP < 0) { Logger.log('Columnas PRODUCTOS_MASTER incompletas (sin codigoBarra/idProducto)'); return; }
+  var iIdP    = _findCol(['idProducto', 'Id_Producto', 'ID_Producto']);
+  var iSkuP   = _findCol(['skuBase', 'SKU_Base', 'sku']);
+  var iCodP   = _findCol(['codigoBarra', 'Cod_Barras', 'codigo_barra']);
+  var iDescP  = _findCol(['descripcion', 'Descripcion', 'nombre']);
+  var iFactP  = _findCol(['factorConversion', 'Factor_Conversion', 'factor_conversion']);
+  if (iCodP < 0 && iIdP < 0) { Logger.log('Columnas PRODUCTOS_MASTER incompletas — skip pickup'); return; }
 
-  var codASku    = {}; // cod_barras (o idProducto) → skuBase
-  var skuANombre = {}; // skuBase → descripción más larga (representativa)
-  var skuACodigos = {}; // skuBase → set de codigosOriginales conocidos del catálogo
+  // codAFila[cod_o_idProducto] = { sku, factor, esCanonico, cod, desc }
+  // Nos sirve para resolver cualquier cod (canónico o presentación) → su sku + factor.
+  var codAFila = {};
+  // canonicoPorSku[sku] = { cod, desc, idP }  (la fila con factor=1 del sku)
+  var canonicoPorSku = {};
+  // equivalentesPorSku[sku] = [codigoBarra, codigoBarra, ...]
+  var equivalentesPorSku = {};
+
   for (var p = 1; p < prodData.length; p++) {
     var idP  = iIdP   >= 0 ? String(prodData[p][iIdP]   || '').trim() : '';
     var sku  = iSkuP  >= 0 ? String(prodData[p][iSkuP]  || '').trim() : '';
     var cod  = iCodP  >= 0 ? String(prodData[p][iCodP]  || '').trim() : '';
     var desc = iDescP >= 0 ? String(prodData[p][iDescP] || '').trim() : '';
-    var skuFinal = sku || idP; // si no hay skuBase, usar idProducto como agrupador
+    var fac  = iFactP >= 0 ? (parseFloat(String(prodData[p][iFactP] || '1').replace(',', '.')) || 1) : 1;
+    var skuFinal = sku || idP;
     if (!skuFinal) continue;
-    // Cualquier código identificador apunta al mismo skuFinal
-    if (cod) codASku[cod] = skuFinal;
-    if (idP) codASku[idP] = skuFinal;
-    if (desc && (!skuANombre[skuFinal] || desc.length > skuANombre[skuFinal].length)) {
-      skuANombre[skuFinal] = desc;
+    var esCanonico = (fac === 1);
+    var fila = { sku: skuFinal, factor: fac, esCanonico: esCanonico, cod: cod, desc: desc, idP: idP };
+    // Indexar por todos los identificadores posibles para resolver al recibir totales
+    if (cod) codAFila[cod] = fila;
+    if (idP) codAFila[idP] = fila;
+    if (esCanonico) {
+      // Guardar canónico — preferir el de descripción más larga si hay varios (raro)
+      if (!canonicoPorSku[skuFinal] ||
+          (desc && desc.length > (canonicoPorSku[skuFinal].desc || '').length)) {
+        canonicoPorSku[skuFinal] = { cod: cod, desc: desc, idP: idP };
+      }
     }
-    if (!skuACodigos[skuFinal]) skuACodigos[skuFinal] = {};
-    if (cod) skuACodigos[skuFinal][cod] = true;
-    if (idP) skuACodigos[skuFinal][idP] = true;
   }
 
-  // EQUIVALENCIAS (también en MOS): codigoBarra alternativo → skuBase del producto
+  // EQUIVALENCIAS — apuntan a un skuBase con factor implícito 1
   var sheetEq = mosSS.getSheetByName('EQUIVALENCIAS');
   if (sheetEq) {
     var eqData = sheetEq.getDataRange().getValues();
     var hdrsE  = eqData[0].map(function(h){ return String(h); });
     var iCodE  = hdrsE.indexOf('codigoBarra') >= 0 ? hdrsE.indexOf('codigoBarra') : hdrsE.indexOf('Cod_Alias');
     var iSkuE  = hdrsE.indexOf('skuBase')    >= 0 ? hdrsE.indexOf('skuBase')    : hdrsE.indexOf('Cod_Barras_Real');
+    var iActE  = hdrsE.indexOf('activo');
     if (iCodE >= 0 && iSkuE >= 0) {
       for (var e = 1; e < eqData.length; e++) {
         var ca = String(eqData[e][iCodE] || '').trim();
         var sb = String(eqData[e][iSkuE] || '').trim();
-        if (ca && sb) {
-          if (!codASku[ca]) codASku[ca] = sb;
-          if (!skuACodigos[sb]) skuACodigos[sb] = {};
-          skuACodigos[sb][ca] = true;
-        }
+        var act = iActE >= 0 ? String(eqData[e][iActE]) : '';
+        if (!ca || !sb) continue;
+        if (act && (act === '0' || act.toUpperCase() === 'FALSE' || act.toUpperCase() === 'INACTIVO')) continue;
+        if (!codAFila[ca]) codAFila[ca] = { sku: sb, factor: 1, esCanonico: false, esEquivalente: true, cod: ca };
+        if (!equivalentesPorSku[sb]) equivalentesPorSku[sb] = [];
+        if (equivalentesPorSku[sb].indexOf(ca) < 0) equivalentesPorSku[sb].push(ca);
       }
     }
   }
 
-  // 2. Agrupar totales por skuBase
-  var porSku = {}; // sku → { solicitado, codigosOriginales: Set }
+  // 2. Agrupar totales por skuBase, multiplicando por factor cuando aplica.
+  //    Resultado: porSku[sku].solicitado en UNIDADES del canónico.
+  var porSku = {};
   Object.keys(totalesPorCodBarras).forEach(function(cod) {
-    var sku = codASku[cod] || cod; // fallback: usar el cod como sku si no se resuelve
-    if (!porSku[sku]) porSku[sku] = { solicitado: 0, codigosOriginales: {} };
-    porSku[sku].solicitado += parseFloat(totalesPorCodBarras[cod]) || 0;
-    porSku[sku].codigosOriginales[cod] = true;
+    var fila = codAFila[cod];
+    var qty  = parseFloat(totalesPorCodBarras[cod]) || 0;
+    if (qty <= 0) return;
+    if (!fila) {
+      // Cod desconocido en el catálogo — fallback defensivo: usarlo como sku
+      // (mejor mostrarlo en el pickup que perderlo silencioso)
+      if (!porSku[cod]) porSku[cod] = { solicitado: 0 };
+      porSku[cod].solicitado += qty;
+      return;
+    }
+    var sku = fila.sku;
+    if (!porSku[sku]) porSku[sku] = { solicitado: 0 };
+    // Multiplicar por factor — el pickup en WH siempre habla en unidades del canónico
+    porSku[sku].solicitado += qty * fila.factor;
   });
 
-  // 3. Construir items. codigosOriginales = los códigos efectivamente vendidos
-  //    + TODOS los equivalentes conocidos del catálogo. Así el operador WH
-  //    puede despachar escaneando cualquier presentación/alias y cuenta.
-  var items = Object.keys(porSku).map(function(sku) {
-    var codsConocidos = skuACodigos[sku] || {};
-    Object.keys(codsConocidos).forEach(function(c){ porSku[sku].codigosOriginales[c] = true; });
-    return {
+  // 3. Construir items con SOLO codigoBarra del canónico + equivalentes.
+  //    NO se incluyen idProducto ni codigoBarra de presentaciones.
+  var items = [];
+  Object.keys(porSku).forEach(function(sku) {
+    if (porSku[sku].solicitado <= 0) return;
+    var canonico    = canonicoPorSku[sku];
+    var equivCods   = equivalentesPorSku[sku] || [];
+    var codigosValidos = [];
+    if (canonico && canonico.cod) codigosValidos.push(canonico.cod);
+    equivCods.forEach(function(c){ if (codigosValidos.indexOf(c) < 0) codigosValidos.push(c); });
+    // Si no encontramos canónico ni equivalentes, fallback al primer código que
+    // resolvió este sku (ej: el catálogo tiene la fila pero sin canónico explícito).
+    if (codigosValidos.length === 0) {
+      // Buscar cualquier cod que apunte a este sku
+      Object.keys(codAFila).forEach(function(c){
+        if (codAFila[c].sku === sku && codAFila[c].cod && codigosValidos.indexOf(codAFila[c].cod) < 0) {
+          codigosValidos.push(codAFila[c].cod);
+        }
+      });
+    }
+    items.push({
       skuBase:           sku,
-      nombre:            skuANombre[sku] || sku,
+      nombre:            (canonico && canonico.desc) ? canonico.desc : sku,
       solicitado:        porSku[sku].solicitado,
       despachado:        0,
-      codigosOriginales: Object.keys(porSku[sku].codigosOriginales)
-    };
+      codigosOriginales: codigosValidos
+    });
   });
   if (!items.length) return;
 
