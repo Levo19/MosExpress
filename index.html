@@ -1096,6 +1096,15 @@
         <button class="me-perm-status is-pedir" onclick="MePerms.pedir('audio')">PROBAR</button>
       </div>
 
+      <div class="me-perm-card" data-perm="install">
+        <span class="me-perm-icon">📱</span>
+        <div style="flex:1;min-width:0">
+          <p class="me-perm-name">Instalar como app</p>
+          <p class="me-perm-desc">Acceso directo desde la pantalla de inicio. Funciona offline.</p>
+        </div>
+        <button class="me-perm-status is-pedir" onclick="MePerms.pedir('install')">INSTALAR</button>
+      </div>
+
       <div class="me-perms-footer">
         <span class="me-perms-progress-text" id="mePermsProgress">0/0 listos</span>
         <button class="me-perms-btn-listo" id="mePermsBtnListo"
@@ -1107,8 +1116,12 @@
   <!-- Wizard permisos JS -->
   <script>
   (function(){
-    const PERMS = ['notifications', 'camera', 'microphone', 'geolocation', 'audio'];
+    const PERMS = ['notifications', 'camera', 'microphone', 'geolocation', 'audio', 'install'];
     const AUDIO_KEY = 'me_audio_tested_v';
+
+    let _installPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); _installPrompt = e; });
+    window.addEventListener('appinstalled', () => { _installPrompt = null; });
 
     // Detecta hardware físico — para no pedir permiso si el dispositivo no existe
     let _hwCache = null;
@@ -1143,6 +1156,18 @@
           const v = window._ME_PERMS_VERSION || 'unk';
           return localStorage.getItem(AUDIO_KEY + v) === '1' ? 'granted' : 'prompt';
         } catch(_) { return 'prompt'; }
+      }
+      if (perm === 'install') {
+        const standalone = window.matchMedia?.('(display-mode: standalone)').matches
+                        || window.navigator.standalone === true;
+        if (standalone) return 'granted';
+        try {
+          const v = window._ME_PERMS_VERSION || 'unk';
+          if (localStorage.getItem('me_install_dismissed_v' + v) === '1') return 'granted';
+        } catch(_){}
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) return 'prompt';
+        return _installPrompt ? 'prompt' : 'unsupported';
       }
       if (!navigator.permissions?.query) return 'prompt';
       try {
@@ -1179,7 +1204,7 @@
           pendientes++;
           if (btn) {
             btn.className = 'me-perm-status is-pedir';
-            btn.textContent = (p === 'audio') ? 'PROBAR' : 'AUTORIZAR';
+            btn.textContent = (p === 'audio') ? 'PROBAR' : (p === 'install') ? 'INSTALAR' : 'AUTORIZAR';
             btn.disabled = false;
           }
         }
@@ -1219,6 +1244,21 @@
           await new Promise((res, rej) => {
             navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 });
           });
+        } else if (perm === 'install') {
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+          if (isIOS) {
+            alert('📱 Instalar en iOS:\n\n1. Toca el botón Compartir\n2. Desliza y elige "Añadir a inicio"\n3. Toca "Añadir"\n\nLa app aparecerá en tu pantalla de inicio.');
+            try {
+              const v = window._ME_PERMS_VERSION || 'unk';
+              localStorage.setItem('me_install_dismissed_v' + v, '1');
+            } catch(_){}
+          } else if (_installPrompt) {
+            try {
+              _installPrompt.prompt();
+              const result = await _installPrompt.userChoice;
+              if (result.outcome === 'accepted') _installPrompt = null;
+            } catch(_){}
+          }
         } else if (perm === 'audio') {
           try {
             const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -1415,6 +1455,35 @@
             <svg v-if="verificandoDispositivo" class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
             REINTENTAR CONEXIÓN
         </button>
+        <div v-if="dispositivoEstadoMos !== 'INACTIVO'" class="mt-3">
+          <div class="text-xs text-gray-500 my-3 tracking-wider">─ o si está un admin contigo ─</div>
+          <button @click="abrirActivarInSitu" class="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 transition-colors">
+            🔑 ACTIVAR IN-SITU
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: Activar dispositivo in-situ con clave admin 8 dig -->
+    <div v-if="actInSituShow" class="fixed inset-0 z-[110] bg-black/85 flex items-center justify-center p-5">
+      <div class="bg-gray-800 rounded-2xl border border-emerald-500 p-5 w-full max-w-md text-white">
+        <div class="text-3xl mb-2">🔑</div>
+        <h3 class="text-lg font-black mb-1">Activar dispositivo</h3>
+        <p class="text-xs text-gray-400 mb-4">Un administrador autoriza este dispositivo con su clave de 8 dígitos.</p>
+        <label class="block text-[11px] font-bold text-gray-400 mb-1 tracking-wider">NOMBRE DEL DISPOSITIVO</label>
+        <input v-model="actInSituNombre" type="text" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-sm mb-3 outline-none focus:border-emerald-400" placeholder="ej: iPad caja central">
+        <label class="block text-[11px] font-bold text-gray-400 mb-1 tracking-wider">CLAVE ADMIN (8 DÍGITOS)</label>
+        <input v-model="actInSituClave" type="password" inputmode="numeric" maxlength="8" pattern="[0-9]{8}"
+               class="w-full p-3 rounded-lg bg-gray-900 border border-emerald-500/50 text-center text-2xl font-black tracking-[.4em] outline-none focus:border-emerald-400" placeholder="••••••••">
+        <p class="text-[10px] text-gray-500 mt-1 mb-2">Clave global (4) + PIN personal del admin (4)</p>
+        <p v-if="actInSituErr" class="text-xs text-red-400 mb-2 text-center">{{ actInSituErr }}</p>
+        <div class="flex gap-2 mt-3">
+          <button @click="actInSituShow=false" class="flex-1 py-3 rounded-lg border border-gray-600 bg-gray-700 text-sm font-bold">Cancelar</button>
+          <button @click="confirmarActivarInSitu" :disabled="actInSituBusy" class="flex-1 py-3 rounded-lg bg-gradient-to-r from-emerald-600 to-green-600 text-sm font-black disabled:opacity-60">
+            {{ actInSituBusy ? '⌛ Validando...' : '✓ ACTIVAR' }}
+          </button>
+        </div>
+        <p class="text-[10px] text-gray-600 mt-3 font-mono text-center break-all">{{ deviceId }}</p>
       </div>
     </div>
 
@@ -3622,6 +3691,61 @@
         const dispositivoAutorizado = ref(null); // null = cargando, true/false
         const verificandoDispositivo = ref(false);
         const dispositivoEstadoMos = ref(null); // null | 'ACTIVO' | 'INACTIVO' | 'PENDIENTE_APROBACION'
+
+        // Modal de activación in-situ por admin presente
+        const actInSituShow   = ref(false);
+        const actInSituNombre = ref('');
+        const actInSituClave  = ref('');
+        const actInSituErr    = ref('');
+        const actInSituBusy   = ref(false);
+        function abrirActivarInSitu() {
+          const ua = (navigator.userAgent || '');
+          const esMobile = /iPhone|Android|Mobile|iPad/i.test(ua);
+          const prefix   = esMobile ? 'Mobile' : 'Desktop';
+          const ahora    = new Date();
+          const hh = String(ahora.getHours()).padStart(2, '0');
+          const mm = String(ahora.getMinutes()).padStart(2, '0');
+          actInSituNombre.value = prefix + ' ME ' + hh + ':' + mm;
+          actInSituClave.value  = '';
+          actInSituErr.value    = '';
+          actInSituShow.value   = true;
+        }
+        async function confirmarActivarInSitu() {
+          actInSituErr.value = '';
+          const clave = String(actInSituClave.value || '').trim();
+          if (!/^\d{8}$/.test(clave)) { actInSituErr.value = 'La clave debe ser 8 dígitos numéricos'; return; }
+          actInSituBusy.value = true;
+          try {
+            const r = await fetch(MOS_GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({
+                action: 'aprobarDispositivoEnSitu',
+                deviceId: deviceId.value,
+                nombreEquipo: actInSituNombre.value || ('ME ' + new Date().toISOString()),
+                app: 'mosExpress',
+                userAgent: (navigator.userAgent || '').substring(0, 200),
+                claveAdmin: clave
+              })
+            });
+            const j = await r.json();
+            if (!j.ok) { actInSituErr.value = j.error || 'Error de conexión'; actInSituBusy.value = false; return; }
+            if (!j.data?.autorizado) {
+              actInSituErr.value = j.data?.error || 'Clave incorrecta';
+              actInSituBusy.value = false; return;
+            }
+            // ✓ Aprobado
+            try { lsSet('mosexpress_device_auth_id', deviceId.value); } catch(_){}
+            try { localStorage.setItem('me_perms_check_pending', '1'); } catch(_){}
+            actInSituShow.value = false; actInSituBusy.value = false;
+            dispositivoAutorizado.value = true;
+            dispositivoEstadoMos.value  = 'ACTIVO';
+            // Disparar wizard de permisos automáticamente
+            setTimeout(() => { if (window.MePerms?.auto) window.MePerms.auto(); }, 300);
+          } catch (e) {
+            actInSituErr.value = 'Sin conexión con MOS';
+            actInSituBusy.value = false;
+          }
+        }
         
         // NAVIGATION
         const currentModule = ref('CAJA'); // CAJA | POS | TOOLS
@@ -9114,6 +9238,8 @@
           camaraHerramientasAbierta, toggleCamaraHerramientas,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, toggleVentaCreditoDirecto,
           deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo,
+          actInSituShow, actInSituNombre, actInSituClave, actInSituErr, actInSituBusy,
+          abrirActivarInSitu, confirmarActivarInSitu,
           sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
           flashNuevosTickets,
           sincronizarDatos, isSyncing, pendingSales,
