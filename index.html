@@ -1110,7 +1110,30 @@
     const PERMS = ['notifications', 'camera', 'microphone', 'geolocation', 'audio'];
     const AUDIO_KEY = 'me_audio_tested_v';
 
+    // Detecta hardware físico — para no pedir permiso si el dispositivo no existe
+    let _hwCache = null;
+    async function _detectarHardware() {
+      if (_hwCache !== null) return _hwCache;
+      _hwCache = { mic: true, cam: true, geo: true };
+      try {
+        if (navigator.mediaDevices?.enumerateDevices) {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          if (devs && devs.length > 0) {
+            _hwCache.mic = devs.some(d => d.kind === 'audioinput');
+            _hwCache.cam = devs.some(d => d.kind === 'videoinput');
+          }
+        }
+        _hwCache.geo = !!(navigator.geolocation);
+      } catch(_){}
+      return _hwCache;
+    }
+
     async function _consultarPerm(perm) {
+      const hw = await _detectarHardware();
+      if (perm === 'microphone' && !hw.mic) return 'unsupported';
+      if (perm === 'camera'     && !hw.cam) return 'unsupported';
+      if (perm === 'geolocation' && !hw.geo) return 'unsupported';
+
       if (perm === 'notifications') {
         if (!('Notification' in window)) return 'unsupported';
         return Notification.permission;
@@ -1173,11 +1196,25 @@
         if (perm === 'notifications') {
           await Notification.requestPermission();
         } else if (perm === 'camera') {
-          const s = await navigator.mediaDevices.getUserMedia({ video: true });
-          s.getTracks().forEach(t => t.stop());
+          try {
+            const s = await navigator.mediaDevices.getUserMedia({ video: true });
+            s.getTracks().forEach(t => t.stop());
+          } catch (err) {
+            if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
+              _hwCache = _hwCache || {}; _hwCache.cam = false;
+            }
+            throw err;
+          }
         } else if (perm === 'microphone') {
-          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-          s.getTracks().forEach(t => t.stop());
+          try {
+            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+            s.getTracks().forEach(t => t.stop());
+          } catch (err) {
+            if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
+              _hwCache = _hwCache || {}; _hwCache.mic = false;
+            }
+            throw err;
+          }
         } else if (perm === 'geolocation') {
           await new Promise((res, rej) => {
             navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 });
