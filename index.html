@@ -1120,8 +1120,8 @@
     const AUDIO_KEY = 'me_audio_tested_v';
 
     let _installPrompt = null;
-    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); _installPrompt = e; });
-    window.addEventListener('appinstalled', () => { _installPrompt = null; });
+    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); _installPrompt = e; window._ME_INSTALL_PROMPT = e; });
+    window.addEventListener('appinstalled', () => { _installPrompt = null; window._ME_INSTALL_PROMPT = null; if (window._reportarPermisosME) _reportarPermisosME(); });
 
     // Detecta hardware físico — para no pedir permiso si el dispositivo no existe
     let _hwCache = null;
@@ -1204,7 +1204,10 @@
           pendientes++;
           if (btn) {
             btn.className = 'me-perm-status is-pedir';
-            btn.textContent = (p === 'audio') ? 'PROBAR' : (p === 'install') ? 'INSTALAR' : 'AUTORIZAR';
+            let lbl = 'AUTORIZAR';
+            if (p === 'audio') lbl = 'PROBAR';
+            else if (p === 'install') lbl = (_installPrompt) ? 'INSTALAR' : 'VER CÓMO';
+            btn.textContent = lbl;
             btn.disabled = false;
           }
         }
@@ -1311,7 +1314,43 @@
         const v = window._ME_PERMS_VERSION || 'unk';
         localStorage.setItem('me_perms_done_v' + v, '1');
       } catch(_){}
+      _reportarPermisosME();
+      if (window._ME_WIZARD_FORZADO) {
+        try {
+          const id = localStorage.getItem('mosexpress_deviceId') || '';
+          fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
+            method:'POST', body: JSON.stringify({ action:'marcarWizardMostrado', deviceId:id })
+          });
+        } catch(_){}
+        window._ME_WIZARD_FORZADO = false;
+      }
     }
+
+    let _mePermsHooked = false;
+    async function _reportarPermisosME() {
+      try {
+        const id = localStorage.getItem('mosexpress_deviceId') || '';
+        if (!id) return;
+        const map = { notifications:'notif', camera:'cam', microphone:'mic', geolocation:'geo' };
+        const perms = {};
+        for (const [name, key] of Object.entries(map)) {
+          try {
+            const ps = await navigator.permissions.query({ name });
+            perms[key] = ps.state;
+            if (!_mePermsHooked) ps.onchange = () => _reportarPermisosME();
+          } catch(_) { perms[key] = 'unsupported'; }
+        }
+        perms.audio   = (localStorage.getItem('me_audio_ok') === '1') ? 'granted' : 'prompt';
+        perms.install = (matchMedia('(display-mode: standalone)').matches) ? 'granted'
+                      : (window._ME_INSTALL_PROMPT ? 'prompt' : 'unsupported');
+        _mePermsHooked = true;
+        await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
+          method:'POST',
+          body: JSON.stringify({ action:'registrarPermisosDispositivo', deviceId:id, permisos:perms })
+        });
+      } catch(_){}
+    }
+    window._reportarPermisosME = _reportarPermisosME;
 
     async function _autoTrigger() {
       const pending = localStorage.getItem('me_perms_check_pending') === '1';
@@ -1320,7 +1359,17 @@
         const r = await fetch('./version.json?t=' + Date.now()).then(r => r.json());
         v = r.version || 'unk';
       } catch(_){}
-      if (!pending && localStorage.getItem('me_perms_done_v' + v) === '1') return;
+      setTimeout(_reportarPermisosME, 6000);
+      let forzado = false;
+      try {
+        const id = localStorage.getItem('mosexpress_deviceId') || '';
+        if (id) {
+          const r2 = await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec?action=consultarEstadoDispositivo&deviceId=' + encodeURIComponent(id));
+          const j = await r2.json();
+          if (j?.data?.forzar_wizard) { forzado = true; window._ME_WIZARD_FORZADO = true; }
+        }
+      } catch(_){}
+      if (!forzado && !pending && localStorage.getItem('me_perms_done_v' + v) === '1') return;
       // Esperar 3s para que la app Vue termine de inicializar
       setTimeout(async () => {
         await _abrirSiHayQuePedir(v);
