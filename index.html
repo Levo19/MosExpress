@@ -587,6 +587,146 @@
     }
     .me-upd-dots span:nth-child(2){ animation-delay:.2s; }
     .me-upd-dots span:nth-child(3){ animation-delay:.4s; }
+
+    /* ════ Banner flotante de update ME ════ */
+    #meUpdateBanner {
+      position:fixed;bottom:calc(80px + env(safe-area-inset-bottom, 0px));
+      left:50%;transform:translateX(-50%) translateY(180px);
+      z-index:9997;width:calc(100% - 32px);max-width:420px;
+      transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+      pointer-events:none;
+    }
+    @media (min-width: 1024px) {
+      #meUpdateBanner { bottom:24px; }
+    }
+    #meUpdateBanner.visible { transform:translateX(-50%) translateY(0);pointer-events:all; }
+    .me-upd-banner-inner {
+      background:linear-gradient(135deg,#0f172a,#1e293b);
+      border:1px solid #3b82f6;border-radius:16px;padding:12px 16px;
+      box-shadow:0 8px 32px rgba(59,130,246,.35);
+      animation: meUpdBannerGlow 3s ease-in-out infinite;
+    }
+    @keyframes meUpdBannerGlow {
+      0%,100% { box-shadow:0 8px 32px rgba(59,130,246,.35); }
+      50%      { box-shadow:0 8px 44px rgba(59,130,246,.65); }
+    }
+    .me-upd-bnr-row { display:flex;align-items:center;gap:12px; }
+    .me-upd-bnr-icon {
+      font-size:1.4rem;flex-shrink:0;
+      animation: meUpdRocket 1.8s ease-in-out infinite;
+    }
+    @keyframes meUpdRocket {
+      0%,100% { transform:translateY(0); }
+      50%      { transform:translateY(-4px); }
+    }
+    .me-upd-bnr-title { font-size:.82rem;font-weight:700;color:#e2e8f0; }
+    .me-upd-bnr-sub   { font-size:.72rem;color:#64748b;margin-top:2px; }
+    .me-upd-bnr-btn {
+      background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;border:none;
+      border-radius:10px;padding:8px 14px;font-size:.78rem;font-weight:700;
+      cursor:pointer;letter-spacing:.02em;
+      transition:transform .12s, opacity .12s;
+    }
+    .me-upd-bnr-btn:not(:disabled):hover { filter:brightness(1.1); }
+    .me-upd-bnr-btn:disabled {
+      background:rgba(71,85,105,.4);color:#94a3b8;cursor:not-allowed;
+    }
+    .me-upd-bnr-progress {
+      height:4px;background:rgba(15,23,42,.6);border-radius:999px;
+      overflow:hidden;margin-top:8px;position:relative;
+    }
+    .me-upd-bnr-progress-fill {
+      height:100%;background:linear-gradient(90deg,#3b82f6,#06b6d4);
+      width:0%;transition:width .3s ease;border-radius:999px;
+      box-shadow:0 0 12px rgba(59,130,246,.6);
+    }
+    .me-upd-bnr-progress-fill.is-ready {
+      background:linear-gradient(90deg,#10b981,#34d399);
+      box-shadow:0 0 14px rgba(16,185,129,.6);
+    }
+    .me-upd-bnr-shimmer {
+      position:absolute;inset:0;border-radius:999px;
+      background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.25) 50%,transparent 100%);
+      animation: meUpdShimmer 1.4s linear infinite;
+    }
+    @keyframes meUpdShimmer {
+      0%   { transform:translateX(-100%); }
+      100% { transform:translateX(100%); }
+    }
+    .me-upd-bnr-cd { font-size:.65rem;color:#64748b;font-weight:700;margin-top:4px; }
+
+    /* Wizard de permisos · post-update ME */
+    .me-perms-overlay {
+      position:fixed;inset:0;z-index:9998;display:none;
+      background:linear-gradient(135deg,rgba(2,6,23,.92),rgba(15,23,42,.95));
+      backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+      align-items:center;justify-content:center;padding:20px;
+      animation: mePermsIn .35s ease-out;
+    }
+    .me-perms-overlay.is-open { display:flex; }
+    @keyframes mePermsIn { 0% { opacity:0; } 100% { opacity:1; } }
+    .me-perms-modal {
+      max-width:440px;width:100%;max-height:90vh;overflow-y:auto;
+      border-radius:20px;padding:20px;
+      background:linear-gradient(135deg,rgba(30,41,59,.97),rgba(15,23,42,.97));
+      border:1.5px solid rgba(59,130,246,.45);
+      box-shadow:0 30px 60px -10px rgba(0,0,0,.65);
+      animation: mePermsModalPop .4s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes mePermsModalPop {
+      0%   { transform:translateY(20px) scale(.94); opacity:0; }
+      100% { transform:translateY(0) scale(1); opacity:1; }
+    }
+    .me-perms-emoji { font-size:42px;margin-bottom:6px;display:inline-block;
+                      filter:drop-shadow(0 4px 14px rgba(59,130,246,.55)); }
+    .me-perms-title { font-size:1.15em;font-weight:900;color:#f1f5f9;margin-bottom:4px; }
+    .me-perms-sub   { font-size:.78em;color:#94a3b8;margin-bottom:16px;line-height:1.45; }
+    .me-perm-card {
+      border-radius:13px;padding:13px;margin-bottom:10px;
+      background:rgba(15,23,42,.55);border:1px solid rgba(51,65,85,.5);
+      display:flex;align-items:center;gap:12px;transition:all .25s ease;
+    }
+    .me-perm-card.is-granted {
+      background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(15,23,42,.6));
+      border-color:rgba(16,185,129,.5);
+    }
+    .me-perm-card.is-denied {
+      background:linear-gradient(135deg,rgba(220,38,38,.10),rgba(15,23,42,.6));
+      border-color:rgba(239,68,68,.4);
+    }
+    .me-perm-icon { font-size:24px;flex-shrink:0; }
+    .me-perm-name { font-size:.92em;font-weight:800;color:#f1f5f9; }
+    .me-perm-desc { font-size:.7em;color:#94a3b8;margin-top:2px;line-height:1.3; }
+    .me-perm-status {
+      flex-shrink:0;padding:6px 12px;border-radius:9px;border:none;cursor:pointer;
+      font-size:.72em;font-weight:900;letter-spacing:.04em;
+      -webkit-tap-highlight-color:transparent;transition:all .18s ease;
+    }
+    .me-perm-status:active { transform:scale(.94); }
+    .me-perm-status.is-pedir {
+      background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;
+      box-shadow:0 4px 12px -3px rgba(59,130,246,.5);
+    }
+    .me-perm-status.is-ok {
+      background:rgba(16,185,129,.18);color:#86efac;cursor:default;
+    }
+    .me-perm-status.is-denied {
+      background:rgba(220,38,38,.15);color:#fca5a5;
+    }
+    .me-perms-footer {
+      margin-top:14px;padding-top:14px;border-top:1px solid rgba(51,65,85,.4);
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+    }
+    .me-perms-btn-listo {
+      flex:1;padding:13px 16px;border-radius:12px;border:none;cursor:pointer;
+      background:linear-gradient(135deg,#10b981,#059669);color:#fff;
+      font-size:.92em;font-weight:900;letter-spacing:.04em;
+      box-shadow:0 6px 18px -4px rgba(16,185,129,.5);
+    }
+    .me-perms-btn-listo:disabled {
+      background:rgba(71,85,105,.4);color:#94a3b8;cursor:not-allowed;box-shadow:none;
+    }
+    .me-perms-progress-text { font-size:.7em;color:#94a3b8;font-weight:700; }
     @keyframes meDotP {
       0%,80%,100%{ opacity:.2;transform:scale(.8); }
       40%        { opacity:1;transform:scale(1.2); }
@@ -596,21 +736,202 @@
   (function() {
     if (!('serviceWorker' in navigator)) return;
     let _reg = null;
+    let _waitingWorker = null;
+
+    // ══════ SoundFX ME · sonidos del flujo de update ══════
+    let _meSfxCtx = null, _meSfxComp = null;
+    function _meSfxGetCtx() {
+      if (!_meSfxCtx) {
+        try { _meSfxCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_){}
+      }
+      if (!_meSfxCtx) return null;
+      if (_meSfxCtx.state === 'suspended') _meSfxCtx.resume().catch(() => {});
+      if (!_meSfxComp) {
+        _meSfxComp = _meSfxCtx.createDynamicsCompressor();
+        _meSfxComp.threshold.value = -6; _meSfxComp.knee.value = 2;
+        _meSfxComp.ratio.value = 12; _meSfxComp.attack.value = 0.001;
+        _meSfxComp.release.value = 0.08;
+        _meSfxComp.connect(_meSfxCtx.destination);
+      }
+      return _meSfxCtx;
+    }
+    function _meTone(freq, dur, type, vol, delay) {
+      try {
+        const ctx = _meSfxGetCtx(); if (!ctx) return;
+        const t = ctx.currentTime + (delay || 0);
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.connect(g); g.connect(_meSfxComp);
+        osc.type = type || 'sine';
+        osc.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(vol || 0.8, t + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.start(t); osc.stop(t + dur + 0.02);
+      } catch(_){}
+    }
+    const MeSfx = {
+      updateArrived: () => {
+        _meTone(523, 0.10, 'sine',     0.7, 0);
+        _meTone(784, 0.12, 'triangle', 0.85, 0.10);
+        _meTone(1047,0.18, 'sine',     0.85, 0.22);
+      },
+      updateReady: () => {
+        _meTone(659, 0.10, 'triangle', 0.8, 0);
+        _meTone(880, 0.10, 'triangle', 0.85, 0.10);
+        _meTone(1175,0.12, 'triangle', 0.9, 0.20);
+        _meTone(1568,0.30, 'sine',     1.0, 0.32);
+      },
+      rocket: () => {
+        try {
+          const ctx = _meSfxGetCtx(); if (!ctx) return;
+          const t = ctx.currentTime;
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.connect(g); g.connect(_meSfxComp);
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(120, t);
+          osc.frequency.exponentialRampToValueAtTime(2400, t + 0.85);
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.6, t + 0.05);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+          osc.start(t); osc.stop(t + 1.0);
+        } catch(_){}
+        _meTone(1568, 0.10, 'square', 0.7, 0.85);
+        _meTone(2093, 0.18, 'square', 0.9, 0.95);
+      },
+      tickUrgent: () => _meTone(1500, 0.04, 'square', 0.6)
+    };
+    window.MeSfx = MeSfx;
 
     function _showOverlay() {
       const el = document.getElementById('meUpdateOverlay');
       if (el) el.classList.add('visible');
     }
 
-    function _activateWaiting(worker) {
-      _showOverlay();
-      // Marcar para que la app fuerce resync de catálogo tras el reload
-      // (los masters pueden haberse actualizado junto con el deploy)
-      try { localStorage.setItem('mosexpress_force_resync', '1'); } catch(e) {}
-      worker.postMessage('SKIP_WAITING');
+    // ══════ Banner de update con progreso real ══════
+    let _meSwProgress = { done: 0, total: 0, ready: false };
+    let _meAutoCdInterval = null;
+    let _meAutoCdActive = false;
+
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      const d = e.data;
+      if (!d || !d.type) return;
+      if (d.type === 'sw-install-progress') {
+        _meSwProgress.done = d.done; _meSwProgress.total = d.total;
+        _meUpdateProgressBar();
+      }
+      if (d.type === 'sw-install-done') {
+        _meSwProgress.done = _meSwProgress.total = d.total;
+        _meSwProgress.ready = true;
+        _meUpdateProgressBar();
+      }
+    });
+
+    function _meUpdateProgressBar() {
+      const fill = document.getElementById('meUpdateProgressFill');
+      const sub  = document.getElementById('meUpdateBannerSub');
+      const tit  = document.getElementById('meUpdateBannerTitle');
+      const btn  = document.getElementById('meUpdateBnrBtn');
+      const sh   = document.getElementById('meUpdateShimmer');
+      const cdEl = document.getElementById('meUpdateCountdown');
+      if (!fill) return;
+      const pct = _meSwProgress.total > 0
+        ? Math.round((_meSwProgress.done / _meSwProgress.total) * 100) : 0;
+      fill.style.width = (_meSwProgress.ready ? 100 : pct) + '%';
+      if (_meSwProgress.ready) {
+        const wasReady = fill.classList.contains('is-ready');
+        fill.classList.add('is-ready');
+        if (sh) sh.style.display = 'none';
+        if (tit) tit.textContent = '✓ Lista para instalar';
+        if (sub) sub.textContent = `Descargada · ${_meSwProgress.total} archivos`;
+        if (btn) btn.disabled = false;
+        if (cdEl) cdEl.style.display = 'block';
+        if (!wasReady) {
+          try { MeSfx.updateReady(); } catch(_){}
+          try { if (navigator.vibrate) navigator.vibrate([30, 30, 30, 30, 60]); } catch(_){}
+        }
+        _meStartAutoCd();
+      } else {
+        if (tit) tit.textContent = 'Descargando nueva versión...';
+        if (sub) sub.textContent = `Preparando ${_meSwProgress.done}/${_meSwProgress.total} archivos`;
+        if (btn) btn.disabled = true;
+      }
     }
 
-    // Expuesto para que Vue lo llame en el sync periódico
+    function _meStartAutoCd() {
+      if (_meAutoCdActive) return;
+      _meAutoCdActive = true;
+      let secs = 60;
+      const cdNum = document.getElementById('meUpdateCdNum');
+      if (cdNum) cdNum.textContent = secs;
+      _meAutoCdInterval = setInterval(() => {
+        secs--;
+        if (cdNum) cdNum.textContent = secs;
+        if (secs > 0 && secs <= 5) { try { MeSfx.tickUrgent(); } catch(_){} }
+        if (secs <= 0) {
+          clearInterval(_meAutoCdInterval); _meAutoCdInterval = null;
+          _meAutoCdActive = false;
+          window._applyMeUpdate();
+        }
+      }, 1000);
+    }
+    function _meStopAutoCd() {
+      if (_meAutoCdInterval) { clearInterval(_meAutoCdInterval); _meAutoCdInterval = null; }
+      _meAutoCdActive = false;
+    }
+
+    function _showUpdateBanner(worker) {
+      _waitingWorker = worker;
+      fetch('./version.json?t=' + Date.now())
+        .then(r => r.json())
+        .then(v => {
+          const tit = document.getElementById('meUpdateBannerTitle');
+          if (tit) tit.textContent = 'Nueva versión v' + v.version;
+        }).catch(() => {});
+      const b = document.getElementById('meUpdateBanner');
+      if (b) setTimeout(() => b.classList.add('visible'), 200);
+      try { MeSfx.updateArrived(); } catch(_){}
+      try { if (navigator.vibrate) navigator.vibrate([20, 40, 20]); } catch(_){}
+      if (worker && worker.state === 'installed') {
+        _meSwProgress.ready = true;
+        _meUpdateProgressBar();
+      } else if (worker) {
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'installed') {
+            _meSwProgress.ready = true;
+            _meUpdateProgressBar();
+          }
+        });
+      }
+    }
+
+    function _hideBanner() {
+      const b = document.getElementById('meUpdateBanner');
+      if (b) b.classList.remove('visible');
+      _meStopAutoCd();
+    }
+
+    // Aplicar update — con cohete + delay 900ms para escucharlo
+    window._applyMeUpdate = function() {
+      if (!_waitingWorker) return;
+      _meStopAutoCd();
+      try { MeSfx.rocket(); } catch(_){}
+      try { if (navigator.vibrate) navigator.vibrate([60, 30, 60, 30, 100]); } catch(_){}
+      _hideBanner();
+      _showOverlay();
+      try {
+        localStorage.setItem('mosexpress_force_resync', '1');
+        localStorage.setItem('me_perms_check_pending', '1');
+      } catch(_){}
+      setTimeout(() => _waitingWorker.postMessage('SKIP_WAITING'), 900);
+    };
+
+    // Reemplaza al antiguo _activateWaiting — ahora muestra banner en vez
+    // de aplicar directo, dando feedback de progreso al usuario.
+    function _activateWaiting(worker) {
+      _showUpdateBanner(worker);
+    }
+
+    // Expuesto para sync periódico
     window._SWCheck = async function() {
       if (!_reg) return;
       try {
@@ -622,10 +943,8 @@
     navigator.serviceWorker.register('./sw.js').then(reg => {
       _reg = reg;
 
-      // ¿Ya hay un SW en espera? (p.ej. otra pestaña actualizó antes)
       if (reg.waiting) { _activateWaiting(reg.waiting); return; }
 
-      // Nueva versión detectada mientras la app corre
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
         nw.addEventListener('statechange', () => {
@@ -635,12 +954,10 @@
         });
       });
 
-      // Reload cuando controller cambia (skipWaiting aplicado)
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         window.location.reload();
       });
 
-      // Check inmediato al abrir la app (siempre busca nueva versión)
       _reg.update().catch(() => {});
 
     }).catch(e => console.warn('[SW]', e));
@@ -703,6 +1020,242 @@
     <p class="me-upd-sub">Nueva versión disponible · Instalando...</p>
     <div class="me-upd-dots"><span></span><span></span><span></span></div>
   </div>
+
+  <!-- ════ Banner flotante de update ME · con barra de progreso real ════ -->
+  <div id="meUpdateBanner">
+    <div class="me-upd-banner-inner" style="display:flex;flex-direction:column;gap:8px">
+      <div class="me-upd-bnr-row">
+        <span class="me-upd-bnr-icon">🚀</span>
+        <div style="flex:1;min-width:0">
+          <p class="me-upd-bnr-title" id="meUpdateBannerTitle">Descargando nueva versión...</p>
+          <p class="me-upd-bnr-sub" id="meUpdateBannerSub">Preparando…</p>
+        </div>
+        <button class="me-upd-bnr-btn" id="meUpdateBnrBtn"
+                onclick="window._applyMeUpdate()" disabled>Actualizar</button>
+      </div>
+      <div class="me-upd-bnr-progress">
+        <div class="me-upd-bnr-progress-fill" id="meUpdateProgressFill" style="width:0%">
+          <div class="me-upd-bnr-shimmer" id="meUpdateShimmer"></div>
+        </div>
+      </div>
+      <p class="me-upd-bnr-cd" id="meUpdateCountdown" style="display:none">
+        Auto-actualización en <span id="meUpdateCdNum">60</span>s
+      </p>
+    </div>
+  </div>
+
+  <!-- ════ Wizard de permisos · post-update ME ════ -->
+  <div id="mePermsOverlay" class="me-perms-overlay">
+    <div class="me-perms-modal">
+      <div class="me-perms-emoji">🛡</div>
+      <p class="me-perms-title">Configurá tus permisos</p>
+      <p class="me-perms-sub">Para que MOSexpress funcione al 100% necesitamos algunos accesos. Solo te pido lo que falta.</p>
+
+      <div class="me-perm-card" data-perm="notifications">
+        <span class="me-perm-icon">🔔</span>
+        <div style="flex:1;min-width:0">
+          <p class="me-perm-name">Notificaciones</p>
+          <p class="me-perm-desc">Avisos de cambios en tu caja, alertas de admin.</p>
+        </div>
+        <button class="me-perm-status is-pedir" onclick="MePerms.pedir('notifications')">AUTORIZAR</button>
+      </div>
+
+      <div class="me-perm-card" data-perm="camera">
+        <span class="me-perm-icon">📷</span>
+        <div style="flex:1;min-width:0">
+          <p class="me-perm-name">Cámara</p>
+          <p class="me-perm-desc">Escaneo de barcodes de productos al cobrar.</p>
+        </div>
+        <button class="me-perm-status is-pedir" onclick="MePerms.pedir('camera')">AUTORIZAR</button>
+      </div>
+
+      <div class="me-perm-card" data-perm="microphone">
+        <span class="me-perm-icon">🎤</span>
+        <div style="flex:1;min-width:0">
+          <p class="me-perm-name">Micrófono</p>
+          <p class="me-perm-desc">Audio de incidentes remotos desde MOS.</p>
+        </div>
+        <button class="me-perm-status is-pedir" onclick="MePerms.pedir('microphone')">AUTORIZAR</button>
+      </div>
+
+      <div class="me-perm-card" data-perm="geolocation">
+        <span class="me-perm-icon">📍</span>
+        <div style="flex:1;min-width:0">
+          <p class="me-perm-name">Ubicación (GPS)</p>
+          <p class="me-perm-desc">Tracking de actividad y zona de la caja.</p>
+        </div>
+        <button class="me-perm-status is-pedir" onclick="MePerms.pedir('geolocation')">AUTORIZAR</button>
+      </div>
+
+      <div class="me-perm-card" data-perm="audio">
+        <span class="me-perm-icon">🔊</span>
+        <div style="flex:1;min-width:0">
+          <p class="me-perm-name">Voz y sonidos</p>
+          <p class="me-perm-desc">Beeps al escanear, voz de avisos. Toca para probar.</p>
+        </div>
+        <button class="me-perm-status is-pedir" onclick="MePerms.pedir('audio')">PROBAR</button>
+      </div>
+
+      <div class="me-perms-footer">
+        <span class="me-perms-progress-text" id="mePermsProgress">0/0 listos</span>
+        <button class="me-perms-btn-listo" id="mePermsBtnListo"
+                onclick="MePerms.cerrar()" disabled>Listo · usar MOSexpress</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wizard permisos JS -->
+  <script>
+  (function(){
+    const PERMS = ['notifications', 'camera', 'microphone', 'geolocation', 'audio'];
+    const AUDIO_KEY = 'me_audio_tested_v';
+
+    async function _consultarPerm(perm) {
+      if (perm === 'notifications') {
+        if (!('Notification' in window)) return 'unsupported';
+        return Notification.permission;
+      }
+      if (perm === 'audio') {
+        try {
+          const v = window._ME_PERMS_VERSION || 'unk';
+          return localStorage.getItem(AUDIO_KEY + v) === '1' ? 'granted' : 'prompt';
+        } catch(_) { return 'prompt'; }
+      }
+      if (!navigator.permissions?.query) return 'prompt';
+      try {
+        const res = await navigator.permissions.query({ name: perm });
+        return res.state;
+      } catch (e) { return 'prompt'; }
+    }
+    function _normEstado(s) {
+      if (s === 'default')     return 'prompt';
+      if (s === 'unsupported') return 'unsupported';
+      return s;
+    }
+
+    async function _refrescarUI() {
+      let pendientes = 0, listos = 0;
+      for (const p of PERMS) {
+        const raw = await _consultarPerm(p);
+        const est = _normEstado(raw);
+        const card = document.querySelector(`.me-perm-card[data-perm="${p}"]`);
+        if (!card) continue;
+        const btn = card.querySelector('.me-perm-status');
+        card.classList.remove('is-granted', 'is-denied');
+        if (est === 'granted') {
+          listos++;
+          card.classList.add('is-granted');
+          if (btn) { btn.className = 'me-perm-status is-ok'; btn.textContent = '✓ OK'; btn.disabled = true; }
+        } else if (est === 'denied') {
+          card.classList.add('is-denied');
+          if (btn) { btn.className = 'me-perm-status is-denied'; btn.textContent = '✗ DENEGADO'; }
+        } else if (est === 'unsupported') {
+          listos++;
+          if (btn) { btn.className = 'me-perm-status is-ok'; btn.textContent = 'N/A'; btn.disabled = true; }
+        } else {
+          pendientes++;
+          if (btn) {
+            btn.className = 'me-perm-status is-pedir';
+            btn.textContent = (p === 'audio') ? 'PROBAR' : 'AUTORIZAR';
+            btn.disabled = false;
+          }
+        }
+      }
+      const prog = document.getElementById('mePermsProgress');
+      const btn  = document.getElementById('mePermsBtnListo');
+      if (prog) prog.textContent = `${listos}/${PERMS.length} resueltos · ${pendientes} pendiente${pendientes!==1?'s':''}`;
+      if (btn) btn.disabled = pendientes > 0;
+      return { pendientes, listos };
+    }
+
+    async function _pedirPerm(perm) {
+      try {
+        if (perm === 'notifications') {
+          await Notification.requestPermission();
+        } else if (perm === 'camera') {
+          const s = await navigator.mediaDevices.getUserMedia({ video: true });
+          s.getTracks().forEach(t => t.stop());
+        } else if (perm === 'microphone') {
+          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+          s.getTracks().forEach(t => t.stop());
+        } else if (perm === 'geolocation') {
+          await new Promise((res, rej) => {
+            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 });
+          });
+        } else if (perm === 'audio') {
+          try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            const ctx = new Ctx();
+            const osc = ctx.createOscillator(); const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.frequency.value = 880; gain.gain.value = 0.15;
+            osc.start(); osc.stop(ctx.currentTime + 0.18);
+          } catch(_){}
+          if ('speechSynthesis' in window) {
+            try {
+              speechSynthesis.cancel();
+              const u = new SpeechSynthesisUtterance('Voz activa MosExpress, listo');
+              u.lang = 'es-PE'; u.rate = 1.05; u.volume = 1;
+              speechSynthesis.speak(u);
+            } catch(_){}
+          }
+          const escucho = confirm('🔊 ¿Escuchaste el beep y la voz?\n\nSi NO, revisa el volumen del dispositivo y vuelve a probar.');
+          if (escucho) {
+            try {
+              const v = window._ME_PERMS_VERSION || 'unk';
+              localStorage.setItem(AUDIO_KEY + v, '1');
+            } catch(_){}
+          }
+        }
+      } catch (e) {}
+      setTimeout(_refrescarUI, 300);
+    }
+
+    async function _abrirSiHayQuePedir(versionActual) {
+      const flagKey = 'me_perms_done_v' + (versionActual || 'unk');
+      if (localStorage.getItem(flagKey) === '1') return false;
+      const { pendientes } = await _refrescarUI();
+      if (pendientes === 0) {
+        try { localStorage.setItem(flagKey, '1'); } catch(_){}
+        return false;
+      }
+      const ov = document.getElementById('mePermsOverlay');
+      if (ov) ov.classList.add('is-open');
+      window._ME_PERMS_VERSION = versionActual;
+      return true;
+    }
+
+    function _cerrar() {
+      const btn = document.getElementById('mePermsBtnListo');
+      if (btn && btn.disabled) return;
+      const ov = document.getElementById('mePermsOverlay');
+      if (ov) ov.classList.remove('is-open');
+      try {
+        const v = window._ME_PERMS_VERSION || 'unk';
+        localStorage.setItem('me_perms_done_v' + v, '1');
+      } catch(_){}
+    }
+
+    async function _autoTrigger() {
+      const pending = localStorage.getItem('me_perms_check_pending') === '1';
+      let v = 'unk';
+      try {
+        const r = await fetch('./version.json?t=' + Date.now()).then(r => r.json());
+        v = r.version || 'unk';
+      } catch(_){}
+      if (!pending && localStorage.getItem('me_perms_done_v' + v) === '1') return;
+      // Esperar 3s para que la app Vue termine de inicializar
+      setTimeout(async () => {
+        await _abrirSiHayQuePedir(v);
+        try { localStorage.removeItem('me_perms_check_pending'); } catch(_){}
+      }, 3000);
+    }
+
+    window.MePerms = { pedir: _pedirPerm, cerrar: _cerrar, refrescar: _refrescarUI, auto: _autoTrigger };
+    if (document.readyState === 'complete') _autoTrigger();
+    else window.addEventListener('load', _autoTrigger);
+  })();
+  </script>
 
   <div id="app" class="h-full flex flex-col relative" v-cloak>
     

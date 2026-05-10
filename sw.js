@@ -34,7 +34,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '1.9.0';
+const VERSION = '2.0.0';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
@@ -45,15 +45,28 @@ const ASSETS  = [
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
 ];
 
-// ── Instalar: cachear assets con no-store (ignora CDN) ──────
+// ── Instalar: cachear secuencial con reporte de progreso ──
+// postMessage al cliente por cada asset → banner muestra barra real.
+// NO skipWaiting automático: queda en 'waiting' para que el banner avise.
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(c => c.addAll(
-        ASSETS.map(url => new Request(url, { cache: 'no-store' }))
-      ))
-      .then(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    const total = ASSETS.length;
+    let done = 0;
+    async function _broadcast(payload) {
+      const cs = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+      cs.forEach(c => { try { c.postMessage(payload); } catch(_){} });
+    }
+    await _broadcast({ type: 'sw-install-progress', done: 0, total, version: VERSION });
+    for (const url of ASSETS) {
+      try {
+        await cache.add(new Request(url, { cache: 'no-store' }));
+      } catch (err) { console.warn('[SW ME] No se pudo cachear:', url, err); }
+      done++;
+      await _broadcast({ type: 'sw-install-progress', done, total, version: VERSION });
+    }
+    await _broadcast({ type: 'sw-install-done', total, version: VERSION });
+  })());
 });
 
 // ── Activar: borrar cachés viejos y reclamar clientes ───────
