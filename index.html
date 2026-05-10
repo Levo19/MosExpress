@@ -1326,6 +1326,18 @@
       }
     }
 
+    // Persistent Storage · pide al SO no borrar localStorage. Silencioso.
+    async function _pedirPersistentStorageME() {
+      try {
+        if (!navigator.storage || !navigator.storage.persist) return 'unsupported';
+        const ya = await navigator.storage.persisted();
+        if (ya) return 'granted';
+        const ok = await navigator.storage.persist();
+        return ok ? 'granted' : 'prompt';
+      } catch(_) { return 'unsupported'; }
+    }
+    window._pedirPersistentStorageME = _pedirPersistentStorageME;
+
     let _mePermsHooked = false;
     async function _reportarPermisosME() {
       try {
@@ -1343,6 +1355,7 @@
         perms.audio   = (localStorage.getItem('me_audio_ok') === '1') ? 'granted' : 'prompt';
         perms.install = (matchMedia('(display-mode: standalone)').matches) ? 'granted'
                       : (window._ME_INSTALL_PROMPT ? 'prompt' : 'unsupported');
+        perms.storage = await _pedirPersistentStorageME();
         _mePermsHooked = true;
         await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
           method:'POST',
@@ -3785,6 +3798,7 @@
             // ✓ Aprobado
             try { lsSet('mosexpress_device_auth_id', deviceId.value); } catch(_){}
             try { localStorage.setItem('me_perms_check_pending', '1'); } catch(_){}
+            try { window._pedirPersistentStorageME && window._pedirPersistentStorageME(); } catch(_){}
             actInSituShow.value = false; actInSituBusy.value = false;
             dispositivoAutorizado.value = true;
             dispositivoEstadoMos.value  = 'ACTIVO';
