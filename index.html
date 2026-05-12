@@ -1263,6 +1263,7 @@
             } catch(_){}
           }
         } else if (perm === 'audio') {
+          let _meAudioOK = false;
           try {
             const Ctx = window.AudioContext || window.webkitAudioContext;
             const ctx = new Ctx();
@@ -1270,6 +1271,7 @@
             osc.connect(gain); gain.connect(ctx.destination);
             osc.frequency.value = 880; gain.gain.value = 0.15;
             osc.start(); osc.stop(ctx.currentTime + 0.18);
+            _meAudioOK = true;
           } catch(_){}
           if ('speechSynthesis' in window) {
             try {
@@ -1277,10 +1279,12 @@
               const u = new SpeechSynthesisUtterance('Voz activa MosExpress, listo');
               u.lang = 'es-PE'; u.rate = 1.05; u.volume = 1;
               speechSynthesis.speak(u);
+              _meAudioOK = true;
             } catch(_){}
           }
-          const escucho = confirm('🔊 ¿Escuchaste el beep y la voz?\n\nSi NO, revisa el volumen del dispositivo y vuelve a probar.');
-          if (escucho) {
+          // Auto-marcar OK si el navegador permitió beep/speak. Antes usábamos
+          // confirm() pero en algunas PWAs no aparece → wizard atascado.
+          if (_meAudioOK) {
             try {
               const v = window._ME_PERMS_VERSION || 'unk';
               localStorage.setItem(AUDIO_KEY + v, '1');
