@@ -3477,11 +3477,14 @@
                 <!-- Lista items -->
                 <div class="flex-1 space-y-2 overflow-y-auto">
                     <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
-                        <div class="flex-1 min-w-0"><p class="text-white font-bold text-sm truncate">{{ item.nombre }}</p><p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p></div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
+                            <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p>
+                        </div>
                         <div class="flex items-center gap-1.5">
-                            <button @click="item.cantidad = parseFloat((Math.max(0.01, item.cantidad - 1)).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
-                            <input :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat($event.target.value || 0.01).toFixed(2)) || 0.01" type="number" step="0.01" min="0.01" class="text-white font-black text-sm w-14 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-amber-500 py-1">
-                            <button @click="item.cantidad = parseFloat((item.cantidad + 1).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                            <button @click="item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                            <input :data-guia-input="item.cod_barras" :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat(String($event.target.value || 0.01).replace(',', '.')).toFixed(3)) || 0.01" type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01" class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-amber-500 py-1" inputmode="decimal">
+                            <button @click="item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
                             <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
                         </div>
                     </div>
@@ -3547,11 +3550,14 @@
                 <div v-show="camaraGuiaAbierta && guiaTab==='entrada'" class="rounded-xl overflow-hidden"><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
                 <div class="flex-1 space-y-2 overflow-y-auto">
                     <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
-                        <div class="flex-1 min-w-0"><p class="text-white font-bold text-sm truncate">{{ item.nombre }}</p><p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p></div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
+                            <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p>
+                        </div>
                         <div class="flex items-center gap-1.5">
-                            <button @click="item.cantidad = parseFloat((Math.max(0.01, item.cantidad - 1)).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
-                            <input :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat($event.target.value || 0.01).toFixed(2)) || 0.01" type="number" step="0.01" min="0.01" class="text-white font-black text-sm w-14 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-emerald-500 py-1">
-                            <button @click="item.cantidad = parseFloat((item.cantidad + 1).toFixed(2))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                            <button @click="item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                            <input :data-guia-input="item.cod_barras" :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat(String($event.target.value || 0.01).replace(',', '.')).toFixed(3)) || 0.01" type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01" class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-emerald-500 py-1" inputmode="decimal">
+                            <button @click="item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
                             <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
                         </div>
                     </div>
@@ -3593,7 +3599,7 @@
                         <div v-if="!guiaDetalle.length" class="text-gray-500 text-xs text-center py-2">Cargando...</div>
                         <div v-for="it in guiaDetalle" :key="it.cod_barras" class="flex justify-between py-1 text-sm">
                             <span class="text-gray-300">{{ getNombrePres(it.cod_barras) }}</span>
-                            <span class="font-black" :class="g.tipo.startsWith('SALIDA') ? 'text-red-400' : 'text-emerald-400'">{{ g.tipo.startsWith('SALIDA') ? '-' : '+' }}{{ it.cantidad }}</span>
+                            <span class="font-black" :class="g.tipo.startsWith('SALIDA') ? 'text-red-400' : 'text-emerald-400'">{{ g.tipo.startsWith('SALIDA') ? '-' : '+' }}{{ fmtCantGuia(it.cantidad) }}</span>
                         </div>
                         <button @click="imprimirGuia(g)" class="mt-3 w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
@@ -8963,22 +8969,60 @@
         const guiaBuscarItem = () => {
             const q = guiaBusq.value.trim();
             if (!q) return;
-            const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
+
+            let pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
+
+            if (!pres) {
+                const eq = (db.value.EQUIVALENCIAS || []).find(e => String(e.Cod_Alias) === q);
+                if (eq) {
+                    const codReal = String(eq.Cod_Barras_Real);
+                    let presRef = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === codReal);
+                    if (!presRef) {
+                        const presF1eq = (db.value.PRESENTACIONES || []).filter(
+                            p => String(p.SKU_Base) === codReal && (parseFloat(String(p.Factor).replace(',', '.')) || 1) === 1
+                        );
+                        if (presF1eq.length === 1) presRef = presF1eq[0];
+                    }
+                    if (presRef) pres = Object.assign({}, presRef, { Cod_Barras: q });
+                }
+            }
+
             if (!pres) { playBeepError(); agregarToast('No encontrado', 'Código no está en el catálogo'); return; }
+
             const base = db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base);
             const nombre = (base ? base.Nombre : pres.SKU_Base) + ' · ' + pres.Empaque;
+            const unidadMedida = String(base?.Unidad_Medida || 'NIU').toUpperCase();
+            const esGranel = unidadMedida === 'KGM';
+
+            const focusGranelInput = () => {
+                nextTick(() => {
+                    const el = document.querySelector(`[data-guia-input="${q}"]`);
+                    if (el) { el.focus(); el.select(); }
+                });
+            };
+
             const idx = guiaItems.value.findIndex(i => i.cod_barras === q);
             if (idx >= 0) {
-                guiaItems.value[idx].cantidad++;
+                if (esGranel) {
+                    focusGranelInput();
+                } else {
+                    guiaItems.value[idx].cantidad++;
+                }
             } else {
                 const stockActual = stockMap.value[q + '_' + guiaZona.value] ?? null;
-                guiaItems.value.push({ cod_barras: q, nombre, cantidad: 1, stockActual });
+                guiaItems.value.push({ cod_barras: q, nombre, cantidad: 1, stockActual, unidadMedida });
+                if (esGranel) focusGranelInput();
             }
             playBeepOK();
             guiaBusq.value = '';
         };
 
         const quitarItemGuia = (idx) => { guiaItems.value.splice(idx, 1); };
+
+        const fmtCantGuia = (c) => {
+            const n = parseFloat(c) || 0;
+            return Number.isInteger(n) ? String(n) : parseFloat(n.toFixed(3)).toString();
+        };
 
         // Contador de guías en vuelo (POST en background). procesandoGuia se mantiene
         // true mientras haya >=1 guía sincronizándose, solo para el guard de
@@ -9136,7 +9180,7 @@
                 const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === it.cod_barras);
                 const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
                 const nom = base ? (base.Nombre + ' ' + pres.Empaque).substring(0, 26) : it.cod_barras.substring(0, 26);
-                txt += nom.padEnd(28) + String(it.cantidad).padStart(4) + "\n";
+                txt += nom.padEnd(28) + fmtCantGuia(it.cantidad).padStart(4) + "\n";
             });
             txt += "================================================\n";
             txt += "\x1b\x61\x01*** " + (esSalida ? 'SALIDA' : 'ENTRADA') + " DE MERCADERÍA ***\n";
@@ -9373,7 +9417,7 @@
           guiaItems, guiaBusq, guiaObs, guiaObsModal, procesandoGuia,
           guiaHistorial, guiaHistorialCargando, guiaDetallando, guiaDetalle, camaraGuiaAbierta,
           abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
-          guiaBuscarItem, quitarItemGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
+          guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
           auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente, auditCargando, auditConfirmados,
           camaraAuditAbierta, toggleCamaraAudit, auditEscanear, _guardarAuditHoy,
           auditInputRefs, autoGuardarItem, auditCardClass, auditInputClass,
