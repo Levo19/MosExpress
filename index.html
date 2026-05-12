@@ -4970,7 +4970,8 @@
             } catch (e) {
                 console.error("Fallo descarga catalogo", e);
                 dbCargada.value = true; // dejar entrar aunque falle — usará datos mock/caché
-                agregarToast("Error", "No se pudo descargar el catálogo. Revisa la conexión.");
+                const detalle = String(e?.message || e || 'error').slice(0, 80);
+                agregarToast("Error", `Catálogo: ${detalle}`);
             }
             procesandoCatalogo.value = false;
         };
