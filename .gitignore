@@ -3,6 +3,10 @@ config.local.js
 .env
 .env.local
 
+# clasp credentials — NUNCA commitear OAuth tokens
+.clasprc.json
+**/.clasprc.json
+
 # Sistemas operativos
 .DS_Store
 Thumbs.db
