@@ -910,7 +910,9 @@
       _meStopAutoCd();
     }
 
-    // Aplicar update — con cohete + delay 900ms para escucharlo
+    // Aplicar update — 250ms (cohete arranca) + fallback reload 3s.
+    // Antes esperaba 900ms y sin fallback: si el SW se trababa el overlay
+    // quedaba infinito. Ahora actualización percibida ~700ms vs ~5s.
     window._applyMeUpdate = function() {
       if (!_waitingWorker) return;
       _meStopAutoCd();
@@ -922,7 +924,13 @@
         localStorage.setItem('mosexpress_force_resync', '1');
         localStorage.setItem('me_perms_check_pending', '1');
       } catch(_){}
-      setTimeout(() => _waitingWorker.postMessage('SKIP_WAITING'), 900);
+      setTimeout(() => {
+        _waitingWorker.postMessage('SKIP_WAITING');
+        setTimeout(() => {
+          const ov = document.getElementById('meUpdateOverlay');
+          if (ov && ov.classList.contains('visible')) window.location.reload();
+        }, 3000);
+      }, 250);
     };
 
     // Reemplaza al antiguo _activateWaiting — ahora muestra banner en vez
