@@ -34,7 +34,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.1.1';
+const VERSION = '2.1.2';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
@@ -58,9 +58,15 @@ self.addEventListener('install', e => {
       cs.forEach(c => { try { c.postMessage(payload); } catch(_){} });
     }
     await _broadcast({ type: 'sw-install-progress', done: 0, total, version: VERSION });
+    // Timeout duro por asset — si la red está lenta o el CDN se cuelga,
+    // no dejamos que el install se atore eternamente.
+    const _withTimeout = (p, ms, label) => Promise.race([
+      p,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout ' + label)), ms))
+    ]);
     for (const url of ASSETS) {
       try {
-        await cache.add(new Request(url, { cache: 'no-store' }));
+        await _withTimeout(cache.add(new Request(url, { cache: 'no-store' })), 15000, url);
       } catch (err) { console.warn('[SW ME] No se pudo cachear:', url, err); }
       done++;
       await _broadcast({ type: 'sw-install-progress', done, total, version: VERSION });
