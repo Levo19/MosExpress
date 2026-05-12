@@ -1159,11 +1159,13 @@
         if (!('Notification' in window)) return 'unsupported';
         return Notification.permission;
       }
+      // Audio NUNCA bloquea el botón "Listo". El Web Audio API existe siempre
+      // en navegadores modernos; el botón "PROBAR" solo verifica si el USUARIO
+      // oye (volumen del dispositivo) — eso es ajuste del SO, no permiso del
+      // browser. Si no oye, igual la app funciona. Antes en PWAs donde
+      // confirm() no aparecía, el user quedaba atrapado en el wizard.
       if (perm === 'audio') {
-        try {
-          const v = window._ME_PERMS_VERSION || 'unk';
-          return localStorage.getItem(AUDIO_KEY + v) === '1' ? 'granted' : 'prompt';
-        } catch(_) { return 'prompt'; }
+        return 'granted';
       }
       if (perm === 'install') {
         const standalone = window.matchMedia?.('(display-mode: standalone)').matches
