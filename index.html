@@ -1065,6 +1065,229 @@
     <div class="me-upd-dots"><span></span><span></span><span></span></div>
   </div>
 
+  <!-- ════ Overlay POS CERRADO POR HORARIO (fuera de Vue, z-index alto) ════
+       Mismo horario que WH: Lun-Sáb 07:00-19:00, Dom 07:00-16:00.
+       Bloquea a TODOS los usuarios. Admin/master pueden desbloquear 1 hora
+       con clave de 8 dígitos (botón verde). El monitor revisa cada 60s y
+       respeta el flag me_desbloqueo_hasta en localStorage. -->
+  <style>
+    #meCerradoOverlay {
+      display:none; position:fixed; inset:0; z-index:9100;
+      background:#0a0f1e; color:#f1f5f9;
+      flex-direction:column; align-items:center; justify-content:center;
+      padding:24px; text-align:center;
+      font-family:system-ui,-apple-system,sans-serif;
+    }
+    #meCerradoOverlay.visible { display:flex; }
+    .me-cer-emoji   { font-size:5rem; margin-bottom:18px; }
+    .me-cer-title   { font-size:1.4rem; font-weight:800; margin:0 0 8px; }
+    .me-cer-horario { color:#94a3b8; font-size:.9rem; margin:0 0 4px; line-height:1.6; }
+    .me-cer-faltan  { color:#fbbf24; font-size:1rem; font-weight:700; margin:14px 0 24px; }
+    .me-cer-unlock  { color:#22c55e; font-size:.85rem; font-weight:700; margin:0 0 16px; display:none; }
+    .me-cer-unlock.show { display:block; }
+    .me-cer-hint    { color:#475569; font-size:.78rem; margin:0 0 8px; }
+    .me-cer-actions { display:flex; flex-direction:column; gap:10px; align-items:stretch; width:280px; max-width:90%; }
+    .me-cer-btn-1h  {
+      background:linear-gradient(135deg,#15803d,#22c55e); border:none; color:#fff;
+      padding:11px 22px; border-radius:10px; font-size:.85rem; font-weight:800;
+      cursor:pointer; letter-spacing:.03em;
+      box-shadow:0 4px 12px rgba(34,197,94,.25);
+    }
+    /* Modal desbloqueo */
+    #meDesbloqueoModal {
+      display:none; position:fixed; inset:0; z-index:9200;
+      background:rgba(0,0,0,.85); backdrop-filter:blur(6px);
+      align-items:center; justify-content:center; padding:20px;
+    }
+    #meDesbloqueoModal.visible { display:flex; }
+    .me-des-box {
+      background:#0f172a; border:1px solid rgba(34,197,94,.35); border-radius:16px;
+      padding:22px; max-width:380px; width:100%; text-align:center;
+      box-shadow:0 20px 60px rgba(0,0,0,.5);
+    }
+    .me-des-emoji { font-size:2.4rem; margin-bottom:10px; }
+    .me-des-title { font-size:1.05rem; font-weight:800; margin:0 0 6px; color:#86efac; }
+    .me-des-hint  { font-size:.8rem; color:#94a3b8; margin:0 0 18px; line-height:1.4; }
+    .me-des-input {
+      width:100%; box-sizing:border-box; padding:12px 14px; background:#0a1322;
+      border:1px solid #334155; border-radius:10px; color:#f1f5f9;
+      font-family:ui-monospace,monospace; font-size:1.1rem;
+      letter-spacing:.15em; text-align:center; outline:none; margin-bottom:10px;
+    }
+    .me-des-err { font-size:.78rem; color:#fca5a5; min-height:18px; margin:0 0 10px; }
+    .me-des-row { display:flex; gap:9px; }
+    .me-des-cancel {
+      flex:1; background:transparent; border:1px solid #334155; color:#94a3b8;
+      padding:11px; border-radius:10px; cursor:pointer; font-weight:700; font-size:.85rem;
+    }
+    .me-des-ok {
+      flex:2; background:linear-gradient(135deg,#15803d,#22c55e); border:none;
+      color:#fff; padding:11px; border-radius:10px; cursor:pointer;
+      font-weight:800; font-size:.85rem; letter-spacing:.04em;
+    }
+    .me-des-ok:disabled { opacity:.6; cursor:not-allowed; }
+  </style>
+  <div id="meCerradoOverlay">
+    <div class="me-cer-emoji">🌙</div>
+    <h2 class="me-cer-title">POS CERRADO</h2>
+    <p id="meCerHorario" class="me-cer-horario"></p>
+    <p id="meCerFaltan" class="me-cer-faltan"></p>
+    <p id="meCerUnlock" class="me-cer-unlock">
+      🔓 Acceso temporal habilitado · termina en <span id="meCerUnlockMin">—</span> min
+    </p>
+    <p class="me-cer-hint">¿Eres administrador?</p>
+    <div class="me-cer-actions">
+      <button class="me-cer-btn-1h" onclick="window._meAbrirDesbloqueo()">
+        🔓 Habilitar acceso operativo 1 hora
+      </button>
+    </div>
+  </div>
+  <div id="meDesbloqueoModal">
+    <div class="me-des-box">
+      <div class="me-des-emoji">🔓</div>
+      <h3 class="me-des-title">Desbloqueo operativo · 1 hora</h3>
+      <p class="me-des-hint">Habilita el POS para todos los usuarios durante 60 minutos. Solo admin o master.</p>
+      <input type="password" id="meDesClave" inputmode="numeric" maxlength="8"
+             autocomplete="off" placeholder="Clave admin (8 dígitos)" class="me-des-input">
+      <p id="meDesErr" class="me-des-err"></p>
+      <div class="me-des-row">
+        <button onclick="window._meCerrarDesbloqueo()" class="me-des-cancel">Cancelar</button>
+        <button id="meDesOk" onclick="window._meConfirmarDesbloqueo()" class="me-des-ok">🔓 Desbloquear 1h</button>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function() {
+    'use strict';
+    const _ME_UNLOCK_KEY = 'me_desbloqueo_hasta';
+
+    function _meUnlockVigente() {
+      try {
+        const hasta = parseInt(localStorage.getItem(_ME_UNLOCK_KEY) || '0', 10);
+        return hasta && Date.now() < hasta ? hasta : 0;
+      } catch(_) { return 0; }
+    }
+
+    function _meMostrarCerrado(info) {
+      const ov = document.getElementById('meCerradoOverlay');
+      if (!ov) return;
+      const dia = info.dia || 1;
+      const horario = (dia === 7) ? 'Domingo: 07:00 - 16:00' : 'Lun-Sáb: 07:00 - 19:00';
+      document.getElementById('meCerHorario').textContent = horario;
+      const ahora = new Date();
+      const apertura = new Date(ahora);
+      if (info.motivo === 'despues_cierre') apertura.setDate(apertura.getDate() + 1);
+      apertura.setHours(info.apertura || 7, 0, 0, 0);
+      const diff = apertura - ahora;
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      document.getElementById('meCerFaltan').textContent = `Faltan ${h}h ${m}m para abrir`;
+      ov.classList.add('visible');
+    }
+
+    function _meOcultarCerrado() {
+      const ov = document.getElementById('meCerradoOverlay');
+      if (ov) ov.classList.remove('visible');
+    }
+
+    function _meCheckHorario() {
+      const ahora = new Date();
+      const dia = ahora.getDay() === 0 ? 7 : ahora.getDay();
+      const cierreH   = (dia === 7) ? 16 : 19;
+      const aperturaH = 7;
+      const horaActual = ahora.getHours() + ahora.getMinutes() / 60;
+      const desHasta = _meUnlockVigente();
+      // Si hay desbloqueo vigente, ocultar overlay (independiente del horario)
+      if (desHasta) {
+        _meOcultarCerrado();
+        // Actualizar contador en banner top (si está visible algún día)
+        const elUnlock = document.getElementById('meCerUnlock');
+        const elMin    = document.getElementById('meCerUnlockMin');
+        if (elUnlock && elMin) {
+          const minRest = Math.ceil((desHasta - Date.now()) / 60000);
+          elMin.textContent = String(minRest);
+        }
+        return;
+      }
+      // Fuera de horario → mostrar overlay
+      if (horaActual >= cierreH || horaActual < aperturaH) {
+        _meMostrarCerrado({
+          apertura: aperturaH, cierre: cierreH, dia,
+          motivo: horaActual >= cierreH ? 'despues_cierre' : 'antes_apertura'
+        });
+        return;
+      }
+      _meOcultarCerrado();
+    }
+
+    // Handlers públicos para el botón del overlay
+    window._meAbrirDesbloqueo = function() {
+      const m = document.getElementById('meDesbloqueoModal');
+      const inp = document.getElementById('meDesClave');
+      const err = document.getElementById('meDesErr');
+      if (inp) inp.value = '';
+      if (err) err.textContent = '';
+      if (m) m.classList.add('visible');
+      setTimeout(() => { if (inp) inp.focus(); }, 60);
+    };
+    window._meCerrarDesbloqueo = function() {
+      const m = document.getElementById('meDesbloqueoModal');
+      if (m) m.classList.remove('visible');
+    };
+    window._meConfirmarDesbloqueo = async function() {
+      const inp = document.getElementById('meDesClave');
+      const err = document.getElementById('meDesErr');
+      const btn = document.getElementById('meDesOk');
+      const clave = String(inp?.value || '').trim();
+      if (err) err.textContent = '';
+      if (!/^\d{8}$/.test(clave)) {
+        if (err) err.textContent = 'La clave debe ser de 8 dígitos numéricos';
+        return;
+      }
+      if (btn) { btn.disabled = true; btn.textContent = 'Validando...'; }
+      try {
+        // Llamar al GAS de MOS (verificarClaveAdmin) — la URL viene de localStorage MOS_GAS_URL
+        // o del config; por simplicidad busca window.MOS_GAS_URL si está definida.
+        const mosUrl = window.MOS_GAS_URL || (window.config && window.config.value && window.config.value.mosUrl) || '';
+        if (!mosUrl) {
+          if (err) err.textContent = 'MOS_GAS_URL no configurada — pídelo al master';
+          return;
+        }
+        const r = await fetch(mosUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'verificarClaveAdmin',
+            clave: clave,
+            accion: 'DESBLOQUEO_HORARIO_ME',
+            appOrigen: 'MosExpress',
+            detalle: 'Habilitación operativa 1 hora pasado el horario'
+          })
+        });
+        const j = await r.json();
+        if (!j || !j.data || !j.data.autorizado) {
+          if (err) err.textContent = (j && j.data && j.data.error) || 'Clave incorrecta';
+          return;
+        }
+        const hasta = Date.now() + 60 * 60 * 1000;
+        try { localStorage.setItem(_ME_UNLOCK_KEY, String(hasta)); } catch(_){}
+        window._meCerrarDesbloqueo();
+        _meOcultarCerrado();
+      } catch(e) {
+        if (err) err.textContent = 'Error de red: ' + (e?.message || 'reintenta');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔓 Desbloquear 1h'; }
+      }
+    };
+
+    // Monitorear cada 60 segundos + al volver a foreground
+    _meCheckHorario();
+    setInterval(_meCheckHorario, 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _meCheckHorario();
+    });
+  })();
+  </script>
+
   <!-- ════ Banner flotante de update ME · con barra de progreso real ════ -->
   <div id="meUpdateBanner">
     <div class="me-upd-banner-inner" style="display:flex;flex-direction:column;gap:8px">
@@ -3785,6 +4008,9 @@
 
     const API_URL     = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
     const MOS_GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+    // Exponer al ámbito global para el script de bloqueo horario que vive
+    // fuera de Vue (cargado antes del mount). Lo usa _meConfirmarDesbloqueo.
+    window.MOS_GAS_URL = MOS_GAS_URL;
     // NOTA: La clave de PrintNode fue movida al servidor (Google Apps Script).
     // El navegador ya NO llama a PrintNode directamente. Ver funcion mandarImpresionPrintNode.
 
