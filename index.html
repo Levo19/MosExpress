@@ -1016,6 +1016,42 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') _checkForcedUpdate();
     });
+
+    // ── PRE-CHECK síncrono para acciones críticas ─────────────────────
+    // Antes de procesar venta / cerrar caja / acción crítica, llamar a
+    // window._preCheckVersion(). Si la versión local difiere de la
+    // publicada, bloquea la acción y fuerza reload. Cache 30s.
+    let _preCheckCache = { ts: 0, ok: true };
+    window._preCheckVersion = async function() {
+      if (_forceUpdateTriggered) return false;
+      const now = Date.now();
+      if (now - _preCheckCache.ts < 30000 && _preCheckCache.ok) return true;
+      try {
+        const r = await fetch('./version.json?t=' + now, { cache: 'no-store' });
+        if (!r.ok) { _preCheckCache = { ts: now, ok: true }; return true; }
+        const j = await r.json();
+        if (_APP_VERSION === null) _APP_VERSION = j.version;
+        if (j && j.version && j.version !== _APP_VERSION) {
+          _forceUpdateTriggered = true;
+          const el = document.getElementById('meUpdateOverlay');
+          if (el) {
+            el.classList.add('visible');
+            const sub = el.querySelector('.me-upd-sub');
+            if (sub) sub.textContent = 'Versión nueva v' + j.version + ' · evitando duplicados';
+          }
+          try { localStorage.setItem('mosexpress_force_resync', '1'); } catch(_){}
+          if (window._SWCheck) { try { await window._SWCheck(); } catch(_){} }
+          setTimeout(() => { location.reload(true); }, 1500);
+          _preCheckCache = { ts: now, ok: false };
+          return false;
+        }
+        _preCheckCache = { ts: now, ok: true };
+        return true;
+      } catch(_) {
+        _preCheckCache = { ts: now, ok: true };
+        return true;
+      }
+    };
   })();
   </script>
 </head>
@@ -6365,6 +6401,16 @@
         };
 
         const cerrarCaja = async () => {
+             // PRE-CHECK de versión: si la PWA tiene código viejo, bloquear el
+             // cierre y forzar reload. Evita generar guías duplicadas, montos
+             // mal calculados u otros bugs ya corregidos en versiones posteriores.
+             if (typeof window._preCheckVersion === 'function') {
+                 const ok = await window._preCheckVersion();
+                 if (!ok) {
+                     agregarToast('🔄 Actualizando', 'Hay una versión nueva, recargando para evitar errores', 'warning');
+                     return;
+                 }
+             }
              // --- Validar que existe un ID de caja real antes de continuar ---
              const _idCaja = idCajaActual.value || '';
              if (!_idCaja) {
