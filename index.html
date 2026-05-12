@@ -2473,14 +2473,16 @@
     </div>
     <div class="fixed top-4 right-4 z-[999] flex flex-col items-end space-y-2 pointer-events-none">
        <div v-for="t in toasts" :key="t.id"
-            :class="t.tipo === 'warning' ? 'bg-amber-50 text-amber-900 border-amber-400' : 'bg-gray-900 text-white border-emerald-500'"
-            class="toast-anim px-5 py-4 rounded-2xl shadow-2xl flex items-center border-[3px] max-w-xs">
-          <div class="flex flex-col">
+            :class="t.tipo === 'error' ? 'bg-red-50 text-red-900 border-red-500 pointer-events-auto' : (t.tipo === 'warning' ? 'bg-amber-50 text-amber-900 border-amber-400' : 'bg-gray-900 text-white border-emerald-500')"
+            class="toast-anim px-5 py-4 rounded-2xl shadow-2xl flex items-start border-[3px] max-w-xs">
+          <div class="flex flex-col flex-1">
             <span class="font-black text-base flex items-center gap-1">
-              <span v-if="t.tipo === 'warning'">⚠️</span>{{ t.title }}
+              <span v-if="t.tipo === 'error'">⛔</span>
+              <span v-else-if="t.tipo === 'warning'">⚠️</span>{{ t.title }}
             </span>
-            <span v-if="t.msg" :class="t.tipo === 'warning' ? 'text-amber-700' : 'text-emerald-300'" class="text-xs font-bold tracking-wider mt-0.5">{{ t.msg }}</span>
+            <span v-if="t.msg" :class="t.tipo === 'error' ? 'text-red-700' : (t.tipo === 'warning' ? 'text-amber-700' : 'text-emerald-300')" class="text-xs font-bold tracking-wider mt-0.5 break-words">{{ t.msg }}</span>
           </div>
+          <button v-if="t.tipo === 'error'" @click="toasts = toasts.filter(x => x.id !== t.id)" class="ml-2 text-red-900 text-xl font-black leading-none">×</button>
        </div>
     </div>
     <!-- MODAL PRESENTACIONES -->
@@ -4314,7 +4316,10 @@
         const agregarToast = (title, msg = '', tipo = 'info') => {
             const id = toastIdCounter++;
             toasts.value.push({ id, title, msg, tipo });
-            const dur = tipo === 'warning' ? 7000 : 3500; // warnings duran más
+            const dur = (tipo === 'error' || tipo === 'warning') ? 12000 : 3500;
+            if (tipo === 'error') {
+                try { localStorage.setItem('mosexpress_last_error', JSON.stringify({ title, msg, at: new Date().toISOString() })); } catch(_){}
+            }
             setTimeout(() => toasts.value = toasts.value.filter(t => t.id !== id), dur);
         };
 
@@ -4963,9 +4968,15 @@
                 clearTimeout(timeoutId);
                 const res = JSON.parse(rawText);
                 if (res.status === 'success' && res.data) {
-                    // Persistir crudo primero (ahorra un JSON.stringify enorme del Proxy)
-                    localStorage.setItem('mosexpress_db', JSON.stringify(res.data));
-                    localStorage.setItem('mosexpress_last_autosync', String(Date.now()));
+                    // Persistir crudo primero (ahorra un JSON.stringify enorme del Proxy).
+                    // Si localStorage está lleno (QuotaExceededError), seguimos en memoria.
+                    try {
+                        localStorage.setItem('mosexpress_db', JSON.stringify(res.data));
+                        localStorage.setItem('mosexpress_last_autosync', String(Date.now()));
+                    } catch (storageErr) {
+                        console.warn('localStorage falló al guardar catálogo:', storageErr);
+                        agregarToast('Aviso', 'Almacenamiento lleno — catálogo solo en memoria. Limpia caché del navegador.', 'warning');
+                    }
                     // markRaw en arrays grandes — evita wrap recursivo de Vue (~5000 objetos
                     // → Proxies en celular lento = 30s+ de "atorado"). ZONAS_CONFIG queda
                     // reactivo porque _syncImpresorasFromProyectoMOS lo muta in-place.
@@ -4991,8 +5002,8 @@
                 clearTimeout(timeoutId);
                 console.error("Fallo descarga catalogo", e);
                 dbCargada.value = true; // dejar entrar aunque falle — usará datos mock/caché
-                const detalle = e?.name === 'AbortError' ? 'Tiempo agotado (90s)' : String(e?.message || e || 'error').slice(0, 80);
-                agregarToast("Error", `Catálogo: ${detalle}`);
+                const detalle = e?.name === 'AbortError' ? 'Tiempo agotado (90s)' : String(e?.message || e || 'error').slice(0, 120);
+                agregarToast("Error", `Catálogo: ${detalle}`, 'error');
             }
             procesandoCatalogo.value = false;
         };
