@@ -318,6 +318,14 @@ function registrarExtraCaja(data) {
     String(data.obs         || ''),
     String(data.registradoPor || '')
   ]);
+
+  // Alerta de recojo de efectivo: tras INGRESO sube monto → posible cruce de
+  // threshold (alerta). Tras EGRESO baja monto → bandera se reajusta sola
+  // sin enviar push. Virtuales no cuentan (no tocan caja física).
+  try {
+    if (data.cajaId) _chequearAlertaEfectivo(data.cajaId);
+  } catch(eA) { Logger.log('Alerta efectivo (extra): ' + eA.message); }
+
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", idExtra: id
   })).setMimeType(ContentService.MimeType.JSON);

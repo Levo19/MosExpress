@@ -148,6 +148,13 @@ function procesarVenta(data) {
     Logger.log('Auto-jornada MOS: ' + eJ.message);
   }
 
+  // ── Alerta de recojo de efectivo (preventivo robos): cruzar S/500 inicial
+  //    o cada S/250 después dispara push a admins+master. Solo evalúa cajas
+  //    ABIERTAS y solo cuenta efectivo físico (EFECTIVO o parte EFE de MIXTO).
+  try {
+    if (pos.cajaId) _chequearAlertaEfectivo(pos.cajaId);
+  } catch(eA) { Logger.log('Alerta efectivo: ' + eA.message); }
+
   return { idVenta: idVenta, correlativo: correlativoFinal, printDispatched: printDispatched,
            nfEstado: nfEstado, nfHash: nfHash, nfEnlace: nfEnlace, nfQrString: nfQrString };
 }
