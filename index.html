@@ -3729,7 +3729,7 @@
   </div>
 
   <script>
-    const { createApp, ref, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
+    const { createApp, ref, markRaw, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
 
     const API_URL     = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
     const MOS_GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
@@ -3743,7 +3743,7 @@
 
         // --- ESTADOS NÚCLEO v2 ---
         const offlineMode = ref(!navigator.onLine);
-        const db = ref({}); 
+        const db = ref({});
         const dbCargada = ref(false);
         const pendingSales = ref([]);
         const isSyncing = ref(false);
@@ -4474,7 +4474,14 @@
           try {
               const dbLocal = localStorage.getItem('mosexpress_db');
               if (dbLocal) {
-                  db.value = JSON.parse(dbLocal);
+                  const dParsed = JSON.parse(dbLocal);
+                  if (Array.isArray(dParsed.PRODUCTO_BASE))      dParsed.PRODUCTO_BASE      = markRaw(dParsed.PRODUCTO_BASE);
+                  if (Array.isArray(dParsed.PRESENTACIONES))     dParsed.PRESENTACIONES     = markRaw(dParsed.PRESENTACIONES);
+                  if (Array.isArray(dParsed.EQUIVALENCIAS))      dParsed.EQUIVALENCIAS      = markRaw(dParsed.EQUIVALENCIAS);
+                  if (Array.isArray(dParsed.STOCK_ZONAS))        dParsed.STOCK_ZONAS        = markRaw(dParsed.STOCK_ZONAS);
+                  if (Array.isArray(dParsed.PROMOCIONES))        dParsed.PROMOCIONES        = markRaw(dParsed.PROMOCIONES);
+                  if (Array.isArray(dParsed.CLIENTES_FRECUENTES)) dParsed.CLIENTES_FRECUENTES = markRaw(dParsed.CLIENTES_FRECUENTES);
+                  db.value = dParsed;
                   dbCargada.value = true;
                   mapearCatalogoLocal();
                   // Restaurar config de MOS desde cache local (instant)
@@ -4948,29 +4955,43 @@
             }
             if (procesandoGuia.value) return; // no competir con GAS mientras hay guía en curso
             procesandoCatalogo.value = true;
+            const ctrl = new AbortController();
+            const timeoutId = setTimeout(() => ctrl.abort(), 90000); // 90s timeout duro
             try {
-                const req = await fetch(`${API_URL}?accion=descargar`);
-                const res = await req.json();
+                const req = await fetch(`${API_URL}?accion=descargar`, { signal: ctrl.signal });
+                const rawText = await req.text();
+                clearTimeout(timeoutId);
+                const res = JSON.parse(rawText);
                 if (res.status === 'success' && res.data) {
-                    db.value = res.data;
-                    localStorage.setItem('mosexpress_db', JSON.stringify(db.value));
+                    // Persistir crudo primero (ahorra un JSON.stringify enorme del Proxy)
+                    localStorage.setItem('mosexpress_db', JSON.stringify(res.data));
                     localStorage.setItem('mosexpress_last_autosync', String(Date.now()));
+                    // markRaw en arrays grandes — evita wrap recursivo de Vue (~5000 objetos
+                    // → Proxies en celular lento = 30s+ de "atorado"). ZONAS_CONFIG queda
+                    // reactivo porque _syncImpresorasFromProyectoMOS lo muta in-place.
+                    const data = res.data;
+                    if (Array.isArray(data.PRODUCTO_BASE))      data.PRODUCTO_BASE      = markRaw(data.PRODUCTO_BASE);
+                    if (Array.isArray(data.PRESENTACIONES))     data.PRESENTACIONES     = markRaw(data.PRESENTACIONES);
+                    if (Array.isArray(data.EQUIVALENCIAS))      data.EQUIVALENCIAS      = markRaw(data.EQUIVALENCIAS);
+                    if (Array.isArray(data.STOCK_ZONAS))        data.STOCK_ZONAS        = markRaw(data.STOCK_ZONAS);
+                    if (Array.isArray(data.PROMOCIONES))        data.PROMOCIONES        = markRaw(data.PROMOCIONES);
+                    if (Array.isArray(data.CLIENTES_FRECUENTES)) data.CLIENTES_FRECUENTES = markRaw(data.CLIENTES_FRECUENTES);
+                    db.value = data;
                     dbCargada.value = true;
+                    await nextTick(); // ceder al UI antes del map
                     mapearCatalogoLocal();
                     agregarToast("Éxito", "Catálogo actualizado");
-                    // Sincronizar impresoras desde ProyectoMOS_DB después del catálogo
                     _syncImpresorasFromProyectoMOS();
-                    // Refrescar config global MOS (metas, parametros)
                     _cargarConfigMos();
-                    // Sincronizar caché admin (clave global + PINs admins)
                     _sincronizarAdminCache();
                 } else {
                     throw new Error("Formato inválido");
                 }
             } catch (e) {
+                clearTimeout(timeoutId);
                 console.error("Fallo descarga catalogo", e);
                 dbCargada.value = true; // dejar entrar aunque falle — usará datos mock/caché
-                const detalle = String(e?.message || e || 'error').slice(0, 80);
+                const detalle = e?.name === 'AbortError' ? 'Tiempo agotado (90s)' : String(e?.message || e || 'error').slice(0, 80);
                 agregarToast("Error", `Catálogo: ${detalle}`);
             }
             procesandoCatalogo.value = false;
