@@ -644,8 +644,10 @@
     const pl = getPlaylistByHour();
     if (!pl || pl.videoId === playerCurrentVideo) return;
     playerCurrentVideo = pl.videoId;
+    // Formato Mix: list=RD{videoId} hace que YouTube genere una "radio" infinita
+    // con canciones similares — ideal para minimarket de fondo todo el día.
     document.getElementById('ytplayer').src =
-      `https://www.youtube.com/embed/${pl.videoId}?autoplay=1&controls=0&loop=1&playlist=${pl.videoId}&modestbranding=1`;
+      `https://www.youtube.com/embed/${pl.videoId}?autoplay=1&controls=0&list=RD${pl.videoId}&modestbranding=1`;
     document.getElementById('playlistTag').textContent = `♪ ${pl.nombre}`;
     document.getElementById('npTitle').textContent = pl.nombre;
   }
