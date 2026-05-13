@@ -283,26 +283,27 @@
     100% { transform: translateY(-10vh) scale(1.5); opacity: 0; }
   }
 
-  /* AUDIO HINT — botón inicial para desbloquear autoplay con sonido */
-  .audio-hint {
-    position: fixed; inset: 0; z-index: 50;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
-    cursor: pointer;
-    transition: opacity 0.5s ease;
+  /* AUDIO CHIP — solo un hint discreto en la esquina, no bloquea nada */
+  .audio-chip {
+    position: fixed;
+    bottom: 110px; right: 32px;
+    z-index: 50;
+    background: rgba(0,0,0,0.65); backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,215,0,0.45);
+    padding: 14px 22px; border-radius: 999px;
+    font-size: 15px; font-weight: 700; letter-spacing: 0.5px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 0 30px rgba(255,107,53,0.3);
+    animation: chipPulse 2.5s ease-in-out infinite alternate;
+    transition: opacity 0.6s ease, transform 0.6s ease;
+    pointer-events: none;
   }
-  .audio-hint.hidden { opacity: 0; pointer-events: none; }
-  .audio-hint-box {
-    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,215,0,0.3);
-    padding: 40px 60px; border-radius: 24px;
-    text-align: center;
-    backdrop-filter: blur(20px);
-    box-shadow: 0 0 80px rgba(255,107,53,0.4);
+  .audio-chip.hidden { opacity: 0; transform: translateY(50px) scale(0.8); }
+  .audio-chip .icon { font-size: 22px; }
+  @keyframes chipPulse {
+    from { box-shadow: 0 0 20px rgba(255,215,0,0.3); border-color: rgba(255,215,0,0.4); }
+    to   { box-shadow: 0 0 50px rgba(255,107,53,0.7); border-color: rgba(255,107,53,0.6); }
   }
-  .audio-hint-box h2 { font-size: 32px; margin-bottom: 12px; }
-  .audio-hint-box p { font-size: 16px; opacity: 0.8; }
-  .audio-hint-icon { font-size: 80px; margin-bottom: 20px; animation: bounce-icon 1.5s ease-in-out infinite alternate; }
-  @keyframes bounce-icon { from { transform: translateY(0) scale(1); } to { transform: translateY(-15px) scale(1.1); } }
 </style>
 </head>
 <body>
@@ -371,12 +372,9 @@
   </div>
 </div>
 
-<div class="audio-hint" id="audioHint">
-  <div class="audio-hint-box">
-    <div class="audio-hint-icon">🔊</div>
-    <h2>Toca para activar el sonido</h2>
-    <p>Los navegadores bloquean el audio hasta una interacción</p>
-  </div>
+<div class="audio-chip" id="audioChip">
+  <span class="icon">🔇</span>
+  <span>Presiona cualquier tecla para sonido</span>
 </div>
 
 <script>
@@ -636,6 +634,7 @@
 
   // ============ PLAYLIST POR HORARIO ============
   let playerCurrentVideo = null;
+  let audioUnlocked = false;
   function getPlaylistByHour() {
     const h = new Date().getHours();
     return PLAYLISTS.find(p => h >= p.rango[0] && h < p.rango[1]) || PLAYLISTS[0];
@@ -644,13 +643,42 @@
     const pl = getPlaylistByHour();
     if (!pl || pl.videoId === playerCurrentVideo) return;
     playerCurrentVideo = pl.videoId;
-    // Formato Mix: list=RD{videoId} hace que YouTube genere una "radio" infinita
-    // con canciones similares — ideal para minimarket de fondo todo el día.
+    // mute=1 inicial — única forma de que el navegador permita autoplay.
+    // En cuanto el usuario presione cualquier tecla del control remoto se
+    // desmuta vía postMessage (YT IFrame JS API). list=RD{videoId} genera
+    // una "radio" infinita con canciones similares.
+    const muteParam = audioUnlocked ? 0 : 1;
     document.getElementById('ytplayer').src =
-      `https://www.youtube.com/embed/${pl.videoId}?autoplay=1&controls=0&list=RD${pl.videoId}&modestbranding=1`;
+      `https://www.youtube.com/embed/${pl.videoId}?autoplay=1&controls=0&list=RD${pl.videoId}&modestbranding=1&mute=${muteParam}&enablejsapi=1`;
     document.getElementById('playlistTag').textContent = `♪ ${pl.nombre}`;
     document.getElementById('npTitle').textContent = pl.nombre;
   }
+
+  // ── postMessage al iframe de YouTube (para unmute/volume desde aquí)
+  function ytCmd(func, args = []) {
+    const iframe = document.getElementById('ytplayer');
+    if (!iframe || !iframe.contentWindow) return;
+    try {
+      iframe.contentWindow.postMessage(JSON.stringify({
+        event: 'command', func: func, args: args
+      }), '*');
+    } catch(e) { console.warn('yt postMessage:', e); }
+  }
+
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    ytCmd('unMute');
+    ytCmd('setVolume', [80]);
+    ytCmd('playVideo');
+    document.getElementById('audioChip').classList.add('hidden');
+  }
+
+  // Cualquier interacción (click, tecla del remote, touch) desbloquea audio.
+  // Los Smart TVs envían keydown al recibir botones del control.
+  ['click', 'touchstart', 'keydown', 'mousedown'].forEach(ev =>
+    document.addEventListener(ev, unlockAudio, { passive: true, once: false })
+  );
 
   // ============ TICKER ============
   function renderTicker() {
@@ -678,14 +706,6 @@
   function hideLoading() {
     setTimeout(() => document.getElementById('loadingScreen').classList.add('hidden'), 400);
   }
-
-  // ============ AUDIO HINT (autoplay) ============
-  const audioHint = document.getElementById('audioHint');
-  audioHint.addEventListener('click', () => {
-    audioHint.classList.add('hidden');
-    // Forzar reload del iframe para que autoplay agarre la interacción
-    mountYTPlayer();
-  });
 
   // ============ INIT ============
   async function init() {
