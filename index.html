@@ -6406,6 +6406,8 @@
 
             // Notificar a master+admin que ingresó este vendedor (push)
             // Idempotente: el GAS no manda push si ya estaba activo en últimos 30 min.
+            // esCajero=true → la push aquí se omite (la push de apertura de caja
+            // ya cubre el evento). esCajero=false → push de "🛍 vendedor".
             try {
                 fetch(MOS_GAS_URL, {
                     method: 'POST',
@@ -6414,7 +6416,9 @@
                         nombre: config.value.vendedor,
                         appOrigen: 'mosExpress',
                         deviceId: deviceId.value || '',
-                        estacion: config.value.estacion?.Estacion_Nombre || ''
+                        estacion: config.value.estacion?.Estacion_Nombre || '',
+                        zona: config.value.zona || '',
+                        esCajero: !!esCajero
                     })
                 }).catch(() => {});
             } catch(_) {}
