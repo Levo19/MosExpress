@@ -283,6 +283,62 @@
     100% { transform: translateY(-10vh) scale(1.5); opacity: 0; }
   }
 
+  /* UPDATE OVERLAY — aparece cuando detecta nueva versión, recarga sola */
+  .update-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: radial-gradient(ellipse at center, rgba(20,0,40,0.85), rgba(0,0,0,0.95));
+    backdrop-filter: blur(30px);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.8s ease;
+  }
+  .update-overlay.show { opacity: 1; pointer-events: auto; }
+  .update-box {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,215,0,0.4);
+    padding: 60px 100px; border-radius: 32px;
+    text-align: center;
+    box-shadow: 0 0 120px rgba(255,107,53,0.5), inset 0 0 40px rgba(255,215,0,0.1);
+    animation: updatePulse 2.5s ease-in-out infinite alternate;
+    max-width: 600px;
+  }
+  @keyframes updatePulse {
+    from { box-shadow: 0 0 80px rgba(255,107,53,0.4), inset 0 0 30px rgba(255,215,0,0.1); transform: scale(1); }
+    to   { box-shadow: 0 0 160px rgba(255,215,0,0.7), inset 0 0 60px rgba(255,107,53,0.2); transform: scale(1.02); }
+  }
+  .update-icon {
+    font-size: 80px; line-height: 1; margin-bottom: 20px;
+    animation: rotateIcon 3s linear infinite;
+    display: inline-block;
+  }
+  @keyframes rotateIcon { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+  .update-box h2 {
+    font-size: 36px; font-weight: 900; letter-spacing: 1px;
+    background: linear-gradient(90deg, #ffd700, #ff6b35);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    margin-bottom: 8px;
+  }
+  .update-box .ver {
+    font-size: 18px; opacity: 0.85; margin-bottom: 28px;
+  }
+  .update-box .ver strong { color: #ffd700; font-variant-numeric: tabular-nums; }
+  .update-bar {
+    width: 100%; height: 8px;
+    background: rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.4);
+  }
+  .update-bar-fill {
+    height: 100%; width: 0;
+    background: linear-gradient(90deg, #ff6b35 0%, #ffd700 50%, #ff6b35 100%);
+    background-size: 200% 100%;
+    border-radius: 4px;
+    animation: updateBar 3.2s cubic-bezier(0.4, 0, 0.6, 1) forwards, barShimmer 1.5s linear infinite;
+    box-shadow: 0 0 20px rgba(255,215,0,0.6);
+  }
+  @keyframes updateBar { from { width: 0; } to { width: 100%; } }
+  @keyframes barShimmer { from { background-position: 0% 0; } to { background-position: 200% 0; } }
+  .update-msg { margin-top: 16px; font-size: 14px; opacity: 0.6; letter-spacing: 1.5px; }
+
   /* AUDIO CHIP — solo un hint discreto en la esquina, no bloquea nada */
   .audio-chip {
     position: fixed;
@@ -377,48 +433,105 @@
   <span>Presiona cualquier tecla para sonido</span>
 </div>
 
+<div class="update-overlay" id="updateOverlay">
+  <div class="update-box">
+    <div class="update-icon">🚀</div>
+    <h2>NUEVA VERSIÓN DISPONIBLE</h2>
+    <div class="ver">Actualizando a <strong id="updateVer">--</strong></div>
+    <div class="update-bar"><div class="update-bar-fill"></div></div>
+    <div class="update-msg">Recargando automáticamente...</div>
+  </div>
+</div>
+
 <script>
   // ============ CONFIG ============
   const API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
 
-  // ============ CATEGORÍAS (gradient + emoji para fallback sin foto) ============
+  // ============ CATEGORÍAS (gradient + emoji + stock photo fallback) ============
   const CATEGORIAS = {
-    bebidas:   { gradient: 'linear-gradient(135deg, #1565c0, #00bcd4)', emoji: '🥤' },
-    cerveza:   { gradient: 'linear-gradient(135deg, #f57c00, #ffc107)', emoji: '🍺' },
-    snacks:    { gradient: 'linear-gradient(135deg, #d84315, #ff8a65)', emoji: '🥨' },
-    chocolate: { gradient: 'linear-gradient(135deg, #4e342e, #a1887f)', emoji: '🍫' },
-    golosinas: { gradient: 'linear-gradient(135deg, #c2185b, #f48fb1)', emoji: '🍬' },
-    lacteos:   { gradient: 'linear-gradient(135deg, #607d8b, #cfd8dc)', emoji: '🥛' },
-    panaderia: { gradient: 'linear-gradient(135deg, #bf6b00, #ffb74d)', emoji: '🥖' },
-    abarrotes: { gradient: 'linear-gradient(135deg, #558b2f, #c5e1a5)', emoji: '🌾' },
-    limpieza:  { gradient: 'linear-gradient(135deg, #0277bd, #4fc3f7)', emoji: '🧼' },
-    higiene:   { gradient: 'linear-gradient(135deg, #00838f, #80deea)', emoji: '🧻' },
-    agua:      { gradient: 'linear-gradient(135deg, #006064, #4dd0e1)', emoji: '💧' },
-    cigarros:  { gradient: 'linear-gradient(135deg, #424242, #757575)', emoji: '🚬' },
-    helados:   { gradient: 'linear-gradient(135deg, #1e88e5, #b3e5fc)', emoji: '🍦' },
-    galletas:  { gradient: 'linear-gradient(135deg, #ef6c00, #ffcc80)', emoji: '🍪' },
-    default:   { gradient: 'linear-gradient(135deg, #455a64, #90a4ae)', emoji: '🛒' },
+    bebidas:    { gradient: 'linear-gradient(135deg, #1565c0, #00bcd4)', emoji: '🥤' },
+    cerveza:    { gradient: 'linear-gradient(135deg, #f57c00, #ffc107)', emoji: '🍺' },
+    snacks:     { gradient: 'linear-gradient(135deg, #d84315, #ff8a65)', emoji: '🥨' },
+    chocolate:  { gradient: 'linear-gradient(135deg, #4e342e, #a1887f)', emoji: '🍫' },
+    golosinas:  { gradient: 'linear-gradient(135deg, #c2185b, #f48fb1)', emoji: '🍬' },
+    lacteos:    { gradient: 'linear-gradient(135deg, #607d8b, #cfd8dc)', emoji: '🥛' },
+    panaderia:  { gradient: 'linear-gradient(135deg, #bf6b00, #ffb74d)', emoji: '🥖' },
+    abarrotes:  { gradient: 'linear-gradient(135deg, #558b2f, #c5e1a5)', emoji: '🌾' },
+    especerias: { gradient: 'linear-gradient(135deg, #a1530d, #d4a76a)', emoji: '🧂' },
+    salsas:     { gradient: 'linear-gradient(135deg, #b71c1c, #ef5350)', emoji: '🥫' },
+    aderezos:   { gradient: 'linear-gradient(135deg, #2e7d32, #81c784)', emoji: '🫒' },
+    limpieza:   { gradient: 'linear-gradient(135deg, #0277bd, #4fc3f7)', emoji: '🧼' },
+    higiene:    { gradient: 'linear-gradient(135deg, #00838f, #80deea)', emoji: '🧻' },
+    agua:       { gradient: 'linear-gradient(135deg, #006064, #4dd0e1)', emoji: '💧' },
+    cigarros:   { gradient: 'linear-gradient(135deg, #424242, #757575)', emoji: '🚬' },
+    helados:    { gradient: 'linear-gradient(135deg, #1e88e5, #b3e5fc)', emoji: '🍦' },
+    galletas:   { gradient: 'linear-gradient(135deg, #ef6c00, #ffcc80)', emoji: '🍪' },
+    conservas:  { gradient: 'linear-gradient(135deg, #6d4c41, #bcaaa4)', emoji: '🥫' },
+    default:    { gradient: 'linear-gradient(135deg, #455a64, #90a4ae)', emoji: '🛒' },
   };
 
-  // Categorización por keyword en el nombre del producto.
-  // Si la hoja RadioConfig tiene "cat" para ese SKU, eso gana.
+  // Stock photos por categoría (fallback cuando el producto no tiene foto propia).
+  // Cada producto agarra una foto distinta de su categoría por hash del SKU,
+  // así no salen todos los productos de "abarrotes" con la misma imagen.
+  const u = (id) => `https://images.unsplash.com/photo-${id}?w=1400&auto=format&fit=crop`;
+  const CATEGORIAS_IMG = {
+    abarrotes:  [u('1604908554049-29eaadb1b099'), u('1547592180-85f173990554'), u('1546069901-ba9599a7e63c'), u('1586201375761-83865001e31c')],
+    especerias: [u('1532336414038-cf19250c5757'), u('1599909533730-0f0b8dd8a89e'), u('1599906825089-66b8c39da0f8'), u('1596040033229-a9821ebd058d')],
+    salsas:     [u('1607604276583-eef5d076aa5f'), u('1612626256634-991e6e977fc1'), u('1551038247-3d9af20df552')],
+    aderezos:   [u('1474979266404-7eaacbcd87c5'), u('1620706857370-e1b9770e8bb1'), u('1632935190508-bd13c4ce6da6')],
+    conservas:  [u('1607349913338-fca6f7fc42d0'), u('1607604276583-eef5d076aa5f')],
+    bebidas:    [u('1554866585-cd94860890b7'), u('1581636625402-29b2a704ef13'), u('1622597467836-f3285f2131b8')],
+    cerveza:    [u('1535958636474-b021ee887b13'), u('1571849572312-5a89c4d2d04c'), u('1608270586620-248524c67de9')],
+    snacks:     [u('1599490659213-e2b9527bd087'), u('1573080496219-bb080dd4f877'), u('1613919113640-25732ec5e61f')],
+    chocolate:  [u('1623660053975-cf75a8be0908'), u('1606312619070-d48e4c7e08fb'), u('1511381939415-e44015466834')],
+    golosinas:  [u('1581798459206-d70b54fc9b3a'), u('1582058091505-f87a2e55a40f')],
+    galletas:   [u('1558961363-fa8fdf82db35'), u('1606313564200-e75d5e30476c')],
+    lacteos:    [u('1563636619-e9143da7973b'), u('1486297678162-eb2a19b0a32d'), u('1582722872445-44dc5f7e3c8f')],
+    panaderia:  [u('1549931319-a545dcf3bc73'), u('1555507036-ab1f4038808a')],
+    limpieza:   [u('1583847268964-b28dc8f51f92'), u('1607619056574-7b8d3ee536f6')],
+    higiene:    [u('1584556812952-905ffd0c611a')],
+    agua:       [u('1560023907-5f339617ea30')],
+    cigarros:   [u('1583511655826-4b88c8b1c1d4')],
+    helados:    [u('1567206563064-6f60f40a2b57'), u('1571506165871-ee72a35bc9d4')],
+    default:    [],
+  };
+
+  // Hash determinístico SKU → indice de foto (mismo producto = misma foto siempre)
+  function hashSku(sku) {
+    let h = 0;
+    for (let i = 0; i < sku.length; i++) h = (h * 31 + sku.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }
+  function getCategoriaImg(catKey, sku) {
+    const arr = CATEGORIAS_IMG[catKey] || [];
+    if (!arr.length) return '';
+    return arr[hashSku(sku) % arr.length];
+  }
+
+  // Categorización por keyword. Override manual con tipo 'cat' en RadioConfig.
+  // El orden importa: matchea la primera regla que pega.
   const KEYWORDS = [
-    [/cerveza|pilsen|cristal|cusque[ñn]a|corona|heineken|backus/i, 'cerveza'],
-    [/coca|inca|sprite|fanta|gaseosa|kola|pepsi|7up|seven/i, 'bebidas'],
-    [/agua|san luis|cielo|san mateo/i, 'agua'],
-    [/jugo|frugos|tampico/i, 'bebidas'],
-    [/chocolate|sublime|princesa|cua\s?cua|triangulo|trian|hersh/i, 'chocolate'],
-    [/galleta|casino|soda|field|oreo|chips ahoy|morochas|margarita/i, 'galletas'],
-    [/papita|chizito|chiz|cheese|lay|pringles|tortee|piqueo|doritos|cheetos/i, 'snacks'],
-    [/caramelo|chupet[ií]n|chicle|halls|mentos|menthoplus|globo/i, 'golosinas'],
-    [/leche|gloria|laive|pura vida|yogur|queso|mantequilla/i, 'lacteos'],
-    [/pan|bagueta|tostada|kekito/i, 'panaderia'],
-    [/arroz|fideo|aceite|az[uú]car|sal|atun|atún|conserva|menestra|harina/i, 'abarrotes'],
-    [/detergente|jab[oó]n|lej[ií]a|sapolio|ace|magia blanca|ariel|bol[ií]var/i, 'limpieza'],
-    [/papel|higi[eé]nico|toalla|servilleta|kotex|pa[ñn]al|pampers/i, 'higiene'],
-    [/cigarro|tabaco|hamilton|lucky|marlboro|winston|caribe/i, 'cigarros'],
-    [/helado|donof|d'?onof/i, 'helados'],
+    [/cerveza|pilsen|cristal|cusque[ñn]a|corona|heineken|backus|guinness/i, 'cerveza'],
+    [/coca\s?cola|inca\s?kola|sprite|fanta|gaseosa|kola|pepsi|7\s?up|seven|guaran[aá]/i, 'bebidas'],
+    [/agua|san luis|cielo|san mateo|botell[oó]n/i, 'agua'],
+    [/jugo|n[eé]ctar|frugos|tampico|gloria selva/i, 'bebidas'],
+    [/sal\s|sal\b|pimienta|comino|paprika|achiote|or[eé]gano|romero|canela|clavo|laurel|sazonador|condimento|especia|saz[oó]n/i, 'especerias'],
+    [/aceite|oliva|vinagre|aderezo|vinagreta/i, 'aderezos'],
+    [/salsa|ketchup|mayonesa|mostaza|aj[ií]|sillao|soya|sazonadora|tarí|tari\s|inglesa|huancaina|barbacoa|bbq/i, 'salsas'],
+    [/at[uú]n|conserva|menestra|frijol|lenteja|garbanzo|durazno enlatado|enlatado/i, 'conservas'],
+    [/chocolate|sublime|princesa|cua\s?cua|triangulo|trian|hersh|kit\s?kat|nestl[eé] cl[aá]sico|cocoa/i, 'chocolate'],
+    [/galleta|casino|soda field|field|oreo|chips ahoy|morochas|margarita|tentaci[oó]n|wafer/i, 'galletas'],
+    [/papita|chizito|chiz|cheese|lay|pringles|tortee|piqueo|doritos|cheetos|cancha|chif[ií]es|chiflado/i, 'snacks'],
+    [/caramelo|chupet[ií]n|chicle|halls|mentos|menthoplus|globo pop|gomas/i, 'golosinas'],
+    [/leche|gloria|laive|pura vida|yogur|queso|mantequilla|crema de leche|leche condensada/i, 'lacteos'],
+    [/pan\b|bagueta|tostada|kekito|panet[oó]n/i, 'panaderia'],
+    [/arroz|fideo|fideos|az[uú]car|harina|avena|qu[ií]nua|kiwicha|hojuela|maicena|tap[ií]oca/i, 'abarrotes'],
+    [/detergente|jab[oó]n liquid|lej[ií]a|sapolio|ace\b|magia blanca|ariel|bol[ií]var|lavavajilla|lim[oó]n verde/i, 'limpieza'],
+    [/papel higi|higi[eé]nico|toalla|servilleta|kotex|pa[ñn]al|pampers|jab[oó]n\b|shampoo|crema dental|cepillo dental/i, 'higiene'],
+    [/cigarro|tabaco|hamilton|lucky|marlboro|winston|caribe|premier/i, 'cigarros'],
+    [/helado|donof|d'?onof|sublime barra|cassata|polo\b/i, 'helados'],
     [/huevo/i, 'abarrotes'],
+    [/ajinomoto|glutamato/i, 'especerias'],
   ];
 
   function categorizar(nombre, override) {
@@ -468,12 +581,26 @@
     const productoBaseMap = {};
     (cat?.PRODUCTO_BASE || []).forEach(p => { productoBaseMap[p.SKU_Base] = p; });
 
-    const vendidosMap = {};
-    (top.productos || []).forEach(p => { vendidosMap[p.sku] = p.vendidos; });
+    // Mapa SKU presentación → SKU_Base (canónico de su grupo)
+    const skuToBase = {};
+    (cat?.PRESENTACIONES || []).forEach(p => { skuToBase[p.SKU] = p.SKU_Base; });
 
-    // Set de SKUs que ESTA tienda ha vendido alguna vez (filtra el catálogo
-    // del MOS master para mostrar solo productos reales del local).
+    // Rollup de vendidos por SKU_Base: si vendiste 6 packs de cerveza,
+    // el canónico cerveza acumula 6 (o el equivalente en factor). Así el
+    // producto ESTRELLA es el canónico cuyas presentaciones más se venden.
+    const vendidosPorBase = {};
+    (top.productos || []).forEach(p => {
+      const base = skuToBase[p.sku] || p.sku;
+      vendidosPorBase[base] = (vendidosPorBase[base] || 0) + p.vendidos;
+    });
+
+    // Grupos (SKU_Base) que tienen al menos una presentación vendida en la tienda.
+    // Es el filtro: muestro solo canónicos cuyas presentaciones realmente vende ME.
     const skusTienda = new Set(top.skus_de_la_tienda || []);
+    const gruposSoldHere = new Set();
+    (cat?.PRESENTACIONES || []).forEach(p => {
+      if (skusTienda.has(p.SKU)) gruposSoldHere.add(p.SKU_Base);
+    });
 
     const overrideImg = cfg.imagenes || {};
     const overrideCat = cfg.categorias || {};
@@ -492,7 +619,8 @@
     const canonicos = Object.values(canonicosPorGrupo);
 
     PRODUCTOS = canonicos
-      .filter(p => skusTienda.size === 0 || skusTienda.has(p.SKU) || skusTienda.has(p.SKU_Base))
+      // Solo canónicos cuyo GRUPO ha vendido algo en la tienda (cualquier presentación)
+      .filter(p => gruposSoldHere.size === 0 || gruposSoldHere.has(p.SKU_Base))
       .map(p => {
         const base = productoBaseMap[p.SKU_Base] || {};
         const nombre = base.Nombre || p.Empaque || p.SKU;
@@ -504,13 +632,15 @@
           nombre:   nombre.toUpperCase(),
           desc:     '',
           precio:   parseFloat(p.Precio_Venta) || 0,
-          vendidos: vendidosMap[p.SKU] || 0,
+          vendidos: vendidosPorBase[p.SKU_Base] || 0,
           categoria: catKey,
           emoji:    getCategoria(catKey).emoji,
-          img:      normalizeImg(imgRaw),
+          // Fallback automático: si no hay foto del producto, agarra una stock
+          // de la categoría (mismo SKU_Base = misma foto siempre, no parpadea).
+          img:      normalizeImg(imgRaw) || getCategoriaImg(catKey, p.SKU_Base),
         };
       });
-    console.log(`[RADIO] Canónicos en master: ${canonicos.length} | filtrados a tienda: ${PRODUCTOS.length}`);
+    console.log(`[RADIO] Canónicos en master: ${canonicos.length} | de la tienda: ${PRODUCTOS.length} | top 3:`, PRODUCTOS.slice().sort((a,b)=>b.vendidos-a.vendidos).slice(0,3).map(p=>`${p.nombre} (${p.vendidos})`));
 
     // Si no hay productos en absoluto, mock fallback
     if (!PRODUCTOS.length) {
@@ -563,10 +693,12 @@
   }
 
   function renderEstrella(prod) {
+    if (!prod) { console.warn('[RADIO] renderEstrella: prod undefined'); return; }
     const img = document.getElementById('estrellaImg');
     const content = document.getElementById('estrellaContent');
     img.classList.add('swap'); content.classList.add('swap');
     setTimeout(() => {
+      try {
       const cat = getCategoria(prod.categoria);
       if (prod.img) {
         img.classList.remove('no-image');
@@ -590,10 +722,16 @@
       document.getElementById('estrellaPedidos').textContent = prod.vendidos;
       img.classList.remove('swap'); content.classList.remove('swap');
       img.style.animation = 'none'; img.offsetHeight; img.style.animation = '';
+      } catch(e) {
+        console.error('[RADIO] renderEstrella crash:', e);
+        // Quita las swap classes para que la estrella no quede invisible
+        img.classList.remove('swap'); content.classList.remove('swap');
+      }
     }, 600);
   }
 
   function rotarEstrella() {
+    if (!PRODUCTOS.length) return;
     const estrellas = obtenerEstrellas();
     if (!estrellas.length) return;
     estrellaIdx = (estrellaIdx + 1) % estrellas.length;
@@ -757,6 +895,50 @@
       try { await cargarData(); } catch (e) { console.warn('refresh fail', e); }
     }, 5 * 60 * 1000);
   }
+
+  // ============ AUTO-UPDATE: detecta nueva versión y recarga con efecto ============
+  let initialVersion = null;
+  async function checkForUpdate() {
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      const v = await r.json();
+      if (initialVersion === null) {
+        initialVersion = v.version;
+        console.log('[RADIO] version inicial:', initialVersion);
+        return;
+      }
+      if (v.version !== initialVersion) {
+        console.log('[RADIO] nueva version detectada:', v.version, 'vs', initialVersion);
+        triggerUpdate(v.version);
+      }
+    } catch(e) { console.warn('[RADIO] checkUpdate:', e); }
+  }
+
+  let updating = false;
+  function triggerUpdate(newVer) {
+    if (updating) return;
+    updating = true;
+    document.getElementById('updateVer').textContent = newVer;
+    document.getElementById('updateOverlay').classList.add('show');
+    // Limpiamos cache SW y recargamos con cachebust → trae la versión nueva real
+    setTimeout(async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.update()));
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.filter(k => k.startsWith('mosexpress')).map(k => caches.delete(k)));
+          }
+        }
+      } catch(e) { console.warn('clear cache:', e); }
+      location.href = location.pathname + '?v=' + Date.now();
+    }, 3300);
+  }
+
+  // Primera lectura a los 30s (memoria base), luego cada 90s
+  setTimeout(checkForUpdate, 30 * 1000);
+  setInterval(checkForUpdate, 90 * 1000);
 
   // Service Worker
   if ('serviceWorker' in navigator) {
