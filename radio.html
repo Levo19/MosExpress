@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MosExpress Radio</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0014">
+<!--
+  MOSEXPRESS RADIO — pantalla publicitaria para SmartTV
+  =====================================================
+  URL para la TV: https://[tu-host]/MosExpress/radio.html
+  Datos: catálogo (descargar) + top vendidos del día + RadioConfig (Sheet)
+  Música: YouTube IFrame con playlist por horario (editable en Sheet RadioConfig)
+  Setup inicial:
+    1) Ejecuta setupRadioSheet() en Apps Script (crea hoja RadioConfig con ejemplos)
+    2) Edita la hoja con tus playlists, ticker, fotos (URL Drive) y categorías
+    3) Abre esta URL en el navegador de la SmartTV → fullscreen
+-->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#fff; background:#0a0014; }
+
+  /* ============ FONDO ANIMADO ============ */
+  .bg-gradient {
+    position: fixed; inset: 0; z-index: -3;
+    background: linear-gradient(125deg, #1a0033 0%, #4a0e4e 25%, #c9184a 50%, #ff6b35 75%, #f7c948 100%);
+    background-size: 400% 400%;
+    animation: gradientShift 25s ease infinite;
+    opacity: 0.55;
+  }
+  @keyframes gradientShift {
+    0%,100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  /* ============ ORBES ============ */
+  .orbs { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events:none; }
+  .orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.5; }
+  .orb-1 { width: 500px; height: 500px; background: #ff6b35; top:-10%; left:-10%; animation: float1 22s ease-in-out infinite; }
+  .orb-2 { width: 400px; height: 400px; background: #ffd700; bottom:-15%; right:-10%; animation: float2 28s ease-in-out infinite; }
+  .orb-3 { width: 450px; height: 450px; background: #c9184a; top:30%; right:20%; animation: float3 35s ease-in-out infinite; }
+  .orb-4 { width: 350px; height: 350px; background: #8b00ff; bottom:20%; left:25%; animation: float4 30s ease-in-out infinite; }
+  @keyframes float1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(40vw, 30vh) scale(1.2); } }
+  @keyframes float2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-30vw, -25vh) scale(0.9); } }
+  @keyframes float3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-20vw, 35vh) scale(1.15); } }
+  @keyframes float4 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(25vw, -20vh) scale(1.1); } }
+
+  .noise {
+    position: fixed; inset: 0; z-index: -1; pointer-events:none;
+    background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.6) 100%);
+  }
+
+  /* ============ LOADING ============ */
+  .loading-screen {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 30px;
+    transition: opacity 0.8s ease, visibility 0.8s ease;
+  }
+  .loading-screen.hidden { opacity: 0; visibility: hidden; }
+  .loading-logo {
+    font-size: 48px; font-weight: 900; letter-spacing: 4px;
+    background: linear-gradient(90deg, #ffd700, #ff6b35);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: logoPulse 2s ease-in-out infinite alternate;
+  }
+  @keyframes logoPulse {
+    from { text-shadow: 0 0 30px rgba(255,107,53,0.5); transform: scale(1); }
+    to   { text-shadow: 0 0 60px rgba(255,215,0,0.8); transform: scale(1.05); }
+  }
+  .loading-spinner {
+    width: 60px; height: 60px;
+    border: 4px solid rgba(255,255,255,0.1);
+    border-top-color: #ffd700;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-msg { font-size: 16px; opacity: 0.7; letter-spacing: 2px; }
+
+  /* ============ LAYOUT ============ */
+  .stage { display: grid; grid-template-rows: auto 1fr auto auto; height: 100vh; padding: 24px 32px; gap: 20px; }
+
+  header { display: flex; justify-content: space-between; align-items: center; }
+  .logo {
+    font-size: 28px; font-weight: 900; letter-spacing: 2px;
+    background: linear-gradient(90deg, #ffd700, #ff6b35);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 30px rgba(255,107,53,0.4);
+  }
+  .logo span { color: #fff; -webkit-text-fill-color: #fff; opacity: 0.7; font-weight: 300; margin-left: 8px; }
+  .clock { font-size: 22px; font-weight: 300; opacity: 0.85; font-variant-numeric: tabular-nums; }
+
+  .hero { display: grid; grid-template-columns: 1fr 380px; gap: 24px; min-height: 0; }
+
+  /* ESTRELLA */
+  .estrella {
+    position: relative; border-radius: 28px; overflow: hidden;
+    background: rgba(255,255,255,0.04); backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 25px 80px rgba(0,0,0,0.5);
+  }
+  .estrella-img {
+    position: absolute; inset: 0;
+    background-size: cover; background-position: center;
+    animation: kenburns 22s ease-in-out infinite alternate;
+  }
+  .estrella-img::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 60%, transparent 100%);
+  }
+  @keyframes kenburns {
+    0% { transform: scale(1.05) translate(0,0); }
+    100% { transform: scale(1.25) translate(-3%, -3%); }
+  }
+  .estrella-img.no-image { animation: none; }
+  .estrella-img.no-image::before {
+    content: attr(data-emoji);
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 280px; line-height: 1;
+    filter: drop-shadow(0 10px 40px rgba(0,0,0,0.5));
+    animation: emojiFloat 6s ease-in-out infinite alternate;
+    z-index: 1;
+  }
+  @keyframes emojiFloat {
+    0%   { transform: translateY(0) rotate(-4deg) scale(1); }
+    100% { transform: translateY(-25px) rotate(4deg) scale(1.08); }
+  }
+  .estrella-img .cat-watermark {
+    position: absolute; right: 32px; top: 28px; z-index: 2;
+    background: rgba(0,0,0,0.4); backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 6px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; opacity: 0.85;
+  }
+  .estrella-content {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 40px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .tag-fire {
+    align-self: flex-start;
+    background: linear-gradient(90deg, #ff3838, #ff6b35);
+    padding: 10px 20px; border-radius: 999px;
+    font-size: 14px; font-weight: 800; letter-spacing: 1.5px;
+    text-shadow: 0 0 10px rgba(0,0,0,0.5);
+    animation: glow 2.5s ease-in-out infinite alternate;
+  }
+  @keyframes glow {
+    from { box-shadow: 0 0 20px #ff6b35, 0 0 40px rgba(255,107,53,0.6); transform: scale(1); }
+    to   { box-shadow: 0 0 35px #ffd700, 0 0 70px rgba(255,107,53,0.9); transform: scale(1.05); }
+  }
+  .estrella-nombre {
+    font-size: 64px; font-weight: 900; line-height: 1.05;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.8);
+    letter-spacing: -1px;
+  }
+  .estrella-desc { font-size: 18px; opacity: 0.85; max-width: 70%; }
+  .estrella-precio { display: flex; align-items: baseline; gap: 12px; }
+  .precio-moneda { font-size: 28px; opacity: 0.8; }
+  .precio-valor {
+    font-size: 88px; font-weight: 900; line-height: 1;
+    background: linear-gradient(90deg, #ffd700, #ffeb3b);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 40px rgba(255,215,0,0.5);
+  }
+  .estrella-pedidos {
+    margin-left: auto;
+    background: rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 8px 16px; border-radius: 12px;
+    font-size: 14px;
+  }
+  .estrella-pedidos strong { color: #ffd700; font-size: 18px; }
+  .estrella-content.swap, .estrella-img.swap { animation: swapOut 0.6s ease forwards; }
+  @keyframes swapOut {
+    0% { opacity: 1; transform: scale(1); filter: blur(0); }
+    100% { opacity: 0; transform: scale(1.05); filter: blur(20px); }
+  }
+
+  /* ASIDE */
+  aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .aside-title { font-size: 14px; font-weight: 700; letter-spacing: 3px; opacity: 0.7; padding: 0 4px; }
+  .cards { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+  .card {
+    flex: 1; min-height: 0;
+    display: flex; gap: 14px; padding: 12px;
+    background: rgba(255,255,255,0.07); backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 18px;
+    overflow: hidden; position: relative;
+    transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .card.slide-in { animation: slideIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .card.slide-out { animation: slideOut 0.6s cubic-bezier(0.7, 0, 0.84, 0) both; }
+  @keyframes slideIn { from { transform: translateX(120%); opacity: 0; filter: blur(10px); } to { transform: translateX(0); opacity: 1; filter: blur(0); } }
+  @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-120%); opacity: 0; filter: blur(10px); } }
+  .card::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,107,53,0.15), transparent);
+    pointer-events: none;
+  }
+  .card-img {
+    width: 100px; flex-shrink: 0;
+    border-radius: 12px; overflow: hidden;
+    background-size: cover; background-position: center;
+    position: relative;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .card-img.no-image::before {
+    content: attr(data-emoji);
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 52px; line-height: 1;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+  }
+  .card-info { display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0; gap: 4px; }
+  .card-nombre { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-desc { font-size: 12px; opacity: 0.65; }
+  .card-precio { font-size: 22px; font-weight: 900; margin-top: auto; color: #ffd700; }
+
+  /* PLAYER */
+  .player-bar {
+    display: flex; align-items: center; gap: 20px;
+    background: rgba(0,0,0,0.45); backdrop-filter: blur(30px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 18px; padding: 14px 22px;
+  }
+  .yt-frame-wrap {
+    width: 80px; height: 50px; border-radius: 10px; overflow: hidden;
+    position: relative; flex-shrink: 0; background: #000;
+    box-shadow: 0 0 25px rgba(255,107,53,0.4);
+  }
+  .yt-frame-wrap iframe { width: 100%; height: 100%; border: 0; }
+  .visualizer { display: flex; align-items: flex-end; gap: 3px; height: 36px; }
+  .bar { width: 4px; background: linear-gradient(to top, #ff6b35, #ffd700); border-radius: 2px; animation: bounce 0.6s ease-in-out infinite alternate; }
+  .bar:nth-child(1) { animation-delay: 0s;    height: 16px; }
+  .bar:nth-child(2) { animation-delay: 0.1s;  height: 28px; }
+  .bar:nth-child(3) { animation-delay: 0.2s;  height: 12px; }
+  .bar:nth-child(4) { animation-delay: 0.15s; height: 30px; }
+  .bar:nth-child(5) { animation-delay: 0.05s; height: 20px; }
+  .bar:nth-child(6) { animation-delay: 0.25s; height: 26px; }
+  .bar:nth-child(7) { animation-delay: 0.1s;  height: 14px; }
+  @keyframes bounce { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
+  .now-playing { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; }
+  .np-label { font-size: 11px; letter-spacing: 2px; opacity: 0.55; font-weight: 700; }
+  .np-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .playlist-tag {
+    background: linear-gradient(90deg, rgba(255,107,53,0.3), rgba(255,215,0,0.3));
+    border: 1px solid rgba(255,215,0,0.4);
+    padding: 6px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+  }
+
+  /* TICKER */
+  .ticker {
+    background: rgba(0,0,0,0.5); backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; overflow: hidden; position: relative; padding: 12px 0;
+  }
+  .ticker::before, .ticker::after { content: ''; position: absolute; top:0; bottom:0; width: 80px; z-index: 2; pointer-events:none; }
+  .ticker::before { left: 0; background: linear-gradient(to right, rgba(0,0,0,0.7), transparent); }
+  .ticker::after  { right: 0; background: linear-gradient(to left,  rgba(0,0,0,0.7), transparent); }
+  .ticker-track { display: flex; gap: 60px; white-space: nowrap; animation: tickerScroll 45s linear infinite; will-change: transform; }
+  .ticker-item { font-size: 16px; font-weight: 600; display: inline-flex; align-items: center; gap: 12px; padding: 0 12px; }
+  .ticker-item.dot { color: #ffd700; }
+  @keyframes tickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+  /* PARTICLES */
+  .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .particle {
+    position: absolute; width: 4px; height: 4px;
+    background: #ffd700; border-radius: 50%;
+    opacity: 0; box-shadow: 0 0 8px #ffd700;
+    animation: particleRise 12s linear infinite;
+  }
+  @keyframes particleRise {
+    0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+    10%  { opacity: 0.8; }
+    90%  { opacity: 0.6; }
+    100% { transform: translateY(-10vh) scale(1.5); opacity: 0; }
+  }
+
+  /* AUDIO HINT — botón inicial para desbloquear autoplay con sonido */
+  .audio-hint {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
+    cursor: pointer;
+    transition: opacity 0.5s ease;
+  }
+  .audio-hint.hidden { opacity: 0; pointer-events: none; }
+  .audio-hint-box {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,215,0,0.3);
+    padding: 40px 60px; border-radius: 24px;
+    text-align: center;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 0 80px rgba(255,107,53,0.4);
+  }
+  .audio-hint-box h2 { font-size: 32px; margin-bottom: 12px; }
+  .audio-hint-box p { font-size: 16px; opacity: 0.8; }
+  .audio-hint-icon { font-size: 80px; margin-bottom: 20px; animation: bounce-icon 1.5s ease-in-out infinite alternate; }
+  @keyframes bounce-icon { from { transform: translateY(0) scale(1); } to { transform: translateY(-15px) scale(1.1); } }
+</style>
+</head>
+<body>
+
+<div class="bg-gradient"></div>
+<div class="orbs">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  <div class="orb orb-4"></div>
+</div>
+<div class="noise"></div>
+<div class="particles" id="particles"></div>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-logo">MOSEXPRESS</div>
+  <div class="loading-spinner"></div>
+  <div class="loading-msg" id="loadingMsg">Cargando catálogo...</div>
+</div>
+
+<div class="stage">
+  <header>
+    <div class="logo">MOSEXPRESS<span>RADIO</span></div>
+    <div class="clock" id="clock">--:--</div>
+  </header>
+
+  <div class="hero">
+    <div class="estrella">
+      <div class="estrella-img" id="estrellaImg"></div>
+      <div class="estrella-content" id="estrellaContent">
+        <span class="tag-fire">🔥 MÁS VENDIDO HOY</span>
+        <h1 class="estrella-nombre" id="estrellaNombre">—</h1>
+        <div class="estrella-desc" id="estrellaDesc"></div>
+        <div class="estrella-precio">
+          <span class="precio-moneda">S/</span>
+          <span class="precio-valor" id="estrellaPrecio">0.00</span>
+          <div class="estrella-pedidos">
+            <strong id="estrellaPedidos">0</strong> vendidos hoy
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside>
+      <div class="aside-title">TAMBIÉN HOY</div>
+      <div class="cards" id="cards"></div>
+    </aside>
+  </div>
+
+  <div class="player-bar">
+    <div class="yt-frame-wrap">
+      <iframe id="ytplayer" src="" allow="autoplay; encrypted-media" frameborder="0"></iframe>
+    </div>
+    <div class="visualizer">
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    </div>
+    <div class="now-playing">
+      <div class="np-label">REPRODUCIENDO</div>
+      <div class="np-title" id="npTitle">MosExpress Radio</div>
+    </div>
+    <div class="playlist-tag" id="playlistTag">— —</div>
+  </div>
+
+  <div class="ticker">
+    <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+</div>
+
+<div class="audio-hint" id="audioHint">
+  <div class="audio-hint-box">
+    <div class="audio-hint-icon">🔊</div>
+    <h2>Toca para activar el sonido</h2>
+    <p>Los navegadores bloquean el audio hasta una interacción</p>
+  </div>
+</div>
+
+<script>
+  // ============ CONFIG ============
+  const API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+
+  // ============ CATEGORÍAS (gradient + emoji para fallback sin foto) ============
+  const CATEGORIAS = {
+    bebidas:   { gradient: 'linear-gradient(135deg, #1565c0, #00bcd4)', emoji: '🥤' },
+    cerveza:   { gradient: 'linear-gradient(135deg, #f57c00, #ffc107)', emoji: '🍺' },
+    snacks:    { gradient: 'linear-gradient(135deg, #d84315, #ff8a65)', emoji: '🥨' },
+    chocolate: { gradient: 'linear-gradient(135deg, #4e342e, #a1887f)', emoji: '🍫' },
+    golosinas: { gradient: 'linear-gradient(135deg, #c2185b, #f48fb1)', emoji: '🍬' },
+    lacteos:   { gradient: 'linear-gradient(135deg, #607d8b, #cfd8dc)', emoji: '🥛' },
+    panaderia: { gradient: 'linear-gradient(135deg, #bf6b00, #ffb74d)', emoji: '🥖' },
+    abarrotes: { gradient: 'linear-gradient(135deg, #558b2f, #c5e1a5)', emoji: '🌾' },
+    limpieza:  { gradient: 'linear-gradient(135deg, #0277bd, #4fc3f7)', emoji: '🧼' },
+    higiene:   { gradient: 'linear-gradient(135deg, #00838f, #80deea)', emoji: '🧻' },
+    agua:      { gradient: 'linear-gradient(135deg, #006064, #4dd0e1)', emoji: '💧' },
+    cigarros:  { gradient: 'linear-gradient(135deg, #424242, #757575)', emoji: '🚬' },
+    helados:   { gradient: 'linear-gradient(135deg, #1e88e5, #b3e5fc)', emoji: '🍦' },
+    galletas:  { gradient: 'linear-gradient(135deg, #ef6c00, #ffcc80)', emoji: '🍪' },
+    default:   { gradient: 'linear-gradient(135deg, #455a64, #90a4ae)', emoji: '🛒' },
+  };
+
+  // Categorización por keyword en el nombre del producto.
+  // Si la hoja RadioConfig tiene "cat" para ese SKU, eso gana.
+  const KEYWORDS = [
+    [/cerveza|pilsen|cristal|cusque[ñn]a|corona|heineken|backus/i, 'cerveza'],
+    [/coca|inca|sprite|fanta|gaseosa|kola|pepsi|7up|seven/i, 'bebidas'],
+    [/agua|san luis|cielo|san mateo/i, 'agua'],
+    [/jugo|frugos|tampico/i, 'bebidas'],
+    [/chocolate|sublime|princesa|cua\s?cua|triangulo|trian|hersh/i, 'chocolate'],
+    [/galleta|casino|soda|field|oreo|chips ahoy|morochas|margarita/i, 'galletas'],
+    [/papita|chizito|chiz|cheese|lay|pringles|tortee|piqueo|doritos|cheetos/i, 'snacks'],
+    [/caramelo|chupet[ií]n|chicle|halls|mentos|menthoplus|globo/i, 'golosinas'],
+    [/leche|gloria|laive|pura vida|yogur|queso|mantequilla/i, 'lacteos'],
+    [/pan|bagueta|tostada|kekito/i, 'panaderia'],
+    [/arroz|fideo|aceite|az[uú]car|sal|atun|atún|conserva|menestra|harina/i, 'abarrotes'],
+    [/detergente|jab[oó]n|lej[ií]a|sapolio|ace|magia blanca|ariel|bol[ií]var/i, 'limpieza'],
+    [/papel|higi[eé]nico|toalla|servilleta|kotex|pa[ñn]al|pampers/i, 'higiene'],
+    [/cigarro|tabaco|hamilton|lucky|marlboro|winston|caribe/i, 'cigarros'],
+    [/helado|donof|d'?onof/i, 'helados'],
+    [/huevo/i, 'abarrotes'],
+  ];
+
+  function categorizar(nombre, override) {
+    if (override) return override;
+    for (const [re, cat] of KEYWORDS) if (re.test(nombre)) return cat;
+    return 'default';
+  }
+  function getCategoria(cat) { return CATEGORIAS[cat] || CATEGORIAS.default; }
+
+  // Drive share → URL directa
+  function normalizeImg(url) {
+    if (!url) return '';
+    const m = url.match(/drive\.google\.com\/file\/d\/([^\/]+)/) || url.match(/[?&]id=([^&]+)/);
+    if (m) return `https://lh3.googleusercontent.com/d/${m[1]}=w1400`;
+    return url;
+  }
+
+  // ============ ESTADO ============
+  let PRODUCTOS = [];       // [{sku, nombre, precio, vendidos, img, emoji, categoria, desc}]
+  let TICKER    = [];
+  let PLAYLISTS = [];
+  let DESTACADOS = [];      // [{sku, prioridad}]
+  let CONFIG    = { rotarEstrellaSeg: 12, rotarCardsSeg: 7 };
+
+  // ============ FETCHERS ============
+  async function fetchJson(action, params = {}) {
+    const qs = new URLSearchParams({ accion: action, ...params }).toString();
+    const r = await fetch(`${API_URL}?${qs}`, { cache: 'no-store' });
+    return r.json();
+  }
+
+  async function cargarData() {
+    setLoadingMsg('Conectando con MosExpress...');
+    const [catRes, topRes, cfgRes] = await Promise.allSettled([
+      fetchJson('descargar'),
+      fetchJson('top_productos_hoy'),
+      fetchJson('radio_config'),
+    ]);
+
+    const cat = catRes.status === 'fulfilled' ? catRes.value : null;
+    const top = topRes.status === 'fulfilled' ? topRes.value : { productos: [] };
+    const cfg = cfgRes.status === 'fulfilled' ? cfgRes.value : {};
+
+    // Mapear catálogo: PRESENTACIONES tiene precio, PRODUCTO_BASE tiene nombre
+    const productoBaseMap = {};
+    (cat?.PRODUCTO_BASE || []).forEach(p => { productoBaseMap[p.SKU_Base] = p; });
+
+    const vendidosMap = {};
+    (top.productos || []).forEach(p => { vendidosMap[p.sku] = p.vendidos; });
+
+    const overrideImg = cfg.imagenes || {};
+    const overrideCat = cfg.categorias || {};
+
+    PRODUCTOS = (cat?.PRESENTACIONES || []).map(p => {
+      const base = productoBaseMap[p.SKU_Base] || {};
+      const nombre = (p.Empaque && base.Nombre)
+        ? `${base.Nombre} ${p.Empaque}`.trim()
+        : (base.Nombre || p.Empaque || p.SKU);
+      const cat = categorizar(nombre, overrideCat[p.SKU] || overrideCat[p.SKU_Base]);
+      const imgRaw = overrideImg[p.SKU] || overrideImg[p.SKU_Base] || '';
+      return {
+        sku:      p.SKU,
+        skuBase:  p.SKU_Base,
+        nombre:   nombre.toUpperCase(),
+        desc:     p.Empaque || '',
+        precio:   parseFloat(p.Precio_Venta) || 0,
+        vendidos: vendidosMap[p.SKU] || 0,
+        categoria: cat,
+        emoji:    getCategoria(cat).emoji,
+        img:      normalizeImg(imgRaw),
+      };
+    });
+
+    // Si no hay productos en absoluto, mock fallback
+    if (!PRODUCTOS.length) {
+      console.warn('[RADIO] Sin catálogo — usando mock');
+      PRODUCTOS = mockProductos();
+    }
+
+    TICKER     = (cfg.ticker?.length ? cfg.ticker : mockTicker());
+    PLAYLISTS  = (cfg.playlists?.length ? cfg.playlists : mockPlaylists());
+    DESTACADOS = cfg.destacados || [];
+    CONFIG     = { ...CONFIG, ...(cfg.config || {}) };
+  }
+
+  function mockProductos() {
+    return [
+      { sku:'MOCK1', nombre:'COCA COLA 1.5L', desc:'gaseosa', precio:7.50, vendidos:92, categoria:'bebidas', emoji:'🥤', img:'' },
+      { sku:'MOCK2', nombre:'CERVEZA PILSEN 6PK', desc:'six pack', precio:24.90, vendidos:48, categoria:'cerveza', emoji:'🍺', img:'' },
+      { sku:'MOCK3', nombre:'CHOCOLATE SUBLIME', desc:'clásico', precio:3.50, vendidos:120, categoria:'chocolate', emoji:'🍫', img:'' },
+      { sku:'MOCK4', nombre:'PAPITAS LAY\'S', desc:'170g', precio:8.90, vendidos:65, categoria:'snacks', emoji:'🥔', img:'' },
+      { sku:'MOCK5', nombre:'GALLETAS CASINO', desc:'pack 6', precio:4.50, vendidos:70, categoria:'galletas', emoji:'🍪', img:'' },
+      { sku:'MOCK6', nombre:'LECHE GLORIA 1L', desc:'UHT', precio:5.20, vendidos:55, categoria:'lacteos', emoji:'🥛', img:'' },
+      { sku:'MOCK7', nombre:'PAN FRANCÉS x10', desc:'fresco', precio:3.00, vendidos:88, categoria:'panaderia', emoji:'🥖', img:'' },
+    ];
+  }
+  function mockTicker() {
+    return ['🛒 MOSEXPRESS — abierto todos los días', '💳 PAGA CON YAPE · PLIN · TARJETA', '⭐ SÍGUENOS @MOSEXPRESS'];
+  }
+  function mockPlaylists() {
+    return [{ rango:[0,24], videoId:'jfKfPfyJRdk', nombre:'LO-FI RADIO' }];
+  }
+
+  // ============ ESTRELLA ============
+  let estrellaIdx = 0;
+  function obtenerEstrellas() {
+    // Si hay destacados manuales, esos primero (orden por prioridad)
+    if (DESTACADOS.length) {
+      const destSet = new Set(DESTACADOS.map(d => d.sku));
+      const ordenados = DESTACADOS
+        .map(d => PRODUCTOS.find(p => p.sku === d.sku))
+        .filter(Boolean);
+      const topVendidos = [...PRODUCTOS]
+        .filter(p => !destSet.has(p.sku) && p.vendidos > 0)
+        .sort((a, b) => b.vendidos - a.vendidos)
+        .slice(0, 5);
+      return [...ordenados, ...topVendidos].slice(0, 6);
+    }
+    // Fallback: top vendidos. Si nadie tiene vendidos, primeros del catálogo.
+    const top = [...PRODUCTOS].sort((a,b) => b.vendidos - a.vendidos).slice(0, 5);
+    return top.some(p => p.vendidos > 0) ? top : PRODUCTOS.slice(0, 5);
+  }
+
+  function renderEstrella(prod) {
+    const img = document.getElementById('estrellaImg');
+    const content = document.getElementById('estrellaContent');
+    img.classList.add('swap'); content.classList.add('swap');
+    setTimeout(() => {
+      const cat = getCategoria(prod.categoria);
+      if (prod.img) {
+        img.classList.remove('no-image');
+        img.style.backgroundImage = `url('${prod.img}'), ${cat.gradient}`;
+        img.removeAttribute('data-emoji');
+        img.querySelector('.cat-watermark')?.remove();
+      } else {
+        img.classList.add('no-image');
+        img.style.backgroundImage = cat.gradient;
+        img.setAttribute('data-emoji', prod.emoji || cat.emoji);
+        if (!img.querySelector('.cat-watermark')) {
+          const wm = document.createElement('div');
+          wm.className = 'cat-watermark';
+          img.appendChild(wm);
+        }
+        img.querySelector('.cat-watermark').textContent = prod.categoria || 'producto';
+      }
+      document.getElementById('estrellaNombre').textContent = prod.nombre;
+      document.getElementById('estrellaDesc').textContent   = prod.desc;
+      document.getElementById('estrellaPrecio').textContent = prod.precio.toFixed(2);
+      document.getElementById('estrellaPedidos').textContent = prod.vendidos;
+      img.classList.remove('swap'); content.classList.remove('swap');
+      img.style.animation = 'none'; img.offsetHeight; img.style.animation = '';
+    }, 600);
+  }
+
+  function rotarEstrella() {
+    const estrellas = obtenerEstrellas();
+    if (!estrellas.length) return;
+    estrellaIdx = (estrellaIdx + 1) % estrellas.length;
+    renderEstrella(estrellas[estrellaIdx]);
+  }
+
+  // ============ CARDS ============
+  let cardsPool = [];
+  function renderCards() {
+    const estrellas = obtenerEstrellas();
+    const estrellasIds = new Set(estrellas.map(p => p.sku));
+    cardsPool = PRODUCTOS.filter(p => !estrellasIds.has(p.sku));
+    if (cardsPool.length < 4) cardsPool = PRODUCTOS.slice();
+    // Shuffle ligero
+    cardsPool = cardsPool.sort(() => Math.random() - 0.5);
+    const ct = document.getElementById('cards');
+    ct.innerHTML = '';
+    cardsPool.slice(0, 4).forEach((prod, i) => ct.appendChild(buildCard(prod, i * 100)));
+  }
+  function buildCard(prod, delay) {
+    const el = document.createElement('div');
+    el.className = 'card slide-in';
+    el.style.animationDelay = `${delay}ms`;
+    const cat = getCategoria(prod.categoria);
+    const imgHtml = prod.img
+      ? `<div class="card-img" style="background-image: url('${prod.img}'), ${cat.gradient};"></div>`
+      : `<div class="card-img no-image" data-emoji="${prod.emoji || cat.emoji}" style="background: ${cat.gradient};"></div>`;
+    el.innerHTML = `
+      ${imgHtml}
+      <div class="card-info">
+        <div class="card-nombre">${prod.nombre}</div>
+        <div class="card-desc">${prod.desc}</div>
+        <div class="card-precio">S/ ${prod.precio.toFixed(2)}</div>
+      </div>`;
+    return el;
+  }
+  function rotarCards() {
+    const ct = document.getElementById('cards');
+    const first = ct.firstElementChild;
+    if (!first || cardsPool.length < 5) { renderCards(); return; }
+    first.classList.remove('slide-in');
+    first.classList.add('slide-out');
+    setTimeout(() => {
+      first.remove();
+      const moved = cardsPool.shift();
+      cardsPool.push(moved);
+      const nuevo = cardsPool[3] || cardsPool[cardsPool.length - 1];
+      ct.appendChild(buildCard(nuevo, 0));
+    }, 600);
+  }
+
+  // ============ RELOJ ============
+  function tickClock() {
+    const d = new Date();
+    document.getElementById('clock').textContent =
+      d.toLocaleTimeString('es-PE', { hour: '2-digit', minute:'2-digit' });
+  }
+
+  // ============ PLAYLIST POR HORARIO ============
+  let playerCurrentVideo = null;
+  function getPlaylistByHour() {
+    const h = new Date().getHours();
+    return PLAYLISTS.find(p => h >= p.rango[0] && h < p.rango[1]) || PLAYLISTS[0];
+  }
+  function mountYTPlayer() {
+    const pl = getPlaylistByHour();
+    if (!pl || pl.videoId === playerCurrentVideo) return;
+    playerCurrentVideo = pl.videoId;
+    document.getElementById('ytplayer').src =
+      `https://www.youtube.com/embed/${pl.videoId}?autoplay=1&controls=0&loop=1&playlist=${pl.videoId}&modestbranding=1`;
+    document.getElementById('playlistTag').textContent = `♪ ${pl.nombre}`;
+    document.getElementById('npTitle').textContent = pl.nombre;
+  }
+
+  // ============ TICKER ============
+  function renderTicker() {
+    const items = [...TICKER, ...TICKER];
+    document.getElementById('tickerTrack').innerHTML = items.map(t =>
+      `<span class="ticker-item">${t}</span>`
+    ).join('<span class="ticker-item dot">•</span>');
+  }
+
+  // ============ PARTICULAS ============
+  function spawnParticles() {
+    const ct = document.getElementById('particles');
+    for (let i = 0; i < 25; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = Math.random() * 100 + 'vw';
+      p.style.animationDelay = Math.random() * 12 + 's';
+      p.style.animationDuration = (8 + Math.random() * 8) + 's';
+      ct.appendChild(p);
+    }
+  }
+
+  // ============ LOADING ============
+  function setLoadingMsg(msg) { document.getElementById('loadingMsg').textContent = msg; }
+  function hideLoading() {
+    setTimeout(() => document.getElementById('loadingScreen').classList.add('hidden'), 400);
+  }
+
+  // ============ AUDIO HINT (autoplay) ============
+  const audioHint = document.getElementById('audioHint');
+  audioHint.addEventListener('click', () => {
+    audioHint.classList.add('hidden');
+    // Forzar reload del iframe para que autoplay agarre la interacción
+    mountYTPlayer();
+  });
+
+  // ============ INIT ============
+  async function init() {
+    spawnParticles();
+    tickClock(); setInterval(tickClock, 1000);
+
+    try {
+      await cargarData();
+    } catch (err) {
+      console.error('[RADIO] Fetch falló, usando mocks:', err);
+      PRODUCTOS = mockProductos();
+      TICKER = mockTicker();
+      PLAYLISTS = mockPlaylists();
+    }
+
+    setLoadingMsg('Listo!');
+    renderTicker();
+    renderCards();
+    renderEstrella(obtenerEstrellas()[0]);
+    mountYTPlayer();
+    hideLoading();
+
+    setInterval(rotarEstrella, (CONFIG.rotarEstrellaSeg || 12) * 1000);
+    setInterval(rotarCards,    (CONFIG.rotarCardsSeg    || 7)  * 1000);
+    setInterval(mountYTPlayer, 60000);
+
+    // Refresca data cada 5 min (top vendidos cambia, config puede cambiar)
+    setInterval(async () => {
+      try { await cargarData(); } catch (e) { console.warn('refresh fail', e); }
+    }, 5 * 60 * 1000);
+  }
+
+  // Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));
+  }
+
+  init();
+</script>
+</body>
+</html>

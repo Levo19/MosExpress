@@ -11,6 +11,7 @@
 //   Guias.gs      ← guías, stock por zona, traslados, auditorías
 //   Impresion.gs  ← procesarImpresion, imprimirTicketInternamente, ESC/POS
 //   NubeFact.gs   ← emitirNubeFact (SUNAT CPE)
+//   Radio.gs      ← radioConfig, topProductosHoy, setupRadioSheet (pantalla TV)
 // ============================================================
 
 function doGet(e) {
@@ -37,6 +38,8 @@ function doGet(e) {
     if (accion === 'historial_venta')       return getHistorialEndpoint('VENTAS_CABECERA', e.parameter.idVenta);
     if (accion === 'historial_extra')       return getHistorialEndpoint('MOVIMIENTOS_EXTRA', e.parameter.idExtra);
     if (accion === 'historial_cliente')     return getHistorialEndpoint('CLIENTES_FRECUENTES', e.parameter.doc);
+    if (accion === 'radio_config')          return radioConfig();
+    if (accion === 'top_productos_hoy')     return topProductosHoy();
     return generarRespuestaError('Acción no válida: ' + accion);
   } catch(err) {
     return generarRespuestaError('Error interno [' + accion + ']: ' + err.message);

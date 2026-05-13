@@ -34,11 +34,12 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
   './index.html',
+  './radio.html',
   './manifest.json',
   './version.json',
   'https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js',
