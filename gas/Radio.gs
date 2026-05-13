@@ -52,10 +52,23 @@ function radioConfig() {
 
   // Estructura esperada: Tipo | Key | Valor   (header en fila 1)
   for (var i = 1; i < data.length; i++) {
-    var tipo  = String(data[i][0] || '').trim().toLowerCase();
-    var key   = String(data[i][1] || '').trim();
-    var valor = String(data[i][2] || '').trim();
+    var tipo    = String(data[i][0] || '').trim().toLowerCase();
+    var keyRaw  = data[i][1];
+    var valor   = String(data[i][2] || '').trim();
     if (!tipo) continue;
+
+    // Recuperar Key si Sheets lo convirtió a Date (ej. "6-12" → 6/dic en locale es-PE).
+    // Extrae month+day del Date y reconstruye "X-Y" — funciona porque el rango
+    // siempre es dos números separados por guión.
+    var key;
+    if (keyRaw instanceof Date) {
+      var m = keyRaw.getMonth() + 1;
+      var d = keyRaw.getDate();
+      var lo = Math.min(m, d), hi = Math.max(m, d);
+      key = lo + '-' + hi;
+    } else {
+      key = String(keyRaw || '').trim();
+    }
 
     if (tipo === 'image') {
       // Key = SKU, Valor = URL (Drive share o cualquier URL directa)
@@ -225,6 +238,8 @@ function setupRadioSheet() {
     ['config',   'rotar_estrella_seg', '12'],
     ['config',   'rotar_cards_seg',    '7']
   ];
+  // Formato 'texto plano' en col Key — evita que Sheets convierta "6-12" a fecha
+  sh.getRange(2, 2, samples.length, 1).setNumberFormat('@');
   sh.getRange(2, 1, samples.length, 3).setValues(samples);
 
   // Notas explicativas en una columna lateral
