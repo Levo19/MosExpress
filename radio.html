@@ -458,7 +458,9 @@
       fetchJson('radio_config'),
     ]);
 
-    const cat = catRes.status === 'fulfilled' ? catRes.value : null;
+    // El endpoint /descargar envuelve la data en { status, data: {...catalogo} }
+    const catRaw = catRes.status === 'fulfilled' ? catRes.value : null;
+    const cat = catRaw?.data || catRaw || null;
     const top = topRes.status === 'fulfilled' ? topRes.value : { productos: [] };
     const cfg = cfgRes.status === 'fulfilled' ? cfgRes.value : {};
 
@@ -476,22 +478,31 @@
     const overrideImg = cfg.imagenes || {};
     const overrideCat = cfg.categorias || {};
 
-    PRODUCTOS = (cat?.PRESENTACIONES || [])
-      // Si la tienda ha vendido al menos 1 producto alguna vez, filtrar al catálogo
-      // de esta tienda. Si está virgen (0 ventas), mostrar todo (mejor algo que nada).
-      .filter(p => skusTienda.size === 0 || skusTienda.has(p.SKU))
+    // CANÓNICOS solamente: PRESENTACIONES con Factor === 1 (uno por grupo skuBase).
+    // Excluye presentaciones (packs, bolsas, cajas) y equivalentes (aliases por código).
+    // Si en el grupo no hay un Factor=1 vendible, se usa el primero del grupo como fallback.
+    const canonicosPorGrupo = {};
+    (cat?.PRESENTACIONES || []).forEach(p => {
+      const factor = parseFloat(p.Factor) || 1;
+      const existing = canonicosPorGrupo[p.SKU_Base];
+      if (!existing || (factor === 1 && parseFloat(existing.Factor) !== 1)) {
+        canonicosPorGrupo[p.SKU_Base] = p;
+      }
+    });
+    const canonicos = Object.values(canonicosPorGrupo);
+
+    PRODUCTOS = canonicos
+      .filter(p => skusTienda.size === 0 || skusTienda.has(p.SKU) || skusTienda.has(p.SKU_Base))
       .map(p => {
         const base = productoBaseMap[p.SKU_Base] || {};
-        const nombre = (p.Empaque && base.Nombre)
-          ? `${base.Nombre} ${p.Empaque}`.trim()
-          : (base.Nombre || p.Empaque || p.SKU);
+        const nombre = base.Nombre || p.Empaque || p.SKU;
         const catKey = categorizar(nombre, overrideCat[p.SKU] || overrideCat[p.SKU_Base]);
         const imgRaw = overrideImg[p.SKU] || overrideImg[p.SKU_Base] || '';
         return {
           sku:      p.SKU,
           skuBase:  p.SKU_Base,
           nombre:   nombre.toUpperCase(),
-          desc:     p.Empaque || '',
+          desc:     '',
           precio:   parseFloat(p.Precio_Venta) || 0,
           vendidos: vendidosMap[p.SKU] || 0,
           categoria: catKey,
@@ -499,7 +510,7 @@
           img:      normalizeImg(imgRaw),
         };
       });
-    console.log(`[RADIO] Catálogo filtrado a ${PRODUCTOS.length} productos de la tienda (de ${cat?.PRESENTACIONES?.length || 0} en master)`);
+    console.log(`[RADIO] Canónicos en master: ${canonicos.length} | filtrados a tienda: ${PRODUCTOS.length}`);
 
     // Si no hay productos en absoluto, mock fallback
     if (!PRODUCTOS.length) {
