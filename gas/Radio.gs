@@ -146,7 +146,7 @@ function topProductosHoy() {
   var hace7Str = Utilities.formatDate(hace7, tz, 'yyyy-MM-dd');
 
   var cabData = shCab.getDataRange().getValues();
-  var ventasHoy = {}, ventas7d = {};
+  var ventasHoy = {}, ventas7d = {}, ventasNoAnuladas = {};
   for (var v = 1; v < cabData.length; v++) {
     var fechaRaw = cabData[v][1];
     if (!fechaRaw) continue;
@@ -157,20 +157,26 @@ function topProductosHoy() {
     if (estado === 'ANULADO') continue;
     var idVenta = String(cabData[v][0] || '');
     if (!idVenta) continue;
-    if (fechaStr === hoy)        ventasHoy[idVenta] = true;
-    if (fechaStr >= hace7Str)    ventas7d[idVenta]  = true;
+    ventasNoAnuladas[idVenta] = true;
+    if (fechaStr === hoy)     ventasHoy[idVenta] = true;
+    if (fechaStr >= hace7Str) ventas7d[idVenta]  = true;
   }
 
-  // Agregar cantidades por SKU
+  // Agregar cantidades por SKU + recolectar todos los SKUs que esta tienda
+  // ha vendido alguna vez (filtro vital para el radio: NO mostrar productos
+  // del MOS master que esta tienda no sale en su catálogo activo).
   var detData = shDet.getDataRange().getValues();
   var sumHoy = {}, sumNombreHoy = {};
   var sum7d  = {}, sumNombre7d  = {};
+  var skusDeLaTienda = {};
   for (var d = 1; d < detData.length; d++) {
     var idV    = String(detData[d][0] || '');
     var sku    = String(detData[d][1] || '').trim();
     var nombre = String(detData[d][2] || '');
     var qty    = parseFloat(detData[d][3]) || 0;
     if (!sku || qty <= 0) continue;
+    if (!ventasNoAnuladas[idV]) continue;
+    skusDeLaTienda[sku] = true;
     if (ventasHoy[idV]) {
       sumHoy[sku] = (sumHoy[sku] || 0) + qty;
       sumNombreHoy[sku] = nombre;
@@ -197,7 +203,8 @@ function topProductosHoy() {
     status: 'ok',
     fecha:  hoy,
     es_fallback_7d: fallback,
-    productos: hoyArr.slice(0, 20)
+    productos: hoyArr.slice(0, 20),
+    skus_de_la_tienda: Object.keys(skusDeLaTienda)
   })).setMimeType(ContentService.MimeType.JSON);
 }
 

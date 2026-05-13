@@ -469,28 +469,37 @@
     const vendidosMap = {};
     (top.productos || []).forEach(p => { vendidosMap[p.sku] = p.vendidos; });
 
+    // Set de SKUs que ESTA tienda ha vendido alguna vez (filtra el catálogo
+    // del MOS master para mostrar solo productos reales del local).
+    const skusTienda = new Set(top.skus_de_la_tienda || []);
+
     const overrideImg = cfg.imagenes || {};
     const overrideCat = cfg.categorias || {};
 
-    PRODUCTOS = (cat?.PRESENTACIONES || []).map(p => {
-      const base = productoBaseMap[p.SKU_Base] || {};
-      const nombre = (p.Empaque && base.Nombre)
-        ? `${base.Nombre} ${p.Empaque}`.trim()
-        : (base.Nombre || p.Empaque || p.SKU);
-      const cat = categorizar(nombre, overrideCat[p.SKU] || overrideCat[p.SKU_Base]);
-      const imgRaw = overrideImg[p.SKU] || overrideImg[p.SKU_Base] || '';
-      return {
-        sku:      p.SKU,
-        skuBase:  p.SKU_Base,
-        nombre:   nombre.toUpperCase(),
-        desc:     p.Empaque || '',
-        precio:   parseFloat(p.Precio_Venta) || 0,
-        vendidos: vendidosMap[p.SKU] || 0,
-        categoria: cat,
-        emoji:    getCategoria(cat).emoji,
-        img:      normalizeImg(imgRaw),
-      };
-    });
+    PRODUCTOS = (cat?.PRESENTACIONES || [])
+      // Si la tienda ha vendido al menos 1 producto alguna vez, filtrar al catálogo
+      // de esta tienda. Si está virgen (0 ventas), mostrar todo (mejor algo que nada).
+      .filter(p => skusTienda.size === 0 || skusTienda.has(p.SKU))
+      .map(p => {
+        const base = productoBaseMap[p.SKU_Base] || {};
+        const nombre = (p.Empaque && base.Nombre)
+          ? `${base.Nombre} ${p.Empaque}`.trim()
+          : (base.Nombre || p.Empaque || p.SKU);
+        const catKey = categorizar(nombre, overrideCat[p.SKU] || overrideCat[p.SKU_Base]);
+        const imgRaw = overrideImg[p.SKU] || overrideImg[p.SKU_Base] || '';
+        return {
+          sku:      p.SKU,
+          skuBase:  p.SKU_Base,
+          nombre:   nombre.toUpperCase(),
+          desc:     p.Empaque || '',
+          precio:   parseFloat(p.Precio_Venta) || 0,
+          vendidos: vendidosMap[p.SKU] || 0,
+          categoria: catKey,
+          emoji:    getCategoria(catKey).emoji,
+          img:      normalizeImg(imgRaw),
+        };
+      });
+    console.log(`[RADIO] Catálogo filtrado a ${PRODUCTOS.length} productos de la tienda (de ${cat?.PRESENTACIONES?.length || 0} en master)`);
 
     // Si no hay productos en absoluto, mock fallback
     if (!PRODUCTOS.length) {
