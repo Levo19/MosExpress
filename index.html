@@ -1722,6 +1722,70 @@
 
   <div id="app" class="h-full flex flex-col relative" v-cloak>
     
+    <!-- Botón flotante de etiquetas pendientes (esquina inferior derecha, no estorba) -->
+    <button v-if="etiqsPendientes.length > 0"
+            @click="abrirEtiqsModal"
+            class="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-2xl shadow-xl active:scale-95 transition-transform"
+            :class="etiqsPendientes.some(e => !e._vistoPorMi) ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'"
+            style="box-shadow:0 8px 22px -4px rgba(245,158,11,.6)">
+      <span class="text-2xl leading-none">🏷</span>
+      <div class="flex flex-col items-start leading-tight">
+        <span class="text-[10px] uppercase tracking-widest font-bold opacity-80">Etiquetas</span>
+        <span class="text-base font-black">{{ etiqsPendientes.length }}</span>
+      </div>
+      <span v-if="etiqsPendientes.some(e => !e._vistoPorMi)"
+            class="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse">!</span>
+    </button>
+
+    <!-- Modal etiquetas (no fullscreen, sólo central tipo card) -->
+    <div v-if="etiqsModalAbierto" @click.self="etiqsModalAbierto = false"
+         class="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3">
+      <div class="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+        <div class="px-5 py-3 border-b flex items-center justify-between bg-gradient-to-r from-amber-50 to-white">
+          <div>
+            <h3 class="font-bold text-gray-800 text-lg">🏷 Etiquetas de precio</h3>
+            <p class="text-xs text-gray-500">{{ etiqsPendientes.length }} pendiente(s) · pega en estantes</p>
+          </div>
+          <button @click="etiqsModalAbierto = false" class="text-2xl text-gray-400 hover:text-gray-700">×</button>
+        </div>
+        <div class="overflow-y-auto px-4 py-3 space-y-2 flex-1">
+          <div v-if="!etiqsPendientes.length" class="text-center py-8 text-gray-400 text-sm">
+            <div class="text-3xl mb-2 opacity-50">🎉</div>
+            Todo al día — sin etiquetas pendientes
+          </div>
+          <div v-for="e in etiqsPendientes" :key="e.idEtiq"
+               class="rounded-xl border p-3 flex items-start gap-3"
+               :class="e.estado === 'IMPRESA' ? 'border-blue-300 bg-blue-50' : 'border-amber-300 bg-amber-50'">
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-bold text-gray-800 truncate">{{ e.descripcion }}</div>
+              <div class="text-[11px] text-gray-500 font-mono">{{ e.codigoBarra || e.skuBase }}</div>
+              <div class="flex items-baseline gap-2 mt-1">
+                <span v-if="e.precioAnterior > 0" class="text-xs line-through text-gray-400">S/ {{ e.precioAnterior.toFixed(2) }}</span>
+                <span class="text-lg font-black text-emerald-700">S/ {{ e.precioNuevo.toFixed(2) }}</span>
+              </div>
+              <div class="text-[10px] mt-1" :class="e._minutosDesdeCambio > 240 ? 'text-rose-600 font-bold' : 'text-gray-500'">
+                <span v-if="e._minutosDesdeCambio < 60">hace {{ e._minutosDesdeCambio }} min</span>
+                <span v-else-if="e._minutosDesdeCambio < 1440">hace {{ Math.floor(e._minutosDesdeCambio / 60) }}h</span>
+                <span v-else>hace {{ Math.floor(e._minutosDesdeCambio / 1440) }}d</span>
+                <span class="ml-2">· estado: <strong>{{ e.estado }}</strong></span>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1 shrink-0">
+              <button @click="etiqMarcarPegada(e.idEtiq)" :disabled="etiqsProcesando"
+                      class="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold active:scale-95 transition-transform disabled:opacity-50">📌 Pegada</button>
+              <button @click="etiqReimprimir(e.idEtiq)" :disabled="etiqsProcesando"
+                      class="text-xs px-3 py-1.5 rounded-lg bg-gray-200 text-gray-700 font-semibold active:scale-95">🖨 Imprimir</button>
+            </div>
+          </div>
+        </div>
+        <div v-if="etiqsPendientes.length > 0" class="p-3 border-t bg-gray-50 flex gap-2">
+          <button @click="etiqsModalAbierto = false" class="flex-1 py-2 rounded-lg bg-gray-200 text-gray-700 font-semibold">Después</button>
+          <button @click="etiqMarcarTodasPegadas" :disabled="etiqsProcesando"
+                  class="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold active:scale-95 disabled:opacity-50">📌 Marcar todas pegadas</button>
+        </div>
+      </div>
+    </div>
+
     <!-- HEADER PWA -->
     <header class="bg-posPrimary text-white px-3 shadow-md flex items-center gap-2 z-30 shrink-0"
             :class="currentModule === 'POS' ? 'py-2' : 'py-1.5'">
@@ -4238,6 +4302,123 @@
         const productosFiltrados = ref([]);
         const carrito = ref([]);
         
+        // --- MÓDULO ETIQUETAS (membretes de cambio de precio) ---
+        const etiqsPendientes = ref([]);     // lista cargada desde MOS
+        const etiqsModalAbierto = ref(false);
+        const etiqsProcesando = ref(false);
+        const etiqsAutoPrintHecho = ref(false); // bandera: ya se auto-imprimió en este turno
+
+        async function cargarEtiqsPendientes() {
+          try {
+            const zona = config.value.zona || '';
+            const usr  = config.value.vendedor || '';
+            if (!zona) return;
+            const res = await fetch(MOS_GAS_URL + '?action=getEtiquetasPendientes&idZona=' + encodeURIComponent(zona) + '&usuario=' + encodeURIComponent(usr));
+            const data = await res.json();
+            if (data && data.ok && Array.isArray(data.data)) {
+              etiqsPendientes.value = data.data;
+            }
+          } catch(e) { console.warn('[Etiq] cargar:', e); }
+        }
+
+        async function abrirEtiqsModal() {
+          await cargarEtiqsPendientes();
+          etiqsModalAbierto.value = true;
+          // Marcar como vistas las que el user aún no había visto
+          const usr = config.value.vendedor || '';
+          if (usr) {
+            const noVistas = etiqsPendientes.value.filter(e => !e._vistoPorMi);
+            noVistas.forEach(e => {
+              fetch(MOS_GAS_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'marcarVistoEtiqueta', idEtiq: e.idEtiq, usuario: usr })
+              }).catch(() => {});
+              e._vistoPorMi = true;
+            });
+          }
+        }
+
+        async function etiqMarcarPegada(idEtiq) {
+          etiqsProcesando.value = true;
+          try {
+            const usr = config.value.vendedor || '';
+            const res = await fetch(MOS_GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'marcarPegadaEtiqueta', idEtiq, usuario: usr })
+            });
+            const d = await res.json();
+            if (d && d.ok) {
+              etiqsPendientes.value = etiqsPendientes.value.filter(x => x.idEtiq !== idEtiq);
+              agregarToast('Marcada como pegada', 'OK');
+            }
+          } catch(e) { agregarToast('Error', e.message); }
+          etiqsProcesando.value = false;
+        }
+
+        async function etiqMarcarTodasPegadas() {
+          if (!confirm('¿Marcar las ' + etiqsPendientes.value.length + ' etiquetas como pegadas?')) return;
+          etiqsProcesando.value = true;
+          try {
+            const usr = config.value.vendedor || '';
+            const ids = etiqsPendientes.value.map(e => e.idEtiq);
+            const res = await fetch(MOS_GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'marcarPegadasBatch', idEtiqs: ids, usuario: usr })
+            });
+            const d = await res.json();
+            if (d && d.ok) {
+              etiqsPendientes.value = [];
+              agregarToast('Pegadas', (d.data && d.data.pegadas) + ' etiquetas marcadas');
+              etiqsModalAbierto.value = false;
+              playBeepOK();
+            }
+          } catch(e) { agregarToast('Error', e.message); }
+          etiqsProcesando.value = false;
+        }
+
+        async function etiqReimprimir(idEtiq) {
+          etiqsProcesando.value = true;
+          try {
+            const printerId = config.value.estacion && config.value.estacion.PrintNode_ID;
+            if (!printerId) { agregarToast('Sin impresora', 'Configura PrintNode'); etiqsProcesando.value = false; return; }
+            const usr = config.value.vendedor || '';
+            const res = await fetch(MOS_GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'reimprimirEtiqueta', idEtiq, printerId, usuario: usr })
+            });
+            const d = await res.json();
+            if (d && d.ok) { agregarToast('Reimprimiendo', 'Job ' + (d.data && d.data.jobId)); playBeepOK(); }
+            else { agregarToast('Error', d && d.error); }
+          } catch(e) { agregarToast('Error', e.message); }
+          etiqsProcesando.value = false;
+        }
+
+        // Auto-print batch al apertura de caja (cajero) — solo 1 vez por turno
+        async function etiqAutoPrintAlAperturaCaja() {
+          if (etiqsAutoPrintHecho.value) return;
+          if (!config.value.esCajero) return; // solo cajero
+          const printerId = config.value.estacion && config.value.estacion.PrintNode_ID;
+          const zona = config.value.zona;
+          const usr  = config.value.vendedor || '';
+          if (!printerId || !zona) return;
+          try {
+            const res = await fetch(MOS_GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({
+                action: 'imprimirBatchEtiquetasZona',
+                idZona: zona, printerId, usuario: usr
+              })
+            });
+            const d = await res.json();
+            if (d && d.ok && d.data && d.data.impresas > 0) {
+              agregarToast('🏷 ' + d.data.impresas + ' etiqueta(s) impresas', 'Pégalas en los estantes');
+              playBeepOK();
+            }
+            etiqsAutoPrintHecho.value = true;
+            cargarEtiqsPendientes();  // refrescar lista para mostrar estado IMPRESA
+          } catch(e) { console.warn('[Etiq] autoprint:', e); }
+        }
+
         // --- MÓDULO C: TOOLS ---
         const bHerramientas = ref('');
         const procesandoMembrete = ref(false);
@@ -4490,6 +4671,10 @@
 
           // Reintento de registro de caja LOCAL — cada 60 segundos
           _intervalCajaRetry = setInterval(_intentarRegistrarCajaLocal, 60000);
+
+          // 🏷 Etiquetas pendientes: carga inicial + refresh cada 2 min
+          setTimeout(() => cargarEtiqsPendientes().catch(() => {}), 1500);
+          setInterval(() => cargarEtiqsPendientes().catch(() => {}), 120000);
 
           _intervalFocus = setInterval(() => {
             if(config.value.completado && currentModule.value === 'POS' && !modalPago.value && !camaraAbierta.value && !popover.value.visible && scannerInput.value) {
@@ -6620,6 +6805,8 @@
             cobradosEnSesion.value = [];
             extrasMovimientos.value = [];
             localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
+            // ⚡ Auto-print de etiquetas pendientes (membretes de cambio de precio)
+            setTimeout(() => etiqAutoPrintAlAperturaCaja().catch(() => {}), 800);
             localStorage.removeItem('mosexpress_cobrados_sesion');
             localStorage.removeItem('mosexpress_extras_sesion');
             localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto: montoAperturaMemoria.value, fecha: Date.now() }));
@@ -9719,6 +9906,10 @@
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,
+          // ── Etiquetas (membretes de cambio de precio) ──
+          etiqsPendientes, etiqsModalAbierto, etiqsProcesando,
+          cargarEtiqsPendientes, abrirEtiqsModal, etiqMarcarPegada,
+          etiqMarcarTodasPegadas, etiqReimprimir, etiqAutoPrintAlAperturaCaja,
           camaraHerramientasAbierta, toggleCamaraHerramientas,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, toggleVentaCreditoDirecto,
           deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo,
