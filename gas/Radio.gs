@@ -144,9 +144,12 @@ function topProductosHoy() {
   var hace7 = new Date();
   hace7.setDate(hace7.getDate() - 7);
   var hace7Str = Utilities.formatDate(hace7, tz, 'yyyy-MM-dd');
+  var hace30 = new Date();
+  hace30.setDate(hace30.getDate() - 30);
+  var hace30Str = Utilities.formatDate(hace30, tz, 'yyyy-MM-dd');
 
   var cabData = shCab.getDataRange().getValues();
-  var ventasHoy = {}, ventas7d = {}, ventasNoAnuladas = {};
+  var ventasHoy = {}, ventas7d = {}, ventas30d = {}, ventasNoAnuladas = {};
   for (var v = 1; v < cabData.length; v++) {
     var fechaRaw = cabData[v][1];
     if (!fechaRaw) continue;
@@ -158,8 +161,9 @@ function topProductosHoy() {
     var idVenta = String(cabData[v][0] || '');
     if (!idVenta) continue;
     ventasNoAnuladas[idVenta] = true;
-    if (fechaStr === hoy)     ventasHoy[idVenta] = true;
-    if (fechaStr >= hace7Str) ventas7d[idVenta]  = true;
+    if (fechaStr === hoy)      ventasHoy[idVenta] = true;
+    if (fechaStr >= hace7Str)  ventas7d[idVenta]  = true;
+    if (fechaStr >= hace30Str) ventas30d[idVenta] = true;
   }
 
   // Agregar cantidades por SKU + recolectar todos los SKUs que esta tienda
@@ -168,7 +172,8 @@ function topProductosHoy() {
   var detData = shDet.getDataRange().getValues();
   var sumHoy = {}, sumNombreHoy = {};
   var sum7d  = {}, sumNombre7d  = {};
-  var skusDeLaTienda = {};
+  var skus30d = {};        // SKUs vendidos en los últimos 30 días (filtro principal)
+  var skusAlguna = {};     // SKUs vendidos alguna vez (fallback si 30d vacío)
   for (var d = 1; d < detData.length; d++) {
     var idV    = String(detData[d][0] || '');
     var sku    = String(detData[d][1] || '').trim();
@@ -176,7 +181,8 @@ function topProductosHoy() {
     var qty    = parseFloat(detData[d][3]) || 0;
     if (!sku || qty <= 0) continue;
     if (!ventasNoAnuladas[idV]) continue;
-    skusDeLaTienda[sku] = true;
+    skusAlguna[sku] = true;
+    if (ventas30d[idV]) skus30d[sku] = true;
     if (ventasHoy[idV]) {
       sumHoy[sku] = (sumHoy[sku] || 0) + qty;
       sumNombreHoy[sku] = nombre;
@@ -186,6 +192,9 @@ function topProductosHoy() {
       sumNombre7d[sku] = nombre;
     }
   }
+
+  // Filtro principal: lo vendido en últimos 30d. Si está vacío, fallback a "alguna vez".
+  var skusKeys = Object.keys(skus30d).length ? skus30d : skusAlguna;
 
   var hoyArr = Object.keys(sumHoy).map(function(sku) {
     return { sku: sku, nombre: sumNombreHoy[sku], vendidos: sumHoy[sku] };
@@ -204,7 +213,8 @@ function topProductosHoy() {
     fecha:  hoy,
     es_fallback_7d: fallback,
     productos: hoyArr.slice(0, 20),
-    skus_de_la_tienda: Object.keys(skusDeLaTienda)
+    skus_de_la_tienda: Object.keys(skusKeys),
+    rango_filtro: Object.keys(skus30d).length ? '30d' : 'alguna_vez'
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
