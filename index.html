@@ -4917,6 +4917,21 @@
               }
           } catch(e) { localStorage.removeItem('mosexpress_caja_activa'); }
 
+          // ── Red de seguridad anti "sesión cajero fantasma" ──────────────
+          // Si config dice cajero logueado pero NO se restauró ninguna caja
+          // activa, la sesión quedó a medias (iniciarTurno cortado por reload
+          // o cierre de sesión durante el await de apertura, o estado viejo en
+          // dispositivos). Antes esto dejaba el modal de APERTURA DE CAJA
+          // bloqueando la pantalla. Reseteamos para que aparezca el wizard
+          // limpio — ahí el cajero re-ingresa con su monto base normalmente.
+          if (config.value.completado && config.value.esCajero && !cajaAbierta.value) {
+              console.warn('[ME] Sesión cajero fantasma (sin caja activa) — reset a wizard');
+              config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+              localStorage.removeItem('mosexpress_config');
+              localStorage.removeItem('mosexpress_session_date');
+              localStorage.removeItem('mosexpress_caja_payload');
+          }
+
           // Restaurar datos de sesión cajero
           try {
               const st = localStorage.getItem('mosexpress_session_start');
@@ -6624,8 +6639,16 @@
                 if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                     try {
                         const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                        // Guard: usuario cerró sesión mientras esperaba GAS
-                        if (!config.value.completado) return;
+                        // Guard: usuario cerró sesión mientras esperaba GAS.
+                        // Limpiamos config+session_date para NO dejar "sesión cajero
+                        // fantasma" (config dice cajero logueado pero nunca se abrió
+                        // caja → al recargar aparece el modal de apertura bloqueando).
+                        if (!config.value.completado) {
+                            localStorage.removeItem('mosexpress_config');
+                            localStorage.removeItem('mosexpress_session_date');
+                            procesandoCaja.value = false;
+                            return;
+                        }
                         const res = await req.json();
                         if (res.status === 'success') {
                             cid = res.idCaja;
@@ -6639,8 +6662,14 @@
                         }
                     } catch(e) { /* sin red: CAJA-LOCAL reintentará después */ }
                 }
-                // Guard final: sesión cerrada durante el await
-                if (!config.value.completado) return;
+                // Guard final: sesión cerrada durante el await — misma limpieza
+                // anti "sesión cajero fantasma".
+                if (!config.value.completado) {
+                    localStorage.removeItem('mosexpress_config');
+                    localStorage.removeItem('mosexpress_session_date');
+                    procesandoCaja.value = false;
+                    return;
+                }
                 idCajaActual.value = cid;
                 cajaAbierta.value = true;
                 montoAperturaMemoria.value = monto;
@@ -7021,7 +7050,9 @@
                  config.value.completado = false;
                  config.value.vendedor = '';
                  config.value.estacion = null;
+                 config.value.esCajero = false;
                  localStorage.removeItem('mosexpress_config');
+                 localStorage.removeItem('mosexpress_session_date');
                  configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
                  cajeroWizardInfo.value = null;
                  wizardCajeroOcupado.value = false;
