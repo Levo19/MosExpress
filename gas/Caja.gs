@@ -75,7 +75,8 @@ function procesarAperturaCaja(data) {
     _notificarMOS(
       '🛒 ' + (data.vendedor || 'Cajero') + ' aperturó caja',
       (data.estacion || data.zona || '') + ' · ' + horaStr,
-      data.vendedor || null
+      data.vendedor || null,
+      'ME_CAJA_APERTURA'
     );
   } catch(eP) { Logger.log('Push apertura caja: ' + eP.message); }
 
@@ -137,7 +138,7 @@ function procesarCierreCaja(data) {
   // Push a MOS — cierre de caja
   try {
     var hora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm');
-    _notificarMOS('🔐 Caja cerrada · ' + hora, cajaVendedor + (cajaZona ? ' · ' + cajaZona : '') + ' · S/ ' + (parseFloat(data.montoFinal) || 0).toFixed(2));
+    _notificarMOS('🔐 Caja cerrada · ' + hora, cajaVendedor + (cajaZona ? ' · ' + cajaZona : '') + ' · S/ ' + (parseFloat(data.montoFinal) || 0).toFixed(2), cajaVendedor, 'ME_CAJA_CIERRE');
   } catch(eP) { Logger.log('Push cierre: ' + eP.message); }
 
   return ContentService.createTextOutput(JSON.stringify({

@@ -177,7 +177,7 @@ function _alertaEnviarPush(caja, efectivoActual, thresholdAlcanzado) {
              + (caja.zona     ? ' · ' + caja.zona     : '')
              + (caja.estacion ? ' · ' + caja.estacion : '')
              + ' · actual: S/ ' + efectivoActual.toFixed(2);
-  try { _notificarMOS(titulo, cuerpo); }
+  try { _notificarMOS(titulo, cuerpo, null, 'ME_RECOGER_EFECTIVO'); }
   catch(e) { Logger.log('[AlertaEfectivo] _notificarMOS falló: ' + e.message); }
 }
 
