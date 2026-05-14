@@ -4080,6 +4080,76 @@
         // Helper: localStorage.setItem con try-catch (no falla si storage lleno o bloqueado)
         const lsSet = (key, value) => { try { localStorage.setItem(key, value); } catch(e) { console.warn('localStorage lleno:', key, e); } };
 
+        // ── IndexedDB para el CATÁLOGO ───────────────────────────────
+        // localStorage da solo ~5MB por origen y el catálogo (PRODUCTO_BASE
+        // + PRESENTACIONES + EQUIVALENCIAS + STOCK_ZONAS + ...) lo desbordaba
+        // en celulares → "QuotaExceededError" → el catálogo no persistía y se
+        // re-descargaba en cada apertura. IndexedDB da cientos de MB / GB.
+        // Guarda objetos directamente (structured clone) — sin JSON.stringify.
+        const _idbCat = {
+          _db: null,
+          _open() {
+            if (this._db) return Promise.resolve(this._db);
+            return new Promise((resolve, reject) => {
+              const req = indexedDB.open('mosexpress_idb', 1);
+              req.onupgradeneeded = () => {
+                const d = req.result;
+                if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+              };
+              req.onsuccess = () => { this._db = req.result; resolve(this._db); };
+              req.onerror = () => reject(req.error);
+            });
+          },
+          async get(key) {
+            const d = await this._open();
+            return new Promise((resolve, reject) => {
+              const tx = d.transaction('kv', 'readonly');
+              const r = tx.objectStore('kv').get(key);
+              r.onsuccess = () => resolve(r.result);
+              r.onerror = () => reject(r.error);
+            });
+          },
+          async set(key, value) {
+            const d = await this._open();
+            return new Promise((resolve, reject) => {
+              const tx = d.transaction('kv', 'readwrite');
+              tx.objectStore('kv').put(value, key);
+              tx.oncomplete = () => resolve(true);
+              tx.onerror = () => reject(tx.error);
+            });
+          },
+          async del(key) {
+            try {
+              const d = await this._open();
+              return new Promise((resolve) => {
+                const tx = d.transaction('kv', 'readwrite');
+                tx.objectStore('kv').delete(key);
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
+              });
+            } catch(_) { return false; }
+          }
+        };
+        // Guarda el catálogo en IndexedDB (fire-and-forget con fallback a
+        // localStorage). Limpia el mosexpress_db viejo de localStorage para
+        // liberar esos ~MB. Nunca lanza — si todo falla, queda en memoria.
+        const _guardarCatalogo = async (data) => {
+          try {
+            await _idbCat.set('mosexpress_db', data);
+            try { localStorage.removeItem('mosexpress_db'); } catch(_){}
+            return true;
+          } catch (idbErr) {
+            console.warn('IndexedDB falló al guardar catálogo:', idbErr);
+            try {
+              localStorage.setItem('mosexpress_db', JSON.stringify(data));
+              return true;
+            } catch (lsErr) {
+              console.warn('localStorage tampoco pudo:', lsErr);
+              return false;
+            }
+          }
+        };
+
         // --- ESTADOS NÚCLEO v2 ---
         const offlineMode = ref(!navigator.onLine);
         const db = ref({});
@@ -4949,9 +5019,23 @@
           } catch(e) { ventasHoy.value = []; localStorage.removeItem('mosexpress_ventas_hoy'); }
 
           try {
-              const dbLocal = localStorage.getItem('mosexpress_db');
-              if (dbLocal) {
-                  const dParsed = JSON.parse(dbLocal);
+              // Leer catálogo desde IndexedDB. Si no está ahí pero sí en
+              // localStorage (instalación previa a esta versión), migrar:
+              // copiar a IDB y borrar de localStorage para liberar los ~MB.
+              let dParsed = null;
+              try { dParsed = await _idbCat.get('mosexpress_db'); } catch(_) {}
+              if (!dParsed) {
+                  const dbLocalViejo = localStorage.getItem('mosexpress_db');
+                  if (dbLocalViejo) {
+                      try {
+                          dParsed = JSON.parse(dbLocalViejo);
+                          await _idbCat.set('mosexpress_db', dParsed);
+                          localStorage.removeItem('mosexpress_db'); // libera espacio
+                          console.log('[ME] Catálogo migrado de localStorage → IndexedDB');
+                      } catch(_) { dParsed = null; }
+                  }
+              }
+              if (dParsed) {
                   if (Array.isArray(dParsed.PRODUCTO_BASE))      dParsed.PRODUCTO_BASE      = markRaw(dParsed.PRODUCTO_BASE);
                   if (Array.isArray(dParsed.PRESENTACIONES))     dParsed.PRESENTACIONES     = markRaw(dParsed.PRESENTACIONES);
                   if (Array.isArray(dParsed.EQUIVALENCIAS))      dParsed.EQUIVALENCIAS      = markRaw(dParsed.EQUIVALENCIAS);
@@ -5001,7 +5085,8 @@
               }
           } catch(e) {
               console.warn("Parse DB", e);
-              localStorage.removeItem('mosexpress_db');
+              try { localStorage.removeItem('mosexpress_db'); } catch(_){}
+              _idbCat.del('mosexpress_db').catch(() => {}); // limpiar IDB corrupto
               db.value = generarBaseDatosMock();
               if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                   await sincronizarCatalogoBase();
@@ -5399,7 +5484,8 @@
                     });
                 }
 
-                localStorage.setItem('mosexpress_db', JSON.stringify(db.value));
+                // Persistir el catálogo (con ZONAS_CONFIG ya mutado) en IndexedDB
+                _guardarCatalogo(db.value).catch(() => {});
 
                 // Refrescar la estación activa si aplica — match por idEstacion o (nombre+zona)
                 if (config.value.estacion) {
@@ -5440,14 +5526,13 @@
                 clearTimeout(timeoutId);
                 const res = JSON.parse(rawText);
                 if (res.status === 'success' && res.data) {
-                    // Persistir crudo primero (ahorra un JSON.stringify enorme del Proxy).
-                    // Si localStorage está lleno (QuotaExceededError), seguimos en memoria.
-                    try {
-                        localStorage.setItem('mosexpress_db', JSON.stringify(res.data));
-                        localStorage.setItem('mosexpress_last_autosync', String(Date.now()));
-                    } catch (storageErr) {
-                        console.warn('localStorage falló al guardar catálogo:', storageErr);
-                        agregarToast('Aviso', 'Almacenamiento lleno — catálogo solo en memoria. Limpia caché del navegador.', 'warning');
+                    // Persistir crudo en IndexedDB (sin límite práctico de tamaño).
+                    // _guardarCatalogo nunca lanza: si IDB y localStorage fallan,
+                    // queda en memoria y avisamos.
+                    const _okGuardado = await _guardarCatalogo(res.data);
+                    try { localStorage.setItem('mosexpress_last_autosync', String(Date.now())); } catch(_){}
+                    if (!_okGuardado) {
+                        agregarToast('Aviso', 'No se pudo guardar el catálogo en disco — funcionará en memoria esta sesión.', 'warning');
                     }
                     // markRaw en arrays grandes — evita wrap recursivo de Vue (~5000 objetos
                     // → Proxies en celular lento = 30s+ de "atorado"). ZONAS_CONFIG queda
