@@ -2137,17 +2137,14 @@
         <!-- MÓDULO A: CAJA -->
         <div v-show="currentModule === 'CAJA'" class="w-full h-full overflow-y-auto p-4 space-y-4 pb-nav" :class="{'frame-nuevo': flashNuevosTickets}">
             
+            <!-- Loader breve mientras iniciarTurno abre la caja desde el wizard.
+                 La apertura (monto inicial incluido) se hace 100% en el wizard;
+                 ya NO existe una segunda pantalla de "ingrese el monto". -->
             <div v-if="config.esCajero && !cajaAbierta" class="h-full flex flex-col items-center justify-center p-6 text-center max-w-sm mx-auto">
-                <div class="bg-white p-6 rounded-3xl shadow-lg w-full border border-gray-200">
-                    <svg class="w-20 h-20 mx-auto text-emerald-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <h2 class="text-2xl font-black text-gray-800 mb-2">APERTURA DE CAJA</h2>
-                    <p class="text-sm text-gray-500 mb-6">Ingresa el saldo base en efectivo para comenzar a generar ventas hoy.</p>
-                    
-                    <input v-model.number="montoApertura" type="number" placeholder="S/ 0.00" class="w-full p-4 mb-4 text-center text-3xl font-black border-2 border-gray-200 rounded-2xl focus:border-posPrimary outline-none bg-gray-50">
-                    <button @click="abrirCaja" :disabled="procesandoCaja || montoApertura === ''" class="w-full bg-posPrimary hover:bg-emerald-600 active:scale-95 disabled:bg-gray-300 text-white font-black py-4 rounded-xl shadow-lg flex items-center justify-center">
-                        <svg v-if="procesandoCaja" class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        INICIAR TURNO DE CAJA
-                    </button>
+                <div class="bg-white p-8 rounded-3xl shadow-lg w-full border border-gray-200 flex flex-col items-center">
+                    <svg class="animate-spin w-12 h-12 text-emerald-500 mb-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <h2 class="text-xl font-black text-gray-800 mb-1">Abriendo tu caja...</h2>
+                    <p class="text-sm text-gray-500">Un momento, preparando el turno</p>
                 </div>
             </div>
 
@@ -4222,7 +4219,6 @@
         // --- MÓDULO A: CAJA ---
         const cajaAbierta = ref(false);
         const idCajaActual = ref('');
-        const montoApertura = ref('');
         const montoAperturaMemoria = ref(0);
         const procesandoCaja = ref(false);
         const procesandoCierre = ref(false);
@@ -6681,6 +6677,14 @@
                 localStorage.removeItem('mosexpress_cobrados_sesion');
                 localStorage.removeItem('mosexpress_extras_sesion');
                 procesandoCaja.value = false;
+                // Dejar al cajero 100% operativo sin necesitar recargar la app:
+                // polling de zona + carga inicial de ventas + auto-print de
+                // etiquetas de cambio de precio pendientes. Antes esto vivía en
+                // la función abrirCaja (vista muerta) y se perdía al abrir desde
+                // el wizard.
+                iniciarPollingZona();
+                cargarVentasZona();
+                setTimeout(() => etiqAutoPrintAlAperturaCaja().catch(() => {}), 800);
                 triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
 
                 // Validar PrintNode_ID antes de intentar imprimir
@@ -6780,71 +6784,10 @@
         };
 
         // --- MÓDULO A: LOGICA CAJA ---
-        const abrirCaja = async () => {
-            if (!config.value.estacion) { agregarToast('Error', 'Configuración incompleta, reinicia la app'); return; }
-            procesandoCaja.value = true;
-            const payload = {
-                tipoEvento: 'APERTURA_CAJA',
-                vendedor: config.value.vendedor, estacion: config.value.estacion.Estacion_Nombre,
-                montoInicial: montoApertura.value, zona: config.value.zona,
-                printNodeId: config.value.estacion.PrintNode_ID || ''  // permite a warehouseMos saber dónde imprimir avisos
-            };
+        // [eliminado] abrirCaja — la apertura de caja se hace integramente en
+        // iniciarTurno desde el wizard inicial. La vista/flujo separado de
+        // "ingrese el monto" era codigo muerto que solo causaba un flash de UI.
 
-            let cid = "CAJA-LOCAL-" + Date.now();
-            // Guardar payload para reintento automático si la apertura falla
-            localStorage.setItem('mosexpress_caja_payload', JSON.stringify(payload));
-            if(!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                try {
-                    const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                    const res = await req.json();
-                    if(res.status === 'success') {
-                        cid = res.idCaja;
-                        localStorage.removeItem('mosexpress_caja_payload'); // ya no necesita reintento
-                        if (res.cajasAutoCerradas > 0)
-                            agregarToast('⚠ Caja anterior cerrada', res.cajasAutoCerradas + ' caja(s) del día anterior fueron cerradas automáticamente. Informa a tu supervisor.', 'warning');
-                    } else {
-                        procesandoCaja.value = false;
-                        agregarToast("Error al abrir caja", res.mensaje || res.message || 'Error desconocido');
-                        return;
-                    }
-                } catch(e) { agregarToast("Modo Offline", "Caja iniciada localmente (sin conexión al servidor)"); }
-            }
-
-            // Ticket PrintNode Bienvenida
-            let txt = "\x1b\x40\x1b\x61\x01"; // Init + Centrar
-            txt += "\x1b\x21\x30MOSexpress\n\n"; // Titulo Grande
-            txt += "\x1b\x21\x00"; // Normal
-            txt += "================================================\n";
-            txt += "\x1b\x21\x10APERTURA DE CAJA\n"; // Doble alto
-            txt += "\x1b\x21\x00"; // Normal
-            txt += "================================================\n\n";
-            txt += "\x1b\x61\x00"; // Alineacion Izquierda
-            txt += "FECHA   : " + new Date().toLocaleString() + "\n";
-            txt += "CAJERO  : " + config.value.vendedor + "\n";
-            txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
-            txt += "SALDO INICIAL: S/ " + parseFloat(montoApertura.value).toFixed(2) + "\n\n";
-            txt += "\x1b\x61\x01"; // Centrar
-            txt += "*** TURNO INICIADO ***\n";
-            txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02"; // Feed extra, Full Cut (GS V, ESC m, ESC i), Pitar 5 veces
-            mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Apertura ", b64ESC(txt))
-                .catch(e => agregarToast('Error Impresión', e.message));
-
-            cajaAbierta.value = true; idCajaActual.value = cid; montoAperturaMemoria.value = montoApertura.value;
-            sessionStartTime.value = new Date().toISOString();
-            cobradosEnSesion.value = [];
-            extrasMovimientos.value = [];
-            localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
-            // ⚡ Auto-print de etiquetas pendientes (membretes de cambio de precio)
-            setTimeout(() => etiqAutoPrintAlAperturaCaja().catch(() => {}), 800);
-            localStorage.removeItem('mosexpress_cobrados_sesion');
-            localStorage.removeItem('mosexpress_extras_sesion');
-            localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto: montoAperturaMemoria.value, fecha: Date.now() }));
-            try { window._meAcquireWakeLock && _meAcquireWakeLock(); } catch(_){}
-            procesandoCaja.value = false;
-            agregarToast("Éxito", "Caja Aperturada");
-            iniciarPollingZona(); // Arrancar polling de zona en segundo plano
-            triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
-        };
 
         const cerrarCaja = async () => {
              // PRE-CHECK de versión: si la PWA tiene código viejo, bloquear el
@@ -9913,7 +9856,7 @@
         return {
           currentModule, config, configWizard, offlineMode,
           uiState,
-          cajaAbierta, idCajaActual, montoAperturaMemoria, montoApertura, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
+          cajaAbierta, idCajaActual, montoAperturaMemoria, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
           ventasZona, cargandoZona, cargarVentasZona, cobradosEnSesion, sessionStartTime, playCoinSound,
           soundEnabled, toggleSound,
           voiceEnabled, toggleVoice,
@@ -9923,7 +9866,7 @@
           procesandoCierre, cerrarCaja, cerrarSesion,
           bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago,
-          iniciarTurno, abrirCaja, cambiarModulo, toggleCamara,
+          iniciarTurno, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
           esGranel, setCantidadGramos, setCantidadKg,
