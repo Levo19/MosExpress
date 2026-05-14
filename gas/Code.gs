@@ -40,6 +40,7 @@ function doGet(e) {
     if (accion === 'historial_cliente')     return getHistorialEndpoint('CLIENTES_FRECUENTES', e.parameter.doc);
     if (accion === 'radio_config')          return radioConfig();
     if (accion === 'top_productos_hoy')     return topProductosHoy();
+    if (accion === 'radio_productos')       return radioProductos();
     return generarRespuestaError('Acción no válida: ' + accion);
   } catch(err) {
     return generarRespuestaError('Error interno [' + accion + ']: ' + err.message);

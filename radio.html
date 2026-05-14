@@ -9,369 +9,288 @@
 <!--
   MOSEXPRESS RADIO — pantalla publicitaria para SmartTV
   =====================================================
-  URL para la TV: https://[tu-host]/MosExpress/radio.html
-  Datos: catálogo (descargar) + top vendidos del día + RadioConfig (Sheet)
-  Música: YouTube IFrame con playlist por horario (editable en Sheet RadioConfig)
-  Setup inicial:
-    1) Ejecuta setupRadioSheet() en Apps Script (crea hoja RadioConfig con ejemplos)
-    2) Edita la hoja con tus playlists, ticker, fotos (URL Drive) y categorías
-    3) Abre esta URL en el navegador de la SmartTV → fullscreen
+  Versión LIGERA y COMPATIBLE: JS en ES5 + CSS sin features modernos.
+  Corre en navegadores viejos (LG webOS 2015, Chromium ~38) sin colgarse.
+
+  - 1 sola llamada al endpoint radio_productos (payload ~40KB, no ~1MB)
+  - Sin CSS Grid, sin backdrop-filter, sin filter:blur (orbes con gradiente)
+  - Sin async/await, fetch, ?., template literals (todo XMLHttpRequest + ES5)
+
+  URL para la TV: https://[host]/MosExpress/radio.html
+  Datos: endpoint radio_productos (catálogo + ventas + config, server-side)
 -->
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#fff; background:#0a0014; }
+  html, body { height:100%; overflow:hidden; color:#fff; background:#0a0014;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; }
 
-  /* ============ FONDO ANIMADO ============ */
+  /* ===== FONDO ===== */
   .bg-gradient {
-    position: fixed; top:0; right:0; bottom:0; left:0; z-index: -3;
-    background: linear-gradient(125deg, #1a0033 0%, #4a0e4e 25%, #c9184a 50%, #ff6b35 75%, #f7c948 100%);
-    background-size: 400% 400%;
-    animation: gradientShift 25s ease infinite;
-    opacity: 0.55;
+    position:fixed; top:0; right:0; bottom:0; left:0; z-index:-3;
+    background:linear-gradient(125deg,#1a0033 0%,#4a0e4e 25%,#c9184a 50%,#ff6b35 75%,#f7c948 100%);
+    background-size:400% 400%;
+    -webkit-animation:gradientShift 25s ease infinite;
+    animation:gradientShift 25s ease infinite;
+    opacity:0.5;
   }
-  @keyframes gradientShift {
-    0%,100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-  }
+  @-webkit-keyframes gradientShift { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+  @keyframes gradientShift { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
 
-  /* ============ ORBES ============ */
-  .orbs { position: fixed; top:0; right:0; bottom:0; left:0; z-index: -2; overflow: hidden; pointer-events:none; }
-  .orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.5; }
-  .orb-1 { width: 500px; height: 500px; background: #ff6b35; top:-10%; left:-10%; animation: float1 22s ease-in-out infinite; }
-  .orb-2 { width: 400px; height: 400px; background: #ffd700; bottom:-15%; right:-10%; animation: float2 28s ease-in-out infinite; }
-  .orb-3 { width: 450px; height: 450px; background: #c9184a; top:30%; right:20%; animation: float3 35s ease-in-out infinite; }
-  .orb-4 { width: 350px; height: 350px; background: #8b00ff; bottom:20%; left:25%; animation: float4 30s ease-in-out infinite; }
-  @keyframes float1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(40vw, 30vh) scale(1.2); } }
-  @keyframes float2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-30vw, -25vh) scale(0.9); } }
-  @keyframes float3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-20vw, 35vh) scale(1.15); } }
-  @keyframes float4 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(25vw, -20vh) scale(1.1); } }
+  /* ORBES — radial-gradient (sin filter:blur, gratis en GPU vieja) */
+  .orbs { position:fixed; top:0; right:0; bottom:0; left:0; z-index:-2; overflow:hidden; pointer-events:none; }
+  .orb { position:absolute; border-radius:50%; }
+  .orb-1 { width:620px; height:620px; top:-15%; left:-12%;
+    background:radial-gradient(circle,rgba(255,107,53,0.55) 0%,rgba(255,107,53,0) 70%);
+    -webkit-animation:float1 22s ease-in-out infinite; animation:float1 22s ease-in-out infinite; }
+  .orb-2 { width:520px; height:520px; bottom:-18%; right:-12%;
+    background:radial-gradient(circle,rgba(255,215,0,0.5) 0%,rgba(255,215,0,0) 70%);
+    -webkit-animation:float2 28s ease-in-out infinite; animation:float2 28s ease-in-out infinite; }
+  .orb-3 { width:560px; height:560px; top:25%; right:15%;
+    background:radial-gradient(circle,rgba(201,24,74,0.5) 0%,rgba(201,24,74,0) 70%);
+    -webkit-animation:float3 35s ease-in-out infinite; animation:float3 35s ease-in-out infinite; }
+  @-webkit-keyframes float1 { 0%,100%{-webkit-transform:translate(0,0)} 50%{-webkit-transform:translate(38vw,28vh)} }
+  @keyframes float1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(38vw,28vh)} }
+  @-webkit-keyframes float2 { 0%,100%{-webkit-transform:translate(0,0)} 50%{-webkit-transform:translate(-28vw,-22vh)} }
+  @keyframes float2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-28vw,-22vh)} }
+  @-webkit-keyframes float3 { 0%,100%{-webkit-transform:translate(0,0)} 50%{-webkit-transform:translate(-18vw,30vh)} }
+  @keyframes float3 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-18vw,30vh)} }
 
-  .noise {
-    position: fixed; top:0; right:0; bottom:0; left:0; z-index: -1; pointer-events:none;
-    background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.6) 100%);
-  }
+  .noise { position:fixed; top:0; right:0; bottom:0; left:0; z-index:-1; pointer-events:none;
+    background:radial-gradient(ellipse at center,transparent 0%,rgba(0,0,0,0.6) 100%); }
 
-  /* ============ LOADING ============ */
+  /* ===== LOADING ===== */
   .loading-screen {
-    position: fixed; top:0; right:0; bottom:0; left:0; z-index: 100;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    transition: opacity 0.8s ease, visibility 0.8s ease;
+    position:fixed; top:0; right:0; bottom:0; left:0; z-index:100;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    -webkit-transition:opacity 0.6s ease; transition:opacity 0.6s ease;
+    background:#0a0014;
   }
-  .loading-screen > * + * { margin-top: 30px; }
-  .loading-screen.hidden { opacity: 0; visibility: hidden; }
+  .loading-screen.hidden { opacity:0; visibility:hidden; }
   .loading-logo {
-    font-size: 48px; font-weight: 900; letter-spacing: 4px;
-    background: linear-gradient(90deg, #ffd700, #ff6b35);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    animation: logoPulse 2s ease-in-out infinite alternate;
-  }
-  @keyframes logoPulse {
-    from { text-shadow: 0 0 30px rgba(255,107,53,0.5); transform: scale(1); }
-    to   { text-shadow: 0 0 60px rgba(255,215,0,0.8); transform: scale(1.05); }
+    font-size:48px; font-weight:900; letter-spacing:4px; color:#ffd700;
+    background:linear-gradient(90deg,#ffd700,#ff6b35);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    margin-bottom:28px;
   }
   .loading-spinner {
-    width: 60px; height: 60px;
-    border: 4px solid rgba(255,255,255,0.1);
-    border-top-color: #ffd700;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
+    width:56px; height:56px; border:4px solid rgba(255,255,255,0.12);
+    border-top-color:#ffd700; border-radius:50%;
+    -webkit-animation:spin 1s linear infinite; animation:spin 1s linear infinite;
+    margin-bottom:24px;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-msg { font-size: 16px; opacity: 0.7; letter-spacing: 2px; }
+  @-webkit-keyframes spin { to{-webkit-transform:rotate(360deg)} }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .loading-msg { font-size:16px; opacity:0.7; letter-spacing:2px; }
 
-  /* ============ LAYOUT ============ */
-  .stage { display: grid; grid-template-rows: auto 1fr auto auto; height: 100vh; padding: 24px 32px; gap: 20px; }
+  /* ===== LAYOUT (flexbox, sin CSS Grid) ===== */
+  .stage { display:flex; flex-direction:column; height:100vh; padding:22px 28px; }
+  .stage > * { flex-shrink:0; }
+  .stage > .hero { -webkit-box-flex:1; flex:1 1 auto; min-height:0; }
+  .stage > * + * { margin-top:16px; }
 
-  header { display: flex; justify-content: space-between; align-items: center; }
+  header { display:flex; justify-content:space-between; align-items:center; }
   .logo {
-    font-size: 28px; font-weight: 900; letter-spacing: 2px;
-    background: linear-gradient(90deg, #ffd700, #ff6b35);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 30px rgba(255,107,53,0.4);
+    font-size:26px; font-weight:900; letter-spacing:2px; color:#ffd700;
+    background:linear-gradient(90deg,#ffd700,#ff6b35);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
   }
-  .logo span { color: #fff; -webkit-text-fill-color: #fff; opacity: 0.7; font-weight: 300; margin-left: 8px; }
-  .clock { font-size: 22px; font-weight: 300; opacity: 0.85; font-variant-numeric: tabular-nums; }
+  .logo span { -webkit-text-fill-color:#fff; color:#fff; opacity:0.65; font-weight:300; margin-left:8px; }
+  .clock { font-size:22px; font-weight:300; opacity:0.85; }
 
-  .hero { display: grid; grid-template-columns: 1fr 380px; gap: 24px; min-height: 0; }
+  .hero { display:flex; min-height:0; }
+  .estrella {
+    -webkit-box-flex:1; flex:1 1 auto; min-width:0; position:relative;
+    border-radius:24px; overflow:hidden;
+    background:rgba(40,10,50,0.55);
+    border:1px solid rgba(255,255,255,0.12);
+  }
+  aside { width:360px; flex-shrink:0; margin-left:20px;
+    display:flex; flex-direction:column; min-height:0; }
 
   /* ESTRELLA */
-  .estrella {
-    position: relative; border-radius: 28px; overflow: hidden;
-    background: rgba(255,255,255,0.04); backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.12);
-    box-shadow: 0 25px 80px rgba(0,0,0,0.5);
-  }
   .estrella-img {
-    position: absolute; top:0; right:0; bottom:0; left:0;
-    background-size: cover; background-position: center;
-    animation: kenburns 22s ease-in-out infinite alternate;
+    position:absolute; top:0; right:0; bottom:0; left:0;
+    background-size:cover; background-position:center;
+    -webkit-animation:kenburns 22s ease-in-out infinite alternate;
+    animation:kenburns 22s ease-in-out infinite alternate;
   }
-  .estrella-img::after {
-    content: ''; position: absolute; top:0; right:0; bottom:0; left:0;
-    background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 60%, transparent 100%);
+  .estrella-img:after {
+    content:''; position:absolute; top:0; right:0; bottom:0; left:0;
+    background:linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.25) 60%,transparent 100%);
   }
-  @keyframes kenburns {
-    0% { transform: scale(1.05) translate(0,0); }
-    100% { transform: scale(1.25) translate(-3%, -3%); }
+  @-webkit-keyframes kenburns { 0%{-webkit-transform:scale(1.05)} 100%{-webkit-transform:scale(1.22)} }
+  @keyframes kenburns { 0%{transform:scale(1.05)} 100%{transform:scale(1.22)} }
+  .estrella-img.no-image { -webkit-animation:none; animation:none; }
+  .estrella-img.no-image:before {
+    content:attr(data-emoji); position:absolute; top:0; right:0; bottom:0; left:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:260px; line-height:1; z-index:1;
+    -webkit-animation:emojiFloat 6s ease-in-out infinite alternate;
+    animation:emojiFloat 6s ease-in-out infinite alternate;
   }
-  .estrella-img.no-image { animation: none; }
-  .estrella-img.no-image::before {
-    content: attr(data-emoji);
-    position: absolute; top:0; right:0; bottom:0; left:0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 280px; line-height: 1;
-    filter: drop-shadow(0 10px 40px rgba(0,0,0,0.5));
-    animation: emojiFloat 6s ease-in-out infinite alternate;
-    z-index: 1;
-  }
-  @keyframes emojiFloat {
-    0%   { transform: translateY(0) rotate(-4deg) scale(1); }
-    100% { transform: translateY(-25px) rotate(4deg) scale(1.08); }
-  }
-  .estrella-img .cat-watermark {
-    position: absolute; right: 32px; top: 28px; z-index: 2;
-    background: rgba(0,0,0,0.4); backdrop-filter: blur(12px);
-    border: 1px solid rgba(255,255,255,0.15);
-    padding: 6px 14px; border-radius: 999px;
-    font-size: 12px; font-weight: 700; letter-spacing: 2px;
-    text-transform: uppercase; opacity: 0.85;
+  @-webkit-keyframes emojiFloat { 0%{-webkit-transform:translateY(0)} 100%{-webkit-transform:translateY(-22px)} }
+  @keyframes emojiFloat { 0%{transform:translateY(0)} 100%{transform:translateY(-22px)} }
+  .cat-watermark {
+    position:absolute; right:28px; top:24px; z-index:2;
+    background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.18);
+    padding:6px 14px; border-radius:999px;
+    font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase; opacity:0.85;
   }
   .estrella-content {
-    position: absolute; left: 0; right: 0; bottom: 0; padding: 40px;
-    display: flex; flex-direction: column;
+    position:absolute; left:0; right:0; bottom:0; padding:36px; z-index:3;
+    display:flex; flex-direction:column;
   }
-  .estrella-content > * + * { margin-top: 16px; }
+  .estrella-content > * + * { margin-top:14px; }
   .tag-fire {
-    align-self: flex-start;
-    background: linear-gradient(90deg, #ff3838, #ff6b35);
-    padding: 10px 20px; border-radius: 999px;
-    font-size: 14px; font-weight: 800; letter-spacing: 1.5px;
-    text-shadow: 0 0 10px rgba(0,0,0,0.5);
-    animation: glow 2.5s ease-in-out infinite alternate;
+    align-self:flex-start;
+    background:linear-gradient(90deg,#ff3838,#ff6b35);
+    padding:9px 18px; border-radius:999px;
+    font-size:14px; font-weight:800; letter-spacing:1.5px;
+    -webkit-animation:glow 2.5s ease-in-out infinite alternate;
+    animation:glow 2.5s ease-in-out infinite alternate;
   }
-  @keyframes glow {
-    from { box-shadow: 0 0 20px #ff6b35, 0 0 40px rgba(255,107,53,0.6); transform: scale(1); }
-    to   { box-shadow: 0 0 35px #ffd700, 0 0 70px rgba(255,107,53,0.9); transform: scale(1.05); }
-  }
-  .estrella-nombre {
-    font-size: 64px; font-weight: 900; line-height: 1.05;
-    text-shadow: 0 4px 30px rgba(0,0,0,0.8);
-    letter-spacing: -1px;
-  }
-  .estrella-desc { font-size: 18px; opacity: 0.85; max-width: 70%; }
-  .estrella-precio { display: flex; align-items: baseline; }
-  .estrella-precio > * + * { margin-left: 12px; }
-  .precio-moneda { font-size: 28px; opacity: 0.8; }
-  .precio-valor {
-    font-size: 88px; font-weight: 900; line-height: 1;
-    background: linear-gradient(90deg, #ffd700, #ffeb3b);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 40px rgba(255,215,0,0.5);
-  }
+  @-webkit-keyframes glow { from{box-shadow:0 0 20px #ff6b35} to{box-shadow:0 0 45px #ffd700} }
+  @keyframes glow { from{box-shadow:0 0 20px #ff6b35} to{box-shadow:0 0 45px #ffd700} }
+  .estrella-nombre { font-size:58px; font-weight:900; line-height:1.05; text-shadow:0 4px 24px rgba(0,0,0,0.8); }
+  .estrella-desc { font-size:17px; opacity:0.85; }
+  .estrella-precio { display:flex; align-items:baseline; }
+  .estrella-precio > * + * { margin-left:10px; }
+  .precio-moneda { font-size:26px; opacity:0.8; }
+  .precio-valor { font-size:80px; font-weight:900; line-height:1; color:#ffd700; text-shadow:0 0 36px rgba(255,215,0,0.5); }
   .estrella-pedidos {
-    margin-left: auto;
-    background: rgba(0,0,0,0.5); backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.15);
-    padding: 8px 16px; border-radius: 12px;
-    font-size: 14px;
+    margin-left:auto; background:rgba(0,0,0,0.55);
+    border:1px solid rgba(255,255,255,0.18); padding:8px 16px; border-radius:12px; font-size:14px;
   }
-  .estrella-pedidos strong { color: #ffd700; font-size: 18px; }
-  .estrella-content.swap, .estrella-img.swap { animation: swapOut 0.6s ease forwards; }
-  @keyframes swapOut {
-    0% { opacity: 1; transform: scale(1); filter: blur(0); }
-    100% { opacity: 0; transform: scale(1.05); filter: blur(20px); }
+  .estrella-pedidos strong { color:#ffd700; font-size:18px; }
+  .estrella-content.swap, .estrella-img.swap {
+    -webkit-animation:swapOut 0.5s ease forwards; animation:swapOut 0.5s ease forwards;
   }
+  @-webkit-keyframes swapOut { 0%{opacity:1;-webkit-transform:scale(1)} 100%{opacity:0;-webkit-transform:scale(1.04)} }
+  @keyframes swapOut { 0%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:scale(1.04)} }
 
-  /* ASIDE */
-  aside { display: flex; flex-direction: column; min-height: 0; }
-  aside > * + * { margin-top: 12px; }
-  .aside-title { font-size: 14px; font-weight: 700; letter-spacing: 3px; opacity: 0.7; padding: 0 4px; }
-  .cards { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .cards > * + * { margin-top: 12px; }
+  /* ASIDE / CARDS */
+  .aside-title { font-size:14px; font-weight:700; letter-spacing:3px; opacity:0.7; padding:0 4px; margin-bottom:12px; }
+  .cards { display:flex; flex-direction:column; -webkit-box-flex:1; flex:1 1 auto; min-height:0; }
+  .cards > * + * { margin-top:12px; }
   .card {
-    flex: 1; min-height: 0;
-    display: flex; padding: 12px;
-    background: rgba(255,255,255,0.07); backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 18px;
-    overflow: hidden; position: relative;
-    transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    -webkit-box-flex:1; flex:1 1 0; min-height:0;
+    display:flex; padding:12px;
+    background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.12); border-radius:16px;
+    overflow:hidden; position:relative;
   }
-  .card > * + * { margin-left: 14px; }
-  .card.slide-in { animation: slideIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
-  .card.slide-out { animation: slideOut 0.6s cubic-bezier(0.7, 0, 0.84, 0) both; }
-  @keyframes slideIn { from { transform: translateX(120%); opacity: 0; filter: blur(10px); } to { transform: translateX(0); opacity: 1; filter: blur(0); } }
-  @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-120%); opacity: 0; filter: blur(10px); } }
-  .card::before {
-    content: ''; position: absolute; top:0; right:0; bottom:0; left:0;
-    background: linear-gradient(135deg, rgba(255,107,53,0.15), transparent);
-    pointer-events: none;
-  }
+  .card > * + * { margin-left:14px; }
+  .card.slide-in { -webkit-animation:slideIn 0.6s ease both; animation:slideIn 0.6s ease both; }
+  .card.slide-out { -webkit-animation:slideOut 0.5s ease both; animation:slideOut 0.5s ease both; }
+  @-webkit-keyframes slideIn { from{opacity:0;-webkit-transform:translateX(60px)} to{opacity:1;-webkit-transform:translateX(0)} }
+  @keyframes slideIn { from{opacity:0;transform:translateX(60px)} to{opacity:1;transform:translateX(0)} }
+  @-webkit-keyframes slideOut { from{opacity:1;-webkit-transform:translateX(0)} to{opacity:0;-webkit-transform:translateX(-60px)} }
+  @keyframes slideOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(-60px)} }
   .card-img {
-    width: 100px; flex-shrink: 0;
-    border-radius: 12px; overflow: hidden;
-    background-size: cover; background-position: center;
-    position: relative;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    width:96px; flex-shrink:0; border-radius:12px; overflow:hidden;
+    background-size:cover; background-position:center; position:relative;
   }
-  .card-img.no-image::before {
-    content: attr(data-emoji);
-    position: absolute; top:0; right:0; bottom:0; left:0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 52px; line-height: 1;
-    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+  .card-img.no-image:before {
+    content:attr(data-emoji); position:absolute; top:0; right:0; bottom:0; left:0;
+    display:flex; align-items:center; justify-content:center; font-size:48px; line-height:1;
   }
-  .card-info { display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0; }
-  .card-info > * + * { margin-top: 4px; }
-  .card-nombre { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-desc { font-size: 12px; opacity: 0.65; }
-  .card-precio { font-size: 22px; font-weight: 900; margin-top: auto; color: #ffd700; }
+  .card-info { display:flex; flex-direction:column; justify-content:center; -webkit-box-flex:1; flex:1 1 auto; min-width:0; }
+  .card-info > * + * { margin-top:4px; }
+  .card-nombre { font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card-desc { font-size:12px; opacity:0.6; }
+  .card-precio { font-size:22px; font-weight:900; color:#ffd700; margin-top:auto; }
 
   /* PLAYER */
   .player-bar {
-    display: flex; align-items: center;
-    background: rgba(0,0,0,0.45); backdrop-filter: blur(30px);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 18px; padding: 14px 22px;
+    display:flex; align-items:center;
+    background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1);
+    border-radius:16px; padding:12px 20px;
   }
-  .player-bar > * + * { margin-left: 20px; }
-  .yt-frame-wrap {
-    width: 80px; height: 50px; border-radius: 10px; overflow: hidden;
-    position: relative; flex-shrink: 0; background: #000;
-    box-shadow: 0 0 25px rgba(255,107,53,0.4);
-  }
-  .yt-frame-wrap iframe { width: 100%; height: 100%; border: 0; }
-  .visualizer { display: flex; align-items: flex-end; height: 36px; }
-  .visualizer > * + * { margin-left: 3px; }
-  .bar { width: 4px; background: linear-gradient(to top, #ff6b35, #ffd700); border-radius: 2px; animation: bounce 0.6s ease-in-out infinite alternate; }
-  .bar:nth-child(1) { animation-delay: 0s;    height: 16px; }
-  .bar:nth-child(2) { animation-delay: 0.1s;  height: 28px; }
-  .bar:nth-child(3) { animation-delay: 0.2s;  height: 12px; }
-  .bar:nth-child(4) { animation-delay: 0.15s; height: 30px; }
-  .bar:nth-child(5) { animation-delay: 0.05s; height: 20px; }
-  .bar:nth-child(6) { animation-delay: 0.25s; height: 26px; }
-  .bar:nth-child(7) { animation-delay: 0.1s;  height: 14px; }
-  @keyframes bounce { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
-  .now-playing { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-  .now-playing > * + * { margin-top: 2px; }
-  .np-label { font-size: 11px; letter-spacing: 2px; opacity: 0.55; font-weight: 700; }
-  .np-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-bar > * + * { margin-left:18px; }
+  .yt-frame-wrap { width:78px; height:48px; border-radius:9px; overflow:hidden;
+    flex-shrink:0; background:#000; }
+  .yt-frame-wrap iframe { width:100%; height:100%; border:0; }
+  .visualizer { display:flex; align-items:flex-end; height:34px; }
+  .visualizer > * + * { margin-left:3px; }
+  .bar { width:4px; background:linear-gradient(to top,#ff6b35,#ffd700); border-radius:2px;
+    -webkit-animation:bounce 0.6s ease-in-out infinite alternate; animation:bounce 0.6s ease-in-out infinite alternate; }
+  .bar:nth-child(1){-webkit-animation-delay:0s;animation-delay:0s;height:16px}
+  .bar:nth-child(2){-webkit-animation-delay:0.1s;animation-delay:0.1s;height:28px}
+  .bar:nth-child(3){-webkit-animation-delay:0.2s;animation-delay:0.2s;height:12px}
+  .bar:nth-child(4){-webkit-animation-delay:0.15s;animation-delay:0.15s;height:30px}
+  .bar:nth-child(5){-webkit-animation-delay:0.05s;animation-delay:0.05s;height:20px}
+  .bar:nth-child(6){-webkit-animation-delay:0.25s;animation-delay:0.25s;height:26px}
+  .bar:nth-child(7){-webkit-animation-delay:0.1s;animation-delay:0.1s;height:14px}
+  @-webkit-keyframes bounce { from{-webkit-transform:scaleY(0.3)} to{-webkit-transform:scaleY(1)} }
+  @keyframes bounce { from{transform:scaleY(0.3)} to{transform:scaleY(1)} }
+  .now-playing { display:flex; flex-direction:column; -webkit-box-flex:1; flex:1 1 auto; min-width:0; }
+  .now-playing > * + * { margin-top:2px; }
+  .np-label { font-size:11px; letter-spacing:2px; opacity:0.55; font-weight:700; }
+  .np-title { font-size:16px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .playlist-tag {
-    background: linear-gradient(90deg, rgba(255,107,53,0.3), rgba(255,215,0,0.3));
-    border: 1px solid rgba(255,215,0,0.4);
-    padding: 6px 14px; border-radius: 999px;
-    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    background:rgba(255,150,50,0.25); border:1px solid rgba(255,215,0,0.4);
+    padding:6px 14px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:1px;
   }
 
   /* TICKER */
   .ticker {
-    background: rgba(0,0,0,0.5); backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px; overflow: hidden; position: relative; padding: 12px 0;
+    background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.08);
+    border-radius:12px; overflow:hidden; position:relative; padding:11px 0;
   }
-  .ticker::before, .ticker::after { content: ''; position: absolute; top:0; bottom:0; width: 80px; z-index: 2; pointer-events:none; }
-  .ticker::before { left: 0; background: linear-gradient(to right, rgba(0,0,0,0.7), transparent); }
-  .ticker::after  { right: 0; background: linear-gradient(to left,  rgba(0,0,0,0.7), transparent); }
-  .ticker-track { display: flex; white-space: nowrap; animation: tickerScroll 45s linear infinite; will-change: transform; }
-  .ticker-track > * + * { margin-left: 60px; }
-  .ticker-item { font-size: 16px; font-weight: 600; display: inline-flex; align-items: center; padding: 0 12px; }
-  .ticker-item > * + * { margin-left: 12px; }
-  .ticker-item.dot { color: #ffd700; }
-  @keyframes tickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .ticker-track { display:flex; white-space:nowrap;
+    -webkit-animation:tickerScroll 45s linear infinite; animation:tickerScroll 45s linear infinite; }
+  .ticker-track > * + * { margin-left:50px; }
+  .ticker-item { font-size:16px; font-weight:600; display:inline-block; padding:0 10px; }
+  .ticker-item.dot { color:#ffd700; }
+  @-webkit-keyframes tickerScroll { from{-webkit-transform:translateX(0)} to{-webkit-transform:translateX(-50%)} }
+  @keyframes tickerScroll { from{transform:translateX(0)} to{transform:translateX(-50%)} }
 
-  /* PARTICLES */
-  .particles { position: fixed; top:0; right:0; bottom:0; left:0; pointer-events: none; z-index: 0; }
-  .particle {
-    position: absolute; width: 4px; height: 4px;
-    background: #ffd700; border-radius: 50%;
-    opacity: 0; box-shadow: 0 0 8px #ffd700;
-    animation: particleRise 12s linear infinite;
-  }
+  /* PARTICLES — pocas y livianas */
+  .particles { position:fixed; top:0; right:0; bottom:0; left:0; pointer-events:none; z-index:0; }
+  .particle { position:absolute; width:4px; height:4px; background:#ffd700; border-radius:50%;
+    opacity:0; -webkit-animation:particleRise 12s linear infinite; animation:particleRise 12s linear infinite; }
+  @-webkit-keyframes particleRise {
+    0%{-webkit-transform:translateY(100vh);opacity:0} 12%{opacity:0.7} 88%{opacity:0.5} 100%{-webkit-transform:translateY(-10vh);opacity:0} }
   @keyframes particleRise {
-    0%   { transform: translateY(100vh) scale(0); opacity: 0; }
-    10%  { opacity: 0.8; }
-    90%  { opacity: 0.6; }
-    100% { transform: translateY(-10vh) scale(1.5); opacity: 0; }
-  }
+    0%{transform:translateY(100vh);opacity:0} 12%{opacity:0.7} 88%{opacity:0.5} 100%{transform:translateY(-10vh);opacity:0} }
 
-  /* UPDATE OVERLAY — aparece cuando detecta nueva versión, recarga sola */
-  .update-overlay {
-    position: fixed; top:0; right:0; bottom:0; left:0; z-index: 200;
-    background: radial-gradient(ellipse at center, rgba(20,0,40,0.85), rgba(0,0,0,0.95));
-    backdrop-filter: blur(30px);
-    display: flex; align-items: center; justify-content: center;
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.8s ease;
-  }
-  .update-overlay.show { opacity: 1; pointer-events: auto; }
-  .update-box {
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,215,0,0.4);
-    padding: 60px 100px; border-radius: 32px;
-    text-align: center;
-    box-shadow: 0 0 120px rgba(255,107,53,0.5), inset 0 0 40px rgba(255,215,0,0.1);
-    animation: updatePulse 2.5s ease-in-out infinite alternate;
-    max-width: 600px;
-  }
-  @keyframes updatePulse {
-    from { box-shadow: 0 0 80px rgba(255,107,53,0.4), inset 0 0 30px rgba(255,215,0,0.1); transform: scale(1); }
-    to   { box-shadow: 0 0 160px rgba(255,215,0,0.7), inset 0 0 60px rgba(255,107,53,0.2); transform: scale(1.02); }
-  }
-  .update-icon {
-    font-size: 80px; line-height: 1; margin-bottom: 20px;
-    animation: rotateIcon 3s linear infinite;
-    display: inline-block;
-  }
-  @keyframes rotateIcon { from { transform: rotate(0); } to { transform: rotate(360deg); } }
-  .update-box h2 {
-    font-size: 36px; font-weight: 900; letter-spacing: 1px;
-    background: linear-gradient(90deg, #ffd700, #ff6b35);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    margin-bottom: 8px;
-  }
-  .update-box .ver {
-    font-size: 18px; opacity: 0.85; margin-bottom: 28px;
-  }
-  .update-box .ver strong { color: #ffd700; font-variant-numeric: tabular-nums; }
-  .update-bar {
-    width: 100%; height: 8px;
-    background: rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.4);
-  }
-  .update-bar-fill {
-    height: 100%; width: 0;
-    background: linear-gradient(90deg, #ff6b35 0%, #ffd700 50%, #ff6b35 100%);
-    background-size: 200% 100%;
-    border-radius: 4px;
-    animation: updateBar 3.2s cubic-bezier(0.4, 0, 0.6, 1) forwards, barShimmer 1.5s linear infinite;
-    box-shadow: 0 0 20px rgba(255,215,0,0.6);
-  }
-  @keyframes updateBar { from { width: 0; } to { width: 100%; } }
-  @keyframes barShimmer { from { background-position: 0% 0; } to { background-position: 200% 0; } }
-  .update-msg { margin-top: 16px; font-size: 14px; opacity: 0.6; letter-spacing: 1.5px; }
-
-  /* AUDIO CHIP — solo un hint discreto en la esquina, no bloquea nada */
+  /* AUDIO CHIP */
   .audio-chip {
-    position: fixed;
-    bottom: 110px; right: 32px;
-    z-index: 50;
-    background: rgba(0,0,0,0.65); backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,215,0,0.45);
-    padding: 14px 22px; border-radius: 999px;
-    font-size: 15px; font-weight: 700; letter-spacing: 0.5px;
-    display: flex; align-items: center;
-    box-shadow: 0 0 30px rgba(255,107,53,0.3);
-    animation: chipPulse 2.5s ease-in-out infinite alternate;
-    transition: opacity 0.6s ease, transform 0.6s ease;
-    pointer-events: none;
+    position:fixed; bottom:104px; right:28px; z-index:50;
+    background:rgba(0,0,0,0.78); border:1px solid rgba(255,215,0,0.45);
+    padding:13px 20px; border-radius:999px;
+    font-size:15px; font-weight:700;
+    display:flex; align-items:center; pointer-events:none;
+    -webkit-transition:opacity 0.5s ease; transition:opacity 0.5s ease;
   }
-  .audio-chip.hidden { opacity: 0; transform: translateY(50px) scale(0.8); }
-  .audio-chip > * + * { margin-left: 12px; }
-  .audio-chip .icon { font-size: 22px; }
-  @keyframes chipPulse {
-    from { box-shadow: 0 0 20px rgba(255,215,0,0.3); border-color: rgba(255,215,0,0.4); }
-    to   { box-shadow: 0 0 50px rgba(255,107,53,0.7); border-color: rgba(255,107,53,0.6); }
+  .audio-chip > * + * { margin-left:10px; }
+  .audio-chip.hidden { opacity:0; }
+  .audio-chip .icon { font-size:22px; }
+
+  /* UPDATE OVERLAY */
+  .update-overlay {
+    position:fixed; top:0; right:0; bottom:0; left:0; z-index:200;
+    background:rgba(10,0,20,0.94);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; visibility:hidden;
+    -webkit-transition:opacity 0.6s ease; transition:opacity 0.6s ease;
   }
+  .update-overlay.show { opacity:1; visibility:visible; }
+  .update-box {
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,215,0,0.4);
+    padding:50px 80px; border-radius:28px; text-align:center; max-width:560px;
+  }
+  .update-icon { font-size:72px; line-height:1; margin-bottom:18px; display:inline-block;
+    -webkit-animation:spin 3s linear infinite; animation:spin 3s linear infinite; }
+  .update-box h2 { font-size:32px; font-weight:900; color:#ffd700; margin-bottom:8px; }
+  .update-box .ver { font-size:17px; opacity:0.85; margin-bottom:24px; }
+  .update-box .ver strong { color:#ffd700; }
+  .update-bar { width:100%; height:8px; background:rgba(255,255,255,0.12); border-radius:4px; overflow:hidden; }
+  .update-bar-fill { height:100%; width:0; background:linear-gradient(90deg,#ff6b35,#ffd700);
+    -webkit-animation:updateBar 3.2s ease forwards; animation:updateBar 3.2s ease forwards; }
+  @-webkit-keyframes updateBar { from{width:0} to{width:100%} }
+  @keyframes updateBar { from{width:0} to{width:100%} }
+  .update-msg { margin-top:14px; font-size:14px; opacity:0.6; letter-spacing:1.5px; }
 </style>
 </head>
 <body>
@@ -381,7 +300,6 @@
   <div class="orb orb-1"></div>
   <div class="orb orb-2"></div>
   <div class="orb orb-3"></div>
-  <div class="orb orb-4"></div>
 </div>
 <div class="noise"></div>
 <div class="particles" id="particles"></div>
@@ -389,7 +307,7 @@
 <div class="loading-screen" id="loadingScreen">
   <div class="loading-logo">MOSEXPRESS</div>
   <div class="loading-spinner"></div>
-  <div class="loading-msg" id="loadingMsg">Cargando catálogo...</div>
+  <div class="loading-msg" id="loadingMsg">Cargando...</div>
 </div>
 
 <div class="stage">
@@ -402,20 +320,18 @@
     <div class="estrella">
       <div class="estrella-img" id="estrellaImg"></div>
       <div class="estrella-content" id="estrellaContent">
-        <span class="tag-fire">🔥 MÁS VENDIDO HOY</span>
-        <h1 class="estrella-nombre" id="estrellaNombre">—</h1>
+        <span class="tag-fire">&#128293; MAS VENDIDO HOY</span>
+        <h1 class="estrella-nombre" id="estrellaNombre">&mdash;</h1>
         <div class="estrella-desc" id="estrellaDesc"></div>
         <div class="estrella-precio">
           <span class="precio-moneda">S/</span>
           <span class="precio-valor" id="estrellaPrecio">0.00</span>
-          <div class="estrella-pedidos">
-            <strong id="estrellaPedidos">0</strong> vendidos hoy
-          </div>
+          <div class="estrella-pedidos"><strong id="estrellaPedidos">0</strong> vendidos hoy</div>
         </div>
       </div>
     </div>
     <aside>
-      <div class="aside-title">TAMBIÉN HOY</div>
+      <div class="aside-title">TAMBIEN HOY</div>
       <div class="cards" id="cards"></div>
     </aside>
   </div>
@@ -425,14 +341,14 @@
       <iframe id="ytplayer" src="" allow="autoplay; encrypted-media" frameborder="0"></iframe>
     </div>
     <div class="visualizer">
-      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
       <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
     </div>
     <div class="now-playing">
       <div class="np-label">REPRODUCIENDO</div>
       <div class="np-title" id="npTitle">MosExpress Radio</div>
     </div>
-    <div class="playlist-tag" id="playlistTag">— —</div>
+    <div class="playlist-tag" id="playlistTag">&mdash;</div>
   </div>
 
   <div class="ticker">
@@ -441,526 +357,432 @@
 </div>
 
 <div class="audio-chip" id="audioChip">
-  <span class="icon">🔇</span>
+  <span class="icon">&#128263;</span>
   <span>Presiona cualquier tecla para sonido</span>
 </div>
 
 <div class="update-overlay" id="updateOverlay">
   <div class="update-box">
-    <div class="update-icon">🚀</div>
-    <h2>NUEVA VERSIÓN DISPONIBLE</h2>
+    <div class="update-icon">&#128640;</div>
+    <h2>NUEVA VERSION DISPONIBLE</h2>
     <div class="ver">Actualizando a <strong id="updateVer">--</strong></div>
     <div class="update-bar"><div class="update-bar-fill"></div></div>
-    <div class="update-msg">Recargando automáticamente...</div>
+    <div class="update-msg">Recargando automaticamente...</div>
   </div>
 </div>
 
 <script>
-  // ============ CONFIG ============
-  const API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+/* ===================================================================
+   MOSEXPRESS RADIO — JS en ES5 puro (compatible navegadores 2014+)
+   Sin async/await, fetch, arrow functions, template literals, ?.
+   =================================================================== */
+(function () {
+  'use strict';
 
-  // ============ CATEGORÍAS (gradient + emoji + stock photo fallback) ============
-  const CATEGORIAS = {
-    bebidas:    { gradient: 'linear-gradient(135deg, #1565c0, #00bcd4)', emoji: '🥤' },
-    cerveza:    { gradient: 'linear-gradient(135deg, #f57c00, #ffc107)', emoji: '🍺' },
-    snacks:     { gradient: 'linear-gradient(135deg, #d84315, #ff8a65)', emoji: '🥨' },
-    chocolate:  { gradient: 'linear-gradient(135deg, #4e342e, #a1887f)', emoji: '🍫' },
-    golosinas:  { gradient: 'linear-gradient(135deg, #c2185b, #f48fb1)', emoji: '🍬' },
-    lacteos:    { gradient: 'linear-gradient(135deg, #607d8b, #cfd8dc)', emoji: '🥛' },
-    panaderia:  { gradient: 'linear-gradient(135deg, #bf6b00, #ffb74d)', emoji: '🥖' },
-    abarrotes:  { gradient: 'linear-gradient(135deg, #558b2f, #c5e1a5)', emoji: '🌾' },
-    especerias: { gradient: 'linear-gradient(135deg, #a1530d, #d4a76a)', emoji: '🧂' },
-    salsas:     { gradient: 'linear-gradient(135deg, #b71c1c, #ef5350)', emoji: '🥫' },
-    aderezos:   { gradient: 'linear-gradient(135deg, #2e7d32, #81c784)', emoji: '🫒' },
-    limpieza:   { gradient: 'linear-gradient(135deg, #0277bd, #4fc3f7)', emoji: '🧼' },
-    higiene:    { gradient: 'linear-gradient(135deg, #00838f, #80deea)', emoji: '🧻' },
-    agua:       { gradient: 'linear-gradient(135deg, #006064, #4dd0e1)', emoji: '💧' },
-    cigarros:   { gradient: 'linear-gradient(135deg, #424242, #757575)', emoji: '🚬' },
-    helados:    { gradient: 'linear-gradient(135deg, #1e88e5, #b3e5fc)', emoji: '🍦' },
-    galletas:   { gradient: 'linear-gradient(135deg, #ef6c00, #ffcc80)', emoji: '🍪' },
-    conservas:  { gradient: 'linear-gradient(135deg, #6d4c41, #bcaaa4)', emoji: '🥫' },
-    default:    { gradient: 'linear-gradient(135deg, #455a64, #90a4ae)', emoji: '🛒' },
+  var API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+
+  /* ===== Categorías: gradiente + emoji para productos sin foto ===== */
+  var CATEGORIAS = {
+    bebidas:    { g:'linear-gradient(135deg,#1565c0,#00bcd4)', e:'🥤' },
+    cerveza:    { g:'linear-gradient(135deg,#f57c00,#ffc107)', e:'🍺' },
+    snacks:     { g:'linear-gradient(135deg,#d84315,#ff8a65)', e:'🥨' },
+    chocolate:  { g:'linear-gradient(135deg,#4e342e,#a1887f)', e:'🍫' },
+    golosinas:  { g:'linear-gradient(135deg,#c2185b,#f48fb1)', e:'🍬' },
+    lacteos:    { g:'linear-gradient(135deg,#607d8b,#cfd8dc)', e:'🥛' },
+    panaderia:  { g:'linear-gradient(135deg,#bf6b00,#ffb74d)', e:'🥖' },
+    abarrotes:  { g:'linear-gradient(135deg,#558b2f,#c5e1a5)', e:'🌾' },
+    especerias: { g:'linear-gradient(135deg,#a1530d,#d4a76a)', e:'🧂' },
+    salsas:     { g:'linear-gradient(135deg,#b71c1c,#ef5350)', e:'🥫' },
+    aderezos:   { g:'linear-gradient(135deg,#2e7d32,#81c784)', e:'🫒' },
+    conservas:  { g:'linear-gradient(135deg,#6d4c41,#bcaaa4)', e:'🥫' },
+    limpieza:   { g:'linear-gradient(135deg,#0277bd,#4fc3f7)', e:'🧼' },
+    higiene:    { g:'linear-gradient(135deg,#00838f,#80deea)', e:'🧻' },
+    agua:       { g:'linear-gradient(135deg,#006064,#4dd0e1)', e:'💧' },
+    cigarros:   { g:'linear-gradient(135deg,#424242,#757575)', e:'🚬' },
+    helados:    { g:'linear-gradient(135deg,#1e88e5,#b3e5fc)', e:'🍦' },
+    galletas:   { g:'linear-gradient(135deg,#ef6c00,#ffcc80)', e:'🍪' },
+    def:        { g:'linear-gradient(135deg,#455a64,#90a4ae)', e:'🛒' }
   };
+  function catOf(k) { return CATEGORIAS[k] || CATEGORIAS.def; }
 
-  // Stock photos por categoría (fallback cuando el producto no tiene foto propia).
-  // Cada producto agarra una foto distinta de su categoría por hash del SKU,
-  // así no salen todos los productos de "abarrotes" con la misma imagen.
-  const u = (id) => `https://images.unsplash.com/photo-${id}?w=1400&auto=format&fit=crop`;
-  const CATEGORIAS_IMG = {
-    abarrotes:  [u('1604908554049-29eaadb1b099'), u('1547592180-85f173990554'), u('1546069901-ba9599a7e63c'), u('1586201375761-83865001e31c')],
-    especerias: [u('1532336414038-cf19250c5757'), u('1599909533730-0f0b8dd8a89e'), u('1599906825089-66b8c39da0f8'), u('1596040033229-a9821ebd058d')],
-    salsas:     [u('1607604276583-eef5d076aa5f'), u('1612626256634-991e6e977fc1'), u('1551038247-3d9af20df552')],
-    aderezos:   [u('1474979266404-7eaacbcd87c5'), u('1620706857370-e1b9770e8bb1'), u('1632935190508-bd13c4ce6da6')],
-    conservas:  [u('1607349913338-fca6f7fc42d0'), u('1607604276583-eef5d076aa5f')],
-    bebidas:    [u('1554866585-cd94860890b7'), u('1581636625402-29b2a704ef13'), u('1622597467836-f3285f2131b8')],
-    cerveza:    [u('1535958636474-b021ee887b13'), u('1571849572312-5a89c4d2d04c'), u('1608270586620-248524c67de9')],
-    snacks:     [u('1599490659213-e2b9527bd087'), u('1573080496219-bb080dd4f877'), u('1613919113640-25732ec5e61f')],
-    chocolate:  [u('1623660053975-cf75a8be0908'), u('1606312619070-d48e4c7e08fb'), u('1511381939415-e44015466834')],
-    golosinas:  [u('1581798459206-d70b54fc9b3a'), u('1582058091505-f87a2e55a40f')],
-    galletas:   [u('1558961363-fa8fdf82db35'), u('1606313564200-e75d5e30476c')],
-    lacteos:    [u('1563636619-e9143da7973b'), u('1486297678162-eb2a19b0a32d'), u('1582722872445-44dc5f7e3c8f')],
-    panaderia:  [u('1549931319-a545dcf3bc73'), u('1555507036-ab1f4038808a')],
-    limpieza:   [u('1583847268964-b28dc8f51f92'), u('1607619056574-7b8d3ee536f6')],
-    higiene:    [u('1584556812952-905ffd0c611a')],
-    agua:       [u('1560023907-5f339617ea30')],
-    cigarros:   [u('1583511655826-4b88c8b1c1d4')],
-    helados:    [u('1567206563064-6f60f40a2b57'), u('1571506165871-ee72a35bc9d4')],
-    default:    [],
-  };
+  /* ===== Estado ===== */
+  var PRODUCTOS = [];
+  var PLAYLISTS = [];
+  var TICKER    = [];
+  var DESTACADOS = [];
+  var CONFIG = { rotarEstrellaSeg: 12, rotarCardsSeg: 7 };
 
-  // Hash determinístico SKU → indice de foto (mismo producto = misma foto siempre)
-  function hashSku(sku) {
-    let h = 0;
-    for (let i = 0; i < sku.length; i++) h = (h * 31 + sku.charCodeAt(i)) | 0;
-    return Math.abs(h);
-  }
-  function getCategoriaImg(catKey, sku) {
-    const arr = CATEGORIAS_IMG[catKey] || [];
-    if (!arr.length) return '';
-    return arr[hashSku(sku) % arr.length];
+  /* ===== XHR helper (en vez de fetch) ===== */
+  function xhrGet(url, onOk, onErr) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    try { x.timeout = 30000; } catch (e) {}
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      if (x.status >= 200 && x.status < 300) {
+        var data = null;
+        try { data = JSON.parse(x.responseText); } catch (e) { data = null; }
+        if (data) { onOk(data); } else if (onErr) { onErr('parse'); }
+      } else if (onErr) { onErr(x.status); }
+    };
+    x.ontimeout = function () { if (onErr) onErr('timeout'); };
+    x.onerror   = function () { if (onErr) onErr('neterror'); };
+    x.send();
   }
 
-  // Categorización por keyword. Override manual con tipo 'cat' en RadioConfig.
-  // El orden importa: matchea la primera regla que pega.
-  const KEYWORDS = [
-    [/cerveza|pilsen|cristal|cusque[ñn]a|corona|heineken|backus|guinness/i, 'cerveza'],
-    [/coca\s?cola|inca\s?kola|sprite|fanta|gaseosa|kola|pepsi|7\s?up|seven|guaran[aá]/i, 'bebidas'],
-    [/agua|san luis|cielo|san mateo|botell[oó]n/i, 'agua'],
-    [/jugo|n[eé]ctar|frugos|tampico|gloria selva/i, 'bebidas'],
-    [/sal\s|sal\b|pimienta|comino|paprika|achiote|or[eé]gano|romero|canela|clavo|laurel|sazonador|condimento|especia|saz[oó]n/i, 'especerias'],
-    [/aceite|oliva|vinagre|aderezo|vinagreta/i, 'aderezos'],
-    [/salsa|ketchup|mayonesa|mostaza|aj[ií]|sillao|soya|sazonadora|tarí|tari\s|inglesa|huancaina|barbacoa|bbq/i, 'salsas'],
-    [/at[uú]n|conserva|menestra|frijol|lenteja|garbanzo|durazno enlatado|enlatado/i, 'conservas'],
-    [/chocolate|sublime|princesa|cua\s?cua|triangulo|trian|hersh|kit\s?kat|nestl[eé] cl[aá]sico|cocoa/i, 'chocolate'],
-    [/galleta|casino|soda field|field|oreo|chips ahoy|morochas|margarita|tentaci[oó]n|wafer/i, 'galletas'],
-    [/papita|chizito|chiz|cheese|lay|pringles|tortee|piqueo|doritos|cheetos|cancha|chif[ií]es|chiflado/i, 'snacks'],
-    [/caramelo|chupet[ií]n|chicle|halls|mentos|menthoplus|globo pop|gomas/i, 'golosinas'],
-    [/leche|gloria|laive|pura vida|yogur|queso|mantequilla|crema de leche|leche condensada/i, 'lacteos'],
-    [/pan\b|bagueta|tostada|kekito|panet[oó]n/i, 'panaderia'],
-    [/arroz|fideo|fideos|az[uú]car|harina|avena|qu[ií]nua|kiwicha|hojuela|maicena|tap[ií]oca/i, 'abarrotes'],
-    [/detergente|jab[oó]n liquid|lej[ií]a|sapolio|ace\b|magia blanca|ariel|bol[ií]var|lavavajilla|lim[oó]n verde/i, 'limpieza'],
-    [/papel higi|higi[eé]nico|toalla|servilleta|kotex|pa[ñn]al|pampers|jab[oó]n\b|shampoo|crema dental|cepillo dental/i, 'higiene'],
-    [/cigarro|tabaco|hamilton|lucky|marlboro|winston|caribe|premier/i, 'cigarros'],
-    [/helado|donof|d'?onof|sublime barra|cassata|polo\b/i, 'helados'],
-    [/huevo/i, 'abarrotes'],
-    [/ajinomoto|glutamato/i, 'especerias'],
-  ];
-
-  function categorizar(nombre, override) {
-    if (override) return override;
-    for (const [re, cat] of KEYWORDS) if (re.test(nombre)) return cat;
-    return 'default';
-  }
-  function getCategoria(cat) { return CATEGORIAS[cat] || CATEGORIAS.default; }
-
-  // Drive share → URL directa
-  function normalizeImg(url) {
-    if (!url) return '';
-    const m = url.match(/drive\.google\.com\/file\/d\/([^\/]+)/) || url.match(/[?&]id=([^&]+)/);
-    if (m) return `https://lh3.googleusercontent.com/d/${m[1]}=w1400`;
-    return url;
-  }
-
-  // ============ ESTADO ============
-  let PRODUCTOS = [];       // [{sku, nombre, precio, vendidos, img, emoji, categoria, desc}]
-  let TICKER    = [];
-  let PLAYLISTS = [];
-  let DESTACADOS = [];      // [{sku, prioridad}]
-  let CONFIG    = { rotarEstrellaSeg: 12, rotarCardsSeg: 7 };
-
-  // ============ FETCHERS ============
-  async function fetchJson(action, params = {}) {
-    const qs = new URLSearchParams({ accion: action, ...params }).toString();
-    const r = await fetch(`${API_URL}?${qs}`, { cache: 'no-store' });
-    return r.json();
-  }
-
-  async function cargarData() {
+  /* ===== Carga de datos: 1 sola llamada al endpoint liviano ===== */
+  function cargarData() {
     setLoadingMsg('Conectando con MosExpress...');
-    const [catRes, topRes, cfgRes] = await Promise.allSettled([
-      fetchJson('descargar'),
-      fetchJson('top_productos_hoy'),
-      fetchJson('radio_config'),
-    ]);
-
-    // El endpoint /descargar envuelve la data en { status, data: {...catalogo} }
-    const catRaw = catRes.status === 'fulfilled' ? catRes.value : null;
-    const cat = catRaw?.data || catRaw || null;
-    const top = topRes.status === 'fulfilled' ? topRes.value : { productos: [] };
-    const cfg = cfgRes.status === 'fulfilled' ? cfgRes.value : {};
-
-    // Mapear catálogo: PRESENTACIONES tiene precio, PRODUCTO_BASE tiene nombre
-    const productoBaseMap = {};
-    (cat?.PRODUCTO_BASE || []).forEach(p => { productoBaseMap[p.SKU_Base] = p; });
-
-    // Mapa SKU presentación → SKU_Base (canónico de su grupo)
-    const skuToBase = {};
-    (cat?.PRESENTACIONES || []).forEach(p => { skuToBase[p.SKU] = p.SKU_Base; });
-
-    // Rollup de vendidos por SKU_Base: si vendiste 6 packs de cerveza,
-    // el canónico cerveza acumula 6 (o el equivalente en factor). Así el
-    // producto ESTRELLA es el canónico cuyas presentaciones más se venden.
-    const vendidosPorBase = {};
-    (top.productos || []).forEach(p => {
-      const base = skuToBase[p.sku] || p.sku;
-      vendidosPorBase[base] = (vendidosPorBase[base] || 0) + p.vendidos;
-    });
-
-    // Grupos (SKU_Base) que la tienda ha vendido. OJO: VENTAS_DETALLE guarda el
-    // SKU_Base (ej "LEV371"), no el SKU de presentación (ej "IDPRO0001918").
-    // Por eso matcheamos contra SKU_Base primero, y SKU como respaldo.
-    const skusTienda = new Set(top.skus_de_la_tienda || []);
-    const gruposSoldHere = new Set();
-    (cat?.PRESENTACIONES || []).forEach(p => {
-      if (skusTienda.has(p.SKU_Base) || skusTienda.has(p.SKU)) {
-        gruposSoldHere.add(p.SKU_Base);
-      }
-    });
-
-    const overrideImg = cfg.imagenes || {};
-    const overrideCat = cfg.categorias || {};
-
-    // CANÓNICOS solamente: PRESENTACIONES con Factor === 1 (uno por grupo skuBase).
-    // Excluye presentaciones (packs, bolsas, cajas) y equivalentes (aliases por código).
-    // Si en el grupo no hay un Factor=1 vendible, se usa el primero del grupo como fallback.
-    const canonicosPorGrupo = {};
-    (cat?.PRESENTACIONES || []).forEach(p => {
-      const factor = parseFloat(p.Factor) || 1;
-      const existing = canonicosPorGrupo[p.SKU_Base];
-      if (!existing || (factor === 1 && parseFloat(existing.Factor) !== 1)) {
-        canonicosPorGrupo[p.SKU_Base] = p;
-      }
-    });
-    const canonicos = Object.values(canonicosPorGrupo);
-
-    PRODUCTOS = canonicos
-      // Solo canónicos cuyo GRUPO ha vendido algo en la tienda (cualquier presentación)
-      .filter(p => gruposSoldHere.size === 0 || gruposSoldHere.has(p.SKU_Base))
-      .map(p => {
-        const base = productoBaseMap[p.SKU_Base] || {};
-        const nombre = base.Nombre || p.Empaque || p.SKU;
-        const catKey = categorizar(nombre, overrideCat[p.SKU] || overrideCat[p.SKU_Base]);
-        const imgRaw = overrideImg[p.SKU] || overrideImg[p.SKU_Base] || '';
-        return {
-          sku:      p.SKU,
-          skuBase:  p.SKU_Base,
-          nombre:   nombre.toUpperCase(),
-          desc:     '',
-          precio:   parseFloat(p.Precio_Venta) || 0,
-          vendidos: vendidosPorBase[p.SKU_Base] || 0,
-          categoria: catKey,
-          emoji:    getCategoria(catKey).emoji,
-          // Fallback automático: si no hay foto del producto, agarra una stock
-          // de la categoría (mismo SKU_Base = misma foto siempre, no parpadea).
-          img:      normalizeImg(imgRaw) || getCategoriaImg(catKey, p.SKU_Base),
-        };
-      });
-    console.log(`[RADIO] Canónicos en master: ${canonicos.length} | de la tienda: ${PRODUCTOS.length} | top 3:`, PRODUCTOS.slice().sort((a,b)=>b.vendidos-a.vendidos).slice(0,3).map(p=>`${p.nombre} (${p.vendidos})`));
-
-    // Si no hay productos en absoluto, mock fallback
-    if (!PRODUCTOS.length) {
-      console.warn('[RADIO] Sin catálogo — usando mock');
+    xhrGet(API_URL + '?accion=radio_productos', function (res) {
+      PRODUCTOS  = res.productos  || [];
+      PLAYLISTS  = res.playlists  || [];
+      TICKER     = res.ticker     || [];
+      DESTACADOS = res.destacados || [];
+      if (res.config) CONFIG = res.config;
+      if (!PRODUCTOS.length) PRODUCTOS = mockProductos();
+      if (!TICKER.length)    TICKER = mockTicker();
+      if (!PLAYLISTS.length) PLAYLISTS = mockPlaylists();
+      arrancar();
+    }, function (err) {
+      // Falló la red: arrancamos igual con datos de muestra (la TV nunca queda en blanco)
+      if (window.console) console.warn('[RADIO] fetch fallo:', err);
       PRODUCTOS = mockProductos();
-    }
-
-    TICKER     = (cfg.ticker?.length ? cfg.ticker : mockTicker());
-    PLAYLISTS  = (cfg.playlists?.length ? cfg.playlists : mockPlaylists());
-    DESTACADOS = cfg.destacados || [];
-    CONFIG     = { ...CONFIG, ...(cfg.config || {}) };
+      TICKER    = mockTicker();
+      PLAYLISTS = mockPlaylists();
+      arrancar();
+    });
   }
 
+  /* ===== Recarga periódica de datos (sin reconstruir intervalos) ===== */
+  function refrescarData() {
+    xhrGet(API_URL + '?accion=radio_productos', function (res) {
+      if (res.productos && res.productos.length) PRODUCTOS = res.productos;
+      if (res.playlists && res.playlists.length) PLAYLISTS = res.playlists;
+      if (res.ticker && res.ticker.length) { TICKER = res.ticker; renderTicker(); }
+      if (res.destacados) DESTACADOS = res.destacados;
+      if (res.config) CONFIG = res.config;
+    }, function () {});
+  }
+
+  /* ===== Datos de muestra (fallback si no hay red) ===== */
   function mockProductos() {
     return [
-      { sku:'MOCK1', nombre:'COCA COLA 1.5L', desc:'gaseosa', precio:7.50, vendidos:92, categoria:'bebidas', emoji:'🥤', img:'' },
-      { sku:'MOCK2', nombre:'CERVEZA PILSEN 6PK', desc:'six pack', precio:24.90, vendidos:48, categoria:'cerveza', emoji:'🍺', img:'' },
-      { sku:'MOCK3', nombre:'CHOCOLATE SUBLIME', desc:'clásico', precio:3.50, vendidos:120, categoria:'chocolate', emoji:'🍫', img:'' },
-      { sku:'MOCK4', nombre:'PAPITAS LAY\'S', desc:'170g', precio:8.90, vendidos:65, categoria:'snacks', emoji:'🥔', img:'' },
-      { sku:'MOCK5', nombre:'GALLETAS CASINO', desc:'pack 6', precio:4.50, vendidos:70, categoria:'galletas', emoji:'🍪', img:'' },
-      { sku:'MOCK6', nombre:'LECHE GLORIA 1L', desc:'UHT', precio:5.20, vendidos:55, categoria:'lacteos', emoji:'🥛', img:'' },
-      { sku:'MOCK7', nombre:'PAN FRANCÉS x10', desc:'fresco', precio:3.00, vendidos:88, categoria:'panaderia', emoji:'🥖', img:'' },
+      { sku:'M1', nombre:'COCA COLA 1.5L',     precio:7.50,  vendidos:92,  categoria:'bebidas',   img:'' },
+      { sku:'M2', nombre:'CERVEZA PILSEN 6PK',  precio:24.90, vendidos:48,  categoria:'cerveza',   img:'' },
+      { sku:'M3', nombre:'CHOCOLATE SUBLIME',   precio:3.50,  vendidos:120, categoria:'chocolate', img:'' },
+      { sku:'M4', nombre:'ARROZ COSTENO 5KG',   precio:28.90, vendidos:65,  categoria:'abarrotes', img:'' },
+      { sku:'M5', nombre:'ACEITE PRIMOR 1L',    precio:12.50, vendidos:70,  categoria:'aderezos',  img:'' },
+      { sku:'M6', nombre:'LECHE GLORIA 1L',     precio:5.20,  vendidos:55,  categoria:'lacteos',   img:'' },
+      { sku:'M7', nombre:'PAN FRANCES x10',     precio:3.00,  vendidos:88,  categoria:'panaderia', img:'' }
     ];
   }
   function mockTicker() {
-    return ['🛒 MOSEXPRESS — abierto todos los días', '💳 PAGA CON YAPE · PLIN · TARJETA', '⭐ SÍGUENOS @MOSEXPRESS'];
+    return ['🛒 MOSEXPRESS - abierto todos los dias',
+            '💳 PAGA CON YAPE - PLIN - TARJETA',
+            '⭐ SIGUENOS @MOSEXPRESS'];
   }
   function mockPlaylists() {
-    return [{ rango:[0,24], videoId:'jfKfPfyJRdk', nombre:'LO-FI RADIO' }];
+    return [{ rango:[0,24], videoId:'jfKfPfyJRdk', nombre:'RADIO' }];
   }
 
-  // ============ ESTRELLA ============
-  let estrellaIdx = 0;
+  /* ===== Producto estrella ===== */
+  var estrellaIdx = 0;
   function obtenerEstrellas() {
-    // Si hay destacados manuales, esos primero (orden por prioridad)
+    if (!PRODUCTOS.length) return [];
+    var i, p;
+    // Destacados manuales primero
     if (DESTACADOS.length) {
-      const destSet = new Set(DESTACADOS.map(d => d.sku));
-      const ordenados = DESTACADOS
-        .map(d => PRODUCTOS.find(p => p.sku === d.sku))
-        .filter(Boolean);
-      const topVendidos = [...PRODUCTOS]
-        .filter(p => !destSet.has(p.sku) && p.vendidos > 0)
-        .sort((a, b) => b.vendidos - a.vendidos)
-        .slice(0, 5);
-      return [...ordenados, ...topVendidos].slice(0, 6);
+      var destSet = {};
+      for (i = 0; i < DESTACADOS.length; i++) destSet[DESTACADOS[i].sku] = true;
+      var orden = [];
+      for (i = 0; i < DESTACADOS.length; i++) {
+        for (var j = 0; j < PRODUCTOS.length; j++) {
+          if (PRODUCTOS[j].sku === DESTACADOS[i].sku) { orden.push(PRODUCTOS[j]); break; }
+        }
+      }
+      var resto = [];
+      for (i = 0; i < PRODUCTOS.length; i++) {
+        p = PRODUCTOS[i];
+        if (!destSet[p.sku] && p.vendidos > 0) resto.push(p);
+      }
+      resto.sort(function (a, b) { return b.vendidos - a.vendidos; });
+      return orden.concat(resto.slice(0, 5)).slice(0, 6);
     }
-    // Fallback: top vendidos. Si nadie tiene vendidos, primeros del catálogo.
-    const top = [...PRODUCTOS].sort((a,b) => b.vendidos - a.vendidos).slice(0, 5);
-    return top.some(p => p.vendidos > 0) ? top : PRODUCTOS.slice(0, 5);
+    // Fallback: top vendidos. El endpoint ya los manda ordenados por vendidos.
+    var copia = PRODUCTOS.slice();
+    copia.sort(function (a, b) { return b.vendidos - a.vendidos; });
+    var hayVendidos = false;
+    for (i = 0; i < copia.length; i++) { if (copia[i].vendidos > 0) { hayVendidos = true; break; } }
+    return hayVendidos ? copia.slice(0, 6) : copia.slice(0, 6);
   }
 
   function renderEstrella(prod) {
-    if (!prod) { console.warn('[RADIO] renderEstrella: prod undefined'); return; }
-    const img = document.getElementById('estrellaImg');
-    const content = document.getElementById('estrellaContent');
-    img.classList.add('swap'); content.classList.add('swap');
-    setTimeout(() => {
+    if (!prod) return;
+    var img = document.getElementById('estrellaImg');
+    var content = document.getElementById('estrellaContent');
+    img.className = img.className + ' swap';
+    content.className = content.className + ' swap';
+    setTimeout(function () {
       try {
-      const cat = getCategoria(prod.categoria);
-      if (prod.img) {
-        img.classList.remove('no-image');
-        img.style.backgroundImage = `url('${prod.img}'), ${cat.gradient}`;
-        img.removeAttribute('data-emoji');
-        img.querySelector('.cat-watermark')?.remove();
-      } else {
-        img.classList.add('no-image');
-        img.style.backgroundImage = cat.gradient;
-        img.setAttribute('data-emoji', prod.emoji || cat.emoji);
-        if (!img.querySelector('.cat-watermark')) {
-          const wm = document.createElement('div');
-          wm.className = 'cat-watermark';
-          img.appendChild(wm);
+        var c = catOf(prod.categoria);
+        if (prod.img) {
+          img.className = 'estrella-img';
+          img.style.backgroundImage = "url('" + prod.img + "')";
+          img.removeAttribute('data-emoji');
+          var oldWm = img.querySelector('.cat-watermark');
+          if (oldWm) oldWm.parentNode.removeChild(oldWm);
+        } else {
+          img.className = 'estrella-img no-image';
+          img.style.backgroundImage = c.g;
+          img.setAttribute('data-emoji', c.e);
+          var wm = img.querySelector('.cat-watermark');
+          if (!wm) {
+            wm = document.createElement('div');
+            wm.className = 'cat-watermark';
+            img.appendChild(wm);
+          }
+          wm.innerHTML = textoSeguro(prod.categoria || 'producto');
         }
-        img.querySelector('.cat-watermark').textContent = prod.categoria || 'producto';
+        document.getElementById('estrellaNombre').innerHTML = textoSeguro(prod.nombre);
+        document.getElementById('estrellaDesc').innerHTML = textoSeguro(prod.desc || '');
+        document.getElementById('estrellaPrecio').innerHTML = (Number(prod.precio) || 0).toFixed(2);
+        document.getElementById('estrellaPedidos').innerHTML = String(prod.vendidos || 0);
+      } catch (e) {
+        if (window.console) console.error('[RADIO] renderEstrella:', e);
       }
-      document.getElementById('estrellaNombre').textContent = prod.nombre;
-      document.getElementById('estrellaDesc').textContent   = prod.desc;
-      document.getElementById('estrellaPrecio').textContent = prod.precio.toFixed(2);
-      document.getElementById('estrellaPedidos').textContent = prod.vendidos;
-      img.classList.remove('swap'); content.classList.remove('swap');
-      img.style.animation = 'none'; img.offsetHeight; img.style.animation = '';
-      } catch(e) {
-        console.error('[RADIO] renderEstrella crash:', e);
-        // Quita las swap classes para que la estrella no quede invisible
-        img.classList.remove('swap'); content.classList.remove('swap');
-      }
-    }, 600);
+      img.className = img.className.replace(' swap', '');
+      content.className = content.className.replace(' swap', '');
+    }, 520);
   }
 
   function rotarEstrella() {
     if (!PRODUCTOS.length) return;
-    const estrellas = obtenerEstrellas();
-    if (!estrellas.length) return;
-    estrellaIdx = (estrellaIdx + 1) % estrellas.length;
-    renderEstrella(estrellas[estrellaIdx]);
+    var lista = obtenerEstrellas();
+    if (!lista.length) return;
+    estrellaIdx = (estrellaIdx + 1) % lista.length;
+    renderEstrella(lista[estrellaIdx]);
   }
 
-  // ============ CARDS ============
-  let cardsPool = [];
+  /* ===== Cards laterales ===== */
+  var cardsPool = [];
   function renderCards() {
-    const estrellas = obtenerEstrellas();
-    const estrellasIds = new Set(estrellas.map(p => p.sku));
-    cardsPool = PRODUCTOS.filter(p => !estrellasIds.has(p.sku));
+    var estrellas = obtenerEstrellas();
+    var ids = {};
+    var i;
+    for (i = 0; i < estrellas.length; i++) ids[estrellas[i].sku] = true;
+    cardsPool = [];
+    for (i = 0; i < PRODUCTOS.length; i++) {
+      if (!ids[PRODUCTOS[i].sku]) cardsPool.push(PRODUCTOS[i]);
+    }
     if (cardsPool.length < 4) cardsPool = PRODUCTOS.slice();
-    // Shuffle ligero
-    cardsPool = cardsPool.sort(() => Math.random() - 0.5);
-    const ct = document.getElementById('cards');
+    shuffle(cardsPool);
+    var ct = document.getElementById('cards');
     ct.innerHTML = '';
-    cardsPool.slice(0, 4).forEach((prod, i) => ct.appendChild(buildCard(prod, i * 100)));
+    for (i = 0; i < Math.min(4, cardsPool.length); i++) {
+      ct.appendChild(buildCard(cardsPool[i]));
+    }
   }
-  function buildCard(prod, delay) {
-    const el = document.createElement('div');
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+  }
+  function buildCard(prod) {
+    var c = catOf(prod.categoria);
+    var el = document.createElement('div');
     el.className = 'card slide-in';
-    el.style.animationDelay = `${delay}ms`;
-    const cat = getCategoria(prod.categoria);
-    const imgHtml = prod.img
-      ? `<div class="card-img" style="background-image: url('${prod.img}'), ${cat.gradient};"></div>`
-      : `<div class="card-img no-image" data-emoji="${prod.emoji || cat.emoji}" style="background: ${cat.gradient};"></div>`;
-    el.innerHTML = `
-      ${imgHtml}
-      <div class="card-info">
-        <div class="card-nombre">${prod.nombre}</div>
-        <div class="card-desc">${prod.desc}</div>
-        <div class="card-precio">S/ ${prod.precio.toFixed(2)}</div>
-      </div>`;
+    var imgHtml;
+    if (prod.img) {
+      imgHtml = '<div class="card-img" style="background-image:url(\'' + prod.img + '\')"></div>';
+    } else {
+      imgHtml = '<div class="card-img no-image" data-emoji="' + c.e + '" style="background:' + c.g + '"></div>';
+    }
+    el.innerHTML = imgHtml +
+      '<div class="card-info">' +
+        '<div class="card-nombre">' + textoSeguro(prod.nombre) + '</div>' +
+        '<div class="card-desc">' + textoSeguro(prod.categoria || '') + '</div>' +
+        '<div class="card-precio">S/ ' + (Number(prod.precio) || 0).toFixed(2) + '</div>' +
+      '</div>';
     return el;
   }
   function rotarCards() {
-    const ct = document.getElementById('cards');
-    const first = ct.firstElementChild;
+    var ct = document.getElementById('cards');
+    var first = ct.firstChild;
     if (!first || cardsPool.length < 5) { renderCards(); return; }
-    first.classList.remove('slide-in');
-    first.classList.add('slide-out');
-    setTimeout(() => {
-      first.remove();
-      const moved = cardsPool.shift();
+    first.className = 'card slide-out';
+    setTimeout(function () {
+      if (first.parentNode) first.parentNode.removeChild(first);
+      var moved = cardsPool.shift();
       cardsPool.push(moved);
-      const nuevo = cardsPool[3] || cardsPool[cardsPool.length - 1];
-      ct.appendChild(buildCard(nuevo, 0));
-    }, 600);
+      var nuevo = cardsPool[3] || cardsPool[cardsPool.length - 1];
+      ct.appendChild(buildCard(nuevo));
+    }, 480);
   }
 
-  // ============ RELOJ ============
+  /* ===== Reloj ===== */
   function tickClock() {
-    const d = new Date();
-    document.getElementById('clock').textContent =
-      d.toLocaleTimeString('es-PE', { hour: '2-digit', minute:'2-digit' });
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    var hh = (h < 10 ? '0' : '') + h;
+    var mm = (m < 10 ? '0' : '') + m;
+    document.getElementById('clock').innerHTML = hh + ':' + mm;
   }
 
-  // ============ PLAYLIST POR HORARIO ============
-  let playerCurrentVideo = null;
-  let audioUnlocked = false;
+  /* ===== Playlist por horario + reproductor YouTube ===== */
+  var playerCurrentVideo = null;
+  var audioUnlocked = false;
   function getPlaylistByHour() {
-    const h = new Date().getHours();
-    return PLAYLISTS.find(p => h >= p.rango[0] && h < p.rango[1]) || PLAYLISTS[0];
+    var h = new Date().getHours();
+    for (var i = 0; i < PLAYLISTS.length; i++) {
+      var pl = PLAYLISTS[i];
+      if (pl.rango && h >= pl.rango[0] && h < pl.rango[1]) return pl;
+    }
+    return PLAYLISTS[0] || null;
   }
   function mountYTPlayer() {
-    const pl = getPlaylistByHour();
+    var pl = getPlaylistByHour();
     if (!pl || pl.videoId === playerCurrentVideo) return;
     playerCurrentVideo = pl.videoId;
-    // mute=1 inicial — única forma de que el navegador permita autoplay.
-    // En cuanto el usuario presione cualquier tecla del control remoto se
-    // desmuta vía postMessage (YT IFrame JS API). list=RD{videoId} genera
-    // una "radio" infinita con canciones similares.
-    const muteParam = audioUnlocked ? 0 : 1;
+    var mute = audioUnlocked ? 0 : 1;
     document.getElementById('ytplayer').src =
-      `https://www.youtube.com/embed/${pl.videoId}?autoplay=1&controls=0&list=RD${pl.videoId}&modestbranding=1&mute=${muteParam}&enablejsapi=1`;
-    document.getElementById('playlistTag').textContent = `♪ ${pl.nombre}`;
-    document.getElementById('npTitle').textContent = pl.nombre;
+      'https://www.youtube.com/embed/' + pl.videoId +
+      '?autoplay=1&controls=0&list=RD' + pl.videoId +
+      '&modestbranding=1&mute=' + mute + '&enablejsapi=1';
+    document.getElementById('playlistTag').innerHTML = '♪ ' + textoSeguro(pl.nombre || '');
+    document.getElementById('npTitle').innerHTML = textoSeguro(pl.nombre || 'MosExpress Radio');
   }
-
-  // ── postMessage al iframe de YouTube (para unmute/volume desde aquí)
-  function ytCmd(func, args = []) {
-    const iframe = document.getElementById('ytplayer');
+  function ytCmd(func, args) {
+    var iframe = document.getElementById('ytplayer');
     if (!iframe || !iframe.contentWindow) return;
     try {
-      iframe.contentWindow.postMessage(JSON.stringify({
-        event: 'command', func: func, args: args
-      }), '*');
-    } catch(e) { console.warn('yt postMessage:', e); }
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: func, args: args || [] }), '*');
+    } catch (e) {}
   }
-
   function unlockAudio() {
     if (audioUnlocked) return;
     audioUnlocked = true;
     ytCmd('unMute');
     ytCmd('setVolume', [80]);
     ytCmd('playVideo');
-    document.getElementById('audioChip').classList.add('hidden');
+    var chip = document.getElementById('audioChip');
+    chip.className = chip.className + ' hidden';
   }
 
-  // Cualquier interacción (click, tecla del remote, touch) desbloquea audio.
-  // Los Smart TVs envían keydown al recibir botones del control.
-  ['click', 'touchstart', 'keydown', 'mousedown'].forEach(ev =>
-    document.addEventListener(ev, unlockAudio, { passive: true, once: false })
-  );
-
-  // ============ TICKER ============
+  /* ===== Ticker ===== */
   function renderTicker() {
-    const items = [...TICKER, ...TICKER];
-    document.getElementById('tickerTrack').innerHTML = items.map(t =>
-      `<span class="ticker-item">${t}</span>`
-    ).join('<span class="ticker-item dot">•</span>');
+    var items = TICKER.concat(TICKER);
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      if (i > 0) html += '<span class="ticker-item dot">&bull;</span>';
+      html += '<span class="ticker-item">' + textoSeguro(items[i]) + '</span>';
+    }
+    document.getElementById('tickerTrack').innerHTML = html;
   }
 
-  // ============ PARTICULAS ============
+  /* ===== Partículas (pocas, livianas) ===== */
   function spawnParticles() {
-    const ct = document.getElementById('particles');
-    for (let i = 0; i < 25; i++) {
-      const p = document.createElement('div');
+    var ct = document.getElementById('particles');
+    for (var i = 0; i < 12; i++) {
+      var p = document.createElement('div');
       p.className = 'particle';
-      p.style.left = Math.random() * 100 + 'vw';
-      p.style.animationDelay = Math.random() * 12 + 's';
-      p.style.animationDuration = (8 + Math.random() * 8) + 's';
+      p.style.left = (Math.random() * 100) + 'vw';
+      p.style.webkitAnimationDelay = (Math.random() * 12) + 's';
+      p.style.animationDelay = (Math.random() * 12) + 's';
       ct.appendChild(p);
     }
   }
 
-  // ============ LOADING ============
-  function setLoadingMsg(msg) { document.getElementById('loadingMsg').textContent = msg; }
+  /* ===== Loading ===== */
+  function setLoadingMsg(msg) { document.getElementById('loadingMsg').innerHTML = msg; }
   function hideLoading() {
-    setTimeout(() => document.getElementById('loadingScreen').classList.add('hidden'), 400);
+    setTimeout(function () {
+      var ls = document.getElementById('loadingScreen');
+      ls.className = ls.className + ' hidden';
+    }, 300);
   }
 
-  // ============ INIT ============
-  async function init() {
-    spawnParticles();
-    tickClock(); setInterval(tickClock, 1000);
+  /* ===== Auto-update: detecta nueva versión y recarga con efecto ===== */
+  var initialVersion = null;
+  var updating = false;
+  function checkForUpdate() {
+    xhrGet('version.json?t=' + (new Date().getTime()), function (v) {
+      if (initialVersion === null) { initialVersion = v.version; return; }
+      if (v.version !== initialVersion && !updating) triggerUpdate(v.version);
+    }, function () {});
+  }
+  function triggerUpdate(newVer) {
+    updating = true;
+    document.getElementById('updateVer').innerHTML = textoSeguro(newVer);
+    var ov = document.getElementById('updateOverlay');
+    ov.className = ov.className + ' show';
+    setTimeout(function () {
+      try {
+        if (window.caches && caches.keys) {
+          caches.keys().then(function (keys) {
+            for (var i = 0; i < keys.length; i++) {
+              if (keys[i].indexOf('mosexpress') === 0) caches.delete(keys[i]);
+            }
+          });
+        }
+      } catch (e) {}
+      window.location.href = window.location.pathname + '?v=' + (new Date().getTime());
+    }, 3300);
+  }
 
-    try {
-      await cargarData();
-    } catch (err) {
-      console.error('[RADIO] Fetch falló, usando mocks:', err);
-      PRODUCTOS = mockProductos();
-      TICKER = mockTicker();
-      PLAYLISTS = mockPlaylists();
-    }
+  /* ===== Util: escapar texto para innerHTML ===== */
+  function textoSeguro(s) {
+    s = String(s == null ? '' : s);
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 
+  /* ===== Arranque del render + intervalos ===== */
+  function arrancar() {
     setLoadingMsg('Listo!');
     renderTicker();
     renderCards();
-    renderEstrella(obtenerEstrellas()[0]);
+    var est = obtenerEstrellas();
+    if (est.length) renderEstrella(est[0]);
     mountYTPlayer();
     hideLoading();
 
     setInterval(rotarEstrella, (CONFIG.rotarEstrellaSeg || 12) * 1000);
     setInterval(rotarCards,    (CONFIG.rotarCardsSeg    || 7)  * 1000);
     setInterval(mountYTPlayer, 60000);
-
-    // Refresca data cada 5 min (top vendidos cambia, config puede cambiar)
-    setInterval(async () => {
-      try { await cargarData(); } catch (e) { console.warn('refresh fail', e); }
-    }, 5 * 60 * 1000);
+    setInterval(refrescarData, 5 * 60 * 1000);
   }
 
-  // ============ AUTO-UPDATE: detecta nueva versión y recarga con efecto ============
-  let initialVersion = null;
-  async function checkForUpdate() {
-    try {
-      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
-      const v = await r.json();
-      if (initialVersion === null) {
-        initialVersion = v.version;
-        console.log('[RADIO] version inicial:', initialVersion);
-        return;
-      }
-      if (v.version !== initialVersion) {
-        console.log('[RADIO] nueva version detectada:', v.version, 'vs', initialVersion);
-        triggerUpdate(v.version);
-      }
-    } catch(e) { console.warn('[RADIO] checkUpdate:', e); }
+  /* ===== Init ===== */
+  function init() {
+    spawnParticles();
+    tickClock();
+    setInterval(tickClock, 1000);
+
+    // Cualquier interacción (tecla del control remoto, click, touch) activa el audio
+    var evs = ['click', 'touchstart', 'keydown', 'mousedown'];
+    for (var i = 0; i < evs.length; i++) {
+      document.addEventListener(evs[i], unlockAudio, false);
+    }
+
+    cargarData();
+
+    // Chequeo de versión: a los 30s y luego cada 90s
+    setTimeout(checkForUpdate, 30000);
+    setInterval(checkForUpdate, 90000);
+
+    // Service Worker (si el navegador lo soporta; los viejos lo ignoran)
+    if ('serviceWorker' in navigator) {
+      try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+    }
   }
 
-  let updating = false;
-  function triggerUpdate(newVer) {
-    if (updating) return;
-    updating = true;
-    document.getElementById('updateVer').textContent = newVer;
-    document.getElementById('updateOverlay').classList.add('show');
-    // Limpiamos cache SW y recargamos con cachebust → trae la versión nueva real
-    setTimeout(async () => {
-      try {
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.update()));
-          if ('caches' in window) {
-            const keys = await caches.keys();
-            await Promise.all(keys.filter(k => k.startsWith('mosexpress')).map(k => caches.delete(k)));
-          }
-        }
-      } catch(e) { console.warn('clear cache:', e); }
-      location.href = location.pathname + '?v=' + Date.now();
-    }, 3300);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, false);
+  } else {
+    init();
   }
-
-  // Primera lectura a los 30s (memoria base), luego cada 90s
-  setTimeout(checkForUpdate, 30 * 1000);
-  setInterval(checkForUpdate, 90 * 1000);
-
-  // Service Worker
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));
-  }
-
-  init();
+})();
 </script>
 </body>
 </html>
