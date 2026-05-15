@@ -241,6 +241,7 @@ function doPost(e) {
       idVenta:        response.idVenta,
       correlativo:    response.correlativo,
       printDispatched:response.printDispatched,
+      dedupVenta:     response.dedupVenta === true,   // [v40] flag anti ticket-doble
       nfEstado:       response.nfEstado || 'NA',
       nfHash:         response.nfHash   || '',
       nfEnlace:       response.nfEnlace || '',

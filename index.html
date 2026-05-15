@@ -2915,25 +2915,55 @@
                    </div>
                  </div>
 
-                 <!-- Estado C: API no encontró nada → nombre manual -->
+                 <!-- [v40] Estado C: API no encontró nada → opciones controladas (no texto libre).
+                      El campo cliente es OBLIGATORIO. El operador no puede escribir nombre
+                      arbitrario sin RUC/DNI — solo puede reintentar, usar VARIOS, o pedir
+                      autorización admin para guardar manual. -->
                  <div v-if="clienteModoManual && !pago.nombreCliente" class="space-y-2">
-                   <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                     <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                     <div>
-                       <p class="text-xs text-amber-800 font-bold">No encontrado en RENIEC / SUNAT</p>
-                       <p class="text-[10px] text-amber-600 mt-0.5">Doc: <span class="font-mono font-bold">{{ pago.docCliente }}</span> · Escribe el nombre manualmente</p>
+                   <!-- Caso C1: sin autorización admin → opciones (reintentar/varios/auth) -->
+                   <div v-if="!pago.adminAuthCliente" class="space-y-2">
+                     <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                       <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                       <div class="flex-1 min-w-0">
+                         <p class="text-xs text-amber-800 font-bold">Sin coincidencias en RENIEC/SUNAT</p>
+                         <p class="text-[10px] text-amber-700 mt-0.5">Doc: <span class="font-mono font-bold">{{ pago.docCliente }}</span></p>
+                       </div>
                      </div>
+                     <div class="flex gap-2">
+                       <button @click="reintentarBuscarCliente"
+                               class="flex-1 bg-blue-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                         Reintentar
+                       </button>
+                       <button @click="cargarClienteVarios"
+                               class="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">
+                         👤 Usar VARIOS
+                       </button>
+                     </div>
+                     <p class="text-[10px] text-gray-400 text-center mt-1">Para registrar un cliente sin doc, autorizá con clave admin</p>
+                     <button @click="abrirAutorizarClienteManual" class="text-[10px] text-orange-600 hover:text-orange-700 font-bold underline w-full text-center py-1.5">🔑 Cliente sin doc · pedir autorización admin</button>
                    </div>
-                   <div class="flex gap-2">
-                     <input v-model="clienteNombreManual" type="text" placeholder="Nombre completo / Razón social..."
-                            @keyup.enter="confirmarNombreManual" autocomplete="off"
-                            class="flex-1 p-3.5 border-2 border-amber-300 focus:border-amber-500 rounded-xl font-semibold text-sm bg-amber-50 outline-none transition-colors">
-                     <button @click="confirmarNombreManual" :disabled="!clienteNombreManual.trim()"
-                             class="bg-gray-800 text-white px-5 rounded-xl font-black text-sm active:scale-95 transition-transform disabled:opacity-40">
-                       OK
-                     </button>
+
+                   <!-- Caso C2: admin autorizó → permitir nombre manual -->
+                   <div v-else class="space-y-2">
+                     <div class="flex items-start gap-2 bg-orange-50 border border-orange-300 rounded-xl px-3 py-2.5">
+                       <span class="text-base shrink-0">🔑</span>
+                       <div class="flex-1 min-w-0">
+                         <p class="text-xs text-orange-800 font-bold">Admin autorizó cliente manual</p>
+                         <p class="text-[10px] text-orange-600 mt-0.5">Por: <span class="font-bold">{{ pago.adminAuthCliente.nombre }}</span></p>
+                       </div>
+                     </div>
+                     <div class="flex gap-2">
+                       <input v-model="clienteNombreManual" type="text" placeholder="Nombre del cliente / Razón social..."
+                              @keyup.enter="confirmarNombreManual" autocomplete="off"
+                              class="flex-1 p-3.5 border-2 border-orange-300 focus:border-orange-500 rounded-xl font-semibold text-sm bg-orange-50 outline-none transition-colors">
+                       <button @click="confirmarNombreManual" :disabled="!clienteNombreManual.trim()"
+                               class="bg-orange-600 text-white px-5 rounded-xl font-black text-sm active:scale-95 transition-transform disabled:opacity-40">
+                         OK
+                       </button>
+                     </div>
+                     <button @click="cancelarAutorizarManual" class="text-xs text-gray-400 hover:text-gray-600 underline w-full text-center">Cancelar autorización</button>
                    </div>
-                   <button @click="limpiarCliente" class="text-xs text-gray-400 hover:text-gray-600 underline">Cancelar</button>
                  </div>
 
                  <p v-if="errorDocumento" class="mt-1.5 text-xs text-red-500 font-bold">{{ errorDocumento }}</p>
@@ -4569,7 +4599,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, adminAuthCliente: null });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
         const clienteNombreManual = ref('');
@@ -8712,15 +8742,30 @@
             pago.value.nombreCliente    = c.Nombre     || '';
             pago.value.direccionCliente = c.Direccion  || '';
             busquedaNombre.value = '';
-            agregarToast('Cliente', c.Nombre);
+            // [v40] Sonido + vibración al elegir cliente para confirmar visual+auditivo
+            try { playBeepNameMatch?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate(30); } catch(_){}
+            agregarToast('✓ Cliente', c.Nombre);
         };
         const limpiarCliente = () => {
             pago.value.docCliente       = '';
             pago.value.nombreCliente    = '';
             pago.value.direccionCliente = '';
+            pago.value.adminAuthCliente = null;  // [v40] limpiar también la auth admin
             busquedaNombre.value = '';
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
+        };
+        // [v40] Cancelar la autorización admin para cliente manual
+        const cancelarAutorizarManual = () => {
+            pago.value.adminAuthCliente = null;
+            clienteNombreManual.value = '';
+            clienteModoManual.value = false;
+            // Si había doc tipeado, reabrir el campo de búsqueda
+            if (pago.value.docCliente && pago.value.docCliente !== '66666') {
+                busquedaNombre.value = pago.value.docCliente;
+                pago.value.docCliente = '';
+            }
         };
         // Cliente VARIOS por defecto en Nota de Venta cuando el cajero no quiere
         // tipear nada (el cliente "anónimo"). DNI 66666 ya existe en CLIENTES_FRECUENTES.
@@ -8803,28 +8848,97 @@
                    pago.value.nombreCliente    = d.nombre;
                    pago.value.direccionCliente = d.direccion || '';
                    busquedaNombre.value = '';
-                   agregarToast('Cliente', d.nombre + (d.fuente === 'api' ? ' · ' + d.tipo : ''));
+                   // [v40] Sonido + vibración: confirma encontrado
+                   try { playBeepNameMatch?.(); } catch(_){}
+                   try { if (navigator.vibrate) navigator.vibrate([20,40,20]); } catch(_){}
+                   agregarToast('✓ Cliente ' + d.tipo, d.nombre + (d.fuente === 'api' ? ' · RENIEC/SUNAT' : ' · frecuente'));
                } else {
-                   // No encontrado: abrir campo manual
+                   // No encontrado en CF ni en API: mostrar opciones (no acepta texto libre)
                    pago.value.docCliente = doc;
                    clienteModoManual.value = true;
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('Sin coincidencias', 'Doc ' + doc + ' no está en RENIEC/SUNAT. Reintentá o usá VARIOS.');
                }
            } catch(e) {
-               // Error de red: abrir campo manual igual
+               // Error de red: mostrar opciones también
                pago.value.docCliente = doc;
                clienteModoManual.value = true;
+               try { playBeepError?.(); } catch(_){}
+               agregarToast('Error consulta', 'Sin conexión a RENIEC/SUNAT. Reintentá o usá VARIOS.');
            } finally {
                buscandoCliente.value = false;
            }
         };
+
+        // [v40] Auto-disparar consulta APISPeru cuando el operador completa 8 o 11
+        // dígitos (DNI o RUC). Evita que tenga que tocar la lupa manualmente.
+        // Debounce 400ms para no spamear si está corrigiendo el número.
+        let _autoSearchTimer = null;
+        watch(busquedaNombre, (nuevo) => {
+            if (_autoSearchTimer) clearTimeout(_autoSearchTimer);
+            const q = String(nuevo || '').trim();
+            // Solo disparar si es doc completo (8 o 11 dig) y NO hay match local en CF
+            if (!/^\d{8}$/.test(q) && !/^\d{11}$/.test(q)) return;
+            if (sugerenciasCliente.value.length > 0) return; // ya hay matches en CF
+            if (pago.value.nombreCliente) return; // ya hay cliente
+            if (buscandoCliente.value) return;
+            _autoSearchTimer = setTimeout(() => {
+                buscarClienteAPI();
+            }, 400);
+        });
         const confirmarNombreManual = () => {
+           // [v40] Esta función solo se llama desde el flow autorizado por admin
+           // (abrirAutorizarClienteManual). Texto libre sin doc requiere clave.
            const nombre = clienteNombreManual.value.trim().toUpperCase();
            if (!nombre) return;
            pago.value.nombreCliente = nombre;
            busquedaNombre.value = '';
            clienteModoManual.value = false;
            clienteNombreManual.value = '';
-           agregarToast('Cliente', nombre);
+           try { playBeepOK?.(); } catch(_){}
+           agregarToast('✓ Cliente manual', nombre + ' (sin doc · admin)');
+        };
+
+        // [v40] Reintentar consulta APISPeru. Reaprovecha el doc tipeado.
+        const reintentarBuscarCliente = () => {
+            const doc = pago.value.docCliente || busquedaNombre.value.trim();
+            if (!doc) return;
+            busquedaNombre.value = doc;
+            clienteModoManual.value = false;
+            pago.value.docCliente = '';
+            pago.value.nombreCliente = '';
+            // Espera microtask para que watch detecte el cambio y dispare auto-search
+            setTimeout(() => buscarClienteAPI(), 50);
+        };
+
+        // [v40] Abrir flujo "cliente sin doc + autorización admin". Pide clave 8 dig
+        // y solo si valida abre el input de nombre manual. Esto evita el bug previo
+        // de "don lucho" que tipeaba cualquier vendedor sin control.
+        const abrirAutorizarClienteManual = () => {
+            pedirPin((resultado) => {
+                // Admin validó → permitir input manual con nombre
+                clienteModoManual.value = true;
+                clienteNombreManual.value = '';
+                // Marcar que la venta tiene una "anotación admin" en el doc cliente
+                // — pero el doc se mantiene como VARIOS si no hay número
+                const doc = pago.value.docCliente && pago.value.docCliente !== '66666'
+                    ? pago.value.docCliente
+                    : '66666';
+                pago.value.docCliente = doc;
+                pago.value.adminAuthCliente = {
+                    nombre: String(resultado.validadoPor || resultado.nombre || ''),
+                    rol:    String(resultado.rol || 'ADMIN'),
+                    via:    'PIN_8DIG',
+                    idPersonal: String(resultado.idPersonal || '')
+                };
+                // Esperar microtask para que el input aparezca, luego focus
+                setTimeout(() => {
+                    const inp = document.querySelector('input[v-model*="clienteNombreManual"]') ||
+                                document.querySelector('input[placeholder*="Razón social"]');
+                    if (inp) inp.focus();
+                }, 100);
+                agregarToast('Admin autorizó', 'Ingresá el nombre del cliente sin doc');
+            }, { accion: 'CLIENTE_SIN_DOC', refDocumento: 'cliente-manual' });
         };
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
@@ -8836,6 +8950,27 @@
                agregarToast('Sin cajero activo', 'No hay cajero abierto en ' + config.value.zona + '. Comunícate con el cajero de tu zona.');
                return;
            }
+
+           // [v40] Cliente obligatorio. El campo nunca puede quedar vacío.
+           // Si el operador borró el chip sin elegir nada → mostrar warning,
+           // forzar VARIOS o que elija. Bloquea hasta que haya cliente válido.
+           if (!pago.value.nombreCliente || !pago.value.docCliente) {
+               try { playBeepError?.(); } catch(_){}
+               agregarToast('⚠ Falta cliente', 'Selecciona un cliente del listado o tocá "Usar VARIOS"');
+               return;
+           }
+           // BOLETA / FACTURA requieren doc válido (no genérico VARIOS)
+           if ((pago.value.tipoDoc === 'BOLETA' || pago.value.tipoDoc === 'FACTURA') && pago.value.docCliente === '66666') {
+               try { playBeepError?.(); } catch(_){}
+               agregarToast('⚠ Doc requerido', pago.value.tipoDoc + ' requiere DNI o RUC real. Buscá al cliente o cambiá a Nota de venta.');
+               return;
+           }
+           if (pago.value.tipoDoc === 'FACTURA' && pago.value.docCliente.length !== 11) {
+               try { playBeepError?.(); } catch(_){}
+               agregarToast('⚠ RUC inválido', 'FACTURA requiere RUC de 11 dígitos.');
+               return;
+           }
+
            procesando.value = true;
 
            const _est = config.value.estacion || {};
@@ -9128,12 +9263,24 @@
                        agregarToast('CPE emitido SUNAT', res.correlativo, 'success');
                    }
 
-                   // GAS ya imprimió — solo fallback si reporta que no pudo
-                   if (!res.printDispatched) {
+                   // [v40] GAS ya imprimió — solo fallback si reporta que no pudo
+                   // Y NO fue un duplicado idempotente (ya impreso en intento previo).
+                   // Antes esto disparaba ticket doble cuando había reintento de red:
+                   // GAS dedupea + retorna printDispatched:false → frontend mandaba 2do print.
+                   if (!res.printDispatched && !res.dedupVenta) {
                        const nfData = res.nfEstado === 'EMITIDO'
                            ? { hash: res.nfHash || '', enlace: res.nfEnlace || '', qrString: res.nfQrString || '' }
                            : null;
                        imprimirTicketVenta(res.correlativo, true, nfData);
+                   } else if (res.dedupVenta) {
+                       console.info('[v40] Venta deduplicada — impresión omitida (ya estaba registrada)');
+                   }
+
+                   // [v40] Feedback de notificación push a admins cuando se autoriza crédito
+                   if (metodoVenta === 'CREDITO' && adminAuthVenta) {
+                       setTimeout(() => {
+                           agregarToast('✓ Admins notificados', 'Crédito S/ ' + totalVenta.toFixed(2) + ' autorizado por ' + (adminAuthVenta.nombre || 'admin'));
+                       }, 400);
                    }
 
                    // Insertar en ventasZona instantáneamente (sin esperar polling)
@@ -9962,6 +10109,7 @@
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
+          reintentarBuscarCliente, abrirAutorizarClienteManual, cancelarAutorizarManual,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,

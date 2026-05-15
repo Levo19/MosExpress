@@ -25,6 +25,10 @@ function procesarVenta(data) {
   var idVenta = "V-" + fechaActual.getTime();
 
   // ── Idempotencia: evita duplicados cuando el browser reintenta ──────────
+  // [v40 fix ticket doble] Retornar `dedupVenta:true` para que el frontend
+  // NO dispare el fallback de impresión. Antes retornaba sólo
+  // `printDispatched:false` → frontend creía que GAS no había impreso y
+  // mandaba un 2do print job a PrintNode → 2 tickets físicos.
   var refLocal = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
   if (refLocal) {
     var totalFilas  = sheetCabecera.getLastRow();
@@ -32,7 +36,12 @@ function procesarVenta(data) {
     var filasBuscar = sheetCabecera.getRange(buscarDesde, 1, totalFilas - buscarDesde + 1, 16).getValues();
     for (var fi = filasBuscar.length - 1; fi >= 0; fi--) {
       if (String(filasBuscar[fi][13]) === refLocal) {
-        return { idVenta: String(filasBuscar[fi][0]), correlativo: String(filasBuscar[fi][9]), printDispatched: false };
+        return {
+          idVenta:         String(filasBuscar[fi][0]),
+          correlativo:     String(filasBuscar[fi][9]),
+          printDispatched: false,
+          dedupVenta:      true   // ← frontend ve este flag y NO reimprime
+        };
       }
     }
   }
@@ -90,11 +99,14 @@ function procesarVenta(data) {
   }
 
   // ── Registrar cliente frecuente ──────────────────────────────────────────
-  if (header.tipoDoc !== 'NOTA_DE_VENTA') {
+  // [v40] Guardar SIEMPRE que haya doc válido y no sea VARIOS (66666). Antes
+  // sólo guardaba en BOLETA/FACTURA → las NV con DNI/RUC real perdían el
+  // contacto. Ahora cualquier venta con cliente identificado lo persiste.
+  var _cliDoc    = (header.cliente && header.cliente.doc)    || '';
+  var _cliNombre = (header.cliente && header.cliente.nombre) || '';
+  if (_cliDoc && _cliDoc !== '66666' && _cliNombre) {
     verificarYAgregaCliente(
-      (header.cliente && header.cliente.doc)       || '',
-      (header.cliente && header.cliente.nombre)    || '',
-      header.tipoDoc,
+      _cliDoc, _cliNombre, header.tipoDoc,
       (header.cliente && header.cliente.direccion) || ''
     );
   }
@@ -148,6 +160,30 @@ function procesarVenta(data) {
     Logger.log('Auto-jornada MOS: ' + eJ.message);
   }
 
+  // ── [v40] Push admin/master cuando se autoriza venta a CRÉDITO ─────────────
+  // Cualquier admin con clave 8-dígitos que autoriza una venta a crédito
+  // dispara una notificación push a TODOS los admin+master en MOS. Esto da
+  // trazabilidad inmediata sin necesidad de imprimir copia interna.
+  // idNotif=ME_CREDITO_AUTORIZADO → editable desde MOS/configuraciones.
+  try {
+    var _adminAuth = data.adminAuth || (header.adminAuth) || null;
+    var _formaPago = header.metodo || '';
+    if (_adminAuth && _adminAuth.via === 'PIN_8DIG' && _formaPago === 'CREDITO') {
+      var _vendedorTxt = String(auth.vendedor || 'desconocido');
+      var _clienteTxt  = _cliNombre || 'VARIOS';
+      var _adminTxt    = String(_adminAuth.nombre || 'admin').replace(/^admin:/i, '');
+      var _montoTxt    = parseFloat(header.total || 0).toFixed(2);
+      var _obsTxt      = String(header.obs || '').trim();
+      var titulo = '💳 Crédito autorizado · ' + correlativoFinal;
+      var cuerpo = 'Cajero: ' + _vendedorTxt
+                 + '\nCliente: ' + _clienteTxt
+                 + '\nMonto: S/ ' + _montoTxt
+                 + '\nAutoriza: ' + _adminTxt
+                 + (_obsTxt ? '\nNota: ' + _obsTxt : '');
+      _notificarMOS(titulo, cuerpo, null, 'ME_CREDITO_AUTORIZADO');
+    }
+  } catch(ePushC) { Logger.log('Push crédito autorizado: ' + ePushC.message); }
+
   // ── Alerta de recojo de efectivo (preventivo robos): cruzar S/500 inicial
   //    o cada S/250 después dispara push a admins+master. Solo evalúa cajas
   //    ABIERTAS y solo cuenta efectivo físico (EFECTIVO o parte EFE de MIXTO).
@@ -156,6 +192,7 @@ function procesarVenta(data) {
   } catch(eA) { Logger.log('Alerta efectivo: ' + eA.message); }
 
   return { idVenta: idVenta, correlativo: correlativoFinal, printDispatched: printDispatched,
+           dedupVenta: false,
            nfEstado: nfEstado, nfHash: nfHash, nfEnlace: nfEnlace, nfQrString: nfQrString };
 }
 
