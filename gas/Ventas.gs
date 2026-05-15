@@ -118,10 +118,44 @@ function procesarVenta(data) {
   var nfResult = null;
 
   if (header.tipoDoc === 'BOLETA' || header.tipoDoc === 'FACTURA') {
-    nfResult = emitirNubeFact(data, correlativoFinal);
-    nfEstado = nfResult.ok ? 'EMITIDO' : 'ERROR';
-    nfHash   = nfResult.hash   || '';
-    nfEnlace = nfResult.enlace || '';
+    // [v40] Validaciones SUNAT defensivas — bloquear ANTES de pegarle a NubeFact
+    // para evitar emisiones rechazadas y consumir cuota del API. El frontend
+    // valida primero, esto es defensa en profundidad.
+    var _tipoCli   = parseInt((header.cliente && header.cliente.tipo) || 0, 10);
+    var _docCli    = String((header.cliente && header.cliente.doc) || '');
+    var _nomCli    = String((header.cliente && header.cliente.nombre) || '').trim();
+    var _dirCli    = String((header.cliente && header.cliente.direccion) || '').trim();
+    var _totalVta  = parseFloat(header.total || 0);
+    var _bloqueoCPE = '';
+
+    // BOLETA ≥ S/700 requiere DNI o RUC (no admite tipo=0 "sin doc")
+    if (header.tipoDoc === 'BOLETA' && _totalVta >= 700 && _tipoCli === 0) {
+      _bloqueoCPE = 'BOLETA >=S/700 requiere DNI o RUC (SUNAT)';
+    }
+    // BOLETA / FACTURA: el doc no puede ser el genérico VARIOS
+    if (!_bloqueoCPE && (_docCli === '66666' || _docCli === '0' || !_docCli)) {
+      _bloqueoCPE = header.tipoDoc + ' requiere doc real (no VARIOS)';
+    }
+    // FACTURA: RUC 11 dig + dirección obligatoria (NubeFact rechaza sin)
+    if (!_bloqueoCPE && header.tipoDoc === 'FACTURA') {
+      if (_docCli.length !== 11) _bloqueoCPE = 'FACTURA requiere RUC de 11 digitos';
+      else if (!_dirCli)         _bloqueoCPE = 'FACTURA requiere direccion fiscal';
+    }
+    // Denominación no puede estar vacía
+    if (!_bloqueoCPE && !_nomCli) {
+      _bloqueoCPE = header.tipoDoc + ' requiere denominacion del cliente';
+    }
+
+    if (_bloqueoCPE) {
+      nfEstado = 'ERROR';
+      nfResult = { ok: false, error: _bloqueoCPE };
+      Logger.log('NubeFact bloqueado venta ' + idVenta + ': ' + _bloqueoCPE);
+    } else {
+      nfResult = emitirNubeFact(data, correlativoFinal);
+      nfEstado = nfResult.ok ? 'EMITIDO' : 'ERROR';
+      nfHash   = nfResult.hash   || '';
+      nfEnlace = nfResult.enlace || '';
+    }
     var nfRow = sheetCabecera.getLastRow();
     sheetCabecera.getRange(nfRow, 17, 1, 3).setValues([[nfEstado, nfHash, nfEnlace]]);
     if (!nfResult.ok) Logger.log('NubeFact error venta ' + idVenta + ': ' + (nfResult.error || ''));
@@ -323,11 +357,37 @@ function verificarYAgregaCliente(doc, nombre, tipoDoc, direccion) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CLIENTES_FRECUENTES");
   if (!sheet) return;
-  var data = obtenerDatosHojaComoJSON(sheet);
-  for (var i = 0; i < data.length; i++) {
-    if (String(data[i].Documento) === String(doc)) return; // ya existe
+  // [v40] Antes: si el cliente ya existía, salía sin hacer nada → si un cliente
+  // viejo no tenía dirección guardada y ahora APISPeru la trajo, no se actualizaba.
+  // Ahora: si existe Y la dirección está vacía Y llega una nueva no vacía, refrescar.
+  var rangeAll = sheet.getDataRange().getValues();
+  if (rangeAll.length < 2) {
+    sheet.appendRow([doc, nombre, tipoDoc, new Date(), String(direccion || '')]);
+    return;
   }
-  // Esquema: Documento | Nombre | Tipo | Fecha | Direccion
+  var hdrs   = rangeAll[0].map(function(h){ return String(h).trim(); });
+  var idxDoc = hdrs.indexOf('Documento');
+  var idxNom = hdrs.indexOf('Nombre');
+  var idxDir = hdrs.indexOf('Direccion');
+  if (idxDoc < 0) return;
+  for (var i = 1; i < rangeAll.length; i++) {
+    if (String(rangeAll[i][idxDoc]) === String(doc)) {
+      // Ya existe: refrescar dirección y nombre si llegan datos nuevos
+      var dirVieja = idxDir >= 0 ? String(rangeAll[i][idxDir] || '').trim() : '';
+      var dirNueva = String(direccion || '').trim();
+      if (idxDir >= 0 && !dirVieja && dirNueva) {
+        sheet.getRange(i + 1, idxDir + 1).setValue(dirNueva);
+      }
+      var nomViejo = idxNom >= 0 ? String(rangeAll[i][idxNom] || '').trim() : '';
+      var nomNuevo = String(nombre || '').trim();
+      // Solo actualizar nombre si el viejo era vacío (no pisar correcciones manuales)
+      if (idxNom >= 0 && !nomViejo && nomNuevo) {
+        sheet.getRange(i + 1, idxNom + 1).setValue(nomNuevo);
+      }
+      return;
+    }
+  }
+  // No existe: agregar nuevo
   sheet.appendRow([doc, nombre, tipoDoc, new Date(), String(direccion || '')]);
 }
 

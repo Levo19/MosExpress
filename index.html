@@ -8970,6 +8970,21 @@
                agregarToast('⚠ RUC inválido', 'FACTURA requiere RUC de 11 dígitos.');
                return;
            }
+           // [v40] BOLETA ≥ S/700 requiere DNI/RUC (regla SUNAT) — no admite tipo=0 sin doc
+           if (pago.value.tipoDoc === 'BOLETA' && granTotal.value >= 700) {
+               const docLen = String(pago.value.docCliente || '').length;
+               if (docLen !== 8 && docLen !== 11) {
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('⚠ Boleta ≥ S/700', 'SUNAT exige DNI (8) o RUC (11) para boletas de S/ 700 o más.');
+                   return;
+               }
+           }
+           // [v40] FACTURA requiere dirección no vacía (NubeFact rechaza con HTTP 400)
+           if (pago.value.tipoDoc === 'FACTURA' && !String(pago.value.direccionCliente || '').trim()) {
+               try { playBeepError?.(); } catch(_){}
+               agregarToast('⚠ Falta dirección', 'FACTURA requiere dirección fiscal. Reintentá la búsqueda del RUC o cargala manualmente.');
+               return;
+           }
 
            procesando.value = true;
 
