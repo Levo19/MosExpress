@@ -8959,31 +8959,30 @@
                agregarToast('⚠ Falta cliente', 'Selecciona un cliente del listado o tocá "Usar VARIOS"');
                return;
            }
-           // BOLETA / FACTURA requieren doc válido (no genérico VARIOS)
-           if ((pago.value.tipoDoc === 'BOLETA' || pago.value.tipoDoc === 'FACTURA') && pago.value.docCliente === '66666') {
-               try { playBeepError?.(); } catch(_){}
-               agregarToast('⚠ Doc requerido', pago.value.tipoDoc + ' requiere DNI o RUC real. Buscá al cliente o cambiá a Nota de venta.');
-               return;
-           }
-           if (pago.value.tipoDoc === 'FACTURA' && pago.value.docCliente.length !== 11) {
-               try { playBeepError?.(); } catch(_){}
-               agregarToast('⚠ RUC inválido', 'FACTURA requiere RUC de 11 dígitos.');
-               return;
-           }
-           // [v40] BOLETA ≥ S/700 requiere DNI/RUC (regla SUNAT) — no admite tipo=0 sin doc
+           // [v40.1] Validaciones según reglas SUNAT reales:
+           //   - Nota de venta: cualquier cliente (VARIOS ok)
+           //   - Boleta  < S/700: VARIOS ok (tipo=0 "consumidor anónimo")
+           //   - Boleta >= S/700: DNI (8) o RUC (11) OBLIGATORIO
+           //   - Factura: RUC (11) + dirección fiscal OBLIGATORIOS
            if (pago.value.tipoDoc === 'BOLETA' && granTotal.value >= 700) {
                const docLen = String(pago.value.docCliente || '').length;
                if (docLen !== 8 && docLen !== 11) {
                    try { playBeepError?.(); } catch(_){}
-                   agregarToast('⚠ Boleta ≥ S/700', 'SUNAT exige DNI (8) o RUC (11) para boletas de S/ 700 o más.');
+                   agregarToast('⚠ Boleta ≥ S/700', 'SUNAT exige DNI (8) o RUC (11) para boletas de S/ 700 o más. Buscá al cliente.');
                    return;
                }
            }
-           // [v40] FACTURA requiere dirección no vacía (NubeFact rechaza con HTTP 400)
-           if (pago.value.tipoDoc === 'FACTURA' && !String(pago.value.direccionCliente || '').trim()) {
-               try { playBeepError?.(); } catch(_){}
-               agregarToast('⚠ Falta dirección', 'FACTURA requiere dirección fiscal. Reintentá la búsqueda del RUC o cargala manualmente.');
-               return;
+           if (pago.value.tipoDoc === 'FACTURA') {
+               if (pago.value.docCliente === '66666' || pago.value.docCliente.length !== 11) {
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('⚠ RUC inválido', 'FACTURA requiere RUC de 11 dígitos (no admite VARIOS).');
+                   return;
+               }
+               if (!String(pago.value.direccionCliente || '').trim()) {
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('⚠ Falta dirección', 'FACTURA requiere dirección fiscal. Reintentá la búsqueda del RUC.');
+                   return;
+               }
            }
 
            procesando.value = true;

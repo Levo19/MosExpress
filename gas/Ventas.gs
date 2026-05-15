@@ -118,30 +118,33 @@ function procesarVenta(data) {
   var nfResult = null;
 
   if (header.tipoDoc === 'BOLETA' || header.tipoDoc === 'FACTURA') {
-    // [v40] Validaciones SUNAT defensivas — bloquear ANTES de pegarle a NubeFact
-    // para evitar emisiones rechazadas y consumir cuota del API. El frontend
-    // valida primero, esto es defensa en profundidad.
-    var _tipoCli   = parseInt((header.cliente && header.cliente.tipo) || 0, 10);
+    // [v40.1] Validaciones SUNAT defensivas — bloquear ANTES de pegarle a NubeFact
+    // para evitar emisiones rechazadas y consumir cuota del API.
+    // Reglas reales SUNAT:
+    //   - Boleta < S/700: VARIOS permitido (tipo=0 "consumidor anónimo")
+    //   - Boleta ≥ S/700: DNI (8) o RUC (11) obligatorio
+    //   - Factura: SIEMPRE RUC + dirección fiscal
     var _docCli    = String((header.cliente && header.cliente.doc) || '');
     var _nomCli    = String((header.cliente && header.cliente.nombre) || '').trim();
     var _dirCli    = String((header.cliente && header.cliente.direccion) || '').trim();
     var _totalVta  = parseFloat(header.total || 0);
     var _bloqueoCPE = '';
 
-    // BOLETA ≥ S/700 requiere DNI o RUC (no admite tipo=0 "sin doc")
-    if (header.tipoDoc === 'BOLETA' && _totalVta >= 700 && _tipoCli === 0) {
-      _bloqueoCPE = 'BOLETA >=S/700 requiere DNI o RUC (SUNAT)';
-    }
-    // BOLETA / FACTURA: el doc no puede ser el genérico VARIOS
-    if (!_bloqueoCPE && (_docCli === '66666' || _docCli === '0' || !_docCli)) {
-      _bloqueoCPE = header.tipoDoc + ' requiere doc real (no VARIOS)';
+    // BOLETA ≥ S/700 requiere DNI o RUC válidos (no VARIOS ni vacío)
+    if (header.tipoDoc === 'BOLETA' && _totalVta >= 700) {
+      if (_docCli === '66666' || _docCli === '0' || !_docCli ||
+          (_docCli.length !== 8 && _docCli.length !== 11)) {
+        _bloqueoCPE = 'BOLETA >=S/700 requiere DNI o RUC (SUNAT)';
+      }
     }
     // FACTURA: RUC 11 dig + dirección obligatoria (NubeFact rechaza sin)
     if (!_bloqueoCPE && header.tipoDoc === 'FACTURA') {
-      if (_docCli.length !== 11) _bloqueoCPE = 'FACTURA requiere RUC de 11 digitos';
-      else if (!_dirCli)         _bloqueoCPE = 'FACTURA requiere direccion fiscal';
+      if (_docCli === '66666' || _docCli.length !== 11) {
+        _bloqueoCPE = 'FACTURA requiere RUC de 11 digitos (no VARIOS)';
+      }
+      else if (!_dirCli) _bloqueoCPE = 'FACTURA requiere direccion fiscal';
     }
-    // Denominación no puede estar vacía
+    // Denominación no puede estar vacía (válido para boleta y factura)
     if (!_bloqueoCPE && !_nomCli) {
       _bloqueoCPE = header.tipoDoc + ' requiere denominacion del cliente';
     }
