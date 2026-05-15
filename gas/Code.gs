@@ -210,6 +210,7 @@ function doPost(e) {
 
     if (data.tipoEvento === 'APERTURA_CAJA')      return procesarAperturaCaja(data);
     if (data.tipoEvento === 'CIERRE_CAJA')         return procesarCierreCaja(data);
+    if (data.tipoEvento === 'CIERRE_CAJA_FORZADO') return cerrarCajaForzado(data);
     if (data.tipoEvento === 'LIMPIAR_DUPLICADOS') {
       var _r = limpiarGuiasDuplicadasCaja(data.cajaId);
       return ContentService.createTextOutput(JSON.stringify(_r)).setMimeType(ContentService.MimeType.JSON);

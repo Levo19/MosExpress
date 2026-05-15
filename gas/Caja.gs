@@ -146,6 +146,173 @@ function procesarCierreCaja(data) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+// ============================================================
+// CIERRE_CAJA_FORZADO — admin/master cierra caja remotamente desde MOS
+// ============================================================
+// Bug original que motiva este endpoint: el flow normal de cierre hace
+// 2 POST independientes (ANULACION_MASIVA + CIERRE_CAJA) sin LockService,
+// dejando estados inconsistentes si el segundo falla (POR_COBRAR anulados
+// pero caja sigue ABIERTA, como pasó con CAJA-1778848407996 el 2026-05-15).
+//
+// Este endpoint hace TODO en una sola transacción protegida por LockService:
+//   1. Anular POR_COBRAR de esa caja (FormaPago → ANULADO)
+//   2. Calcular montoFinal automáticamente (apertura + efectivo + ingresos - egresos)
+//   3. Marcar caja CERRADA + montoFinal + fechaCierre
+//   4. Auditoría en VENTAS_CABECERA.historialCambios + CAJA log
+//   5. Push al cajero original: "tu caja fue cerrada por admin X"
+//   6. Push a MOS confirmando
+function cerrarCajaForzado(data) {
+  if (!data || !data.idCaja) return generarRespuestaError('idCaja requerido');
+  var adminAuth = data.adminAuth || {};
+  var adminNombre = String(adminAuth.nombre || adminAuth.validadoPor || 'admin');
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); }
+  catch(e) { return generarRespuestaError('LOCK_TIMEOUT: otra operación en curso, reintentá en unos segundos'); }
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetCajas = ss.getSheetByName('CAJAS');
+    var sheetVentas = ss.getSheetByName('VENTAS_CABECERA');
+    var sheetExtra = ss.getSheetByName('MOVIMIENTOS_EXTRA');
+    if (!sheetCajas)  return generarRespuestaError('CAJAS no encontrada');
+    if (!sheetVentas) return generarRespuestaError('VENTAS_CABECERA no encontrada');
+
+    // ── 1. Localizar la caja ──────────────────────────────────────
+    var filasCajas = sheetCajas.getDataRange().getValues();
+    var filaCaja = -1;
+    var cajaRow = null;
+    for (var i = 1; i < filasCajas.length; i++) {
+      if (String(filasCajas[i][0]) === String(data.idCaja)) {
+        filaCaja = i;
+        cajaRow = filasCajas[i];
+        break;
+      }
+    }
+    if (filaCaja < 0) return generarRespuestaError('Caja ' + data.idCaja + ' no encontrada');
+    var estadoActual = String(cajaRow[5] || '');
+    if (estadoActual !== 'ABIERTA') {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success', yaCerrada: true,
+        mensaje: 'La caja ya estaba ' + estadoActual
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var cajaVendedor = String(cajaRow[1] || '');
+    var cajaEstacion = String(cajaRow[2] || '');
+    var cajaZona     = String(cajaRow[8] || '');
+    var montoInicial = parseFloat(cajaRow[4]) || 0;
+
+    // ── 2. Anular POR_COBRAR de esta caja ────────────────────────
+    var filasV = sheetVentas.getDataRange().getValues();
+    var idsAnulados = [];
+    var efectivoVentas = 0;
+    for (var v = 1; v < filasV.length; v++) {
+      var idCajaV = String(filasV[v][10] || '');
+      if (idCajaV !== String(data.idCaja)) continue;
+      var formaPago = String(filasV[v][8] || '').toUpperCase();
+      var total = parseFloat(filasV[v][6]) || 0;
+      if (formaPago === 'POR_COBRAR') {
+        sheetVentas.getRange(v + 1, 9).setValue('ANULADO');
+        idsAnulados.push(String(filasV[v][0]));
+      } else if (formaPago === 'EFECTIVO' || formaPago.indexOf('MIXTO') === 0) {
+        // Sumar efectivo neto de la venta. Para MIXTO el formato es
+        // "MIXTO (VIR:X.XX/EFE:Y.YY)" — extraemos la parte EFE.
+        if (formaPago === 'EFECTIVO') {
+          efectivoVentas += total;
+        } else {
+          var m = formaPago.match(/EFE:([\d.]+)/);
+          if (m) efectivoVentas += parseFloat(m[1]) || 0;
+        }
+      }
+    }
+
+    // ── 3. Sumar ingresos/egresos extra de la caja ───────────────
+    var ingresosEfe = 0, egresosEfe = 0;
+    if (sheetExtra) {
+      var filasE = sheetExtra.getDataRange().getValues();
+      for (var x = 1; x < filasE.length; x++) {
+        if (String(filasE[x][1] || '') !== String(data.idCaja)) continue;
+        var tipoE = String(filasE[x][3] || '');
+        var mtoE  = parseFloat(filasE[x][4]) || 0;
+        if      (tipoE === 'INGRESO') ingresosEfe += mtoE;
+        else if (tipoE === 'EGRESO')  egresosEfe  += mtoE;
+      }
+    }
+
+    // ── 4. Calcular montoFinal automático ────────────────────────
+    var montoFinal = Math.round((montoInicial + efectivoVentas + ingresosEfe - egresosEfe) * 100) / 100;
+
+    // ── 5. Cerrar la caja (CERRADA + montoFinal + fechaCierre) ──
+    var tz = Session.getScriptTimeZone();
+    var fechaCierre = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+    sheetCajas.getRange(filaCaja + 1, 6).setValue('CERRADA');
+    sheetCajas.getRange(filaCaja + 1, 7).setValue(montoFinal);
+    sheetCajas.getRange(filaCaja + 1, 8).setValue(fechaCierre);
+    SpreadsheetApp.flush();
+
+    // ── 6. Auditoría ─────────────────────────────────────────────
+    try {
+      auditarLog && auditarLog('CAJAS', data.idCaja, {
+        usuario: adminNombre, rol: String(adminAuth.rol || 'ADMIN'),
+        source: 'MOS_CIERRE_FORZADO', accion: 'cerrar_caja_forzado',
+        autorizadoPor: adminAuth,
+        cambios: [
+          { campo: 'Estado',      antes: 'ABIERTA', despues: 'CERRADA' },
+          { campo: 'Monto_Final', antes: '',         despues: montoFinal }
+        ],
+        ref: {
+          idCaja: data.idCaja, vendedor: cajaVendedor,
+          zona: cajaZona, idsAnulados: idsAnulados.length,
+          montoFinal: montoFinal
+        },
+        motivo: String(data.motivo || 'Cierre forzado por admin desde MOS'),
+        ts: new Date().toISOString()
+      });
+    } catch(eA) { Logger.log('Audit cierre forzado: ' + eA.message); }
+
+    // ── 7. Notificar al cajero original (push directo) ───────────
+    try {
+      if (cajaVendedor) {
+        enviarPushUsuario && enviarPushUsuario(
+          cajaVendedor,
+          '🔐 Tu caja fue cerrada por admin',
+          adminNombre + ' cerró tu turno · Monto final S/ ' + montoFinal.toFixed(2),
+          { idNotif: 'ME_CAJA_CERRADA_POR_ADMIN', idCaja: data.idCaja }
+        );
+      }
+    } catch(eU) { Logger.log('Push cajero: ' + eU.message); }
+
+    // ── 8. Push a MOS confirmando ────────────────────────────────
+    try {
+      _notificarMOS(
+        '🔐 Cierre forzado · ' + cajaVendedor,
+        adminNombre + ' · S/ ' + montoFinal.toFixed(2) + (idsAnulados.length ? ' · ' + idsAnulados.length + ' anulados' : ''),
+        cajaVendedor, 'ME_CAJA_CIERRE_FORZADO'
+      );
+    } catch(eM) { Logger.log('Push MOS cierre forzado: ' + eM.message); }
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status:      'success',
+      idCaja:      data.idCaja,
+      vendedor:    cajaVendedor,
+      zona:        cajaZona,
+      montoInicial: montoInicial,
+      efectivoVentas: Math.round(efectivoVentas * 100) / 100,
+      ingresos:    Math.round(ingresosEfe * 100) / 100,
+      egresos:     Math.round(egresosEfe * 100) / 100,
+      montoFinal:  montoFinal,
+      anulados:    idsAnulados.length,
+      idsAnulados: idsAnulados,
+      fechaCierre: fechaCierre,
+      cerradoPor:  adminNombre,
+      mensaje:     'Caja cerrada forzadamente por admin'
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } finally {
+    try { lock.releaseLock(); } catch(_){}
+  }
+}
+
 function cajeroActivo(zona) {
   if (!zona) return generarRespuestaError("zona requerida");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
