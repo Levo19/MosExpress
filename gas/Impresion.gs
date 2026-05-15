@@ -81,8 +81,16 @@ function imprimirTicketInternamente(data, correlativo, printerId, nfResult) {
 
   var clienteNombre = normalizarTextoGAS((header.cliente && header.cliente.nombre) || '');
   var clienteDoc    = (header.cliente && header.cliente.doc) ? String(header.cliente.doc) : '';
+  var clienteTipo   = (header.cliente && header.cliente.tipo) || 0; // 0=sin,1=DNI,4=CE,6=RUC,7=PAS
   if (clienteNombre) txt += 'CLIENTE : ' + clienteNombre.substring(0, 38) + '\n';
-  if (clienteDoc)    txt += 'DOC     : ' + clienteDoc + '\n';
+  if (clienteDoc) {
+    var labelDoc = clienteTipo === 1 ? 'DNI     '
+                 : clienteTipo === 4 ? 'C.E.    '
+                 : clienteTipo === 6 ? 'RUC     '
+                 : clienteTipo === 7 ? 'PASAP.  '
+                 : 'DOC     ';
+    txt += labelDoc + ': ' + clienteDoc + '\n';
+  }
   txt += (auth.esCajero ? 'CAJERO  ' : 'VENDEDOR') + ': ' + normalizarTextoGAS(auth.vendedor || '') + '\n';
   txt += SEP;
   txt += 'CANT  DESCRIPCION                      SUBTOTAL \n';

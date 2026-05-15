@@ -127,14 +127,16 @@ function procesarVenta(data) {
     var _docCli    = String((header.cliente && header.cliente.doc) || '');
     var _nomCli    = String((header.cliente && header.cliente.nombre) || '').trim();
     var _dirCli    = String((header.cliente && header.cliente.direccion) || '').trim();
+    var _tipoCli   = parseInt((header.cliente && header.cliente.tipo) || 0, 10); // 0/1/4/6/7
     var _totalVta  = parseFloat(header.total || 0);
     var _bloqueoCPE = '';
 
-    // BOLETA ≥ S/700 requiere DNI o RUC válidos (no VARIOS ni vacío)
+    // BOLETA ≥ S/700 requiere doc identificado: DNI(8) | RUC(11) | CE(tipo=4) | PAS(tipo=7)
     if (header.tipoDoc === 'BOLETA' && _totalVta >= 700) {
-      if (_docCli === '66666' || _docCli === '0' || !_docCli ||
-          (_docCli.length !== 8 && _docCli.length !== 11)) {
-        _bloqueoCPE = 'BOLETA >=S/700 requiere DNI o RUC (SUNAT)';
+      var _esCEoPas = (_tipoCli === 4 || _tipoCli === 7) && _docCli && _docCli !== '66666';
+      var _esDniRuc = (_docCli.length === 8 || _docCli.length === 11) && _docCli !== '66666' && _docCli !== '0';
+      if (!_esCEoPas && !_esDniRuc) {
+        _bloqueoCPE = 'BOLETA >=S/700 requiere DNI/RUC/CE/Pasaporte (SUNAT)';
       }
     }
     // FACTURA: RUC 11 dig + dirección obligatoria (NubeFact rechaza sin)

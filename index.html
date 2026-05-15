@@ -2967,8 +2967,8 @@
                       arbitrario sin RUC/DNI — solo puede reintentar, usar VARIOS, o pedir
                       autorización admin para guardar manual. -->
                  <div v-if="clienteModoManual && !pago.nombreCliente" class="space-y-2">
-                   <!-- Caso C1: sin autorización admin → opciones (reintentar/varios/auth) -->
-                   <div v-if="!pago.adminAuthCliente" class="space-y-2">
+                   <!-- Caso C1: sin autorización admin → opciones (reintentar/varios/CE/auth) -->
+                   <div v-if="!pago.adminAuthCliente && !pago.tipoDocClienteCE" class="space-y-2">
                      <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
                        <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                        <div class="flex-1 min-w-0">
@@ -2987,8 +2987,33 @@
                          👤 Usar VARIOS
                        </button>
                      </div>
+                     <!-- [v41] Carné de Extranjería: guarda doc tal cual + nombre manual, sin PIN admin -->
+                     <button @click="iniciarRegistroCE"
+                             class="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                       🪪 Guardar como CE / Extranjero (con este código)
+                     </button>
                      <p class="text-[10px] text-gray-400 text-center mt-1">Para registrar un cliente sin doc, autorizá con clave admin</p>
                      <button @click="abrirAutorizarClienteManual" class="text-[10px] text-orange-600 hover:text-orange-700 font-bold underline w-full text-center py-1.5">🔑 Cliente sin doc · pedir autorización admin</button>
+                   </div>
+                   <!-- Caso C3 [v41]: registro como CE/Extranjero → input nombre manual sin PIN -->
+                   <div v-else-if="pago.tipoDocClienteCE" class="space-y-2">
+                     <div class="flex items-start gap-2 bg-indigo-50 border border-indigo-300 rounded-xl px-3 py-2.5">
+                       <span class="text-base shrink-0">🪪</span>
+                       <div class="flex-1 min-w-0">
+                         <p class="text-xs text-indigo-800 font-bold">Carné de Extranjería / Pasaporte</p>
+                         <p class="text-[10px] text-indigo-600 mt-0.5">Doc: <span class="font-mono font-bold">{{ pago.docCliente }}</span> · ingresá nombre del cliente</p>
+                       </div>
+                     </div>
+                     <div class="flex gap-2">
+                       <input v-model="clienteNombreManual" type="text" placeholder="Nombre del extranjero..."
+                              @keyup.enter="confirmarClienteCE"
+                              class="flex-1 p-3 bg-white border-2 border-indigo-200 rounded-xl text-sm font-bold focus:border-indigo-500 outline-none">
+                       <button @click="confirmarClienteCE" :disabled="!clienteNombreManual.trim()"
+                               class="bg-indigo-500 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">
+                         ✓ Guardar
+                       </button>
+                     </div>
+                     <button @click="cancelarRegistroCE" class="text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1">← Volver a opciones</button>
                    </div>
 
                    <!-- Caso C2: admin autorizó → permitir nombre manual -->
@@ -3023,18 +3048,18 @@
                       <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal; pago.montoVirtual = 0" :class="pago.metodo === 'VIRTUAL' && !pago.ventaCreditoDirecto ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">VIRTUAL</button>
                       <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'MIXTO'; pago.montoRecibido = 0; pago.montoVirtual = 0" :class="pago.metodo === 'MIXTO' && !pago.ventaCreditoDirecto ? 'bg-white text-posSecondary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">MIXTO</button>
                   </div>
-                  <!-- ☑ Vender directo a crédito (admin) -->
-                  <button @click="toggleVentaCreditoDirecto"
-                          :class="pago.ventaCreditoDirecto ? 'bg-orange-50 border-orange-400 text-orange-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-400'"
-                          class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 transition-all text-left mb-3">
-                      <span class="text-base shrink-0">{{ pago.ventaCreditoDirecto ? '☑' : '☐' }}</span>
-                      <div class="flex-1 min-w-0">
-                          <div class="text-xs font-black uppercase tracking-wider">Vender directo a crédito</div>
-                          <div class="text-[10px] font-medium opacity-70 mt-0.5">📋 Requiere clave admin · queda como deuda formal</div>
-                      </div>
-                      <span v-if="pago.ventaCreditoDirecto" class="text-[10px] font-bold bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full shrink-0">CREDITO</span>
-                  </button>
                </div>
+               <!-- 📒 Vender directo a crédito — visible para vendedor y cajero (requiere PIN admin) -->
+               <button @click="toggleVentaCreditoDirecto"
+                       :class="pago.ventaCreditoDirecto ? 'bg-orange-50 border-orange-400 text-orange-700' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-400'"
+                       class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 transition-all text-left mb-3">
+                   <span class="text-base shrink-0">{{ pago.ventaCreditoDirecto ? '☑' : '📒' }}</span>
+                   <div class="flex-1 min-w-0">
+                       <div class="text-xs font-black uppercase tracking-wider">Vender al crédito</div>
+                       <div class="text-[10px] font-medium opacity-70 mt-0.5">🔐 Requiere clave admin · queda como deuda formal</div>
+                   </div>
+                   <span v-if="pago.ventaCreditoDirecto" class="text-[10px] font-bold bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full shrink-0">CREDITO</span>
+               </button>
 
                <!-- EFECTIVO: monto recibido + vuelto -->
                <div v-if="config.esCajero && pago.metodo === 'EFECTIVO'">
@@ -4759,7 +4784,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, adminAuthCliente: null });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, adminAuthCliente: null, tipoDocClienteCE: false });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
         const clienteNombreManual = ref('');
@@ -4784,6 +4809,8 @@
         const errorDocumento = computed(() => {
             const doc = String(pago.value.docCliente || '').trim();
             if (!doc) return '';
+            // [v41] CE/Pasaporte tiene longitud variable → bypass validación estricta
+            if (pago.value.tipoDocClienteCE) return '';
             if (pago.value.tipoDoc === 'BOLETA' && !/^\d{8}$/.test(doc)) return 'DNI debe tener exactamente 8 dígitos';
             if (pago.value.tipoDoc === 'FACTURA' && !/^\d{11}$/.test(doc)) return 'RUC debe tener exactamente 11 dígitos';
             return '';
@@ -9098,6 +9125,7 @@
             pago.value.nombreCliente    = '';
             pago.value.direccionCliente = '';
             pago.value.adminAuthCliente = null;  // [v40] limpiar también la auth admin
+            pago.value.tipoDocClienteCE = false; // [v41] limpiar flag CE/Extranjero
             busquedaNombre.value = '';
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
@@ -9112,6 +9140,32 @@
                 busquedaNombre.value = pago.value.docCliente;
                 pago.value.docCliente = '';
             }
+        };
+        // [v41] Registrar como Carné de Extranjería / Pasaporte cuando APISPeru
+        // no encontró el doc. CE puede tener longitudes variables (incluso 8 díg
+        // como un DNI). El operador ingresa nombre manual y se guarda con el
+        // código tipeado tal cual, marcado como tipoDoc=4 (CE) SUNAT.
+        // No requiere PIN admin: el código es real (no es VARIOS anónimo).
+        const iniciarRegistroCE = () => {
+            pago.value.tipoDocClienteCE = true;
+            clienteNombreManual.value = '';
+            // mantiene clienteModoManual = true y pago.docCliente con el tipeado
+        };
+        const cancelarRegistroCE = () => {
+            pago.value.tipoDocClienteCE = false;
+            clienteNombreManual.value = '';
+        };
+        const confirmarClienteCE = () => {
+            const nombre = clienteNombreManual.value.trim().toUpperCase();
+            if (!nombre) return;
+            pago.value.nombreCliente = nombre;
+            // pago.docCliente ya tiene el código tipeado
+            // pago.tipoDocClienteCE = true ya quedó marcado
+            busquedaNombre.value = '';
+            clienteModoManual.value = false;
+            clienteNombreManual.value = '';
+            try { playBeepOK?.(); } catch(_){}
+            agregarToast('✓ Cliente CE', nombre + ' · doc ' + pago.value.docCliente);
         };
         // Cliente VARIOS por defecto en Nota de Venta cuando el cajero no quiere
         // tipear nada (el cliente "anónimo"). DNI 66666 ya existe en CLIENTES_FRECUENTES.
@@ -9359,8 +9413,10 @@
            const totalVenta          = granTotal.value;
            const vueltoVenta         = vuelto.value;
 
-           // Tipo de documento SUNAT: 0=sin doc, 1=DNI (8 dígitos), 6=RUC (11 dígitos)
-           const tipoDocCliente = docClienteVenta.length === 8 ? 1
+           // Tipo de documento SUNAT: 0=sin doc, 1=DNI (8 díg), 4=CE, 6=RUC (11 díg)
+           // CE puede tener longitudes variables → flag explícito tipoDocClienteCE
+           const tipoDocCliente = pago.value.tipoDocClienteCE ? 4
+                                : docClienteVenta.length === 8 ? 1
                                 : docClienteVenta.length === 11 ? 6
                                 : 0;
 
@@ -9439,7 +9495,7 @@
                   cliente: {
                       doc:       docClienteVenta,
                       nombre:    nombreClienteVenta,
-                      tipo:      tipoDocCliente,      // 0/1/6 para NubeFact
+                      tipo:      tipoDocCliente,      // 0/1/4/6 para NubeFact
                       direccion: direccionClienteVenta // requerido en FACTURA
                   }
               },
@@ -10470,6 +10526,7 @@
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
           reintentarBuscarCliente, abrirAutorizarClienteManual, cancelarAutorizarManual,
+          iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,
