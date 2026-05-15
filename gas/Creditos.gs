@@ -393,6 +393,28 @@ function getCreditosPendientes(diasAtras) {
   var limite = new Date();
   limite.setDate(hoy.getDate() - dias);
 
+  // [v41] Cargar VENTAS_DETALLE una sola vez para mapear items por idVenta.
+  // Mostrar top 3 items en cada carta del deck (resumen del ticket).
+  var itemsPorVenta = {};
+  try {
+    var detSh = ss.getSheetByName('VENTAS_DETALLE');
+    if (detSh) {
+      var fd = detSh.getDataRange().getValues();
+      // Cabeceras: ID_Venta | SKU | Cod_Barras | Nombre | Cantidad | Precio | Subtotal | Valor_Unit | Tipo_IGV | Unidad | Cod_SUNAT
+      for (var d = 1; d < fd.length; d++) {
+        var idVD = String(fd[d][0]);
+        if (!idVD) continue;
+        if (!itemsPorVenta[idVD]) itemsPorVenta[idVD] = [];
+        if (itemsPorVenta[idVD].length >= 5) continue; // tope top 5
+        itemsPorVenta[idVD].push({
+          nombre:   String(fd[d][3] || ''),
+          cantidad: parseFloat(fd[d][4]) || 0,
+          subtotal: parseFloat(fd[d][6]) || 0
+        });
+      }
+    }
+  } catch(_){}
+
   var fv = ventas.getDataRange().getValues();
   // Agrupar por día
   var porDia = {};
@@ -410,6 +432,7 @@ function getCreditosPendientes(diasAtras) {
 
     var diaKey = Utilities.formatDate(fecha, tz, 'yyyy-MM-dd');
     if (!porDia[diaKey]) porDia[diaKey] = [];
+    var itemsTicket = itemsPorVenta[idV] || [];
     porDia[diaKey].push({
       idVenta:        idV,
       correlativo:    String(fv[i][9] || ''),
@@ -421,7 +444,9 @@ function getCreditosPendientes(diasAtras) {
       obs:            String(fv[i][14] || ''),
       idCaja:         String(fv[i][10] || ''),
       fechaISO:       Utilities.formatDate(fecha, tz, 'yyyy-MM-dd HH:mm:ss'),
-      asignado:       asigSet[idV] || null   // si ya está siendo cobrado
+      asignado:       asigSet[idV] || null,  // si ya está siendo cobrado
+      items:          itemsTicket,           // [v41] top 5 items para mostrar resumen
+      itemsCount:     itemsTicket.length
     });
   }
 
