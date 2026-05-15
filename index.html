@@ -19,6 +19,20 @@
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+    /* [v40.3] Widget cobros asignados — pulse + slide-in */
+    @keyframes cobroPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,.5); }
+      50%      { box-shadow: 0 0 0 8px rgba(245,158,11,0); }
+    }
+    @keyframes cobroSlideIn {
+      0%   { transform: translateX(-20px) scale(.95); opacity: 0; }
+      100% { transform: translateX(0)     scale(1);   opacity: 1; }
+    }
+    @keyframes cobroSuccess {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
     @keyframes toastSlide { 0% { transform: translateX(100%); opacity: 0;} 10% { transform: translateX(0); opacity: 1;} 90% { transform: translateX(0); opacity: 1;} 100% { transform: translateX(100%); opacity: 0;} }
     .toast-anim { animation: toastSlide 3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -2196,6 +2210,39 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- ═════════════════════════════════════════════════════
+                     [v40.3] WIDGET COBROS ASIGNADOS — pinned arriba
+                     Aparece cuando un admin asignó cobros a esta caja.
+                     Bypasea el filtro de turno (los tickets son de días
+                     anteriores). Pulse + sonido al recibir nuevo cobro.
+                ════════════════════════════════════════════════════════ -->
+                <div v-if="config.esCajero && cajaAbierta && cobrosAsignados.length > 0"
+                     class="mb-6 rounded-3xl overflow-hidden border-2 border-amber-400 shadow-lg"
+                     style="background: linear-gradient(135deg, #fffbeb, #fef3c7); animation: cobroPulse 2s ease-in-out infinite;">
+                    <div class="bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-between">
+                        <span class="font-black text-sm uppercase tracking-wider flex items-center gap-2">
+                            <span class="text-lg">🔔</span>
+                            <span>{{ cobrosAsignados.length }} cobro{{ cobrosAsignados.length === 1 ? '' : 's' }} pendiente{{ cobrosAsignados.length === 1 ? '' : 's' }}</span>
+                        </span>
+                        <span class="text-amber-900 text-[10px] font-bold opacity-80">⚡ asignado por admin</span>
+                    </div>
+                    <div class="p-3 space-y-2">
+                        <div v-for="cobro in cobrosAsignados" :key="cobro.idCobro"
+                             class="bg-white border-2 border-amber-300 rounded-xl p-3 shadow-md flex items-center justify-between gap-3"
+                             style="animation: cobroSlideIn .4s cubic-bezier(.34,1.56,.64,1)">
+                            <div class="flex-1 min-w-0">
+                                <p class="font-black text-amber-900 text-sm truncate">👤 {{ cobro.cliente || 'VARIOS' }}</p>
+                                <p class="text-[11px] text-amber-700 font-mono">{{ cobro.correlativo }} · S/ {{ parseFloat(cobro.monto).toFixed(2) }} · {{ cobro.metodoSug }}</p>
+                                <p class="text-[10px] text-gray-500 mt-0.5">📋 Asignó: {{ cobro.adminAsig }} · {{ _fmtFechaCorta(cobro.fechaAsig) }}</p>
+                            </div>
+                            <button @click="abrirModalCobrarAsignado(cobro)"
+                                    class="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-black text-xs px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-transform whitespace-nowrap">
+                                💳 COBRAR
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 <!-- Header Vendedor: solo nombre, estación y cerrar sesión -->
                 <div v-else class="bg-gray-800 text-white p-5 rounded-3xl shadow-lg mb-6 flex justify-between items-center gap-4">
                     <div>
@@ -3703,6 +3750,107 @@
         </div>
     </div>
 
+    <!-- ═════════════════════════════════════════════════════════
+         [v40.3] MODAL: COBRAR CRÉDITO ASIGNADO POR ADMIN
+    ═════════════════════════════════════════════════════════ -->
+    <div v-if="modalCobrarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-50 flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h2 class="text-xl font-black text-gray-800">💳 Cobrar Crédito Asignado</h2>
+                    <p class="text-xs text-amber-600 font-bold mt-0.5">📋 Asignado por: {{ cobroAsignadoActivo.adminAsig }}</p>
+                </div>
+                <button @click="cerrarCobrarAsignado" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Info ticket -->
+            <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 mb-4">
+                <p class="font-black text-lg text-amber-900">{{ cobroAsignadoActivo.cliente || 'VARIOS' }}</p>
+                <p class="text-xs text-amber-700 font-mono mt-0.5">{{ cobroAsignadoActivo.correlativo }} · {{ cobroAsignadoActivo.idVenta }}</p>
+                <div class="flex items-end justify-between mt-3 pt-3 border-t border-amber-200">
+                    <span class="text-xs text-amber-700 font-bold uppercase">Total a cobrar</span>
+                    <span class="text-3xl font-black text-amber-900">S/ {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }}</span>
+                </div>
+            </div>
+
+            <!-- Método -->
+            <label class="block text-xs font-black text-gray-500 uppercase tracking-wider mb-2">Método (sugerido: {{ cobroAsignadoActivo.metodoSug }})</label>
+            <div class="grid grid-cols-3 gap-2 mb-4">
+                <button @click="cobroAsigMetodo = 'EFECTIVO'"
+                        :class="cobroAsigMetodo === 'EFECTIVO' ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-300'"
+                        class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
+                    💵 EFECTIVO
+                </button>
+                <button @click="cobroAsigMetodo = 'VIRTUAL'"
+                        :class="cobroAsigMetodo === 'VIRTUAL' ? 'bg-cyan-500 text-white border-cyan-600' : 'bg-white text-gray-700 border-gray-300'"
+                        class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
+                    📱 VIRTUAL
+                </button>
+                <button @click="cobroAsigMetodo = 'MIXTO'"
+                        :class="cobroAsigMetodo === 'MIXTO' ? 'bg-violet-500 text-white border-violet-600' : 'bg-white text-gray-700 border-gray-300'"
+                        class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
+                    🔀 MIXTO
+                </button>
+            </div>
+
+            <!-- Inputs MIXTO -->
+            <div v-if="cobroAsigMetodo === 'MIXTO'" class="grid grid-cols-2 gap-2 mb-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Efectivo</label>
+                    <input v-model.number="cobroAsigMixtoEf" type="number" step="0.01" min="0" class="w-full p-3 border-2 border-emerald-300 rounded-xl font-bold text-lg">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Virtual</label>
+                    <input v-model.number="cobroAsigMixtoVi" type="number" step="0.01" min="0" class="w-full p-3 border-2 border-cyan-300 rounded-xl font-bold text-lg">
+                </div>
+                <p v-if="cobroAsigMixtoEf + cobroAsigMixtoVi !== parseFloat(cobroAsignadoActivo.monto)"
+                   class="col-span-2 text-xs text-red-600 font-bold text-center">
+                    ⚠ Suma {{ (cobroAsigMixtoEf + cobroAsigMixtoVi).toFixed(2) }} ≠ Total {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }}
+                </p>
+            </div>
+
+            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 text-xs text-emerald-900">
+                <p class="font-bold mb-1">📤 Al confirmar:</p>
+                <ul class="list-disc list-inside space-y-0.5 text-[11px]">
+                    <li>Ticket pasa de CREDITO → {{ cobroAsigMetodo }}</li>
+                    <li>S/ {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }} entra como INGRESO a tu caja</li>
+                    <li>Se reimprime el ticket con sello "PAGADO · COBRO DIFERIDO"</li>
+                </ul>
+            </div>
+
+            <!-- Botones acción -->
+            <div class="grid grid-cols-2 gap-2">
+                <button @click="abrirRechazarAsignado"
+                        class="bg-red-100 text-red-700 font-black py-3 rounded-xl text-sm active:scale-95 transition-transform border-2 border-red-200">
+                    ❌ RECHAZAR
+                </button>
+                <button @click="confirmarCobrarAsignado"
+                        :disabled="procesandoCobroAsig"
+                        class="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-black py-3 rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-1.5">
+                    <svg v-if="procesandoCobroAsig" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                    {{ procesandoCobroAsig ? 'PROCESANDO...' : '✓ CONFIRMAR COBRO' }}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal rechazo: pide razón -->
+    <div v-if="modalRechazarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg font-black text-red-700 mb-2">❌ Rechazar cobro</h3>
+            <p class="text-xs text-gray-600 mb-3">Indicá por qué rechazás. El admin verá la razón.</p>
+            <textarea v-model="razonRechazoAsig" rows="3" class="w-full p-3 border-2 border-red-300 rounded-xl text-sm font-semibold focus:border-red-500 outline-none mb-3" placeholder="Ej: cliente no llegó, monto no coincide..."></textarea>
+            <div class="grid grid-cols-2 gap-2">
+                <button @click="modalRechazarAsignado = false" class="bg-gray-200 text-gray-700 font-black py-2.5 rounded-xl text-sm">Cancelar</button>
+                <button @click="confirmarRechazarAsignado" :disabled="!razonRechazoAsig.trim() || procesandoCobroAsig" class="bg-red-500 text-white font-black py-2.5 rounded-xl text-sm disabled:opacity-50">
+                    Confirmar rechazo
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- ===== MODAL: EXTRA DE CAJA (ingreso/egreso extra) ===== -->
     <div v-if="modalExtra" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
         <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
@@ -4390,6 +4538,18 @@
         const procesandoExtra = ref(false);
         const nuevoExtra = ref({ tipo: 'EGRESO', monto: '', concepto: '', obs: '', virtual: false });
 
+        // [v40.3] Cobros asignados por admin/master desde MOS
+        const cobrosAsignados = ref([]);
+        const modalCobrarAsignado = ref(false);
+        const cobroAsignadoActivo = ref(null);
+        const cobroAsigMetodo = ref('EFECTIVO');
+        const cobroAsigMixtoEf = ref(0);
+        const cobroAsigMixtoVi = ref(0);
+        const modalRechazarAsignado = ref(false);
+        const razonRechazoAsig = ref('');
+        const procesandoCobroAsig = ref(false);
+        let _cobrosAsigPollTimer = null;
+
         // --- MÓDULO B: POS ---
         const bBuscador = ref('');
         const scannerFocused = ref(false);
@@ -4999,6 +5159,8 @@
                      idCajaActual.value = cr.idCaja;
                      montoAperturaMemoria.value = cr.monto;
                      try { window._meAcquireWakeLock && _meAcquireWakeLock(); } catch(_){}
+                     // [v40.3] Iniciar polling de cobros asignados al recuperar caja
+                     setTimeout(() => iniciarPollingCobros(), 1000);
                  } else {
                      // Caja de ayer: notificar cierre al GAS antes de descartar
                      if (cr.idCaja && !cr.idCaja.startsWith('CAJA-LOCAL-') &&
@@ -6786,6 +6948,8 @@
                 montoAperturaMemoria.value = monto;
                 sessionStartTime.value = new Date().toISOString();
                 cobradosEnSesion.value = [];
+                // [v40.3] Iniciar polling cobros asignados al abrir caja
+                setTimeout(() => iniciarPollingCobros(), 1500);
                 extrasMovimientos.value = [];
                 localStorage.setItem('mosexpress_caja_activa', JSON.stringify({ idCaja: cid, monto, fecha: Date.now() }));
                 localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
@@ -8029,6 +8193,177 @@
         };
 
         // --- CAJERO: Registrar movimiento EXTRA de caja ---
+        // ════════════════════════════════════════════════════════
+        // [v40.3] COBROS ASIGNADOS POR ADMIN — flow cajero
+        // ════════════════════════════════════════════════════════
+
+        const _fmtFechaCorta = (iso) => {
+            if (!iso) return '—';
+            try {
+                const d = new Date(iso.replace(' ', 'T'));
+                const ahora = new Date();
+                const min = Math.round((ahora - d) / 60000);
+                if (min < 1)   return 'recién';
+                if (min < 60)  return 'hace ' + min + ' min';
+                if (min < 1440) return 'hace ' + Math.floor(min/60) + ' h';
+                return 'hace ' + Math.floor(min/1440) + ' días';
+            } catch(_) { return iso; }
+        };
+
+        // Polling cobros asignados (cada 30s mientras caja abierta + cajero)
+        const cargarCobrosAsignados = async () => {
+            if (!config.value.esCajero || !cajaAbierta.value) return;
+            if (!idCajaActual.value || idCajaActual.value.startsWith('CAJA-LOCAL-')) return;
+            try {
+                const r = await fetch(`${API_URL}?accion=cobros_asignados_cajero&cajaId=${encodeURIComponent(idCajaActual.value)}`);
+                const d = await r.json();
+                if (d && d.status === 'success') {
+                    const previo = cobrosAsignados.value.length;
+                    cobrosAsignados.value = d.cobros || [];
+                    // Si entró uno NUEVO → sonido + vibración + voz
+                    if (cobrosAsignados.value.length > previo) {
+                        try { playBeepNameMatch?.(); } catch(_){}
+                        try { if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); } catch(_){}
+                        const ultimo = cobrosAsignados.value[cobrosAsignados.value.length - 1];
+                        if (ultimo) {
+                            agregarToast('🔔 Nuevo cobro asignado', (ultimo.cliente || 'cliente') + ' · S/ ' + parseFloat(ultimo.monto).toFixed(2));
+                            try {
+                                if (window.speechSynthesis) {
+                                    const u = new SpeechSynthesisUtterance(
+                                        'Cobro pendiente: ' + (ultimo.cliente || 'cliente') +
+                                        ', ' + Math.round(ultimo.monto) + ' soles, ' + (ultimo.metodoSug || 'efectivo')
+                                    );
+                                    u.lang = 'es-PE'; u.rate = 0.95;
+                                    window.speechSynthesis.cancel();
+                                    window.speechSynthesis.speak(u);
+                                }
+                            } catch(_){}
+                        }
+                    }
+                }
+            } catch(_){}
+        };
+
+        const iniciarPollingCobros = () => {
+            if (_cobrosAsigPollTimer) clearInterval(_cobrosAsigPollTimer);
+            cargarCobrosAsignados();
+            _cobrosAsigPollTimer = setInterval(cargarCobrosAsignados, 30000);
+        };
+        const detenerPollingCobros = () => {
+            if (_cobrosAsigPollTimer) { clearInterval(_cobrosAsigPollTimer); _cobrosAsigPollTimer = null; }
+            cobrosAsignados.value = [];
+        };
+
+        const abrirModalCobrarAsignado = (cobro) => {
+            cobroAsignadoActivo.value = cobro;
+            cobroAsigMetodo.value = String(cobro.metodoSug || 'EFECTIVO').replace(/^MIXTO.*$/, 'MIXTO');
+            cobroAsigMixtoEf.value = cobroAsigMetodo.value === 'MIXTO' ? parseFloat(cobro.monto) : 0;
+            cobroAsigMixtoVi.value = 0;
+            modalCobrarAsignado.value = true;
+            try { playBeepOK?.(); } catch(_){}
+        };
+        const cerrarCobrarAsignado = () => {
+            modalCobrarAsignado.value = false;
+            cobroAsignadoActivo.value = null;
+            razonRechazoAsig.value = '';
+            modalRechazarAsignado.value = false;
+        };
+
+        const confirmarCobrarAsignado = async () => {
+            const cobro = cobroAsignadoActivo.value;
+            if (!cobro) return;
+            // Validación MIXTO
+            let payload = {
+                tipoEvento: 'CONFIRMAR_COBRO_ASIGNADO',
+                idCobro: cobro.idCobro,
+                metodoFinal: cobroAsigMetodo.value,
+                auth: {
+                    vendedor: config.value.vendedor,
+                    esCajero: true, rol: 'CAJERO',
+                    deviceId: deviceId.value
+                }
+            };
+            if (cobroAsigMetodo.value === 'MIXTO') {
+                const ef = parseFloat(cobroAsigMixtoEf.value) || 0;
+                const vi = parseFloat(cobroAsigMixtoVi.value) || 0;
+                if (Math.abs((ef + vi) - parseFloat(cobro.monto)) > 0.01) {
+                    agregarToast('⚠ Suma incorrecta', 'Efectivo + Virtual debe ser ' + parseFloat(cobro.monto).toFixed(2));
+                    return;
+                }
+                payload.metodoFinal = `MIXTO (VIR:${vi.toFixed(2)}/EFE:${ef.toFixed(2)})`;
+                payload.montoEfectivo = ef;
+                payload.montoVirtual  = vi;
+            }
+            procesandoCobroAsig.value = true;
+            try {
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                const d = await r.json();
+                if (d && d.status === 'success') {
+                    // 🎉 Confetti + sonido + voz
+                    try { playVentaOK?.(); } catch(_){}
+                    try { if (navigator.vibrate) navigator.vibrate([40, 30, 80]); } catch(_){}
+                    try {
+                        if (window.speechSynthesis) {
+                            const u = new SpeechSynthesisUtterance(
+                                'Cobro confirmado. ' + Math.round(cobro.monto) + ' soles de ' + (cobro.cliente || 'cliente')
+                            );
+                            u.lang = 'es-PE'; u.rate = 0.95;
+                            window.speechSynthesis.cancel();
+                            window.speechSynthesis.speak(u);
+                        }
+                    } catch(_){}
+                    agregarToast('✓ Cobro confirmado', 'S/ ' + parseFloat(cobro.monto).toFixed(2) + ' · ' + (cobro.cliente || ''));
+                    // Quitar del listado local
+                    cobrosAsignados.value = cobrosAsignados.value.filter(c => c.idCobro !== cobro.idCobro);
+                    cerrarCobrarAsignado();
+                    // Refrescar extras del turno (entra como INGRESO)
+                    setTimeout(() => cargarCobrosAsignados(), 500);
+                } else {
+                    agregarToast('Error', d.mensaje || 'No se pudo procesar el cobro');
+                }
+            } catch(e) {
+                agregarToast('Error de red', e.message || 'sin conexión');
+            } finally {
+                procesandoCobroAsig.value = false;
+            }
+        };
+
+        const abrirRechazarAsignado = () => {
+            razonRechazoAsig.value = '';
+            modalRechazarAsignado.value = true;
+        };
+        const confirmarRechazarAsignado = async () => {
+            const cobro = cobroAsignadoActivo.value;
+            const razon = razonRechazoAsig.value.trim();
+            if (!cobro || !razon) return;
+            procesandoCobroAsig.value = true;
+            try {
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                    tipoEvento: 'RECHAZAR_COBRO_ASIGNADO',
+                    idCobro: cobro.idCobro,
+                    razon: razon,
+                    auth: {
+                        vendedor: config.value.vendedor,
+                        esCajero: true, rol: 'CAJERO',
+                        deviceId: deviceId.value
+                    }
+                })});
+                const d = await r.json();
+                if (d && d.status === 'success') {
+                    try { playBeepError?.(); } catch(_){}
+                    agregarToast('Cobro rechazado', 'Admin fue notificado');
+                    cobrosAsignados.value = cobrosAsignados.value.filter(c => c.idCobro !== cobro.idCobro);
+                    cerrarCobrarAsignado();
+                } else {
+                    agregarToast('Error', d.mensaje || 'No se pudo rechazar');
+                }
+            } catch(e) {
+                agregarToast('Error de red', e.message || 'sin conexión');
+            } finally {
+                procesandoCobroAsig.value = false;
+            }
+        };
+
         const registrarExtra = async () => {
             const m = parseFloat(nuevoExtra.value.monto);
             if (!m || m <= 0) { agregarToast('Error', 'Ingresa un monto válido'); return; }
@@ -8174,6 +8509,8 @@
              localStorage.removeItem('mosexpress_session_start');
              configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
              cajaAbierta.value = false;
+             // [v40.3] Detener polling cobros asignados al cerrar caja
+             try { detenerPollingCobros(); } catch(_){}
              idCajaActual.value = '';
              cajeroActivoEnZona.value = null;
              wizardCajeroOcupado.value = false;
@@ -10183,6 +10520,13 @@
           // F4 — Tutorial onboarding del botón Admin
           tutAdminVisto, tutAdminMarcarVisto,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra,
+          // [v40.3] Cobros asignados
+          cobrosAsignados, modalCobrarAsignado, cobroAsignadoActivo,
+          cobroAsigMetodo, cobroAsigMixtoEf, cobroAsigMixtoVi,
+          modalRechazarAsignado, razonRechazoAsig, procesandoCobroAsig,
+          _fmtFechaCorta, abrirModalCobrarAsignado, cerrarCobrarAsignado,
+          confirmarCobrarAsignado, abrirRechazarAsignado, confirmarRechazarAsignado,
+          cargarCobrosAsignados,
           usuarioBloqueado, modalDesbloqueo, desbloqueoPin, desbloqueoError, desbloqueoCargando,
           desbloqueoCountdown, intentarDesbloqueoTemporal, _fmtCountdown
         };
