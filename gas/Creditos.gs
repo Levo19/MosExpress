@@ -398,7 +398,9 @@ function getCreditosPendientes(diasAtras) {
   var porDia = {};
   for (var i = 1; i < fv.length; i++) {
     var fp = String(fv[i][8] || '').toUpperCase();
-    if (fp !== 'CREDITO' && fp !== 'POR_COBRAR') continue;
+    // [v40.5] Solo CREDITO entra a la baraja. POR_COBRAR es del flow del
+    // turno del vendedor (no es un crédito formal otorgado al cliente).
+    if (fp !== 'CREDITO') continue;
     var idV = String(fv[i][0]);
     if (cobradas[idV]) continue;
 
