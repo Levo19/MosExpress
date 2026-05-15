@@ -131,10 +131,22 @@ function getHistorialEndpoint(tabla, pk) {
 // Devuelve un objeto listo para entrada.usuario / entrada.autorizadoPor.
 function _audExtraerActor(data) {
   var auth = data.auth || {};
+  // [v40.3] Fallback en cascada para capturar el operador real en TODOS los
+  // endpoints. Antes solo leía auth.vendedor → cualquier endpoint legacy
+  // (registrarExtra, etc.) que mandaba `registradoPor` o `usuario` en raíz
+  // caía a "desconocido" en el campo Registrado_Por de MOVIMIENTOS_EXTRA.
+  var usuario = String(
+    auth.vendedor ||
+    auth.nombre ||
+    data.registradoPor ||
+    data.usuario ||
+    data.vendedor ||
+    'desconocido'
+  );
   var actor = {
-    usuario: String(auth.vendedor || auth.nombre || 'desconocido'),
-    rol:     String(auth.rol || (auth.esCajero ? 'CAJERO' : 'VENDEDOR')),
-    deviceId: String(auth.deviceId || '')
+    usuario:  usuario,
+    rol:      String(auth.rol || (auth.esCajero ? 'CAJERO' : 'VENDEDOR')),
+    deviceId: String(auth.deviceId || data.deviceId || '')
   };
   var admin = data.adminAuth || null;
   if (admin && admin.nombre) {

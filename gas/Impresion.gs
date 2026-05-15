@@ -64,6 +64,14 @@ function imprimirTicketInternamente(data, correlativo, printerId, nfResult) {
 
   var txt = '\x1b\x40';
   txt += '\x1b\x61\x01';
+  // [v40.3] Sello "PAGADO · COBRO DIFERIDO" arriba si es reimpresión post-cobro
+  if (data.esPagoDiferido) {
+    txt += '\x1b\x21\x10';
+    txt += '*** PAGADO ***\n';
+    txt += 'COBRO DIFERIDO\n';
+    txt += '\x1b\x21\x00';
+    txt += SEPd;
+  }
   txt += '\x1b\x21\x30MOSexpress\x1b\x21\x00\n';
   txt += '\x1b\x21\x10' + tipoLabel + '\x1b\x21\x00\n';
   txt += 'Tk: ' + correlativo + '\n';
@@ -99,6 +107,20 @@ function imprimirTicketInternamente(data, correlativo, printerId, nfResult) {
   txt += '\x1b\x61\x02';
   txt += '\x1b\x21\x10TOTAL: S/ ' + parseFloat(header.total || 0).toFixed(2) + '\x1b\x21\x00\n';
   txt += 'METODO: ' + normalizarTextoGAS(header.metodo || 'EFECTIVO') + '\n';
+  // [v40.3] Si es reimpresión por pago diferido, agregar detalle del cobro
+  if (data.esPagoDiferido && data.pagoDiferido) {
+    var pd = data.pagoDiferido;
+    txt += '\x1b\x61\x01';
+    txt += SEPd;
+    txt += '\x1b\x21\x10COBRO RECIBIDO\x1b\x21\x00\n';
+    txt += normalizarTextoGAS('Caja: ' + (pd.cajaCobro || '')).substring(0, W) + '\n';
+    txt += normalizarTextoGAS('Cajero: ' + (pd.cajeroCobro || '')).substring(0, W) + '\n';
+    if (pd.adminAsig) {
+      txt += normalizarTextoGAS('Asignado por: ' + pd.adminAsig).substring(0, W) + '\n';
+    }
+    txt += normalizarTextoGAS('Fecha cobro: ' + (pd.fechaCobro || '')).substring(0, W) + '\n';
+    txt += SEPd;
+  }
   txt += '\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n';
   var qrData = (nfResult && nfResult.qrString) ? nfResult.qrString : correlativo;
   txt += qrESCPOSGas(qrData);

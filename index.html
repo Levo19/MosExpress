@@ -8048,7 +8048,16 @@
                         cajaId: idCajaActual.value,
                         tipo: extra.tipo, monto: extra.monto,
                         concepto: extra.concepto, obs: extra.obs,
-                        registradoPor: config.value.vendedor
+                        registradoPor: config.value.vendedor,
+                        // [v40.3] payload estándar auth para que _audExtraerActor lo lea
+                        // y NO caiga al fallback "desconocido" en MOVIMIENTOS_EXTRA.
+                        auth: {
+                            vendedor: config.value.vendedor,
+                            estacion: (config.value.estacion || {}).Estacion_Nombre || '',
+                            deviceId: deviceId.value,
+                            esCajero: config.value.esCajero,
+                            rol:      config.value.esCajero ? 'CAJERO' : 'VENDEDOR'
+                        }
                     })});
                 }
             } catch(e) { /* guardar local igualmente */ }

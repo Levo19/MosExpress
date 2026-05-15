@@ -34,6 +34,9 @@ function doGet(e) {
     if (accion === 'traslados_entrantes')   return trasladosEntrantes(e.parameter.zona, e.parameter.desde);
     if (accion === 'consultar_cliente')     return consultarCliente(e.parameter.doc);
     if (accion === 'extras_caja')           return getExtrasCaja(e.parameter.cajaId);
+    // [v40.3] Sistema de cobro asignado de créditos (MOS ↔ ME)
+    if (accion === 'creditos_pendientes')      return getCreditosPendientes(e.parameter.diasAtras);
+    if (accion === 'cobros_asignados_cajero')  return getCobrosAsignadosCajero(e.parameter.cajaId);
     if (accion === 'estado_cajas')          return estadoCajas();
     if (accion === 'historial_venta')       return getHistorialEndpoint('VENTAS_CABECERA', e.parameter.idVenta);
     if (accion === 'historial_extra')       return getHistorialEndpoint('MOVIMIENTOS_EXTRA', e.parameter.idExtra);
@@ -232,6 +235,10 @@ function doPost(e) {
     if (data.tipoEvento === 'BAJA_CPE')                  return bajaCPEVenta(data);
     if (data.tipoEvento === 'REGISTRAR_GUIA')      return registrarGuia(data);
     if (data.tipoEvento === 'REGISTRAR_AUDITORIA') return registrarAuditoria(data);
+    // [v40.3] Cobro asignado de créditos
+    if (data.tipoEvento === 'ASIGNAR_COBRO_CAJERO')    return asignarCobroACajero(data);
+    if (data.tipoEvento === 'CONFIRMAR_COBRO_ASIGNADO') return confirmarCobroAsignado(data);
+    if (data.tipoEvento === 'RECHAZAR_COBRO_ASIGNADO')  return rechazarCobroAsignado(data);
     if (data.accion === 'imprimir')                return procesarImpresion(data);
 
     // Default: registrar venta
