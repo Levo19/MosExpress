@@ -2962,13 +2962,13 @@
                    </div>
                  </div>
 
-                 <!-- [v40] Estado C: API no encontró nada → opciones controladas (no texto libre).
-                      El campo cliente es OBLIGATORIO. El operador no puede escribir nombre
-                      arbitrario sin RUC/DNI — solo puede reintentar, usar VARIOS, o pedir
-                      autorización admin para guardar manual. -->
+                 <!-- [v40/v41] Estado C: API no encontró nada → opciones controladas.
+                      Reintentar / Usar VARIOS / Guardar como CE / Extranjero.
+                      El flujo de "cliente sin doc con autorización admin" se eliminó:
+                      el caso de CE cubre extranjeros y casos sin RENIEC/SUNAT. -->
                  <div v-if="clienteModoManual && !pago.nombreCliente" class="space-y-2">
-                   <!-- Caso C1: sin autorización admin → opciones (reintentar/varios/CE/auth) -->
-                   <div v-if="!pago.adminAuthCliente && !pago.tipoDocClienteCE" class="space-y-2">
+                   <!-- Caso C1: opciones cuando no hay match -->
+                   <div v-if="!pago.tipoDocClienteCE" class="space-y-2">
                      <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
                        <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                        <div class="flex-1 min-w-0">
@@ -2992,11 +2992,9 @@
                              class="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                        🪪 Guardar como CE / Extranjero (con este código)
                      </button>
-                     <p class="text-[10px] text-gray-400 text-center mt-1">Para registrar un cliente sin doc, autorizá con clave admin</p>
-                     <button @click="abrirAutorizarClienteManual" class="text-[10px] text-orange-600 hover:text-orange-700 font-bold underline w-full text-center py-1.5">🔑 Cliente sin doc · pedir autorización admin</button>
                    </div>
-                   <!-- Caso C3 [v41]: registro como CE/Extranjero → input nombre manual sin PIN -->
-                   <div v-else-if="pago.tipoDocClienteCE" class="space-y-2">
+                   <!-- Caso C2 [v41]: registro como CE/Extranjero → input nombre manual sin PIN -->
+                   <div v-else class="space-y-2">
                      <div class="flex items-start gap-2 bg-indigo-50 border border-indigo-300 rounded-xl px-3 py-2.5">
                        <span class="text-base shrink-0">🪪</span>
                        <div class="flex-1 min-w-0">
@@ -3014,27 +3012,6 @@
                        </button>
                      </div>
                      <button @click="cancelarRegistroCE" class="text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1">← Volver a opciones</button>
-                   </div>
-
-                   <!-- Caso C2: admin autorizó → permitir nombre manual -->
-                   <div v-else class="space-y-2">
-                     <div class="flex items-start gap-2 bg-orange-50 border border-orange-300 rounded-xl px-3 py-2.5">
-                       <span class="text-base shrink-0">🔑</span>
-                       <div class="flex-1 min-w-0">
-                         <p class="text-xs text-orange-800 font-bold">Admin autorizó cliente manual</p>
-                         <p class="text-[10px] text-orange-600 mt-0.5">Por: <span class="font-bold">{{ pago.adminAuthCliente.nombre }}</span></p>
-                       </div>
-                     </div>
-                     <div class="flex gap-2">
-                       <input v-model="clienteNombreManual" type="text" placeholder="Nombre del cliente / Razón social..."
-                              @keyup.enter="confirmarNombreManual" autocomplete="off"
-                              class="flex-1 p-3.5 border-2 border-orange-300 focus:border-orange-500 rounded-xl font-semibold text-sm bg-orange-50 outline-none transition-colors">
-                       <button @click="confirmarNombreManual" :disabled="!clienteNombreManual.trim()"
-                               class="bg-orange-600 text-white px-5 rounded-xl font-black text-sm active:scale-95 transition-transform disabled:opacity-40">
-                         OK
-                       </button>
-                     </div>
-                     <button @click="cancelarAutorizarManual" class="text-xs text-gray-400 hover:text-gray-600 underline w-full text-center">Cancelar autorización</button>
                    </div>
                  </div>
 
@@ -4784,7 +4761,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, adminAuthCliente: null, tipoDocClienteCE: false });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, tipoDocClienteCE: false });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
         const clienteNombreManual = ref('');
@@ -9124,22 +9101,10 @@
             pago.value.docCliente       = '';
             pago.value.nombreCliente    = '';
             pago.value.direccionCliente = '';
-            pago.value.adminAuthCliente = null;  // [v40] limpiar también la auth admin
             pago.value.tipoDocClienteCE = false; // [v41] limpiar flag CE/Extranjero
             busquedaNombre.value = '';
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
-        };
-        // [v40] Cancelar la autorización admin para cliente manual
-        const cancelarAutorizarManual = () => {
-            pago.value.adminAuthCliente = null;
-            clienteNombreManual.value = '';
-            clienteModoManual.value = false;
-            // Si había doc tipeado, reabrir el campo de búsqueda
-            if (pago.value.docCliente && pago.value.docCliente !== '66666') {
-                busquedaNombre.value = pago.value.docCliente;
-                pago.value.docCliente = '';
-            }
         };
         // [v41] Registrar como Carné de Extranjería / Pasaporte cuando APISPeru
         // no encontró el doc. CE puede tener longitudes variables (incluso 8 díg
@@ -9286,19 +9251,6 @@
                 buscarClienteAPI();
             }, 400);
         });
-        const confirmarNombreManual = () => {
-           // [v40] Esta función solo se llama desde el flow autorizado por admin
-           // (abrirAutorizarClienteManual). Texto libre sin doc requiere clave.
-           const nombre = clienteNombreManual.value.trim().toUpperCase();
-           if (!nombre) return;
-           pago.value.nombreCliente = nombre;
-           busquedaNombre.value = '';
-           clienteModoManual.value = false;
-           clienteNombreManual.value = '';
-           try { playBeepOK?.(); } catch(_){}
-           agregarToast('✓ Cliente manual', nombre + ' (sin doc · admin)');
-        };
-
         // [v40] Reintentar consulta APISPeru. Reaprovecha el doc tipeado.
         const reintentarBuscarCliente = () => {
             const doc = pago.value.docCliente || busquedaNombre.value.trim();
@@ -9309,36 +9261,6 @@
             pago.value.nombreCliente = '';
             // Espera microtask para que watch detecte el cambio y dispare auto-search
             setTimeout(() => buscarClienteAPI(), 50);
-        };
-
-        // [v40] Abrir flujo "cliente sin doc + autorización admin". Pide clave 8 dig
-        // y solo si valida abre el input de nombre manual. Esto evita el bug previo
-        // de "don lucho" que tipeaba cualquier vendedor sin control.
-        const abrirAutorizarClienteManual = () => {
-            pedirPin((resultado) => {
-                // Admin validó → permitir input manual con nombre
-                clienteModoManual.value = true;
-                clienteNombreManual.value = '';
-                // Marcar que la venta tiene una "anotación admin" en el doc cliente
-                // — pero el doc se mantiene como VARIOS si no hay número
-                const doc = pago.value.docCliente && pago.value.docCliente !== '66666'
-                    ? pago.value.docCliente
-                    : '66666';
-                pago.value.docCliente = doc;
-                pago.value.adminAuthCliente = {
-                    nombre: String(resultado.validadoPor || resultado.nombre || ''),
-                    rol:    String(resultado.rol || 'ADMIN'),
-                    via:    'PIN_8DIG',
-                    idPersonal: String(resultado.idPersonal || '')
-                };
-                // Esperar microtask para que el input aparezca, luego focus
-                setTimeout(() => {
-                    const inp = document.querySelector('input[v-model*="clienteNombreManual"]') ||
-                                document.querySelector('input[placeholder*="Razón social"]');
-                    if (inp) inp.focus();
-                }, 100);
-                agregarToast('Admin autorizó', 'Ingresá el nombre del cliente sin doc');
-            }, { accion: 'CLIENTE_SIN_DOC', refDocumento: 'cliente-manual' });
         };
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
@@ -10524,8 +10446,8 @@
           toggleWakeLock, toggleSaver, setSaverMinutos, setMetaDiaria,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
-          clienteBusqEsDocumento, clienteModoManual, clienteNombreManual, confirmarNombreManual,
-          reintentarBuscarCliente, abrirAutorizarClienteManual, cancelarAutorizarManual,
+          clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
+          reintentarBuscarCliente,
           iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
