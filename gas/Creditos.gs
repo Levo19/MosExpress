@@ -393,24 +393,41 @@ function getCreditosPendientes(diasAtras) {
   var limite = new Date();
   limite.setDate(hoy.getDate() - dias);
 
-  // [v41] Cargar VENTAS_DETALLE una sola vez para mapear items por idVenta.
-  // Mostrar top 3 items en cada carta del deck (resumen del ticket).
+  // [v41.2] Cargar VENTAS_DETALLE una sola vez para mapear items por idVenta.
+  // Resolvemos los índices de columna leyendo la cabecera real (no asumir orden).
   var itemsPorVenta = {};
   try {
     var detSh = ss.getSheetByName('VENTAS_DETALLE');
     if (detSh) {
       var fd = detSh.getDataRange().getValues();
-      // Cabeceras: ID_Venta | SKU | Cod_Barras | Nombre | Cantidad | Precio | Subtotal | Valor_Unit | Tipo_IGV | Unidad | Cod_SUNAT
-      for (var d = 1; d < fd.length; d++) {
-        var idVD = String(fd[d][0]);
-        if (!idVD) continue;
-        if (!itemsPorVenta[idVD]) itemsPorVenta[idVD] = [];
-        if (itemsPorVenta[idVD].length >= 5) continue; // tope top 5
-        itemsPorVenta[idVD].push({
-          nombre:   String(fd[d][3] || ''),
-          cantidad: parseFloat(fd[d][4]) || 0,
-          subtotal: parseFloat(fd[d][6]) || 0
-        });
+      if (fd.length >= 2) {
+        var hdrs = fd[0].map(function(h){ return String(h).trim(); });
+        var iId   = hdrs.indexOf('ID_Venta');
+        var iNom  = hdrs.indexOf('Nombre');
+        var iCant = hdrs.indexOf('Cantidad');
+        var iPrec = hdrs.indexOf('Precio');
+        var iSub  = hdrs.indexOf('Subtotal');
+        // Fallbacks defensivos si el header está en otro idioma/case
+        if (iId   < 0) iId   = 0;
+        if (iNom  < 0) iNom  = 2;
+        if (iCant < 0) iCant = 3;
+        if (iPrec < 0) iPrec = 4;
+        if (iSub  < 0) iSub  = 5;
+        for (var d = 1; d < fd.length; d++) {
+          var idVD = String(fd[d][iId]);
+          if (!idVD) continue;
+          if (!itemsPorVenta[idVD]) itemsPorVenta[idVD] = [];
+          if (itemsPorVenta[idVD].length >= 12) continue; // tope generoso por ticket
+          var cant = parseFloat(fd[d][iCant]) || 0;
+          var sub  = parseFloat(fd[d][iSub])  || 0;
+          // Si Subtotal está vacío pero hay cantidad × precio, calcular
+          if (!sub) sub = cant * (parseFloat(fd[d][iPrec]) || 0);
+          itemsPorVenta[idVD].push({
+            nombre:   String(fd[d][iNom] || ''),
+            cantidad: cant,
+            subtotal: sub
+          });
+        }
       }
     }
   } catch(_){}
