@@ -151,6 +151,9 @@ function _cerrarCajaAtomico(opts) {
     var cajaEstacion = String(cajaRow[2] || '');
     var cajaZona     = String(cajaRow[8] || '');
     var montoInicial = parseFloat(cajaRow[4]) || 0;
+    // [v2.5.8] PrintNode_ID guardado al abrir caja → permite que MOS dispare
+    // la impresión del Ticket Z en la impresora correcta tras cierre forzado.
+    var printNodeId  = String(cajaRow[9] || '');
 
     // ── 2. Anular POR_COBRAR ──
     // Si el frontend mandó idsAnular, usar esa lista. Si no, detectar
@@ -282,7 +285,9 @@ function _cerrarCajaAtomico(opts) {
       status:         'success',
       idCaja:         idCaja,
       vendedor:       cajaVendedor,
+      estacion:       cajaEstacion,
       zona:           cajaZona,
+      printNodeId:    printNodeId,        // [v2.5.8] para imprimir Z desde MOS
       montoInicial:   montoInicial,
       efectivoVentas: Math.round(efectivoVentas * 100) / 100,
       ingresos:       Math.round(ingresosEfe * 100) / 100,
