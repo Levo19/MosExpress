@@ -22,12 +22,29 @@ function _existeGuiaSalidaVentasParaCaja(ss, cajaId) {
 }
 
 // ── Helper: cierra automáticamente cajas ABIERTA de días anteriores ──────────
-// Retorna la cantidad de cajas auto-cerradas.
+// [v2.5.10] Refactor: ahora usa _cerrarCajaAtomicoCore para cada caja zombi,
+// igual que el cierre forzado de admin. Eso significa que cada auto-cierre:
+//   ✓ Anula POR_COBRAR de esa caja
+//   ✓ Calcula montoFinal (apertura + efectivo + ingresos - egresos)
+//   ✓ Escribe CERRADA_AUTO + fechaCierre
+//   ✓ Genera guía SALIDA_VENTAS
+//   ✓ Audita la operación con source 'AUTO_CIERRE_DIA'
+//   ✓ Notifica al cajero original (push)
+//   ✓ Notifica a MOS
+//   ✗ NO imprime ticket Z automático (no hay sesión browser; tendrías que
+//     ir a 'Ver cierre' desde MOS para reimprimir)
+// Antes solo marcaba el estado y nada más → POR_COBRAR quedaban colgados,
+// sin guía, sin descuento de stock, sin notificación.
+//
+// Toma un solo LockService para procesar todas las cajas en batch (más
+// eficiente que pedir lock N veces).
 function _autoCerrarCajasViejas(sheetCajas) {
   var tz  = Session.getScriptTimeZone();
   var hoy = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
   var filas = sheetCajas.getDataRange().getValues();
-  var cerradas = 0;
+
+  // Detectar cajas a auto-cerrar primero (lectura)
+  var idsZombi = [];
   for (var c = 1; c < filas.length; c++) {
     if (String(filas[c][5]) !== 'ABIERTA') continue;
     var fApert = filas[c][3];
@@ -36,12 +53,50 @@ function _autoCerrarCajasViejas(sheetCajas) {
       fApert instanceof Date ? fApert : new Date(fApert), tz, 'yyyy-MM-dd'
     );
     if (diaApert < hoy) {
-      sheetCajas.getRange(c + 1, 6).setValue('CERRADA_AUTO');
-      sheetCajas.getRange(c + 1, 8).setValue(Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss'));
-      cerradas++;
+      idsZombi.push(String(filas[c][0]));
     }
   }
-  if (cerradas > 0) SpreadsheetApp.flush(); // garantiza que los setValue se escriban antes del próximo read
+  if (!idsZombi.length) return 0;
+
+  // Tomar el lock global UNA VEZ para todo el batch
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(60000);
+  } catch(e) {
+    Logger.log('_autoCerrarCajasViejas: no se pudo tomar lock, skipping');
+    return 0;
+  }
+
+  var cerradas = 0;
+  try {
+    idsZombi.forEach(function(idCaja) {
+      try {
+        var resp = _cerrarCajaAtomicoCore({
+          idCaja:      idCaja,
+          montoFinal:  null,                // auto: calcular
+          idsAnular:   null,                // auto: detectar POR_COBRAR
+          esForzado:   true,                // forzado por sistema
+          estadoFinal: 'CERRADA_AUTO',      // distingue del cierre manual
+          adminAuth: {
+            nombre:     'auto-sistema',
+            rol:        'SISTEMA',
+            via:        'AUTO_CIERRE_DIA',
+            idPersonal: ''
+          },
+          motivo: 'Auto-cierre de caja del día anterior (jornada vencida)'
+        });
+        // Verificar respuesta success
+        var parsed = null;
+        try { parsed = JSON.parse(resp.getContent()); } catch(_){}
+        if (parsed && parsed.status === 'success') cerradas++;
+      } catch(eC) {
+        Logger.log('_autoCerrarCajasViejas error en ' + idCaja + ': ' + eC.message);
+      }
+    });
+  } finally {
+    try { lock.releaseLock(); } catch(_){}
+  }
+
   return cerradas;
 }
 
@@ -128,9 +183,28 @@ function _cerrarCajaAtomico(opts) {
   var idCaja = String(opts.idCaja || '');
   if (!idCaja) return generarRespuestaError('idCaja requerido');
 
+  // [v2.5.10] Si ya estamos dentro de un lock externo (ej. auto-cierre que
+  // procesa múltiples cajas en batch), skipear LockService propio.
+  if (opts._skipLock) {
+    return _cerrarCajaAtomicoCore(opts);
+  }
+
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); }
   catch(e) { return generarRespuestaError('LOCK_TIMEOUT: otra operación en curso, reintentá en unos segundos'); }
+
+  try {
+    return _cerrarCajaAtomicoCore(opts);
+  } finally {
+    try { lock.releaseLock(); } catch(_){}
+  }
+}
+
+// Lógica del cierre — sin LockService (el caller decide si envuelve o no).
+function _cerrarCajaAtomicoCore(opts) {
+  var idCaja = String(opts.idCaja || '');
+  // [v2.5.10] estadoFinal: 'CERRADA' default, 'CERRADA_AUTO' para auto-cierre
+  var estadoFinal = String(opts.estadoFinal || 'CERRADA');
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -162,11 +236,11 @@ function _cerrarCajaAtomico(opts) {
     // [v2.5.8] PrintNode_ID guardado al abrir caja
     var printNodeId  = String(cajaRow[9] || '');
 
-    // Idempotencia + REPARACIÓN: si ya está CERRADA pero la guía
-    // SALIDA_VENTAS nunca se generó (típico cuando el cierre falló en el
-    // bug viejo: marcó CERRADA pero no generó la guía), regenerar ahora.
+    // Idempotencia + REPARACIÓN: si ya está cerrada (CERRADA o CERRADA_AUTO)
+    // pero la guía SALIDA_VENTAS nunca se generó, regenerar ahora.
     // generarGuiaSalidaVentas tiene defensa anti-duplicado internamente.
-    if (String(cajaRow[5] || '') === 'CERRADA') {
+    var estadoActual = String(cajaRow[5] || '');
+    if (estadoActual === 'CERRADA' || estadoActual === 'CERRADA_AUTO') {
       var guiaRegenerada = false;
       var existeGuia = false;
       if (cajaZona) {
@@ -275,7 +349,7 @@ function _cerrarCajaAtomico(opts) {
     // ── 5. Escribir CERRADA + montoFinal + fechaCierre ──
     var tz = Session.getScriptTimeZone();
     var fechaCierre = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
-    sheetCajas.getRange(filaCaja + 1, 6).setValue('CERRADA');
+    sheetCajas.getRange(filaCaja + 1, 6).setValue(estadoFinal);
     sheetCajas.getRange(filaCaja + 1, 7).setValue(montoFinal);
     sheetCajas.getRange(filaCaja + 1, 8).setValue(fechaCierre);
     SpreadsheetApp.flush();
@@ -283,11 +357,24 @@ function _cerrarCajaAtomico(opts) {
     // ── 6. Auditoría ──
     try {
       if (typeof auditarLog === 'function') {
+        // [v2.5.10] Distinguir source: ME_CIERRE_CAJA (cajero), MOS_CIERRE_FORZADO
+        // (admin desde MOS), AUTO_CIERRE_DIA (sistema, jornada vencida).
+        var auditSource, auditAccion;
+        if (opts.adminAuth && opts.adminAuth.via === 'AUTO_CIERRE_DIA') {
+          auditSource = 'AUTO_CIERRE_DIA';
+          auditAccion = 'auto_cerrar_caja_jornada_vencida';
+        } else if (opts.esForzado) {
+          auditSource = 'MOS_CIERRE_FORZADO';
+          auditAccion = 'cerrar_caja_forzado';
+        } else {
+          auditSource = 'ME_CIERRE_CAJA';
+          auditAccion = 'cerrar_caja';
+        }
         auditarLog('CAJAS', idCaja, {
           usuario: String((opts.adminAuth && opts.adminAuth.nombre) || cajaVendedor),
           rol: String((opts.adminAuth && opts.adminAuth.rol) || 'CAJERO'),
-          source: opts.esForzado ? 'MOS_CIERRE_FORZADO' : 'ME_CIERRE_CAJA',
-          accion: opts.esForzado ? 'cerrar_caja_forzado' : 'cerrar_caja',
+          source: auditSource,
+          accion: auditAccion,
           autorizadoPor: opts.adminAuth || null,
           cambios: [
             { campo: 'Estado',      antes: 'ABIERTA', despues: 'CERRADA' },
@@ -357,8 +444,9 @@ function _cerrarCajaAtomico(opts) {
       mensaje:        opts.esForzado ? 'Caja cerrada forzadamente por admin' : 'Caja cerrada correctamente'
     })).setMimeType(ContentService.MimeType.JSON);
 
-  } finally {
-    try { lock.releaseLock(); } catch(_){}
+  } catch(eC) {
+    Logger.log('_cerrarCajaAtomicoCore error: ' + (eC && eC.message || eC));
+    return generarRespuestaError('Error interno cierre: ' + (eC && eC.message || eC));
   }
 }
 
