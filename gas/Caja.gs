@@ -4,6 +4,23 @@
 // movimientos extra de caja y query de cajero activo.
 // ============================================================
 
+// ── Helper: chequea si ya existe guía SALIDA_VENTAS para una caja ────────────
+// Mismo criterio que generarGuiaSalidaVentas (Tipo='SALIDA_VENTAS' + Obs
+// contiene cajaId). Retorna true/false sin generar nada.
+function _existeGuiaSalidaVentasParaCaja(ss, cajaId) {
+  var sh = ss.getSheetByName('GUIAS_CABECERA');
+  if (!sh) return false;
+  var d = sh.getDataRange().getValues();
+  var idStr = String(cajaId);
+  for (var i = 1; i < d.length; i++) {
+    if (String(d[i][4]) === 'SALIDA_VENTAS' &&
+        String(d[i][5] || '').indexOf(idStr) >= 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ── Helper: cierra automáticamente cajas ABIERTA de días anteriores ──────────
 // Retorna la cantidad de cajas auto-cerradas.
 function _autoCerrarCajasViejas(sheetCajas) {
@@ -136,24 +153,61 @@ function _cerrarCajaAtomico(opts) {
     }
     if (filaCaja < 0) return generarRespuestaError('Caja ' + idCaja + ' no encontrada');
 
-    // Idempotencia: si ya está CERRADA, devolver éxito sin reprocesar
-    if (String(cajaRow[5] || '') === 'CERRADA') {
-      return ContentService.createTextOutput(JSON.stringify({
-        status: 'success',
-        yaCerrada: true,
-        mensaje: 'Caja ya estaba cerrada',
-        idCaja: idCaja,
-        montoFinal: parseFloat(cajaRow[6]) || 0
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
-
+    // Leer info de la caja ANTES del check yaCerrada porque puede que
+    // necesitemos regenerar la guía SALIDA_VENTAS si falta (modo reparación).
     var cajaVendedor = String(cajaRow[1] || '');
     var cajaEstacion = String(cajaRow[2] || '');
     var cajaZona     = String(cajaRow[8] || '');
     var montoInicial = parseFloat(cajaRow[4]) || 0;
-    // [v2.5.8] PrintNode_ID guardado al abrir caja → permite que MOS dispare
-    // la impresión del Ticket Z en la impresora correcta tras cierre forzado.
+    // [v2.5.8] PrintNode_ID guardado al abrir caja
     var printNodeId  = String(cajaRow[9] || '');
+
+    // Idempotencia + REPARACIÓN: si ya está CERRADA pero la guía
+    // SALIDA_VENTAS nunca se generó (típico cuando el cierre falló en el
+    // bug viejo: marcó CERRADA pero no generó la guía), regenerar ahora.
+    // generarGuiaSalidaVentas tiene defensa anti-duplicado internamente.
+    if (String(cajaRow[5] || '') === 'CERRADA') {
+      var guiaRegenerada = false;
+      var existeGuia = false;
+      if (cajaZona) {
+        try { existeGuia = _existeGuiaSalidaVentasParaCaja(ss, idCaja); } catch(_){}
+        if (!existeGuia) {
+          try {
+            generarGuiaSalidaVentas(ss, idCaja, cajaVendedor, cajaZona);
+            guiaRegenerada = true;
+            // Auditoría de la reparación
+            try {
+              if (typeof auditarLog === 'function') {
+                auditarLog('CAJAS', idCaja, {
+                  usuario: String((opts.adminAuth && opts.adminAuth.nombre) || cajaVendedor),
+                  rol:     String((opts.adminAuth && opts.adminAuth.rol) || 'CAJERO'),
+                  source:  'ME_REGEN_GUIA_VENTAS',
+                  accion:  'regenerar_guia_salida_ventas',
+                  autorizadoPor: opts.adminAuth || null,
+                  ref: { idCaja: idCaja, vendedor: cajaVendedor, zona: cajaZona },
+                  motivo: 'Caja ya CERRADA pero sin guía SALIDA_VENTAS — regeneración automática',
+                  ts: new Date().toISOString()
+                });
+              }
+            } catch(_){}
+          } catch(eR) { Logger.log('Regen guia: ' + eR.message); }
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        yaCerrada: true,
+        guiaRegenerada: guiaRegenerada,
+        guiaExistia: existeGuia,
+        mensaje: guiaRegenerada
+          ? 'Caja ya cerrada — guía SALIDA_VENTAS regenerada'
+          : 'Caja ya estaba cerrada (guía OK)',
+        idCaja: idCaja,
+        vendedor: cajaVendedor,
+        zona: cajaZona,
+        montoFinal: parseFloat(cajaRow[6]) || 0,
+        printNodeId: printNodeId
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     // ── 2. Anular POR_COBRAR ──
     // Si el frontend mandó idsAnular, usar esa lista. Si no, detectar
