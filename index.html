@@ -7190,35 +7190,38 @@
              };
 
              try {
-                 // 1. Anulación masiva de POR_COBRAR no cobrados (best-effort, no bloqueante)
-                 if (idsAnular.length > 0 && !_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                     try {
-                         await _fetchConTimeout(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION_MASIVA', ids: idsAnular }) }, 25000);
-                     } catch(e) { agregarToast("Aviso Red", "Anulaciones en cola"); }
-                 }
-
-                 // 2. Registrar cierre en GAS (CRÍTICO — si falla, caja queda abierta).
-                 // Hasta 2 intentos: el primero puede timeoutear porque generarGuiaSalidaVentas
-                 // tarda con muchas ventas; el segundo aprovecha la idempotencia del GAS
-                 // (si ya marcó CERRADA, devuelve success inmediato sin reprocesar).
+                 // [v2.5.7] UN SOLO POST atómico: el backend hace ANULAR + CERRAR
+                 // en una transacción con LockService. Antes eran 2 POST y si el
+                 // segundo fallaba quedaba inconsistencia (POR_COBRAR anulados
+                 // pero caja ABIERTA). Caso real: CAJA-1778848407996 el 2026-05-15.
                  if (!_esLocal && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                      let cierreOk = false;
+                     let resCierre = null;
                      let ultimoError = null;
                      for (let intento = 0; intento < 2 && !cierreOk; intento++) {
                          try {
-                             const reqCierre = await _fetchConTimeout(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal, ventasTotal: cobradosEnSesion.value.length }) }, 60000);
-                             const resCierre = await reqCierre.json();
-                             if (resCierre.status === 'success') {
+                             const reqCierre = await _fetchConTimeout(API_URL, {
+                                 method: 'POST',
+                                 body: JSON.stringify({
+                                     tipoEvento:  'CIERRE_CAJA',
+                                     cajaId:      _idCaja,
+                                     montoFinal:  montoFinal,
+                                     idsAnular:   idsAnular,         // backend anula atómicamente
+                                     ventasTotal: cobradosEnSesion.value.length
+                                 })
+                             }, 60000);
+                             resCierre = await reqCierre.json();
+                             if (resCierre && resCierre.status === 'success') {
                                  cierreOk = true;
                              } else {
-                                 agregarToast('Error al cerrar caja', resCierre.mensaje || resCierre.message || 'GAS devolvió error — intenta de nuevo.', 'warning');
-                                 break; // error explícito del GAS no se reintenta
+                                 agregarToast('Error al cerrar caja',
+                                     (resCierre && (resCierre.mensaje || resCierre.message)) || 'GAS devolvió error — intenta de nuevo.',
+                                     'warning');
+                                 break;
                              }
                          } catch(e) {
                              ultimoError = e;
-                             // Si fue timeout en el primer intento, esperar 2s y reintentar.
-                             // El GAS pudo haber marcado CERRADA aunque la respuesta no llegó —
-                             // el 2do intento detectará idempotencia y devolverá success rápido.
+                             // Timeout primer intento → reintentar (helper es idempotente)
                              if (intento === 0 && e.name === 'AbortError') {
                                  await new Promise(r => setTimeout(r, 2000));
                                  continue;
@@ -7231,15 +7234,33 @@
                              : 'Sin conexión al servidor. Reintenta cuando vuelva la red.';
                          agregarToast('Cierre no registrado', msg, 'warning');
                          try { if (_turnoWin && !_turnoWin.closed) _turnoWin.close(); } catch(_e) {}
-                         return; // procesandoCierre se resetea en finally
+                         return; // ⚠ NO continúa: no se cierra la sesión hasta confirmar
                      }
                  }
 
-                 // 3. Navegar la ventana ya reservada al reporte del turno
+                 // Navegar la ventana ya reservada al reporte del turno.
+                 // turno.html con autoprint=1 imprime el Ticket Z vía PrintNode.
                  if (_turnoWin && !_turnoWin.closed) {
                    _turnoWin.location.href = _turnoUrl;
                  } else {
-                   window.open(_turnoUrl, '_blank'); // fallback si fue bloqueada
+                   // Popup-blocker bloqueó la ventana. Mostrar botón manual.
+                   const w = window.open(_turnoUrl, '_blank');
+                   if (!w) {
+                     agregarToast('⚠ Popup bloqueado',
+                         'El navegador bloqueó la ventana del turno. Tocá aquí para abrirla',
+                         'warning');
+                     // Fallback: ofrecer al cajero un botón manual
+                     try {
+                       const link = document.createElement('a');
+                       link.href = _turnoUrl;
+                       link.target = '_blank';
+                       link.textContent = '🖨 Abrir ticket de turno';
+                       link.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:16px 24px;border-radius:12px;font-weight:900;z-index:99999;box-shadow:0 8px 20px rgba(0,0,0,.4);text-decoration:none;font-size:16px';
+                       link.addEventListener('click', () => link.remove());
+                       document.body.appendChild(link);
+                       setTimeout(() => { try { link.remove(); } catch(_){} }, 30000);
+                     } catch(_){}
+                   }
                  }
 
                  // 4. Detener polling y limpiar estado local
