@@ -120,6 +120,12 @@
     }
     /* Ticket nuevo detectado en segundo plano */
     @keyframes pulseNuevo { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); } 70% { box-shadow: 0 0 0 14px rgba(16,185,129,0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
+    /* [v2.5.13] FAB etiquetas pendientes con glow ámbar que llama la atención */
+    @keyframes etiqsPulseGlow {
+      0%, 100% { box-shadow: 0 10px 28px -6px rgba(245,158,11,.85), 0 0 0 2px rgba(255,255,255,.15), 0 0 0 0 rgba(245,158,11,.6); }
+      50%      { box-shadow: 0 10px 32px -4px rgba(245,158,11,1),   0 0 0 2px rgba(255,255,255,.25), 0 0 0 14px rgba(245,158,11,0); }
+    }
+    .animate-pulse-glow { animation: etiqsPulseGlow 1.8s ease-in-out infinite; }
     .ticket-nuevo { animation: pulseNuevo 1s ease-out infinite; border-color: #10b981 !important; }
     @keyframes frameFlash { 0%, 100% { box-shadow: inset 0 0 0 0px rgba(16,185,129,0); } 50% { box-shadow: inset 0 0 0 6px rgba(16,185,129,0.85); } }
     .frame-nuevo { animation: frameFlash 0.5s ease-in-out 4; }
@@ -1747,19 +1753,23 @@
 
   <div id="app" class="h-full flex flex-col relative" v-cloak>
     
-    <!-- Botón flotante de etiquetas pendientes (esquina inferior derecha, no estorba) -->
+    <!-- [v2.5.13] FAB etiquetas pendientes — ahora visible POR ENCIMA del nav
+         inferior (que es h-16 = 64px). Antes en bottom-4 quedaba TAPADO bajo
+         el nav. Ahora bottom-20 (80px) lo deja flotando claramente sobre el
+         nav. z-50 garantiza que no lo tape ningún otro overlay. Glow pulsante
+         + escala mayor para llamar la atención cuando hay no-vistas. -->
     <button v-if="etiqsPendientes.length > 0"
             @click="abrirEtiqsModal"
-            class="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-2xl shadow-xl active:scale-95 transition-transform"
-            :class="etiqsPendientes.some(e => !e._vistoPorMi) ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'"
-            style="box-shadow:0 8px 22px -4px rgba(245,158,11,.6)">
-      <span class="text-2xl leading-none">🏷</span>
+            class="fixed bottom-20 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl active:scale-95 transition-all hover:scale-105"
+            :class="etiqsPendientes.some(e => !e._vistoPorMi) ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white animate-pulse-glow' : 'bg-gradient-to-br from-emerald-500 to-emerald-700 text-white'"
+            style="box-shadow: 0 10px 28px -6px rgba(245,158,11,.85), 0 0 0 2px rgba(255,255,255,.15);">
+      <span class="text-3xl leading-none">🏷</span>
       <div class="flex flex-col items-start leading-tight">
-        <span class="text-[10px] uppercase tracking-widest font-bold opacity-80">Etiquetas</span>
-        <span class="text-base font-black">{{ etiqsPendientes.length }}</span>
+        <span class="text-[10px] uppercase tracking-widest font-black opacity-90">Etiquetas</span>
+        <span class="text-xl font-black">{{ etiqsPendientes.length }}</span>
       </div>
       <span v-if="etiqsPendientes.some(e => !e._vistoPorMi)"
-            class="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse">!</span>
+            class="absolute -top-2 -right-2 bg-rose-500 text-white text-xs font-black rounded-full w-6 h-6 flex items-center justify-center animate-bounce shadow-lg ring-2 ring-white">!</span>
     </button>
 
     <!-- Modal etiquetas (no fullscreen, sólo central tipo card) -->
