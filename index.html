@@ -2244,7 +2244,10 @@
                     </div>
                 </div>
                 <!-- Header Vendedor: solo nombre, estación y cerrar sesión -->
-                <div v-else class="bg-gray-800 text-white p-5 rounded-3xl shadow-lg mb-6 flex justify-between items-center gap-4">
+                <!-- [v40.4] FIX: antes v-else se enlazaba al v-if de cobrosAsignados,
+                     no al de esCajero. Resultado: cajero SIN cobros veía DOS botones
+                     (CERRAR + CERRAR SESIÓN). Ahora v-if explícito: solo vendedores. -->
+                <div v-if="!config.esCajero" class="bg-gray-800 text-white p-5 rounded-3xl shadow-lg mb-6 flex justify-between items-center gap-4">
                     <div>
                         <p class="text-gray-400 font-bold uppercase text-xs tracking-wider">SESIÓN ACTIVA</p>
                         <h2 class="text-xl font-black mt-0.5">{{ config.vendedor }}</h2>
