@@ -8378,6 +8378,12 @@
         };
 
         // Polling cobros asignados (cada 30s mientras caja abierta + cajero)
+        // _primerPollCobros: en el primer poll después de abrir la app, los cobros
+        // que devuelva la GAS son cobros PRE-EXISTENTES (de antes que abriera caja).
+        // No auto-abrimos modal para esos — si lo hiciéramos, cada vez que el
+        // cajero reabre la app salta el modal y queda pantalla blanca en bucle.
+        // Solo auto-abrimos cuando llega un cobro DURANTE la sesión activa.
+        let _primerPollCobros = true;
         const cargarCobrosAsignados = async () => {
             if (!config.value.esCajero || !cajaAbierta.value) return;
             if (!idCajaActual.value || idCajaActual.value.startsWith('CAJA-LOCAL-')) return;
@@ -8386,9 +8392,12 @@
                 const d = await r.json();
                 if (d && d.status === 'success') {
                     const previo = cobrosAsignados.value.length;
+                    const esPrimerPoll = _primerPollCobros;
+                    _primerPollCobros = false;
                     cobrosAsignados.value = d.cobros || [];
-                    // Si entró uno NUEVO → sonido + vibración + voz + auto-abrir vista grande
-                    if (cobrosAsignados.value.length > previo) {
+                    // Si entró uno NUEVO durante la sesión → sonido + vibración + voz + modal.
+                    // En el primer poll, NO disparamos nada — solo cargamos el banner naranja.
+                    if (!esPrimerPoll && cobrosAsignados.value.length > previo) {
                         try { playBeepNameMatch?.(); } catch(_){}
                         try { if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); } catch(_){}
                         const ultimo = cobrosAsignados.value[cobrosAsignados.value.length - 1];
@@ -8425,12 +8434,14 @@
 
         const iniciarPollingCobros = () => {
             if (_cobrosAsigPollTimer) clearInterval(_cobrosAsigPollTimer);
+            _primerPollCobros = true; // sesión nueva: primer poll no auto-abre modal
             cargarCobrosAsignados();
             _cobrosAsigPollTimer = setInterval(cargarCobrosAsignados, 30000);
         };
         const detenerPollingCobros = () => {
             if (_cobrosAsigPollTimer) { clearInterval(_cobrosAsigPollTimer); _cobrosAsigPollTimer = null; }
             cobrosAsignados.value = [];
+            _primerPollCobros = true;
         };
 
         const abrirModalCobrarAsignado = (cobro) => {
