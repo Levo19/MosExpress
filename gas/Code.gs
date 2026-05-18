@@ -241,6 +241,8 @@ function doPost(e) {
     if (data.tipoEvento === 'CONFIRMAR_COBRO_ASIGNADO') return confirmarCobroAsignado(data);
     if (data.tipoEvento === 'RECHAZAR_COBRO_ASIGNADO')  return rechazarCobroAsignado(data);
     if (data.accion === 'imprimir')                return procesarImpresion(data);
+    // [v2.5.16] Verifica estado de impresora en PrintNode antes de imprimir
+    if (data.accion === 'verificarImpresora')      return verificarEstadoImpresora(data);
 
     // Default: registrar venta
     var response = procesarVenta(data);

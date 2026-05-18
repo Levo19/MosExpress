@@ -6896,6 +6896,29 @@
           return res;
         };
 
+        // [v2.5.16] Verifica que la impresora esté online ANTES de enviar
+        // un print job. Detecta el caso "impresora prendida pero agente
+        // PrintNode desconectado" (job se encola y nunca imprime).
+        // Devuelve { online: bool, state, computerState, nombre, computer, mensaje }
+        const verificarImpresoraPN = async (printerId) => {
+          if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+            return { online: true, state: 'mock', nombre: 'mock', mensaje: 'OK' };
+          }
+          try {
+            const resp = await fetch(API_URL, {
+              method: 'POST',
+              body: JSON.stringify({
+                accion: 'verificarImpresora',
+                printerId: printerId
+              })
+            });
+            if (!resp.ok) return { online: false, state: 'http_error', mensaje: 'HTTP ' + resp.status };
+            return await resp.json();
+          } catch (e) {
+            return { online: false, state: 'network_error', mensaje: e.message || 'Sin red' };
+          }
+        };
+
         const imprimirAvisoCierrePendiente = () => {
             if (!sesionAnteriorInfo.value?.estacion?.PrintNode_ID) return;
             const info = sesionAnteriorInfo.value;
@@ -7047,34 +7070,45 @@
                 // Validar PrintNode_ID antes de intentar imprimir
                 const _cPrinterId = config.value.estacion?.PrintNode_ID;
                 if (!_cPrinterId || !/^\d+$/.test(String(_cPrinterId))) {
-                    // [v2.5.15] Alerta MÁS visible (no toast warn pequeño): el
-                    // ticket de bienvenida es el modo cajero/vendedor de validar
-                    // que el hardware está operativo. Si no imprime, el cajero
-                    // debe enterarse al instante.
                     agregarToast('🖨 SIN IMPRESORA',
                         'Tu estación no tiene PrintNode_ID válido. El ticket de bienvenida NO se imprimió. Avisa al supervisor.',
                         'error');
                 } else {
-                    // Ticket apertura cajero + BIENVENIDA hardware check
-                    let txt = "\x1b\x40\x1b\x61\x01";
-                    txt += "\x1b\x21\x30MOSexpress\n\n";
-                    txt += "\x1b\x21\x00================================================\n";
-                    txt += "\x1b\x21\x10APERTURA DE CAJA\n";
-                    txt += "\x1b\x21\x00================================================\n\n";
-                    txt += "\x1b\x61\x00";
-                    txt += "FECHA   : " + new Date().toLocaleString() + "\n";
-                    txt += "CAJERO  : " + config.value.vendedor + "\n";
-                    txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
-                    txt += "CAJA ID : " + cid + "\n";
-                    txt += "IMPRESORA: " + _cPrinterId + "\n";
-                    txt += "MONTO   : S/ " + monto.toFixed(2) + "\n\n";
-                    txt += "\x1b\x61\x01*** TURNO INICIADO ***\n";
-                    txt += "*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
-                    mandarImpresionPrintNode(_cPrinterId, "Apertura Caja", b64ESC(txt))
-                        .then(() => agregarToast('🖨 Ticket bienvenida enviado', 'Hardware impresora OK · revisa el ticket', 'success'))
-                        .catch(e => agregarToast('🖨 Error impresión bienvenida',
-                            'No salió el ticket: ' + (e.message || e) + ' · revisa cables/PrintNode',
-                            'error'));
+                    // [v2.5.16] Health check: verifica que la impresora esté
+                    // online en PrintNode ANTES de enviar el job. Antes, si la
+                    // impresora estaba prendida pero el agente PrintNode caído,
+                    // el job se aceptaba pero nunca imprimía.
+                    const _chk = await verificarImpresoraPN(_cPrinterId);
+                    if (!_chk.online) {
+                        agregarToast('🖨 IMPRESORA OFFLINE',
+                            (_chk.nombre || 'Impresora #' + _cPrinterId) + ' está OFFLINE en PrintNode' +
+                            (_chk.computer ? ' (PC ' + _chk.computer + ')' : '') +
+                            '. ' + (_chk.computerState === 'disconnected'
+                                ? 'El agente PrintNode no está conectado. Abre PrintNode en la PC.'
+                                : 'Estado: ' + _chk.state + '. Revisa cable USB/encendido.'),
+                            'error');
+                    } else {
+                        // Ticket apertura cajero + BIENVENIDA hardware check
+                        let txt = "\x1b\x40\x1b\x61\x01";
+                        txt += "\x1b\x21\x30MOSexpress\n\n";
+                        txt += "\x1b\x21\x00================================================\n";
+                        txt += "\x1b\x21\x10APERTURA DE CAJA\n";
+                        txt += "\x1b\x21\x00================================================\n\n";
+                        txt += "\x1b\x61\x00";
+                        txt += "FECHA   : " + new Date().toLocaleString() + "\n";
+                        txt += "CAJERO  : " + config.value.vendedor + "\n";
+                        txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+                        txt += "CAJA ID : " + cid + "\n";
+                        txt += "IMPRESORA: " + _cPrinterId + " (" + (_chk.nombre || '') + ")\n";
+                        txt += "MONTO   : S/ " + monto.toFixed(2) + "\n\n";
+                        txt += "\x1b\x61\x01*** TURNO INICIADO ***\n";
+                        txt += "*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
+                        mandarImpresionPrintNode(_cPrinterId, "Apertura Caja", b64ESC(txt))
+                            .then(() => agregarToast('🖨 Ticket bienvenida enviado',
+                                'Hardware OK · ' + (_chk.nombre || 'impresora') + ' online', 'success'))
+                            .catch(e => agregarToast('🖨 Error impresión bienvenida',
+                                'No salió el ticket: ' + (e.message || e), 'error'));
+                    }
                 }
             } else {
                 // ── VENDEDOR: sin entrada en CAJAS, usa idCaja del cajero activo ──
@@ -7108,28 +7142,39 @@
                 // Validar PrintNode_ID antes de intentar imprimir
                 const _vPrinterId = config.value.estacion?.PrintNode_ID;
                 if (!_vPrinterId || !/^\d+$/.test(String(_vPrinterId))) {
-                    // [v2.5.15] Igual al cajero: alerta visible si no se puede imprimir
                     agregarToast('🖨 SIN IMPRESORA',
                         'Tu estación no tiene PrintNode_ID válido. El ticket de bienvenida NO se imprimió. Avisa al supervisor.',
                         'error');
                 } else {
-                    // Ticket confirmación vendedor
-                    let txtV = "\x1b\x40\x1b\x61\x01";
-                    txtV += "\x1b\x21\x30MOSexpress\n\n";
-                    txtV += "\x1b\x21\x00================================================\n";
-                    txtV += "\x1b\x21\x10VENDEDOR LISTO\n";
-                    txtV += "\x1b\x21\x00================================================\n\n";
-                    txtV += "\x1b\x61\x00";
-                    txtV += "FECHA   : " + new Date().toLocaleString() + "\n";
-                    txtV += "VENDEDOR: " + config.value.vendedor + "\n";
-                    txtV += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
-                    txtV += "IMPRESORA: " + _vPrinterId + "\n\n";
-                    txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
-                    mandarImpresionPrintNode(_vPrinterId, "Bienvenida Vendedor", b64ESC(txtV))
-                        .then(() => agregarToast('🖨 Ticket bienvenida enviado', 'Hardware impresora OK · revisa el ticket', 'success'))
-                        .catch(e => agregarToast('🖨 Error impresión bienvenida',
-                            'No salió el ticket: ' + (e.message || e) + ' · revisa cables/PrintNode',
-                            'error'));
+                    // [v2.5.16] Health check: verifica impresora online en PrintNode
+                    const _chkV = await verificarImpresoraPN(_vPrinterId);
+                    if (!_chkV.online) {
+                        agregarToast('🖨 IMPRESORA OFFLINE',
+                            (_chkV.nombre || 'Impresora #' + _vPrinterId) + ' está OFFLINE en PrintNode' +
+                            (_chkV.computer ? ' (PC ' + _chkV.computer + ')' : '') +
+                            '. ' + (_chkV.computerState === 'disconnected'
+                                ? 'El agente PrintNode no está conectado. Abre PrintNode en la PC.'
+                                : 'Estado: ' + _chkV.state + '. Revisa cable USB/encendido.'),
+                            'error');
+                    } else {
+                        // Ticket confirmación vendedor
+                        let txtV = "\x1b\x40\x1b\x61\x01";
+                        txtV += "\x1b\x21\x30MOSexpress\n\n";
+                        txtV += "\x1b\x21\x00================================================\n";
+                        txtV += "\x1b\x21\x10VENDEDOR LISTO\n";
+                        txtV += "\x1b\x21\x00================================================\n\n";
+                        txtV += "\x1b\x61\x00";
+                        txtV += "FECHA   : " + new Date().toLocaleString() + "\n";
+                        txtV += "VENDEDOR: " + config.value.vendedor + "\n";
+                        txtV += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
+                        txtV += "IMPRESORA: " + _vPrinterId + " (" + (_chkV.nombre || '') + ")\n\n";
+                        txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
+                        mandarImpresionPrintNode(_vPrinterId, "Bienvenida Vendedor", b64ESC(txtV))
+                            .then(() => agregarToast('🖨 Ticket bienvenida enviado',
+                                'Hardware OK · ' + (_chkV.nombre || 'impresora') + ' online', 'success'))
+                            .catch(e => agregarToast('🖨 Error impresión bienvenida',
+                                'No salió el ticket: ' + (e.message || e), 'error'));
+                    }
                 }
             }
 

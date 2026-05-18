@@ -4,6 +4,62 @@
 // Script Property requerida: PRINTNODE_API_KEY
 // ============================================================
 
+// [v2.5.16] Verifica estado de impresora en PrintNode antes de enviar print job.
+// Si la impresora local está offline (agente PrintNode caído, USB desconectada,
+// computador apagado), PrintNode acepta el job pero NUNCA imprime → el cajero
+// no se entera. Esta función consulta /printers/{id} para validar state ANTES.
+//
+// Devuelve { status, state, computer, nombre, online: bool }
+function verificarEstadoImpresora(data) {
+  var printNodeKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+  if (!printNodeKey) return generarRespuestaError("PRINTNODE_API_KEY no configurada");
+  if (!data.printerId) return generarRespuestaError("printerId requerido");
+  var printerId = parseInt(data.printerId, 10);
+  if (isNaN(printerId) || printerId <= 0) return generarRespuestaError("printerId inválido: " + data.printerId);
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printers/' + printerId, {
+      method:  'get',
+      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(printNodeKey + ':') },
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code !== 200) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        online: false,
+        state:  'http_error_' + code,
+        nombre: '',
+        computer: '',
+        mensaje: 'PrintNode HTTP ' + code + ': ' + resp.getContentText().substring(0, 120)
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var arr = JSON.parse(resp.getContentText());
+    var p = (arr && arr[0]) || null;
+    if (!p) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success', online: false, state: 'not_found', nombre: '', computer: '',
+        mensaje: 'Impresora ' + printerId + ' no existe en PrintNode'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    // State puede ser 'online' | 'offline' | 'unknown'.
+    // computer.state similar — si el agente PrintNode está caído, computer.state='disconnected'
+    var pState   = String(p.state || 'unknown').toLowerCase();
+    var compState = String((p.computer && p.computer.state) || 'unknown').toLowerCase();
+    var online = (pState === 'online') && (compState === 'connected');
+    return ContentService.createTextOutput(JSON.stringify({
+      status:   'success',
+      online:   online,
+      state:    pState,
+      computerState: compState,
+      nombre:   String(p.name || ''),
+      computer: String((p.computer && p.computer.name) || ''),
+      mensaje:  online ? 'OK' : 'Impresora ' + (pState !== 'online' ? pState : 'agente ' + compState)
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return generarRespuestaError("Error consultando PrintNode: " + err.toString());
+  }
+}
+
 // Proxy para impresión manual desde el browser (fallback / etiquetas especiales)
 function procesarImpresion(data) {
   var printNodeKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
