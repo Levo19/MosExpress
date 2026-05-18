@@ -3794,8 +3794,10 @@
     <!-- ═════════════════════════════════════════════════════════
          [v40.3] MODAL: COBRAR CRÉDITO ASIGNADO POR ADMIN
     ═════════════════════════════════════════════════════════ -->
-    <div v-if="modalCobrarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[210] flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl shadow-2xl max-h-[90vh] flex flex-col">
+    <div v-if="modalCobrarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[210] flex flex-col justify-end backdrop-blur-sm"
+         style="height:100dvh">
+        <div class="bg-white rounded-t-3xl shadow-2xl flex flex-col"
+             style="max-height:85dvh; min-height:300px">
 
             <!-- HEADER FIJO arriba -->
             <div class="p-5 pb-3 shrink-0 flex justify-between items-center border-b border-gray-100">
@@ -8376,14 +8378,18 @@
         const _fmtFechaCorta = (iso) => {
             if (!iso) return '—';
             try {
-                const d = new Date(iso.replace(' ', 'T'));
+                // [v2.5.22] Coerción defensiva: si iso viene como Date u objeto,
+                // .replace no existe → TypeError → pantalla blanca al render del card.
+                const isoStr = String(iso);
+                const d = new Date(isoStr.replace(' ', 'T'));
+                if (isNaN(d.getTime())) return '—';
                 const ahora = new Date();
                 const min = Math.round((ahora - d) / 60000);
                 if (min < 1)   return 'recién';
                 if (min < 60)  return 'hace ' + min + ' min';
                 if (min < 1440) return 'hace ' + Math.floor(min/60) + ' h';
                 return 'hace ' + Math.floor(min/1440) + ' días';
-            } catch(_) { return iso; }
+            } catch(_) { return '—'; }
         };
 
         // Polling cobros asignados (cada 30s mientras caja abierta + cajero)
@@ -10730,6 +10736,24 @@
         };
       }
     });
+    // [v2.5.22] Error handler global: si un template/computed tira excepción
+    // (ej. accediendo a campo undefined en un nuevo cobro asignado), Vue
+    // antes podía dejar parte del árbol unmounted → pantalla blanca. Ahora
+    // capturamos, logueamos y avisamos al user con toast en vez de crashear.
+    app.config.errorHandler = (err, instance, info) => {
+      try { console.error('[Vue error]', info, err); } catch(_){}
+      try {
+        const errMsg = String((err && err.message) || err || 'error desconocido').substring(0, 120);
+        const cont = document.getElementById('toastContainer');
+        if (cont) {
+          const t = document.createElement('div');
+          t.style.cssText = 'background:#7f1d1d;color:#fecaca;border:2px solid #dc2626;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;max-width:340px;margin-bottom:8px;box-shadow:0 8px 24px rgba(0,0,0,.5)';
+          t.innerHTML = '⚠ Error UI capturado: ' + errMsg + '<br><span style="font-size:10px;opacity:.85">(' + (info || 'sin info') + ') · App sigue operativa</span>';
+          cont.appendChild(t);
+          setTimeout(() => { try { t.remove(); } catch(_){} }, 8000);
+        }
+      } catch(_){}
+    };
     app.mount('#app');
   </script>
 </body>
