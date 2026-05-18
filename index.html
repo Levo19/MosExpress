@@ -3872,7 +3872,7 @@
     <div v-if="modalRechazarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[60] flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
             <h3 class="text-lg font-black text-red-700 mb-2">❌ Rechazar cobro</h3>
-            <p class="text-xs text-gray-600 mb-3">Indicá por qué rechazás. El admin verá la razón.</p>
+            <p class="text-xs text-gray-600 mb-3">Indica por qué lo rechazas. El admin verá la razón.</p>
             <textarea v-model="razonRechazoAsig" rows="3" class="w-full p-3 border-2 border-red-300 rounded-xl text-sm font-semibold focus:border-red-500 outline-none mb-3" placeholder="Ej: cliente no llegó, monto no coincide..."></textarea>
             <div class="grid grid-cols-2 gap-2">
                 <button @click="modalRechazarAsignado = false" class="bg-gray-200 text-gray-700 font-black py-2.5 rounded-xl text-sm">Cancelar</button>
@@ -8381,7 +8381,7 @@
                 if (d && d.status === 'success') {
                     const previo = cobrosAsignados.value.length;
                     cobrosAsignados.value = d.cobros || [];
-                    // Si entró uno NUEVO → sonido + vibración + voz
+                    // Si entró uno NUEVO → sonido + vibración + voz + auto-abrir vista grande
                     if (cobrosAsignados.value.length > previo) {
                         try { playBeepNameMatch?.(); } catch(_){}
                         try { if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); } catch(_){}
@@ -8399,6 +8399,18 @@
                                     window.speechSynthesis.speak(u);
                                 }
                             } catch(_){}
+                            // ── AUTO-ABRIR la vista grande (modalCobrarAsignado) ──────────
+                            // Antes solo se reproducía audio + toast: el cajero tenía que
+                            // estar en CAJA y ver el banner naranja para tocar "COBRAR".
+                            // Si estaba en POS no veía nada → "pantalla en blanco".
+                            // Ahora: si no hay otro modal abierto, lo llevamos a CAJA y
+                            // abrimos el modal grande automáticamente con el último cobro.
+                            const haySolapamiento = modalCobrarAsignado.value || modalCobro.value
+                                || modalCredito.value || modalExtra.value || procesandoCobroAsig.value;
+                            if (!haySolapamiento) {
+                                currentModule.value = 'CAJA';
+                                nextTick(() => abrirModalCobrarAsignado(ultimo));
+                            }
                         }
                     }
                 }
