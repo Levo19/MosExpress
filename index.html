@@ -2926,7 +2926,7 @@
 
     <!-- MODAL DE PAGO E IMPRESIÓN -->
     <div v-if="modalPago" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex flex-col justify-end backdrop-blur-sm transition-opacity">
-        <div class="modal-pago-inner bg-white rounded-t-[2.5rem] p-6 max-h-[92dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+        <div class="modal-pago-inner bg-white rounded-t-[2.5rem] p-6 max-h-[92vh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-5 shrink-0">
                <h2 class="text-3xl font-black text-gray-800 tracking-tight">{{ config.esCajero ? 'COBRO' : 'REGISTRAR VENTA' }}</h2>
                <button @click="modalPago = false" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
@@ -3303,7 +3303,7 @@
 
     <!-- MODAL COBRO (cajero cobra ticket emitido por vendedor) -->
     <div v-if="modalCobro && ventaCobrar" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[85dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[85vh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-4 shrink-0">
                 <div>
                     <h2 class="text-2xl font-black text-gray-800">COBRAR TICKET</h2>
@@ -3424,7 +3424,7 @@
 
     <!-- ===== MODAL: MONEDA (cambio de forma de pago posterior) ===== -->
     <div v-if="modalMoneda && ticketParaMoneda" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[85dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[85vh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-4 shrink-0">
                 <div>
                     <h2 class="text-2xl font-black text-gray-800">Cambiar Forma de Pago</h2>
@@ -3479,7 +3479,7 @@
 
     <!-- ===== F3: MODAL ACCIONES ADMIN (menú contextual con PIN) ===== -->
     <div v-if="modalAdminAcc && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] max-h-[85dvh] overflow-y-auto">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)] max-h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-3">
                 <div>
                     <h2 class="text-xl font-black text-gray-800">🔐 Acciones admin</h2>
@@ -3566,7 +3566,7 @@
 
     <!-- ===== F3: MODAL COBRAR CRÉDITO (caja receptora + método) ===== -->
     <div v-if="modalAdminCobrar && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[90dvh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
+        <div class="bg-white rounded-t-[2.5rem] p-6 max-h-[90vh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-3 shrink-0">
                 <div>
                     <h2 class="text-xl font-black text-gray-800">💵 Cobrar deuda</h2>
@@ -3635,7 +3635,7 @@
 
     <!-- ===== F3: MODAL CONVERTIR NV → CPE ===== -->
     <div v-if="modalAdminConv && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl p-6 max-h-[90dvh] flex flex-col shadow-2xl animate-[slideUp_0.3s]">
+        <div class="bg-white rounded-t-3xl p-6 max-h-[90vh] flex flex-col shadow-2xl animate-[slideUp_0.3s]">
             <div class="flex justify-between items-center mb-3 shrink-0">
                 <div>
                     <h2 class="text-xl font-black text-gray-800">📑 Convertir a CPE</h2>
@@ -3697,7 +3697,7 @@
 
     <!-- ===== F3: MODAL BAJA CPE ===== -->
     <div v-if="modalAdminBaja && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s] max-h-[85dvh] overflow-y-auto">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s] max-h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-3">
                 <div>
                     <h2 class="text-xl font-black text-gray-800">📋 Baja del CPE</h2>
@@ -3739,7 +3739,7 @@
 
     <!-- ===== F3: MODAL EDITAR CLIENTE ===== -->
     <div v-if="modalAdminEditCli && ticketParaAdmin" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s] max-h-[85dvh] overflow-y-auto">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s] max-h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-3">
                 <div>
                     <h2 class="text-xl font-black text-gray-800">👤 Editar cliente</h2>
@@ -3786,7 +3786,7 @@
          [v40.3] MODAL: COBRAR CRÉDITO ASIGNADO POR ADMIN
     ═════════════════════════════════════════════════════════ -->
     <div v-if="modalCobrarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
                 <div>
                     <h2 class="text-xl font-black text-gray-800">💳 Cobrar Crédito Asignado</h2>
@@ -3885,7 +3885,7 @@
 
     <!-- ===== MODAL: EXTRA DE CAJA (ingreso/egreso extra) ===== -->
     <div v-if="modalExtra" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-black text-gray-800">Movimiento Extra</h2>
                 <button @click="modalExtra = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
