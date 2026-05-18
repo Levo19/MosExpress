@@ -7033,12 +7033,29 @@
                 setTimeout(() => etiqAutoPrintAlAperturaCaja().catch(() => {}), 800);
                 triggerWelcome(); // ← motivación arranque turno (al tap navega a POS)
 
+                // [v2.5.15] Sync de impresoras desde ProyectoMOS ANTES de imprimir
+                // (el cajero igualaba al vendedor: si el cache local tiene PrintNode_ID
+                // stale, el ticket de bienvenida no se imprime y el cajero no se entera
+                // si el hardware está operativo. Timeout 5s para no bloquear UI).
+                try {
+                    await Promise.race([
+                        _syncImpresorasFromProyectoMOS(),
+                        new Promise(r => setTimeout(r, 5000))
+                    ]);
+                } catch(e) {}
+
                 // Validar PrintNode_ID antes de intentar imprimir
                 const _cPrinterId = config.value.estacion?.PrintNode_ID;
                 if (!_cPrinterId || !/^\d+$/.test(String(_cPrinterId))) {
-                    agregarToast('Sin impresora', 'Tu estación no tiene impresora válida asignada en MOS. Avisa al supervisor.', 'warning');
+                    // [v2.5.15] Alerta MÁS visible (no toast warn pequeño): el
+                    // ticket de bienvenida es el modo cajero/vendedor de validar
+                    // que el hardware está operativo. Si no imprime, el cajero
+                    // debe enterarse al instante.
+                    agregarToast('🖨 SIN IMPRESORA',
+                        'Tu estación no tiene PrintNode_ID válido. El ticket de bienvenida NO se imprimió. Avisa al supervisor.',
+                        'error');
                 } else {
-                    // Ticket apertura cajero
+                    // Ticket apertura cajero + BIENVENIDA hardware check
                     let txt = "\x1b\x40\x1b\x61\x01";
                     txt += "\x1b\x21\x30MOSexpress\n\n";
                     txt += "\x1b\x21\x00================================================\n";
@@ -7049,10 +7066,15 @@
                     txt += "CAJERO  : " + config.value.vendedor + "\n";
                     txt += "ESTACION: " + config.value.estacion.Estacion_Nombre + "\n";
                     txt += "CAJA ID : " + cid + "\n";
+                    txt += "IMPRESORA: " + _cPrinterId + "\n";
                     txt += "MONTO   : S/ " + monto.toFixed(2) + "\n\n";
-                    txt += "\x1b\x61\x01*** TURNO INICIADO ***\n\n\n\n\n\x1d\x56\x00";
+                    txt += "\x1b\x61\x01*** TURNO INICIADO ***\n";
+                    txt += "*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
                     mandarImpresionPrintNode(_cPrinterId, "Apertura Caja", b64ESC(txt))
-                        .catch(e => agregarToast('Error Impresión', e.message));
+                        .then(() => agregarToast('🖨 Ticket bienvenida enviado', 'Hardware impresora OK · revisa el ticket', 'success'))
+                        .catch(e => agregarToast('🖨 Error impresión bienvenida',
+                            'No salió el ticket: ' + (e.message || e) + ' · revisa cables/PrintNode',
+                            'error'));
                 }
             } else {
                 // ── VENDEDOR: sin entrada en CAJAS, usa idCaja del cajero activo ──
@@ -7086,7 +7108,10 @@
                 // Validar PrintNode_ID antes de intentar imprimir
                 const _vPrinterId = config.value.estacion?.PrintNode_ID;
                 if (!_vPrinterId || !/^\d+$/.test(String(_vPrinterId))) {
-                    agregarToast('Sin impresora', 'Tu estación no tiene impresora válida asignada en MOS. Avisa al supervisor.', 'warning');
+                    // [v2.5.15] Igual al cajero: alerta visible si no se puede imprimir
+                    agregarToast('🖨 SIN IMPRESORA',
+                        'Tu estación no tiene PrintNode_ID válido. El ticket de bienvenida NO se imprimió. Avisa al supervisor.',
+                        'error');
                 } else {
                     // Ticket confirmación vendedor
                     let txtV = "\x1b\x40\x1b\x61\x01";
@@ -7101,7 +7126,10 @@
                     txtV += "IMPRESORA: " + _vPrinterId + "\n\n";
                     txtV += "\x1b\x61\x01*** CONEXION CONFIRMADA ***\n\n\n\n\n\x1d\x56\x00";
                     mandarImpresionPrintNode(_vPrinterId, "Bienvenida Vendedor", b64ESC(txtV))
-                        .catch(e => agregarToast('Error Impresión', e.message));
+                        .then(() => agregarToast('🖨 Ticket bienvenida enviado', 'Hardware impresora OK · revisa el ticket', 'success'))
+                        .catch(e => agregarToast('🖨 Error impresión bienvenida',
+                            'No salió el ticket: ' + (e.message || e) + ' · revisa cables/PrintNode',
+                            'error'));
                 }
             }
 
