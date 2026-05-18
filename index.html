@@ -2022,13 +2022,19 @@
         <p class="font-bold text-gray-400 tracking-widest uppercase animate-pulse">Verificando Credenciales...</p>
     </div>
 
-    <!-- AVISO SESIÓN ANTERIOR SIN CERRAR -->
+    <!-- AVISO NUEVA JORNADA · sesión anterior cerrada -->
     <div v-if="mostrarModalSesionAnterior && !config.completado" class="absolute inset-0 z-[55] bg-gray-950 flex flex-col items-center justify-center p-6">
-      <div class="w-full max-w-md bg-gray-800 p-8 rounded-3xl shadow-2xl border-2 border-amber-500">
+      <div class="w-full max-w-md bg-gray-800 p-8 rounded-3xl shadow-2xl"
+           :class="sesionAnteriorInfo?.esCajero ? 'border-2 border-amber-500' : 'border-2 border-emerald-500'">
         <div class="text-center mb-5">
-          <svg class="w-16 h-16 text-amber-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-          <h2 class="text-xl font-black text-white">Sesión sin cerrar</h2>
-          <p class="text-gray-400 text-sm mt-1">Se detectó una jornada anterior que no fue cerrada</p>
+          <svg v-if="sesionAnteriorInfo?.esCajero" class="w-16 h-16 text-amber-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          <svg v-else class="w-16 h-16 text-emerald-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <h2 class="text-xl font-black text-white">
+            {{ sesionAnteriorInfo?.esCajero ? 'Sesión sin cerrar' : 'Nueva jornada' }}
+          </h2>
+          <p class="text-gray-400 text-sm mt-1">
+            {{ sesionAnteriorInfo?.esCajero ? 'Se detectó una jornada anterior que no fue cerrada' : 'Tu sesión del día anterior se cerró automáticamente · vuelve a ingresar' }}
+          </p>
         </div>
         <div class="bg-gray-900 rounded-2xl p-4 mb-5 text-sm space-y-2">
           <div class="flex justify-between">
@@ -4953,6 +4959,37 @@
           // Reloj header — actualizar cada minuto
           setInterval(() => { horaActual.value = _fmtHora(); }, 60000);
 
+          // [v2.5.14] Check cambio de día (cruzó medianoche con la app abierta).
+          // Si la sesión es del día anterior y estamos en uno nuevo, forzar
+          // logout en vivo. Aplica a AMBOS roles (vendedor + cajero).
+          setInterval(() => {
+              if (!config.value.completado) return;
+              const fechaGuardada = localStorage.getItem('mosexpress_session_date');
+              const hoy = new Date().toDateString();
+              if (fechaGuardada && fechaGuardada !== hoy) {
+                  console.log('[ME] Cambio de día detectado en vivo · forzando logout');
+                  let _cajaAyer = null;
+                  if (config.value.esCajero) {
+                      try {
+                          const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
+                          if (_cajaSaved) _cajaAyer = JSON.parse(_cajaSaved);
+                      } catch(e) {}
+                  }
+                  sesionAnteriorInfo.value = {
+                      vendedor: config.value.vendedor,
+                      estacion: config.value.estacion,
+                      esCajero: config.value.esCajero,
+                      fecha: fechaGuardada,
+                      caja: _cajaAyer
+                  };
+                  mostrarModalSesionAnterior.value = true;
+                  config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+                  localStorage.removeItem('mosexpress_config');
+                  localStorage.removeItem('mosexpress_session_date');
+                  localStorage.removeItem('mosexpress_caja_activa');
+              }
+          }, 60000);  // cada minuto basta
+
           // Reintento de registro de caja LOCAL — cada 60 segundos
           _intervalCajaRetry = setInterval(_intentarRegistrarCajaLocal, 60000);
 
@@ -5133,19 +5170,24 @@
           }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
 
-          // Detectar nueva jornada con sesión sin cerrar.
-          // SOLO aplica a CAJEROS — ellos tienen caja física pendiente que debe cerrarse
-          // antes de iniciar un nuevo día. Los vendedores no tienen recursos pendientes;
-          // forzarles relogin causaba confusión (bloquean pantalla, vuelven, "se cerró sesión").
+          // [v2.5.14] Detectar nueva jornada → CERRAR SESIÓN de AMBOS (vendedor + cajero).
+          // Antes solo aplicaba a cajeros y los vendedores se "renovaban" silenciosamente.
+          // El user pidió unificar: a las 23h backend cierra cajas (cron MOS) y al abrir
+          // la app al día siguiente, AMBOS roles tienen que loguearse de nuevo.
+          // Esto garantiza:
+          //  - Higiene de sesión diaria (nadie usa la app con la sesión del operador previo)
+          //  - Sincronía con el cron nocturno 23h que cierra cajas backend
+          //  - Conteo correcto de jornadas en LIQUIDACIONES_DIA
           const _hoyJornada = new Date().toDateString();
           const _fechaSesionGuardada = localStorage.getItem('mosexpress_session_date');
-          if (config.value.completado && config.value.esCajero && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
-              // Capturar info de la caja antes de limpiarla
+          if (config.value.completado && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
               let _cajaAyer = null;
-              try {
-                  const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
-                  if (_cajaSaved) _cajaAyer = JSON.parse(_cajaSaved);
-              } catch(e) {}
+              if (config.value.esCajero) {
+                  try {
+                      const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
+                      if (_cajaSaved) _cajaAyer = JSON.parse(_cajaSaved);
+                  } catch(e) {}
+              }
               sesionAnteriorInfo.value = {
                   vendedor: config.value.vendedor,
                   estacion: config.value.estacion,
@@ -5154,14 +5196,11 @@
                   caja: _cajaAyer
               };
               mostrarModalSesionAnterior.value = true;
-              // Forzar nuevo login — limpiar sesión anterior
+              // Forzar nuevo login — limpiar TODO (vendedor o cajero)
               config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
               localStorage.removeItem('mosexpress_config');
               localStorage.removeItem('mosexpress_session_date');
               localStorage.removeItem('mosexpress_caja_activa');
-          } else if (config.value.completado && !config.value.esCajero && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
-              // Vendedor de día anterior → renovar fecha sin cerrar sesión (no hay caja que cerrar)
-              localStorage.setItem('mosexpress_session_date', _hoyJornada);
           }
 
           // Restaurar carrito en curso (sobrevive refreshes accidentales)
