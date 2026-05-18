@@ -34,7 +34,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.5.20';
+const VERSION = '2.5.21';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
@@ -46,9 +46,13 @@ const ASSETS  = [
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
 ];
 
-// ── Instalar: cachear secuencial con reporte de progreso ──
+// ── Instalar: cachear secuencial con reporte de progreso + skipWaiting ──
 // postMessage al cliente por cada asset → banner muestra barra real.
-// NO skipWaiting automático: queda en 'waiting' para que el banner avise.
+// skipWaiting al final: el SW nuevo se activa de inmediato cuando termina
+// de instalar (combinado con clients.claim en activate, toma control de
+// las pestañas abiertas sin necesidad de cerrar todo). Antes esperábamos
+// que el usuario cerrara todo → updates se atascaban días. Cambio para
+// que pushes lleguen a los cajeros al primer refresh.
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -73,6 +77,8 @@ self.addEventListener('install', e => {
       await _broadcast({ type: 'sw-install-progress', done, total, version: VERSION });
     }
     await _broadcast({ type: 'sw-install-done', total, version: VERSION });
+    // Activar de inmediato (clients.claim en activate toma las pestañas abiertas)
+    self.skipWaiting();
   })());
 });
 
