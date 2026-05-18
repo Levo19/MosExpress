@@ -131,7 +131,7 @@
     .frame-nuevo { animation: frameFlash 0.5s ease-in-out 4; }
     /* Modal de pago no se sale del viewport en pantallas pequeñas */
     @media (max-height: 600px) {
-      .modal-pago-inner { max-height: 98dvh !important; }
+      .modal-pago-inner { max-height: 98vh !important; }
     }
     /* ─── Feedback visual del POS ──────────────────────── */
     @keyframes flashAdd {
@@ -3785,75 +3785,81 @@
     <!-- ═════════════════════════════════════════════════════════
          [v40.3] MODAL: COBRAR CRÉDITO ASIGNADO POR ADMIN
     ═════════════════════════════════════════════════════════ -->
-    <div v-if="modalCobrarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-50 flex flex-col justify-end backdrop-blur-sm">
-        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h2 class="text-xl font-black text-gray-800">💳 Cobrar Crédito Asignado</h2>
-                    <p class="text-xs text-amber-600 font-bold mt-0.5">📋 Asignado por: {{ cobroAsignadoActivo.adminAsig }}</p>
+    <div v-if="modalCobrarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[210] flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white rounded-t-3xl shadow-2xl max-h-[90vh] flex flex-col">
+
+            <!-- HEADER FIJO arriba -->
+            <div class="p-5 pb-3 shrink-0 flex justify-between items-center border-b border-gray-100">
+                <div class="min-w-0 flex-1 mr-3">
+                    <h2 class="text-xl font-black text-gray-800 truncate">💳 Cobrar Crédito Asignado</h2>
+                    <p class="text-xs text-amber-600 font-bold mt-0.5 truncate">📋 Asignado por: {{ cobroAsignadoActivo.adminAsig }}</p>
                 </div>
-                <button @click="cerrarCobrarAsignado" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                <button @click="cerrarCobrarAsignado" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90 shrink-0">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
 
-            <!-- Info ticket -->
-            <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 mb-4">
-                <p class="font-black text-lg text-amber-900">{{ cobroAsignadoActivo.cliente || 'VARIOS' }}</p>
-                <p class="text-xs text-amber-700 font-mono mt-0.5">{{ cobroAsignadoActivo.correlativo }} · {{ cobroAsignadoActivo.idVenta }}</p>
-                <div class="flex items-end justify-between mt-3 pt-3 border-t border-amber-200">
-                    <span class="text-xs text-amber-700 font-bold uppercase">Total a cobrar</span>
-                    <span class="text-3xl font-black text-amber-900">S/ {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }}</span>
+            <!-- CONTENIDO SCROLLEABLE -->
+            <div class="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+
+                <!-- Info ticket -->
+                <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 mb-4">
+                    <p class="font-black text-lg text-amber-900">{{ cobroAsignadoActivo.cliente || 'VARIOS' }}</p>
+                    <p class="text-xs text-amber-700 font-mono mt-0.5">{{ cobroAsignadoActivo.correlativo }} · {{ cobroAsignadoActivo.idVenta }}</p>
+                    <div class="flex items-end justify-between mt-3 pt-3 border-t border-amber-200">
+                        <span class="text-xs text-amber-700 font-bold uppercase">Total a cobrar</span>
+                        <span class="text-3xl font-black text-amber-900">S/ {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }}</span>
+                    </div>
+                </div>
+
+                <!-- Método -->
+                <label class="block text-xs font-black text-gray-500 uppercase tracking-wider mb-2">Método (sugerido: {{ cobroAsignadoActivo.metodoSug }})</label>
+                <div class="grid grid-cols-3 gap-2 mb-4">
+                    <button @click="cobroAsigMetodo = 'EFECTIVO'"
+                            :class="cobroAsigMetodo === 'EFECTIVO' ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-300'"
+                            class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
+                        💵 EFECTIVO
+                    </button>
+                    <button @click="cobroAsigMetodo = 'VIRTUAL'"
+                            :class="cobroAsigMetodo === 'VIRTUAL' ? 'bg-cyan-500 text-white border-cyan-600' : 'bg-white text-gray-700 border-gray-300'"
+                            class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
+                        📱 VIRTUAL
+                    </button>
+                    <button @click="cobroAsigMetodo = 'MIXTO'"
+                            :class="cobroAsigMetodo === 'MIXTO' ? 'bg-violet-500 text-white border-violet-600' : 'bg-white text-gray-700 border-gray-300'"
+                            class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
+                        🔀 MIXTO
+                    </button>
+                </div>
+
+                <!-- Inputs MIXTO -->
+                <div v-if="cobroAsigMetodo === 'MIXTO'" class="grid grid-cols-2 gap-2 mb-4">
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Efectivo</label>
+                        <input v-model.number="cobroAsigMixtoEf" type="number" step="0.01" min="0" class="w-full p-3 border-2 border-emerald-300 rounded-xl font-bold text-lg">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Virtual</label>
+                        <input v-model.number="cobroAsigMixtoVi" type="number" step="0.01" min="0" class="w-full p-3 border-2 border-cyan-300 rounded-xl font-bold text-lg">
+                    </div>
+                    <p v-if="cobroAsigMixtoEf + cobroAsigMixtoVi !== parseFloat(cobroAsignadoActivo.monto)"
+                       class="col-span-2 text-xs text-red-600 font-bold text-center">
+                        ⚠ Suma {{ (cobroAsigMixtoEf + cobroAsigMixtoVi).toFixed(2) }} ≠ Total {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }}
+                    </p>
+                </div>
+
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900">
+                    <p class="font-bold mb-1">📤 Al confirmar:</p>
+                    <ul class="list-disc list-inside space-y-0.5 text-[11px]">
+                        <li>Ticket pasa de CREDITO → {{ cobroAsigMetodo }}</li>
+                        <li>S/ {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }} entra como INGRESO a tu caja</li>
+                        <li>Se reimprime el ticket con sello "PAGADO · COBRO DIFERIDO"</li>
+                    </ul>
                 </div>
             </div>
 
-            <!-- Método -->
-            <label class="block text-xs font-black text-gray-500 uppercase tracking-wider mb-2">Método (sugerido: {{ cobroAsignadoActivo.metodoSug }})</label>
-            <div class="grid grid-cols-3 gap-2 mb-4">
-                <button @click="cobroAsigMetodo = 'EFECTIVO'"
-                        :class="cobroAsigMetodo === 'EFECTIVO' ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-300'"
-                        class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
-                    💵 EFECTIVO
-                </button>
-                <button @click="cobroAsigMetodo = 'VIRTUAL'"
-                        :class="cobroAsigMetodo === 'VIRTUAL' ? 'bg-cyan-500 text-white border-cyan-600' : 'bg-white text-gray-700 border-gray-300'"
-                        class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
-                    📱 VIRTUAL
-                </button>
-                <button @click="cobroAsigMetodo = 'MIXTO'"
-                        :class="cobroAsigMetodo === 'MIXTO' ? 'bg-violet-500 text-white border-violet-600' : 'bg-white text-gray-700 border-gray-300'"
-                        class="py-3 rounded-xl border-2 font-black text-sm active:scale-95 transition-transform">
-                    🔀 MIXTO
-                </button>
-            </div>
-
-            <!-- Inputs MIXTO -->
-            <div v-if="cobroAsigMetodo === 'MIXTO'" class="grid grid-cols-2 gap-2 mb-4">
-                <div>
-                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Efectivo</label>
-                    <input v-model.number="cobroAsigMixtoEf" type="number" step="0.01" min="0" class="w-full p-3 border-2 border-emerald-300 rounded-xl font-bold text-lg">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Virtual</label>
-                    <input v-model.number="cobroAsigMixtoVi" type="number" step="0.01" min="0" class="w-full p-3 border-2 border-cyan-300 rounded-xl font-bold text-lg">
-                </div>
-                <p v-if="cobroAsigMixtoEf + cobroAsigMixtoVi !== parseFloat(cobroAsignadoActivo.monto)"
-                   class="col-span-2 text-xs text-red-600 font-bold text-center">
-                    ⚠ Suma {{ (cobroAsigMixtoEf + cobroAsigMixtoVi).toFixed(2) }} ≠ Total {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }}
-                </p>
-            </div>
-
-            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 text-xs text-emerald-900">
-                <p class="font-bold mb-1">📤 Al confirmar:</p>
-                <ul class="list-disc list-inside space-y-0.5 text-[11px]">
-                    <li>Ticket pasa de CREDITO → {{ cobroAsigMetodo }}</li>
-                    <li>S/ {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }} entra como INGRESO a tu caja</li>
-                    <li>Se reimprime el ticket con sello "PAGADO · COBRO DIFERIDO"</li>
-                </ul>
-            </div>
-
-            <!-- Botones acción -->
-            <div class="grid grid-cols-2 gap-2">
+            <!-- FOOTER FIJO abajo — los botones SIEMPRE visibles -->
+            <div class="p-5 pt-3 shrink-0 border-t border-gray-100 grid grid-cols-2 gap-2">
                 <button @click="abrirRechazarAsignado"
                         class="bg-red-100 text-red-700 font-black py-3 rounded-xl text-sm active:scale-95 transition-transform border-2 border-red-200">
                     ❌ RECHAZAR
@@ -3869,7 +3875,7 @@
     </div>
 
     <!-- Modal rechazo: pide razón -->
-    <div v-if="modalRechazarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[60] flex items-center justify-center p-4">
+    <div v-if="modalRechazarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[220] flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
             <h3 class="text-lg font-black text-red-700 mb-2">❌ Rechazar cobro</h3>
             <p class="text-xs text-gray-600 mb-3">Indica por qué lo rechazas. El admin verá la razón.</p>
