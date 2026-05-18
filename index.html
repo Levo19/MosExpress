@@ -3782,6 +3782,15 @@
         </div>
     </div>
 
+    <!-- [v2.5.19] ESCAPE HATCH — botón cerrar de emergencia siempre visible
+         cuando el modal está abierto. Aunque el contenido principal falle
+         por algún error de render, este botón flotante permite al cajero
+         salir del overlay sin quedar atrapado en "pantalla blanca". -->
+    <button v-if="modalCobrarAsignado"
+            @click="cerrarCobrarAsignado"
+            class="fixed top-3 right-3 z-[300] w-12 h-12 rounded-full bg-rose-600 text-white font-black text-2xl shadow-2xl active:scale-90 ring-4 ring-white"
+            title="Cerrar (emergencia)">✕</button>
+
     <!-- ═════════════════════════════════════════════════════════
          [v40.3] MODAL: COBRAR CRÉDITO ASIGNADO POR ADMIN
     ═════════════════════════════════════════════════════════ -->
@@ -8445,7 +8454,31 @@
         };
 
         const abrirModalCobrarAsignado = (cobro) => {
-            cobroAsignadoActivo.value = cobro;
+            // [v2.5.19] Guards anti pantalla blanca:
+            // 1. Validar cobro mínimo viable (idCobro + monto)
+            if (!cobro || !cobro.idCobro || !(parseFloat(cobro.monto) > 0)) {
+                agregarToast('⚠ Cobro inválido', 'El cobro recibido está incompleto. Se ignora.', 'warning');
+                return;
+            }
+            // 2. Validar que el cajero esté operativo (sin esto, currentModule=CAJA
+            //    quedaba mostrando spinner indefinido sin contenido)
+            if (!config.value.esCajero || !cajaAbierta.value) {
+                agregarToast('🔔 Cobro recibido',
+                    'Recibiste un cobro pero tu caja no está abierta. Abre caja primero.',
+                    'warning');
+                return;
+            }
+            // Defaults safe
+            cobroAsignadoActivo.value = {
+                idCobro:     String(cobro.idCobro || ''),
+                idVenta:     String(cobro.idVenta || ''),
+                cliente:     String(cobro.cliente || 'VARIOS'),
+                correlativo: String(cobro.correlativo || ''),
+                monto:       parseFloat(cobro.monto) || 0,
+                metodoSug:   String(cobro.metodoSug || 'EFECTIVO'),
+                adminAsig:   String(cobro.adminAsig || 'admin'),
+                fechaAsig:   String(cobro.fechaAsig || '')
+            };
             cobroAsigMetodo.value = String(cobro.metodoSug || 'EFECTIVO').replace(/^MIXTO.*$/, 'MIXTO');
             cobroAsigMixtoEf.value = cobroAsigMetodo.value === 'MIXTO' ? parseFloat(cobro.monto) : 0;
             cobroAsigMixtoVi.value = 0;
