@@ -7888,6 +7888,17 @@
             return { ok: true, validadoPor: 'admin:' + admin.nombre + ' (offline)', idPersonal: admin.idPersonal };
         };
 
+        // [v2.5.24] _pinTier — la sensibilidad inferida del catálogo MOS
+        // (1=rutina, 2=sensible, 3=crítica). El backend la usa para tier
+        // en AUDITORIA_ADMIN. Si no se conoce, default 2.
+        const _ME_AUTH_TIERS = {
+          'ANULACION': 1, 'CREDITO_DIRECTO': 1, 'CREDITAR_VENTA': 1,
+          'COBRAR_VENTA': 1, 'COBRAR_CREDITO_CON_EXTRA': 1,
+          'CONVERTIR_NV_A_CPE': 2, 'BAJA_CPE': 3,
+          'EDITAR_CLIENTE_VENTA': 2, 'ACTIVAR_POS_60': 2, 'DESBLOQUEO_TEMPORAL': 2
+        };
+        const _pinT0 = ref(0); // timestamp del abrir modal — mide tiempo_verify
+
         const pedirPin = (callback, opciones) => {
             _pinCallback.value = callback;
             _pinAccion.value = {
@@ -7896,6 +7907,7 @@
             };
             pinInput.value = '';
             pinError.value = '';
+            _pinT0.value = Date.now();
             modalPin.value = true;
             // Refrescar caché en background para próxima vez
             _sincronizarAdminCache();
@@ -7911,6 +7923,9 @@
             pinError.value = '';
             const accion = _pinAccion.value.accion;
             const ref = _pinAccion.value.refDocumento;
+            // [v2.5.24] Tier + tiempo para AUDITORIA_ADMIN enriquecida
+            const tier = _ME_AUTH_TIERS[String(accion).toUpperCase()] || 2;
+            const tiempo_verify_ms = Date.now() - (_pinT0.value || Date.now());
 
             // Intentar online primero
             let resultado = null;
@@ -7924,7 +7939,12 @@
                             accion: accion,
                             refDocumento: ref,
                             appOrigen: 'mosExpress',
-                            dispositivo: deviceId.value || ''
+                            dispositivo: deviceId.value || '',
+                            // [v2.5.24] Auditoría enriquecida
+                            tier: tier,
+                            cache_hit: 0,
+                            tiempo_verify_ms: tiempo_verify_ms,
+                            deviceId: deviceId.value || ''
                         })
                     });
                     const j = await r.json();
