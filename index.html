@@ -5434,6 +5434,36 @@
                            lsSet('mosexpress_device_auth_date', String(Date.now()));
                            lsSet('mosexpress_device_auth_id', deviceId.value);
                            mosOK = true;
+                           // [v2.5.23] Si el cron 23h marcó Forzar_Logout, ejecutar
+                           // el mismo flujo que el "cambio de día" — cerrar sesión
+                           // (y caja si aplica) y volver al login. Limpiar el flag
+                           // en MOS para no quedar en bucle.
+                           if (j.data.forzar_logout && config.value.completado) {
+                               console.log('[ME] Forzar_Logout recibido del cron 23h · cerrando sesión');
+                               try {
+                                   let _cajaAyer = null;
+                                   if (config.value.esCajero) {
+                                       const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
+                                       if (_cajaSaved) try { _cajaAyer = JSON.parse(_cajaSaved); } catch(e) {}
+                                   }
+                                   sesionAnteriorInfo.value = {
+                                       vendedor: config.value.vendedor,
+                                       estacion: config.value.estacion,
+                                       esCajero: config.value.esCajero,
+                                       fecha: j.data.logout_auto_ts || 'cierre auto 23h',
+                                       caja: _cajaAyer,
+                                       motivo: 'CIERRE_NOCTURNO_AUTO'
+                                   };
+                                   mostrarModalSesionAnterior.value = true;
+                                   config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+                                   localStorage.removeItem('mosexpress_config');
+                                   localStorage.removeItem('mosexpress_session_date');
+                                   localStorage.removeItem('mosexpress_caja_activa');
+                                   // Limpiar flag en MOS — fire and forget
+                                   fetch(`${MOS_GAS_URL}?action=marcarLogoutHonrado&deviceId=${encodeURIComponent(deviceId.value)}`)
+                                       .catch(() => {});
+                               } catch(eFL) { console.error('[ME] forzar_logout fallo:', eFL); }
+                           }
                        }
                    }
                }
