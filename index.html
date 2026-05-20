@@ -4381,8 +4381,81 @@
 
     const app = createApp({
       setup() {
-        // Helper: localStorage.setItem con try-catch (no falla si storage lleno o bloqueado)
-        const lsSet = (key, value) => { try { localStorage.setItem(key, value); } catch(e) { console.warn('localStorage lleno:', key, e); } };
+        // [v2.5.32] Helper localStorage SAFE con auto-recovery de quota.
+        // Si el quota está lleno (mosexpress_db viejo ocupa ~3-5MB), limpia
+        // los items grandes/legacy + reintenta. NUNCA lanza — la app sigue
+        // funcionando aunque setItem falle (state queda solo en memoria).
+        //
+        // Items LEGACY que ya están migrados a IndexedDB y se pueden borrar:
+        //   • mosexpress_db (catálogo ~3MB · ahora en IndexedDB)
+        //   • mosexpress_ventas_hoy (cache snapshot · regenerable)
+        //   • mosexpress_last_session_loss (debug · regenerable)
+        const lsSet = (key, value) => {
+          const _doCleanup = () => {
+            const _keysAttack = [
+              'mosexpress_db',          // catálogo gigante (en IndexedDB)
+              'mosexpress_ventas_hoy',  // cache regenerable
+              'mosexpress_last_session_loss',
+              'mosexpress_last_error',
+              'mosexpress_carrito'      // último recurso (se perderían items pendientes)
+            ];
+            let liberados = 0;
+            _keysAttack.forEach(k => {
+              try {
+                const v = localStorage.getItem(k);
+                if (v) { liberados += v.length; localStorage.removeItem(k); }
+              } catch(_) {}
+            });
+            return liberados;
+          };
+          try {
+            localStorage.setItem(key, value);
+            return true;
+          } catch(e) {
+            const isQuota = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+            if (!isQuota) {
+              console.warn('localStorage error (no quota):', key, e);
+              return false;
+            }
+            // Quota exceeded → limpiar legacy + retry
+            const lib = _doCleanup();
+            console.warn(`[lsSet] Quota exceeded, liberados ${lib} bytes, reintentando: ${key}`);
+            try {
+              localStorage.setItem(key, value);
+              return true;
+            } catch(e2) {
+              // Último recurso — limpiar TODO menos sesión activa
+              try {
+                const _preservar = {
+                  mosexpress_config: localStorage.getItem('mosexpress_config'),
+                  mosexpress_session_date: localStorage.getItem('mosexpress_session_date'),
+                  mosexpress_caja_activa: localStorage.getItem('mosexpress_caja_activa'),
+                  mosexpress_deviceId: localStorage.getItem('mosexpress_deviceId'),
+                  mosexpress_pendingSales: localStorage.getItem('mosexpress_pendingSales')
+                };
+                localStorage.clear();
+                Object.keys(_preservar).forEach(k => {
+                  if (_preservar[k]) try { localStorage.setItem(k, _preservar[k]); } catch(_){}
+                });
+                localStorage.setItem(key, value);
+                console.warn('[lsSet] Quota recuperado tras limpiar todo: ' + key);
+                return true;
+              } catch(e3) {
+                console.error('[lsSet] No se pudo guardar tras limpiar todo:', key, e3);
+                return false;
+              }
+            }
+          }
+        };
+
+        // [v2.5.32] Limpieza preventiva al boot — borra mosexpress_db viejo del
+        // localStorage. Ya está en IndexedDB. Este item solo y ocupa ~3MB.
+        try {
+          if (localStorage.getItem('mosexpress_db')) {
+            localStorage.removeItem('mosexpress_db');
+            console.log('[boot] mosexpress_db legacy borrado de localStorage (vive en IndexedDB)');
+          }
+        } catch(_) {}
 
         // ── IndexedDB para el CATÁLOGO ───────────────────────────────
         // localStorage da solo ~5MB por origen y el catálogo (PRODUCTO_BASE
@@ -5046,7 +5119,7 @@
                 if (res.status === 'success') {
                     const realId = res.idCaja;
                     idCajaActual.value = realId;
-                    localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
+                    lsSet('mosexpress_caja_activa', JSON.stringify({
                         idCaja: realId, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
                     }));
                     localStorage.removeItem('mosexpress_caja_payload');
@@ -5059,7 +5132,7 @@
                         const resCaj = await reqCaj.json();
                         if (resCaj.status === 'success' && resCaj.activo && resCaj.idCaja) {
                             idCajaActual.value = resCaj.idCaja;
-                            localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
+                            lsSet('mosexpress_caja_activa', JSON.stringify({
                                 idCaja: resCaj.idCaja, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
                             }));
                             localStorage.removeItem('mosexpress_caja_payload');
@@ -5405,7 +5478,7 @@
               if(vLoc) {
                   const ventasGuardadas = JSON.parse(vLoc);
                   ventasHoy.value = ventasGuardadas.filter(v => new Date(v.timestamp).toDateString() === new Date().toDateString());
-                  localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                  lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
               }
           } catch(e) { ventasHoy.value = []; localStorage.removeItem('mosexpress_ventas_hoy'); }
 
@@ -5786,7 +5859,7 @@
                 }
                 if (estFresh) {
                     config.value.estacion = estFresh;
-                    localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
+                    lsSet('mosexpress_config', JSON.stringify(config.value));
                 }
             }
         };
@@ -5924,7 +5997,7 @@
                     }
                     if (fresh) {
                         config.value.estacion = { ...config.value.estacion, ...fresh };
-                        localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
+                        lsSet('mosexpress_config', JSON.stringify(config.value));
                     }
                 }
             } catch(e) {
@@ -7194,8 +7267,9 @@
                 estacion:  configWizard.value.estacion,
                 esCajero
             };
-            localStorage.setItem('mosexpress_config', JSON.stringify(config.value));
-            localStorage.setItem('mosexpress_session_date', new Date().toDateString());
+            // [v2.5.32] lsSet con auto-recovery de quota (evita pantalla blanca)
+            lsSet('mosexpress_config', JSON.stringify(config.value));
+            lsSet('mosexpress_session_date', new Date().toDateString());
             _cargarAuditHoy();
 
             // Notificar a master+admin que ingresó este vendedor (push)
@@ -10179,7 +10253,7 @@
                 ventasHoy.value[idx].expanded = false;
                 pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
                 localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
-                localStorage.setItem('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
             }
             agregarToast('Comprobante Anulado', venta.correlativo);
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
