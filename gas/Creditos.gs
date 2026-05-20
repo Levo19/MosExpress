@@ -16,10 +16,14 @@
 // Estados: ASIGNADO | COBRADO | RECHAZADO | TIMEOUT
 // ============================================================
 
+// [v2.5.27] Columnas nuevas: Fecha_Vencimiento + Horas_TTL.
+// Permite vencimiento configurable (1h default · 2h · 4h · 6h) y la
+// columna explícita evita recalcular Fecha_Asig + N horas en cada poll.
 var _CREDITO_COBRO_HEADERS = [
   'ID_Cobro','ID_Venta','Caja_Destino','Vendedor_Dest','Metodo_Sug',
   'Estado','Admin_Asignador','Fecha_Asig','Fecha_Res','Razon',
-  'ID_Caja_Origen','Monto','Cliente_Nombre','Correlativo'
+  'ID_Caja_Origen','Monto','Cliente_Nombre','Correlativo',
+  'Fecha_Vencimiento','Horas_TTL'
 ];
 
 function _getHojaCobrosAsignados() {
@@ -29,6 +33,17 @@ function _getHojaCobrosAsignados() {
     sheet = ss.insertSheet('CREDITOS_COBRO_ASIGNADO');
     sheet.appendRow(_CREDITO_COBRO_HEADERS);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  // [v2.5.27] Migrar headers — agregar columnas nuevas si faltan
+  var firstRow = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), _CREDITO_COBRO_HEADERS.length)).getValues()[0];
+  var current = firstRow.map(function(h){ return String(h || '').trim(); });
+  var faltan = _CREDITO_COBRO_HEADERS.filter(function(h) { return current.indexOf(h) === -1; });
+  if (faltan.length > 0) {
+    var startCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, startCol, 1, faltan.length).setValues([faltan]);
+    sheet.getRange(1, startCol, 1, faltan.length)
+         .setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
   }
   return sheet;
 }
@@ -102,15 +117,22 @@ function asignarCobroACajero(data) {
     }
   }
 
-  // 4. Crear row de asignación
-  var idCobro = 'CB-' + new Date().getTime();
+  // 4. [v2.5.27] Calcular Fecha_Vencimiento según horasTTL (default 1h)
+  var horasTTL = parseInt(data.horasTTL, 10);
+  if (![1, 2, 4, 6].includes(horasTTL)) horasTTL = 1; // sanitizar
+  var ahora = new Date();
+  var fechaVencimiento = new Date(ahora.getTime() + horasTTL * 60 * 60 * 1000);
+
+  // 5. Crear row de asignación
+  var idCobro = 'CB-' + ahora.getTime();
   hoja.appendRow([
     idCobro, data.idVenta, data.cajaDestino, cajaInfo.vendedor,
     String(data.metodoSugerido).toUpperCase(),
     'ASIGNADO',
     String(data.adminAuth.nombre || '').replace(/^admin:/i, ''),
-    new Date(), '', '',
-    ventaData.cajaOriginal, ventaData.total, ventaData.cliente, ventaData.correlativo
+    ahora, '', '',
+    ventaData.cajaOriginal, ventaData.total, ventaData.cliente, ventaData.correlativo,
+    fechaVencimiento, horasTTL
   ]);
   SpreadsheetApp.flush();
 
@@ -151,11 +173,16 @@ function asignarCobroACajero(data) {
     });
   } catch(eLog) { Logger.log('Log asignar: ' + eLog.message); }
 
+  // [v2.5.27] Auto-instalar trigger horario (idempotente)
+  try { _ensureTriggerEscalarCobros(); } catch(_){}
+
   return ContentService.createTextOutput(JSON.stringify({
     status: 'success',
     idCobro: idCobro,
     cajeroDestino: cajaInfo.vendedor,
-    mensaje: 'Cobro asignado a ' + cajaInfo.vendedor
+    horasTTL: horasTTL,
+    fechaVencimiento: fechaVencimiento.toISOString(),
+    mensaje: 'Cobro asignado a ' + cajaInfo.vendedor + ' · vence en ' + horasTTL + 'h'
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -336,21 +363,46 @@ function getCobrosAsignadosCajero(cajaId) {
   var hoja = _getHojaCobrosAsignados();
   var fa = hoja.getDataRange().getValues();
   var result = [];
-  var tz = Session.getScriptTimeZone();
+  // [v2.5.27] Indexar columnas por header para soportar columnas nuevas
+  var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
+  var iIdCobro   = hdrs.indexOf('ID_Cobro');
+  var iIdVenta   = hdrs.indexOf('ID_Venta');
+  var iCajaDest  = hdrs.indexOf('Caja_Destino');
+  var iVendDest  = hdrs.indexOf('Vendedor_Dest');
+  var iMetodo    = hdrs.indexOf('Metodo_Sug');
+  var iEstado    = hdrs.indexOf('Estado');
+  var iAdminAsig = hdrs.indexOf('Admin_Asignador');
+  var iFAsig     = hdrs.indexOf('Fecha_Asig');
+  var iMonto     = hdrs.indexOf('Monto');
+  var iCliente   = hdrs.indexOf('Cliente_Nombre');
+  var iCorrel    = hdrs.indexOf('Correlativo');
+  var iVenc      = hdrs.indexOf('Fecha_Vencimiento');
+  var iHorasTTL  = hdrs.indexOf('Horas_TTL');
   for (var i = 1; i < fa.length; i++) {
-    if (String(fa[i][2]) !== String(cajaId)) continue;
-    if (String(fa[i][5]) !== 'ASIGNADO')      continue;
+    if (String(fa[i][iCajaDest]) !== String(cajaId)) continue;
+    if (String(fa[i][iEstado]) !== 'ASIGNADO')      continue;
+    // Calcular Fecha_Vencimiento — si no está set, fallback a Fecha_Asig + horasTTL (o 1h)
+    var fVencISO = '';
+    if (iVenc >= 0 && fa[i][iVenc]) {
+      fVencISO = fa[i][iVenc] instanceof Date ? fa[i][iVenc].toISOString() : new Date(fa[i][iVenc]).toISOString();
+    } else if (iFAsig >= 0 && fa[i][iFAsig]) {
+      var fAsigMs = fa[i][iFAsig] instanceof Date ? fa[i][iFAsig].getTime() : new Date(fa[i][iFAsig]).getTime();
+      var ttl = (iHorasTTL >= 0 ? (parseInt(fa[i][iHorasTTL], 10) || 1) : 1);
+      fVencISO = new Date(fAsigMs + ttl * 60 * 60 * 1000).toISOString();
+    }
     result.push({
-      idCobro:       String(fa[i][0]),
-      idVenta:       String(fa[i][1]),
-      cajaDestino:   String(fa[i][2]),
-      vendedorDest:  String(fa[i][3]),
-      metodoSug:     String(fa[i][4]),
-      adminAsig:     String(fa[i][6]),
-      fechaAsig:     fa[i][7] instanceof Date ? Utilities.formatDate(fa[i][7], tz, 'yyyy-MM-dd HH:mm:ss') : String(fa[i][7] || ''),
-      monto:         parseFloat(fa[i][11]) || 0,
-      cliente:       String(fa[i][12]),
-      correlativo:   String(fa[i][13])
+      idCobro:           String(fa[i][iIdCobro]),
+      idVenta:           String(fa[i][iIdVenta]),
+      cajaDestino:       String(fa[i][iCajaDest]),
+      vendedorDest:      String(fa[i][iVendDest]),
+      metodoSug:         String(fa[i][iMetodo]),
+      adminAsig:         String(fa[i][iAdminAsig]),
+      fechaAsig:         fa[i][iFAsig] instanceof Date ? fa[i][iFAsig].toISOString() : String(fa[i][iFAsig] || ''),
+      fechaVencimiento:  fVencISO,
+      horasTTL:          iHorasTTL >= 0 ? (parseInt(fa[i][iHorasTTL], 10) || 1) : 1,
+      monto:             parseFloat(fa[i][iMonto]) || 0,
+      cliente:           String(fa[i][iCliente]),
+      correlativo:       String(fa[i][iCorrel])
     });
   }
   return ContentService.createTextOutput(JSON.stringify({
@@ -492,38 +544,97 @@ function getCreditosPendientes(diasAtras) {
 // ============================================================
 // Marca como TIMEOUT los cobros ASIGNADO > 1 hora y dispara push
 // de escalación a admin+master en MOS.
+// [v2.5.27] Procesador de vencimientos — debe correr via trigger horario.
+// Compara Fecha_Vencimiento contra ahora. Si venció:
+//   1. Estado: EXPIRADO (semánticamente "vencido sin cobrarse")
+//   2. VENTAS_CABECERA.formaPago = 'CREDITO' (vuelve al pool original)
+//   3. VENTAS_CABECERA.cobrado = false
+//   4. Push push al admin asignador: "expiró, re-asignar?"
+// Ya NO usa el TTL hardcodeado 1h — lee Fecha_Vencimiento de cada row.
 function escalarCobrosVencidos() {
   var hoja = _getHojaCobrosAsignados();
   var fa = hoja.getDataRange().getValues();
+  if (fa.length < 2) return { ok: true, vencidos: 0 };
+  // Indexar columnas por header (resiliente a reordenamiento)
+  var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
+  var iEstado    = hdrs.indexOf('Estado');
+  var iAsig      = hdrs.indexOf('Fecha_Asig');
+  var iRes       = hdrs.indexOf('Fecha_Res');
+  var iRazon     = hdrs.indexOf('Razon');
+  var iIdVenta   = hdrs.indexOf('ID_Venta');
+  var iMonto     = hdrs.indexOf('Monto');
+  var iCliente   = hdrs.indexOf('Cliente_Nombre');
+  var iVendedor  = hdrs.indexOf('Vendedor_Dest');
+  var iAdminAsig = hdrs.indexOf('Admin_Asignador');
+  var iVenc      = hdrs.indexOf('Fecha_Vencimiento');
+  var iHorasTTL  = hdrs.indexOf('Horas_TTL');
   var ahora = new Date().getTime();
   var UNA_HORA = 60 * 60 * 1000;
   var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ventasSh = ss.getSheetByName('VENTAS_CABECERA');
   var n = 0;
 
   for (var i = 1; i < fa.length; i++) {
-    if (String(fa[i][5]) !== 'ASIGNADO') continue;
-    var fAsig = fa[i][7] instanceof Date ? fa[i][7].getTime() : new Date(fa[i][7]).getTime();
-    if (isNaN(fAsig)) continue;
-    if ((ahora - fAsig) <= UNA_HORA) continue;
+    if (String(fa[i][iEstado]) !== 'ASIGNADO') continue;
+    // Determinar la fecha de vencimiento:
+    // 1. Si Fecha_Vencimiento está set → usarla
+    // 2. Sino fallback Fecha_Asig + (Horas_TTL || 1h)
+    var fVencMs;
+    var fVenc = iVenc >= 0 ? fa[i][iVenc] : null;
+    if (fVenc) {
+      fVencMs = fVenc instanceof Date ? fVenc.getTime() : new Date(fVenc).getTime();
+    } else {
+      var fAsigMs = fa[i][iAsig] instanceof Date ? fa[i][iAsig].getTime() : new Date(fa[i][iAsig]).getTime();
+      if (isNaN(fAsigMs)) continue;
+      var ttlMs = (iHorasTTL >= 0 ? (parseInt(fa[i][iHorasTTL], 10) || 1) : 1) * UNA_HORA;
+      fVencMs = fAsigMs + ttlMs;
+    }
+    if (isNaN(fVencMs) || ahora < fVencMs) continue;
 
-    // Timeout: marcar y notificar
-    hoja.getRange(i + 1, 6).setValue('TIMEOUT');
-    hoja.getRange(i + 1, 9).setValue(new Date());
-    hoja.getRange(i + 1, 10).setValue('Timeout: no resuelto en 1h');
+    // VENCIDO — marcar y restaurar
+    hoja.getRange(i + 1, iEstado + 1).setValue('EXPIRADO');
+    hoja.getRange(i + 1, iRes + 1).setValue(new Date());
+    hoja.getRange(i + 1, iRazon + 1).setValue('Vencido sin cobrarse · cliente no llegó');
+
+    // [v2.5.27] Restaurar VENTAS_CABECERA → vuelve a estado CREDITO
+    // Cols esperadas en VENTAS_CABECERA: 0=ID, 7=cobrado?, 8=formaPago
+    // (puede variar — buscar por header)
+    try {
+      if (ventasSh) {
+        var vdAll = ventasSh.getDataRange().getValues();
+        var vHdrs = vdAll[0].map(function(h){ return String(h || '').trim(); });
+        var iVId   = vHdrs.indexOf('ID') >= 0 ? vHdrs.indexOf('ID') : 0;
+        var iVCob  = vHdrs.indexOf('Cobrado') >= 0 ? vHdrs.indexOf('Cobrado') : vHdrs.indexOf('cobrado');
+        var iVFp   = vHdrs.indexOf('FormaPago') >= 0 ? vHdrs.indexOf('FormaPago') : vHdrs.indexOf('Forma_Pago');
+        var idV = String(fa[i][iIdVenta]);
+        for (var k = vdAll.length - 1; k > 0; k--) {
+          if (String(vdAll[k][iVId]) === idV) {
+            if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
+            if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
+            break;
+          }
+        }
+      }
+    } catch(eR) { Logger.log('Restore venta a CREDITO: ' + eR.message); }
+
     n++;
 
+    // Push al admin asignador (no a todos, solo al que asignó)
     if (url) {
       try {
         UrlFetchApp.fetch(url, {
           method: 'post',
           contentType: 'application/json',
           payload: JSON.stringify({
-            action: 'enviarPushNotif',
-            soloRolesAdmin: true,
-            titulo: '⏰ Cobro vencido · ' + String(fa[i][12] || 'cliente'),
-            cuerpo: 'S/ ' + parseFloat(fa[i][11] || 0).toFixed(2) +
-                    ' asignado a ' + String(fa[i][3]) + ' no se resolvió en 1h. Volver a asignar.',
-            idNotif: 'CREDITO_COBRO_TIMEOUT'
+            action: 'enviarPushUsuario',
+            usuario: String(fa[i][iAdminAsig] || ''),
+            titulo: '⏰ Cobro expirado · ' + String(fa[i][iCliente] || 'cliente'),
+            cuerpo: 'S/ ' + parseFloat(fa[i][iMonto] || 0).toFixed(2) +
+                    ' asignado a ' + String(fa[i][iVendedor]) + ' venció sin cobrarse. ' +
+                    'Volvió a CRÉDITO. Re-asignar?',
+            idNotif: 'CREDITO_COBRO_EXPIRADO',
+            extra: { idVenta: String(fa[i][iIdVenta]) }
           }),
           muteHttpExceptions: true
         });
@@ -642,4 +753,30 @@ function _reimprimirTicketConSello(idVenta, printerId, ctx) {
   };
 
   return imprimirTicketInternamente(data, venta.correlativo, printerId, null);
+}
+
+// ============================================================
+// [v2.5.27] Auto-instalación del trigger horario que procesa
+// vencimientos. Se llama desde asignarCobroACajero — si nadie
+// asigna no se instala, pero al primer asignamiento queda activo.
+// ============================================================
+function _ensureTriggerEscalarCobros() {
+  try {
+    var existe = ScriptApp.getProjectTriggers().some(function(t) {
+      return t.getHandlerFunction() === 'escalarCobrosVencidos';
+    });
+    if (!existe) {
+      ScriptApp.newTrigger('escalarCobrosVencidos').timeBased().everyMinutes(15).create();
+      Logger.log('[Trigger] escalarCobrosVencidos auto-instalado · cada 15min');
+    }
+  } catch(e) { Logger.log('[Trigger escalarCobrosVencidos] auto fallo: ' + e.message); }
+}
+
+// Setup público — llamable desde Apps Script editor manualmente
+function setupTriggerEscalarCobros() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'escalarCobrosVencidos') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('escalarCobrosVencidos').timeBased().everyMinutes(15).create();
+  return { ok: true, mensaje: 'Trigger escalarCobrosVencidos creado · cada 15min' };
 }

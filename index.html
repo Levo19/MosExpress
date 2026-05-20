@@ -33,6 +33,26 @@
       50%  { transform: scale(1.1); }
       100% { transform: scale(1); }
     }
+    /* [v2.5.27] Sello PAGADO diagonal sobre la card */
+    .cobro-sello-pagado {
+      font-family: 'Courier New', monospace;
+      font-size: 22px; font-weight: 900;
+      color: #059669;
+      background: rgba(16,185,129,.15);
+      border: 4px solid #059669;
+      border-radius: 14px;
+      padding: 8px 24px;
+      transform: rotate(-12deg);
+      letter-spacing: .12em;
+      text-shadow: 0 2px 6px rgba(5,150,105,.4);
+      box-shadow: 0 0 0 3px rgba(16,185,129,.2), 0 0 24px rgba(16,185,129,.5);
+      animation: pagadoStamp .6s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    @keyframes pagadoStamp {
+      0%   { transform: rotate(-12deg) scale(2);   opacity: 0; }
+      60%  { transform: rotate(-12deg) scale(.85); opacity: 1; }
+      100% { transform: rotate(-12deg) scale(1);   opacity: 1; }
+    }
     @keyframes toastSlide { 0% { transform: translateX(100%); opacity: 0;} 10% { transform: translateX(0); opacity: 1;} 90% { transform: translateX(0); opacity: 1;} 100% { transform: translateX(100%); opacity: 0;} }
     .toast-anim { animation: toastSlide 3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -2256,12 +2276,32 @@
                     </div>
                     <div class="p-3 space-y-2">
                         <div v-for="cobro in cobrosAsignados" :key="cobro.idCobro"
-                             class="bg-white border-2 border-amber-300 rounded-xl p-3 shadow-md flex items-center justify-between gap-3"
+                             :class="[
+                               'border-2 rounded-xl p-3 shadow-md flex items-center justify-between gap-3 relative',
+                               _cobroUrgencia(cobro) === 'critical' ? 'bg-red-50 border-red-400 animate-pulse'
+                                 : _cobroUrgencia(cobro) === 'warn' ? 'bg-yellow-50 border-yellow-400'
+                                 : 'bg-white border-amber-300'
+                             ]"
                              style="animation: cobroSlideIn .4s cubic-bezier(.34,1.56,.64,1)">
+                            <!-- [v2.5.27] Sello "PAGADO" cuando se confirma (visible 4s antes que la card se actualice) -->
+                            <div v-if="cobro._justPaid"
+                                 class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                <div class="cobro-sello-pagado">PAGADO ✓</div>
+                            </div>
                             <div class="flex-1 min-w-0">
                                 <p class="font-black text-amber-900 text-sm truncate">👤 {{ cobro.cliente || 'VARIOS' }}</p>
                                 <p class="text-[11px] text-amber-700 font-mono">{{ cobro.correlativo }} · S/ {{ parseFloat(cobro.monto).toFixed(2) }} · {{ cobro.metodoSug }}</p>
-                                <p class="text-[10px] text-gray-500 mt-0.5">📋 Asignó: {{ cobro.adminAsig }} · {{ _fmtFechaCorta(cobro.fechaAsig) }}</p>
+                                <p class="text-[10px] text-gray-500 mt-0.5">📋 {{ cobro.adminAsig }} · {{ _fmtFechaCorta(cobro.fechaAsig) }}</p>
+                                <!-- [v2.5.27] Countdown live de vencimiento -->
+                                <p v-if="cobro.fechaVencimiento"
+                                   :class="[
+                                     'text-[10px] font-black mt-1',
+                                     _cobroUrgencia(cobro) === 'critical' ? 'text-red-700 animate-pulse'
+                                       : _cobroUrgencia(cobro) === 'warn' ? 'text-yellow-700'
+                                       : 'text-emerald-700'
+                                   ]">
+                                    ⏱ {{ _cobroRestante(cobro) }}
+                                </p>
                             </div>
                             <button @click="abrirModalCobrarAsignado(cobro)"
                                     class="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-black text-xs px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-transform whitespace-nowrap">
@@ -4628,6 +4668,33 @@
 
         // [v40.3] Cobros asignados por admin/master desde MOS
         const cobrosAsignados = ref([]);
+        // [v2.5.27] Tick reactivo cada minuto — fuerza re-cómputo de countdown
+        const _cobroTick = ref(0);
+        setInterval(() => { _cobroTick.value++; }, 60 * 1000);
+        // Funciones de countdown — leen _cobroTick para forzar reactividad
+        const _cobroRestante = (cobro) => {
+            _cobroTick.value; // dependency
+            if (!cobro || !cobro.fechaVencimiento) return '';
+            const t = new Date(cobro.fechaVencimiento).getTime();
+            if (isNaN(t)) return '';
+            const diffMs = t - Date.now();
+            if (diffMs <= 0) return '⏰ vencido · vuelve a CRÉDITO';
+            const min = Math.floor(diffMs / 60000);
+            if (min < 60) return 'Vence en ' + min + ' min';
+            const h = Math.floor(min / 60);
+            const m = min % 60;
+            return 'Vence en ' + h + 'h ' + (m > 0 ? m + 'm' : '');
+        };
+        const _cobroUrgencia = (cobro) => {
+            _cobroTick.value; // dependency
+            if (!cobro || !cobro.fechaVencimiento) return 'ok';
+            const t = new Date(cobro.fechaVencimiento).getTime();
+            if (isNaN(t)) return 'ok';
+            const diffMin = (t - Date.now()) / 60000;
+            if (diffMin <= 5) return 'critical';   // <5 min: rojo pulsa
+            if (diffMin <= 15) return 'warn';      // <15 min: amarillo
+            return 'ok';                            // OK
+        };
         const modalCobrarAsignado = ref(false);
         const cobroAsignadoActivo = ref(null);
         const cobroAsigMetodo = ref('EFECTIVO');
@@ -8647,11 +8714,18 @@
                         }
                     } catch(_){}
                     agregarToast('✓ Cobro confirmado', 'S/ ' + parseFloat(cobro.monto).toFixed(2) + ' · ' + (cobro.cliente || ''));
-                    // Quitar del listado local
-                    cobrosAsignados.value = cobrosAsignados.value.filter(c => c.idCobro !== cobro.idCobro);
+                    // [v2.5.27] Sello PAGADO sobre la card 1.2s antes de quitarla
+                    const idx = cobrosAsignados.value.findIndex(c => c.idCobro === cobro.idCobro);
+                    if (idx >= 0) {
+                        cobrosAsignados.value[idx]._justPaid = true;
+                        cobrosAsignados.value = [...cobrosAsignados.value]; // forzar reactividad
+                    }
                     cerrarCobrarAsignado();
-                    // Refrescar extras del turno (entra como INGRESO)
-                    setTimeout(() => cargarCobrosAsignados(), 500);
+                    // Después de 1.2s quitar del listado + refresh
+                    setTimeout(() => {
+                        cobrosAsignados.value = cobrosAsignados.value.filter(c => c.idCobro !== cobro.idCobro);
+                        cargarCobrosAsignados();
+                    }, 1200);
                 } else {
                     agregarToast('Error', d.mensaje || 'No se pudo procesar el cobro');
                 }
@@ -10817,6 +10891,7 @@
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
           modalPin, pinInput, pinError, confirmarPin, pinValidando, _pinPress, _pinDel,
+          _cobroRestante, _cobroUrgencia,
           modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro, revertirCobroDesdeModal,
           // F3 — Acciones admin sobre tickets + cola pendientes
           modalAdminAcc, ticketParaAdmin, abrirAccionesAdmin,
