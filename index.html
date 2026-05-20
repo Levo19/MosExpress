@@ -2242,7 +2242,7 @@
          class="fixed top-2 left-1/2 -translate-x-1/2 z-[95] bg-amber-500/95 backdrop-blur-sm text-gray-900 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-black uppercase tracking-wider animate-pulse"
          :class="{ 'bg-red-500/95 text-white': desbloqueoCountdown <= 60 }">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      Acceso temporal · {{ _fmtCountdown(desbloqueoCountdown) }}
+      Acceso temporal · {{ fmtCountdown(desbloqueoCountdown) }}
     </div>
 
     <!-- PANTALLA CARGANDO INICIAL -->
@@ -3856,16 +3856,16 @@
 
             <!-- [v2.5.25] Keypad numérico táctil 3×4 -->
             <div class="grid grid-cols-3 gap-2 mb-3">
-                <button v-for="n in [1,2,3,4,5,6,7,8,9]" :key="n" @click="_pinPress(String(n))"
+                <button v-for="n in [1,2,3,4,5,6,7,8,9]" :key="n" @click="pinPress(String(n))"
                         :disabled="pinValidando || pinInput.length >= 8"
                         class="py-3 rounded-xl text-xl font-black bg-gray-50 hover:bg-amber-50 border-2 border-gray-200 text-gray-800 active:scale-95 active:bg-amber-100 disabled:opacity-40 disabled:active:scale-100 transition-all">
                     {{ n }}
                 </button>
-                <button @click="_pinDel" :disabled="pinValidando || !pinInput.length"
+                <button @click="pinDel" :disabled="pinValidando || !pinInput.length"
                         class="py-3 rounded-xl text-lg font-black bg-red-50 hover:bg-red-100 border-2 border-red-200 text-red-600 active:scale-95 disabled:opacity-40 disabled:active:scale-100 transition-all">
                     ⌫
                 </button>
-                <button @click="_pinPress('0')" :disabled="pinValidando || pinInput.length >= 8"
+                <button @click="pinPress('0')" :disabled="pinValidando || pinInput.length >= 8"
                         class="py-3 rounded-xl text-xl font-black bg-gray-50 hover:bg-amber-50 border-2 border-gray-200 text-gray-800 active:scale-95 active:bg-amber-100 disabled:opacity-40 disabled:active:scale-100 transition-all">
                     0
                 </button>
@@ -8755,7 +8755,7 @@
             }
         };
 
-        const _fmtCountdown = (segs) => {
+        const fmtCountdown = (segs) => {
             const m = Math.floor(segs / 60);
             const s = segs % 60;
             return m + ':' + (s < 10 ? '0' : '') + s;
@@ -9047,7 +9047,7 @@
         };
 
         // [v2.5.25] Handlers del keypad táctil del modalPin
-        const _pinPress = (digit) => {
+        const pinPress = (digit) => {
             if (pinInput.value.length >= 8) return;
             pinInput.value += String(digit);
             try { if (navigator.vibrate) navigator.vibrate(15); } catch(_){}
@@ -9056,7 +9056,7 @@
                 setTimeout(confirmarPin, 120);
             }
         };
-        const _pinDel = () => {
+        const pinDel = () => {
             if (!pinInput.value.length) return;
             pinInput.value = pinInput.value.slice(0, -1);
             try { if (navigator.vibrate) navigator.vibrate(15); } catch(_){}
@@ -11924,7 +11924,7 @@
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
-          modalPin, pinInput, pinError, confirmarPin, pinValidando, _pinPress, _pinDel,
+          modalPin, pinInput, pinError, confirmarPin, pinValidando, pinPress, pinDel,
           _cobroRestante, _cobroUrgencia,
           modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro, revertirCobroDesdeModal,
           // F3 — Acciones admin sobre tickets + cola pendientes
@@ -11946,7 +11946,7 @@
           confirmarCobrarAsignado, abrirRechazarAsignado, confirmarRechazarAsignado,
           cargarCobrosAsignados,
           usuarioBloqueado, modalDesbloqueo, desbloqueoPin, desbloqueoError, desbloqueoCargando,
-          desbloqueoCountdown, intentarDesbloqueoTemporal, _fmtCountdown
+          desbloqueoCountdown, intentarDesbloqueoTemporal, fmtCountdown
         };
       }
     });
