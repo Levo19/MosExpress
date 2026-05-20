@@ -950,6 +950,29 @@
       _meStopAutoCd();
     }
 
+    // [v2.5.38] Descartar el banner manualmente (volverá a aparecer si hay
+    // otro update). Útil cuando el banner queda atorado por un waiting
+    // fantasma del SW (race entre skipWaiting + clients.claim + reload).
+    window._meDismissBanner = function() {
+      _hideBanner();
+      try { _waitingWorker = null; } catch(_){}
+    };
+
+    // [v2.5.38] Sanity check periódico: si el banner está visible pero el
+    // SW activo ya coincide con _APP_VERSION (versión cargada en bundle),
+    // significa que el banner es zombie — ya no hay update pendiente.
+    // Lo ocultamos automáticamente para evitar que estorbe.
+    setInterval(() => {
+      try {
+        const b = document.getElementById('meUpdateBanner');
+        if (!b || !b.classList.contains('visible')) return;
+        // No hay reg.waiting → no hay worker esperando → banner zombie
+        if (_reg && !_reg.waiting) {
+          _hideBanner();
+        }
+      } catch(_){}
+    }, 8000);
+
     // Aplicar update — 250ms (cohete arranca) + fallback reload 3s.
     // Antes esperaba 900ms y sin fallback: si el SW se trababa el overlay
     // quedaba infinito. Ahora actualización percibida ~700ms vs ~5s.
@@ -1530,7 +1553,12 @@
 
   <!-- ════ Banner flotante de update ME · con barra de progreso real ════ -->
   <div id="meUpdateBanner">
-    <div class="me-upd-banner-inner" style="display:flex;flex-direction:column;gap:8px">
+    <div class="me-upd-banner-inner" style="display:flex;flex-direction:column;gap:8px;position:relative">
+      <!-- [v2.5.38] Botón ✕ para descartar el banner manualmente -->
+      <button id="meUpdateBnrClose"
+              onclick="window._meDismissBanner && window._meDismissBanner()"
+              title="Descartar (volverá a aparecer al siguiente refresh)"
+              style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:rgba(15,23,42,.9);color:#94a3b8;border:1px solid #334155;font-size:14px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0">×</button>
       <div class="me-upd-bnr-row">
         <span class="me-upd-bnr-icon">🚀</span>
         <div style="flex:1;min-width:0">
