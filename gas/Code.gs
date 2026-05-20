@@ -37,6 +37,8 @@ function doGet(e) {
     // [v40.3] Sistema de cobro asignado de créditos (MOS ↔ ME)
     if (accion === 'creditos_pendientes')      return getCreditosPendientes(e.parameter.diasAtras);
     if (accion === 'cobros_asignados_cajero')  return getCobrosAsignadosCajero(e.parameter.cajaId);
+    // [v2.5.28] Panel "Cobros en vuelo" para MOS Admin
+    if (accion === 'cobros_en_vuelo_admin')    return getCobrosEnVueloAdmin();
     if (accion === 'estado_cajas')          return estadoCajas();
     if (accion === 'historial_venta')       return getHistorialEndpoint('VENTAS_CABECERA', e.parameter.idVenta);
     if (accion === 'historial_extra')       return getHistorialEndpoint('MOVIMIENTOS_EXTRA', e.parameter.idExtra);
@@ -240,6 +242,9 @@ function doPost(e) {
     if (data.tipoEvento === 'ASIGNAR_COBRO_CAJERO')    return asignarCobroACajero(data);
     if (data.tipoEvento === 'CONFIRMAR_COBRO_ASIGNADO') return confirmarCobroAsignado(data);
     if (data.tipoEvento === 'RECHAZAR_COBRO_ASIGNADO')  return rechazarCobroAsignado(data);
+    // [v2.5.28] Admin puede cancelar/reasignar antes que el cajero procese
+    if (data.tipoEvento === 'CANCELAR_COBRO_ASIGNADO')  return cancelarCobroAsignado(data);
+    if (data.tipoEvento === 'REASIGNAR_COBRO_ASIGNADO') return reasignarCobroAsignado(data);
     if (data.accion === 'imprimir')                return procesarImpresion(data);
     // [v2.5.16] Verifica estado de impresora en PrintNode antes de imprimir
     if (data.accion === 'verificarImpresora')      return verificarEstadoImpresora(data);

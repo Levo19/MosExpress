@@ -23,7 +23,9 @@ var _CREDITO_COBRO_HEADERS = [
   'ID_Cobro','ID_Venta','Caja_Destino','Vendedor_Dest','Metodo_Sug',
   'Estado','Admin_Asignador','Fecha_Asig','Fecha_Res','Razon',
   'ID_Caja_Origen','Monto','Cliente_Nombre','Correlativo',
-  'Fecha_Vencimiento','Horas_TTL'
+  'Fecha_Vencimiento','Horas_TTL',
+  // [v2.5.28] Mensaje opcional del admin al cajero + tracking de reasignaciones
+  'Mensaje_Admin','Reasignaciones'
 ];
 
 function _getHojaCobrosAsignados() {
@@ -125,6 +127,8 @@ function asignarCobroACajero(data) {
 
   // 5. Crear row de asignación
   var idCobro = 'CB-' + ahora.getTime();
+  // [v2.5.28] Mensaje opcional del admin al cajero (max 140 chars)
+  var mensajeAdmin = String(data.mensajeAdmin || '').substring(0, 140).trim();
   hoja.appendRow([
     idCobro, data.idVenta, data.cajaDestino, cajaInfo.vendedor,
     String(data.metodoSugerido).toUpperCase(),
@@ -132,7 +136,8 @@ function asignarCobroACajero(data) {
     String(data.adminAuth.nombre || '').replace(/^admin:/i, ''),
     ahora, '', '',
     ventaData.cajaOriginal, ventaData.total, ventaData.cliente, ventaData.correlativo,
-    fechaVencimiento, horasTTL
+    fechaVencimiento, horasTTL,
+    mensajeAdmin, 0  // reasignaciones=0 al inicio
   ]);
   SpreadsheetApp.flush();
 
@@ -378,6 +383,7 @@ function getCobrosAsignadosCajero(cajaId) {
   var iCorrel    = hdrs.indexOf('Correlativo');
   var iVenc      = hdrs.indexOf('Fecha_Vencimiento');
   var iHorasTTL  = hdrs.indexOf('Horas_TTL');
+  var iMsgAdmin  = hdrs.indexOf('Mensaje_Admin');
   for (var i = 1; i < fa.length; i++) {
     if (String(fa[i][iCajaDest]) !== String(cajaId)) continue;
     if (String(fa[i][iEstado]) !== 'ASIGNADO')      continue;
@@ -402,7 +408,9 @@ function getCobrosAsignadosCajero(cajaId) {
       horasTTL:          iHorasTTL >= 0 ? (parseInt(fa[i][iHorasTTL], 10) || 1) : 1,
       monto:             parseFloat(fa[i][iMonto]) || 0,
       cliente:           String(fa[i][iCliente]),
-      correlativo:       String(fa[i][iCorrel])
+      correlativo:       String(fa[i][iCorrel]),
+      // [v2.5.28] Mensaje opcional del admin
+      mensajeAdmin:      iMsgAdmin >= 0 ? String(fa[i][iMsgAdmin] || '') : ''
     });
   }
   return ContentService.createTextOutput(JSON.stringify({
@@ -766,8 +774,8 @@ function _ensureTriggerEscalarCobros() {
       return t.getHandlerFunction() === 'escalarCobrosVencidos';
     });
     if (!existe) {
-      ScriptApp.newTrigger('escalarCobrosVencidos').timeBased().everyMinutes(15).create();
-      Logger.log('[Trigger] escalarCobrosVencidos auto-instalado · cada 15min');
+      ScriptApp.newTrigger('escalarCobrosVencidos').timeBased().everyMinutes(5).create();
+      Logger.log('[Trigger] escalarCobrosVencidos auto-instalado · cada 5min');
     }
   } catch(e) { Logger.log('[Trigger escalarCobrosVencidos] auto fallo: ' + e.message); }
 }
@@ -777,6 +785,194 @@ function setupTriggerEscalarCobros() {
   ScriptApp.getProjectTriggers().forEach(function(t) {
     if (t.getHandlerFunction() === 'escalarCobrosVencidos') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('escalarCobrosVencidos').timeBased().everyMinutes(15).create();
-  return { ok: true, mensaje: 'Trigger escalarCobrosVencidos creado · cada 15min' };
+  ScriptApp.newTrigger('escalarCobrosVencidos').timeBased().everyMinutes(5).create();
+  return { ok: true, mensaje: 'Trigger escalarCobrosVencidos creado · cada 5min' };
+}
+
+// ============================================================
+// [v2.5.28] cancelarCobroAsignado — admin retira el cobro antes
+// que el cajero lo procese. Solo válido si está en ASIGNADO.
+// El ticket vuelve a CREDITO inmediatamente.
+// ============================================================
+function cancelarCobroAsignado(data) {
+  if (!data.idCobro) return generarRespuestaError('idCobro requerido');
+  if (!data.adminAuth || !data.adminAuth.nombre) {
+    return generarRespuestaError('adminAuth requerido');
+  }
+  var hoja = _getHojaCobrosAsignados();
+  var fa = hoja.getDataRange().getValues();
+  var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
+  var iIdCobro = hdrs.indexOf('ID_Cobro');
+  var iIdVenta = hdrs.indexOf('ID_Venta');
+  var iEstado  = hdrs.indexOf('Estado');
+  var iRes     = hdrs.indexOf('Fecha_Res');
+  var iRazon   = hdrs.indexOf('Razon');
+  var iVendDest= hdrs.indexOf('Vendedor_Dest');
+  var iCliente = hdrs.indexOf('Cliente_Nombre');
+  var iMonto   = hdrs.indexOf('Monto');
+  for (var i = 1; i < fa.length; i++) {
+    if (String(fa[i][iIdCobro]) !== String(data.idCobro)) continue;
+    if (String(fa[i][iEstado]) !== 'ASIGNADO') {
+      return generarRespuestaError('Solo se puede cancelar mientras está ASIGNADO (actual: ' + fa[i][iEstado] + ')');
+    }
+    var idVenta = String(fa[i][iIdVenta]);
+    // Marcar como CANCELADO_ADMIN
+    hoja.getRange(i + 1, iEstado + 1).setValue('CANCELADO_ADMIN');
+    hoja.getRange(i + 1, iRes + 1).setValue(new Date());
+    hoja.getRange(i + 1, iRazon + 1).setValue('Cancelado por admin: ' + (data.razon || 'sin razón'));
+    // Restaurar VENTAS_CABECERA → CREDITO
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var ventasSh = ss.getSheetByName('VENTAS_CABECERA');
+      if (ventasSh) {
+        var vdAll = ventasSh.getDataRange().getValues();
+        var vHdrs = vdAll[0].map(function(h){ return String(h || '').trim(); });
+        var iVId   = vHdrs.indexOf('ID') >= 0 ? vHdrs.indexOf('ID') : 0;
+        var iVCob  = vHdrs.indexOf('Cobrado') >= 0 ? vHdrs.indexOf('Cobrado') : vHdrs.indexOf('cobrado');
+        var iVFp   = vHdrs.indexOf('FormaPago') >= 0 ? vHdrs.indexOf('FormaPago') : vHdrs.indexOf('Forma_Pago');
+        for (var k = vdAll.length - 1; k > 0; k--) {
+          if (String(vdAll[k][iVId]) === idVenta) {
+            if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
+            if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
+            break;
+          }
+        }
+      }
+    } catch(eR) { Logger.log('Cancelar - restore venta: ' + eR.message); }
+
+    // Push al cajero destino (avisar que ya no debe cobrar)
+    try {
+      var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+      if (url) {
+        UrlFetchApp.fetch(url, {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify({
+            action: 'enviarPushUsuario',
+            usuario: String(fa[i][iVendDest] || ''),
+            titulo: '⊘ Cobro cancelado · ' + String(fa[i][iCliente] || 'cliente'),
+            cuerpo: 'S/ ' + parseFloat(fa[i][iMonto] || 0).toFixed(2) +
+                    ' fue cancelado por ' + (data.adminAuth.nombre || 'admin') +
+                    '. Ya no debes cobrarlo.',
+            idNotif: 'CREDITO_COBRO_CANCELADO'
+          }),
+          muteHttpExceptions: true
+        });
+      }
+    } catch(_){}
+
+    SpreadsheetApp.flush();
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success', mensaje: 'Cobro cancelado y ticket retornado a CRÉDITO'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  return generarRespuestaError('Cobro ' + data.idCobro + ' no encontrado');
+}
+
+// ============================================================
+// [v2.5.28] reasignarCobroAsignado — admin cambia caja destino sin
+// cancelar y crear de nuevo. Cancela el actual + crea uno nuevo
+// con misma idVenta. Incrementa contador de reasignaciones.
+// ============================================================
+function reasignarCobroAsignado(data) {
+  if (!data.idCobro)         return generarRespuestaError('idCobro requerido');
+  if (!data.cajaDestino)     return generarRespuestaError('cajaDestino requerida');
+  if (!data.adminAuth || !data.adminAuth.nombre) return generarRespuestaError('adminAuth requerido');
+  var hoja = _getHojaCobrosAsignados();
+  var fa = hoja.getDataRange().getValues();
+  var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
+  var iIdCobro = hdrs.indexOf('ID_Cobro');
+  var iIdVenta = hdrs.indexOf('ID_Venta');
+  var iEstado  = hdrs.indexOf('Estado');
+  var iMetodo  = hdrs.indexOf('Metodo_Sug');
+  var iHorasTTL= hdrs.indexOf('Horas_TTL');
+  var iReasig  = hdrs.indexOf('Reasignaciones');
+  var idVenta = '', metodoSug = 'EFECTIVO', horasTTL = 1, reasignaciones = 0;
+  var found = false;
+  for (var i = 1; i < fa.length; i++) {
+    if (String(fa[i][iIdCobro]) !== String(data.idCobro)) continue;
+    if (String(fa[i][iEstado]) !== 'ASIGNADO') {
+      return generarRespuestaError('Solo se puede reasignar mientras está ASIGNADO (actual: ' + fa[i][iEstado] + ')');
+    }
+    idVenta = String(fa[i][iIdVenta]);
+    metodoSug = String(fa[i][iMetodo] || 'EFECTIVO');
+    horasTTL = iHorasTTL >= 0 ? (parseInt(fa[i][iHorasTTL], 10) || 1) : 1;
+    reasignaciones = iReasig >= 0 ? (parseInt(fa[i][iReasig], 10) || 0) : 0;
+    // Marcar viejo como REASIGNADO (no CANCELADO_ADMIN ni nada raro)
+    hoja.getRange(i + 1, iEstado + 1).setValue('REASIGNADO');
+    var iRes = hdrs.indexOf('Fecha_Res');
+    var iRazon = hdrs.indexOf('Razon');
+    if (iRes >= 0)  hoja.getRange(i + 1, iRes + 1).setValue(new Date());
+    if (iRazon >= 0) hoja.getRange(i + 1, iRazon + 1).setValue('Reasignado a ' + data.cajaDestino);
+    found = true;
+    break;
+  }
+  if (!found) return generarRespuestaError('Cobro ' + data.idCobro + ' no encontrado');
+  // Crear nuevo cobro
+  data.adminAuth = data.adminAuth;
+  data.metodoSugerido = data.metodoSugerido || metodoSug;
+  data.horasTTL       = data.horasTTL       || horasTTL;
+  data.idVenta        = idVenta;
+  data.mensajeAdmin   = data.mensajeAdmin || ('Reasignación #' + (reasignaciones + 1));
+  var nuevoResp = asignarCobroACajero(data);
+  return nuevoResp;
+}
+
+// ============================================================
+// [v2.5.28] getCobrosEnVueloAdmin — devuelve TODOS los cobros
+// activos para el panel "Cobros en vuelo" del admin en MOS.
+// Incluye ASIGNADO + últimos COBRADOS/EXPIRADOS/CANCELADOS (5).
+// ============================================================
+function getCobrosEnVueloAdmin() {
+  var hoja = _getHojaCobrosAsignados();
+  var fa = hoja.getDataRange().getValues();
+  if (fa.length < 2) return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', enVuelo: [], recientes: []
+  })).setMimeType(ContentService.MimeType.JSON);
+  var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
+  var H = {};
+  hdrs.forEach(function(h, idx) { H[h] = idx; });
+  var enVuelo = [];
+  var recientes = [];
+  for (var i = 1; i < fa.length; i++) {
+    var row = fa[i];
+    var estado = String(row[H.Estado] || '');
+    var item = {
+      idCobro:          String(row[H.ID_Cobro]),
+      idVenta:          String(row[H.ID_Venta]),
+      cajaDestino:      String(row[H.Caja_Destino]),
+      vendedorDest:     String(row[H.Vendedor_Dest]),
+      metodoSug:        String(row[H.Metodo_Sug]),
+      estado:           estado,
+      adminAsig:        String(row[H.Admin_Asignador]),
+      fechaAsig:        row[H.Fecha_Asig] instanceof Date ? row[H.Fecha_Asig].toISOString() : String(row[H.Fecha_Asig] || ''),
+      fechaRes:         row[H.Fecha_Res] instanceof Date ? row[H.Fecha_Res].toISOString() : String(row[H.Fecha_Res] || ''),
+      razon:            String(row[H.Razon] || ''),
+      monto:            parseFloat(row[H.Monto]) || 0,
+      cliente:          String(row[H.Cliente_Nombre] || ''),
+      correlativo:      String(row[H.Correlativo] || ''),
+      fechaVencimiento: row[H.Fecha_Vencimiento] instanceof Date ? row[H.Fecha_Vencimiento].toISOString() : String(row[H.Fecha_Vencimiento] || ''),
+      horasTTL:         parseInt(row[H.Horas_TTL], 10) || 1,
+      mensajeAdmin:     String(row[H.Mensaje_Admin] || ''),
+      reasignaciones:   parseInt(row[H.Reasignaciones], 10) || 0
+    };
+    if (estado === 'ASIGNADO') enVuelo.push(item);
+    else recientes.push(item);
+  }
+  // Ordenar recientes por fecha_res desc, tomar últimos 10
+  recientes.sort(function(a, b) {
+    var ta = new Date(a.fechaRes).getTime() || 0;
+    var tb = new Date(b.fechaRes).getTime() || 0;
+    return tb - ta;
+  });
+  recientes = recientes.slice(0, 10);
+  // Ordenar enVuelo por fecha_vencimiento (los que vencen primero, primero)
+  enVuelo.sort(function(a, b) {
+    var ta = new Date(a.fechaVencimiento).getTime() || 0;
+    var tb = new Date(b.fechaVencimiento).getTime() || 0;
+    return ta - tb;
+  });
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', enVuelo: enVuelo, recientes: recientes
+  })).setMimeType(ContentService.MimeType.JSON);
 }
