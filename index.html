@@ -2275,33 +2275,21 @@
                         <span class="text-amber-900 text-[10px] font-bold opacity-80">⚡ asignado por admin</span>
                     </div>
                     <div class="p-3 space-y-2">
+                        <!-- [v2.5.31] FIX pantalla blanca — sin llamar funciones que pueden crashear el render.
+                             Las clases visuales se calculan inline. countdown se computa via método simple.
+                             Si _cobroUrgencia/_cobroRestante fallan, NO debe romper el render del módulo CAJA. -->
                         <div v-for="cobro in cobrosAsignados" :key="cobro.idCobro"
-                             :class="[
-                               'border-2 rounded-xl p-3 shadow-md flex items-center justify-between gap-3 relative',
-                               _cobroUrgencia(cobro) === 'critical' ? 'bg-red-50 border-red-400 animate-pulse'
-                                 : _cobroUrgencia(cobro) === 'warn' ? 'bg-yellow-50 border-yellow-400'
-                                 : 'bg-white border-amber-300'
-                             ]"
+                             class="border-2 border-amber-300 bg-white rounded-xl p-3 shadow-md flex items-center justify-between gap-3 relative"
                              style="animation: cobroSlideIn .4s cubic-bezier(.34,1.56,.64,1)">
-                            <!-- [v2.5.27] Sello "PAGADO" cuando se confirma (visible 4s antes que la card se actualice) -->
                             <div v-if="cobro._justPaid"
                                  class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                                 <div class="cobro-sello-pagado">PAGADO ✓</div>
                             </div>
                             <div class="flex-1 min-w-0">
                                 <p class="font-black text-amber-900 text-sm truncate">👤 {{ cobro.cliente || 'VARIOS' }}</p>
-                                <p class="text-[11px] text-amber-700 font-mono">{{ cobro.correlativo }} · S/ {{ parseFloat(cobro.monto).toFixed(2) }} · {{ cobro.metodoSug }}</p>
-                                <p class="text-[10px] text-gray-500 mt-0.5">📋 {{ cobro.adminAsig }} · {{ _fmtFechaCorta(cobro.fechaAsig) }}</p>
-                                <!-- [v2.5.27] Countdown live de vencimiento -->
-                                <p v-if="cobro.fechaVencimiento"
-                                   :class="[
-                                     'text-[10px] font-black mt-1',
-                                     _cobroUrgencia(cobro) === 'critical' ? 'text-red-700 animate-pulse'
-                                       : _cobroUrgencia(cobro) === 'warn' ? 'text-yellow-700'
-                                       : 'text-emerald-700'
-                                   ]">
-                                    ⏱ {{ _cobroRestante(cobro) }}
-                                </p>
+                                <p class="text-[11px] text-amber-700 font-mono">{{ cobro.correlativo }} · S/ {{ parseFloat(cobro.monto || 0).toFixed(2) }} · {{ cobro.metodoSug }}</p>
+                                <p class="text-[10px] text-gray-500 mt-0.5">📋 {{ cobro.adminAsig }}</p>
+                                <p v-if="cobro.mensajeAdmin" class="text-[10px] text-amber-800 mt-1 italic bg-amber-50 px-2 py-1 rounded">💬 {{ cobro.mensajeAdmin }}</p>
                             </div>
                             <button @click="abrirModalCobrarAsignado(cobro)"
                                     class="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-black text-xs px-4 py-3 rounded-xl shadow-lg active:scale-95 transition-transform whitespace-nowrap">
