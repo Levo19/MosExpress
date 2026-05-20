@@ -1094,8 +1094,166 @@
     };
   })();
   </script>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       [v2.5.34] Verificación de dispositivo PRE-VUE (in-situ)
+       Cumple [[feedback-verif-dispositivo-bloqueante]]: el await ocurre
+       desde el HTML, no async silencioso dentro de Vue. Si MOS responde
+       ACTIVO → ocultamos el candado y Vue arranca normal (saltea su propia
+       verificación via window._ME_VERIF_PREVUE_OK). Si responde
+       PENDIENTE/INACTIVO/ERROR → mantenemos el candado y Vue queda detrás
+       del z-index 9998.
+
+       Aprobación de dispositivos nuevos: admin-only desde MOS (este script
+       NO auto-aprueba, solo crea el row PENDIENTE via registrarSesionDispositivo).
+  ═══════════════════════════════════════════════════════════════ -->
+  <script>
+  (function _meVerifDispositivoPreVue() {
+    var MOS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+    var CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+
+    // Generar/recuperar deviceId
+    var devId = '';
+    try {
+      devId = localStorage.getItem('mosexpress_deviceId') || '';
+      if (!devId) {
+        devId = (window.crypto && window.crypto.randomUUID)
+          ? crypto.randomUUID()
+          : ('UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8));
+        localStorage.setItem('mosexpress_deviceId', devId);
+      }
+    } catch(e) { devId = 'UID-' + Date.now(); }
+    window._ME_DEVICE_ID_PREVUE = devId;
+
+    // Helpers del candado (los nodos pueden no existir aún si el HTML no se
+    // parseó — usamos requestAnimationFrame para diferir hasta que estén)
+    function _setVerifState(icono, titulo, msg, mostrarUuid, mostrarBtn, btnAction) {
+      function _apply() {
+        var ico = document.getElementById('verifDispIcono');
+        var tit = document.getElementById('verifDispTitulo');
+        var mg  = document.getElementById('verifDispMsg');
+        var uu  = document.getElementById('verifDispUuid');
+        var bt  = document.getElementById('verifDispReintentar');
+        if (!ico || !tit) { return requestAnimationFrame(_apply); }
+        ico.textContent = icono;
+        tit.textContent = titulo;
+        mg.textContent = msg;
+        if (mostrarUuid && uu) { uu.style.display = 'block'; uu.textContent = devId; }
+        if (mostrarBtn && bt) {
+          bt.style.display = 'inline-block';
+          bt.onclick = btnAction || function(){ location.reload(); };
+        } else if (bt) { bt.style.display = 'none'; }
+      }
+      _apply();
+    }
+
+    function _ocultarCandado() {
+      function _apply() {
+        var el = document.getElementById('verifDispScreen');
+        if (!el) { return requestAnimationFrame(_apply); }
+        el.style.transition = 'opacity .25s ease';
+        el.style.opacity = '0';
+        setTimeout(function(){ el.style.display = 'none'; }, 260);
+      }
+      _apply();
+    }
+
+    function _autorizar() {
+      try {
+        localStorage.setItem('mosexpress_device_auth_date', String(Date.now()));
+        localStorage.setItem('mosexpress_device_auth_id', devId);
+      } catch(_) {}
+      window._ME_VERIF_PREVUE_OK = true;
+      _ocultarCandado();
+    }
+
+    // ── Cache hit: si verificó hace <1h con el mismo deviceId, autorizar al instante.
+    //    Refrescamos en background (silencioso) para mantener fresh el cache.
+    try {
+      var ts = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
+      var cachedId = localStorage.getItem('mosexpress_device_auth_id');
+      if (ts && cachedId === devId && (Date.now() - ts) < CACHE_TTL_MS) {
+        _autorizar();
+        // Refresh silencioso (no espera, no bloquea)
+        setTimeout(function(){
+          try { fetch(MOS_URL + '?action=consultarEstadoDispositivo&deviceId=' + encodeURIComponent(devId)).catch(function(){}); } catch(_) {}
+        }, 2000);
+        return;
+      }
+    } catch(_) {}
+
+    // ── Verificación real con timeout 6s ──
+    var pollingTimer = null;
+    function _hacerVerificacion() {
+      var ua = (navigator.userAgent || '').substring(0, 200);
+      var url = MOS_URL
+              + '?action=registrarSesionDispositivo'
+              + '&ID_Dispositivo=' + encodeURIComponent(devId)
+              + '&app=mosExpress'
+              + '&userAgent=' + encodeURIComponent(ua);
+      var ctrl = new AbortController();
+      var tid  = setTimeout(function(){ ctrl.abort(); }, 6000);
+      fetch(url, { signal: ctrl.signal })
+        .then(function(r){ clearTimeout(tid); return r.json(); })
+        .then(function(j){
+          var d = (j && j.data) || {};
+          if (d.estado === 'ACTIVO' || d.autorizado === true) {
+            if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null; }
+            _autorizar();
+            return;
+          }
+          if (d.estado === 'PENDIENTE_APROBACION') {
+            _setVerifState('⏳', 'Esperando aprobación',
+              'Un admin debe autorizar este dispositivo desde MOS. Tu solicitud ya fue enviada.',
+              true, false);
+            if (!pollingTimer) pollingTimer = setInterval(_hacerVerificacion, 15000);
+            return;
+          }
+          if (d.estado === 'INACTIVO') {
+            _setVerifState('🚫', 'Dispositivo inactivo',
+              'Este dispositivo fue desactivado por el admin. Contáctalo si necesitas acceso.',
+              true, false);
+            return;
+          }
+          _setVerifState('❓', 'Estado desconocido',
+            'MOS devolvió un estado no reconocido. Avisa al admin.',
+            true, true, _hacerVerificacion);
+        })
+        .catch(function(e){
+          clearTimeout(tid);
+          _setVerifState('📡', 'Sin conexión con MOS',
+            'No se pudo verificar el dispositivo. Revisa tu red e intenta de nuevo.',
+            false, true, _hacerVerificacion);
+        });
+    }
+
+    // Disparar inmediatamente (DOM no necesita estar listo para fetch — los
+    // updates del candado usan requestAnimationFrame hasta que aparezca).
+    _hacerVerificacion();
+  })();
+  </script>
 </head>
 <body class="h-screen flex flex-col font-sans overflow-hidden select-none" :class="{'dark-mode': false}">
+
+  <!-- ── [v2.5.34] Candado de verificación dispositivo (pre-Vue) ──────
+       Bloquea TODA la app antes de que Vue arranque. Es la primera línea
+       de defensa: si MOS no autoriza este deviceId, la app no se ve.
+       Estilos inline (no Tailwind) porque Tailwind aún no se cargó cuando
+       este nodo se pinta. Controlado por el script inline en <head>:
+       _meVerifDispositivoPreVue(). Aprobación admin-only desde MOS. -->
+  <div id="verifDispScreen"
+       style="position:fixed;inset:0;z-index:9998;background:linear-gradient(135deg,#064e3b 0%,#065f46 50%,#064e3b 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;">
+    <div style="text-align:center;max-width:420px;">
+      <div id="verifDispIcono" style="font-size:64px;margin-bottom:16px;">🔄</div>
+      <h2 id="verifDispTitulo" style="font-size:22px;font-weight:900;margin:0 0 8px;color:#fff;">Verificando dispositivo</h2>
+      <p id="verifDispMsg" style="font-size:13px;color:#a7f3d0;margin:0 0 12px;line-height:1.45;">Conectando con MOS...</p>
+      <div id="verifDispUuid" style="margin-top:14px;padding:8px 12px;background:rgba(0,0,0,.25);border:1px solid rgba(251,191,36,.35);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:#fbbf24;word-break:break-all;display:none;"></div>
+      <button id="verifDispReintentar" type="button"
+              style="display:none;margin-top:16px;padding:10px 22px;background:#10b981;color:#fff;font-weight:800;font-size:13px;letter-spacing:.04em;border:none;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(16,185,129,.35);">
+        REINTENTAR
+      </button>
+    </div>
+  </div>
 
   <!-- Overlay de actualización (fuera de Vue) -->
   <div id="meUpdateOverlay">
@@ -2227,8 +2385,8 @@
                   <span>{{ zInfo.cantEstaciones }} estación{{ zInfo.cantEstaciones !== 1 ? 'es' : '' }}</span>
                   <span v-if="zInfo.ventasPendientes > 0">📋 {{ zInfo.ventasPendientes }} pendientes</span>
                 </div>
-                <p v-if="zInfo.cajeroActivo" class="text-[10px] text-orange-700 mt-1 font-semibold">
-                  💡 Si entras aquí, será como VENDEDOR (cajero ya es {{ zInfo.cajeroNombre }})
+                <p v-if="zInfo.cajeroActivo" class="text-[10px] text-orange-700 mt-1 font-semibold leading-snug">
+                  💡 Vas a entrar como VENDEDOR (cajero: <strong>{{ zInfo.cajeroNombre }}</strong> · ID: {{ zInfo.cajeroIdCaja }} · abierta {{ zInfo.cajeroDesde }})
                 </p>
               </button>
             </div>
@@ -2280,11 +2438,15 @@
             <div v-else>
               <!-- Cajero ya ocupado -->
               <div v-if="wizardCajeroOcupado" class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-3 mb-3">
-                <div class="flex items-center gap-2">
-                  <span class="w-3 h-3 bg-orange-500 rounded-full animate-pulse shrink-0"></span>
-                  <div>
-                    <p class="text-xs font-black text-orange-700">Cajero activo: {{ cajeroWizardInfo?.vendedor || '...' }}</p>
-                    <p class="text-[10px] text-orange-600">Solo puedes entrar como VENDEDOR aquí</p>
+                <div class="flex items-start gap-2">
+                  <span class="w-3 h-3 bg-orange-500 rounded-full animate-pulse shrink-0 mt-1"></span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs font-black text-orange-700">Cajero activo en {{ configWizard.zona }}</p>
+                    <p class="text-[11px] text-orange-800 font-semibold mt-0.5">
+                      <strong>{{ cajeroWizardInfo?.vendedor || '...' }}</strong>
+                      <span v-if="cajeroWizardInfo?.idCaja" class="opacity-75"> · ID {{ cajeroWizardInfo.idCaja }}</span>
+                    </p>
+                    <p class="text-[10px] text-orange-600 mt-1">✓ Vas a entrar como VENDEDOR (lo único disponible mientras haya caja abierta)</p>
                   </div>
                 </div>
               </div>
@@ -5942,6 +6104,13 @@
                dispositivoAutorizado.value = true;
                return;
            }
+           // [v2.5.34] Si el candado pre-Vue ya autorizó (in-situ desde el HTML),
+           // saltamos la verificación interna — confiamos en el resultado del
+           // script pre-Vue que ya actualizó el cache de localStorage.
+           if (window._ME_VERIF_PREVUE_OK === true) {
+               dispositivoAutorizado.value = true;
+               return;
+           }
            // Cache: si el dispositivo fue verificado en la última hora, no volver a llamar
            const _authTs = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
            const _authId = localStorage.getItem('mosexpress_device_auth_id');
@@ -7267,12 +7436,21 @@
             configWizard.value.estacion = null;
             configWizard.value.esCajero = false;
             configWizard.value.monto = 0;
-            wizardCajeroOcupado.value = false;
-            cajeroWizardInfo.value = null;
+            // [v2.5.34] Usar precarga: si ya cargamos cajeros_activos_todos en el boot,
+            // sabemos al instante si hay cajero en esta zona (no fetch en vivo).
+            const cached = wizCajerosActivosPorZona.value && wizCajerosActivosPorZona.value[zona];
+            if (cached) {
+                wizardCajeroOcupado.value = true;
+                cajeroWizardInfo.value = cached;
+            } else {
+                wizardCajeroOcupado.value = false;
+                cajeroWizardInfo.value = null;
+            }
             // Auto-seleccionar si hay una sola estación en la zona
             const estaciones = estacionesFiltradas.value;
             if (estaciones.length === 1) configWizard.value.estacion = estaciones[0];
-            await verificarCajeroEnZonaWizard(zona);
+            // Refresh en background (silent) para tener fresh state — no bloquea UI
+            verificarCajeroEnZonaWizard(zona, true);
             // Polling 3s mientras el wizard está abierto
             detenerPollingWizard();
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
@@ -7347,12 +7525,21 @@
             return zonasUnicas.value.map(z => {
                 const ests = (db.value.ZONAS_CONFIG || []).filter(x => x.Zona_ID === z);
                 const cajero = wizCajerosActivosPorZona.value[z];
+                let hace = '';
+                if (cajero?.desde) {
+                    const ms = Date.now() - new Date(cajero.desde).getTime();
+                    const horas = Math.floor(ms / 3600000);
+                    const mins  = Math.floor((ms % 3600000) / 60000);
+                    hace = horas > 0 ? `hace ${horas}h ${mins}m` : `hace ${mins}m`;
+                }
                 return {
                     zona: z,
                     cantEstaciones: ests.length,
                     cajeroActivo: !!cajero,
                     cajeroNombre: cajero?.vendedor || '',
-                    ventasPendientes: 0 // placeholder, se llenará si hay info
+                    cajeroIdCaja: cajero?.idCaja || '',
+                    cajeroDesde: hace,
+                    ventasPendientes: 0
                 };
             });
         });
@@ -7512,14 +7699,12 @@
             } catch(e) {}
         };
 
-        // ── Cargar impresoras de la zona (PrintNode states) ──
-        const _wizCargarImpresorasZona = async () => {
-            const ests = estacionesFiltradas.value;
-            const ids = [...new Set(ests.map(e => String(e.PrintNode_ID || '').trim()).filter(Boolean))];
+        // ── [v2.5.34] Cargar impresoras de TODAS las zonas en bulk (precarga) ──
+        const _wizCargarImpresorasTodas = async () => {
+            const ids = [...new Set((db.value.ZONAS_CONFIG || []).map(e => String(e.PrintNode_ID || '').trim()).filter(Boolean))];
             if (!ids.length) return;
-            // Inicializar todas en "checking"
             ids.forEach(pid => {
-                if (!wizImpresorasStatus.value[pid]) wizImpresorasStatus.value[pid] = { state: 'checking', name: '', reason: 'Consultando...' };
+                if (!wizImpresorasStatus.value[pid]) wizImpresorasStatus.value[pid] = { state: 'checking', name: '#' + pid, reason: 'Consultando...' };
             });
             try {
                 if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' || offlineMode.value) {
@@ -7541,6 +7726,8 @@
                 ids.forEach(pid => { wizImpresorasStatus.value[pid] = { state: 'checking', name: '#' + pid, reason: 'No se pudo verificar' }; });
             }
         };
+        // Alias retrocompatible (algunos lugares aún lo llaman)
+        const _wizCargarImpresorasZona = _wizCargarImpresorasTodas;
 
         // ── Monto sugerido (último cierre del cajero) ──
         const _wizCalcularMontoSugerido = () => {
@@ -7551,32 +7738,26 @@
             }
         };
 
-        // ── Pre-flight check ──
-        const _wizPreflightRun = async () => {
-            wizPreflight.value = { run: true, mos: false, impresora: false, impresoraOk: false, catalogo: false };
-            // catálogo
-            wizPreflight.value.catalogo = !!dbCargada.value;
-            // MOS — un ping rápido
-            try {
-                if (API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                    const ctl = new AbortController();
-                    const tid = setTimeout(() => ctl.abort(), 3000);
-                    const r = await fetch(`${API_URL}?accion=ping`, { signal: ctl.signal });
-                    clearTimeout(tid);
-                    wizPreflight.value.mos = r.ok;
-                }
-            } catch(e) { wizPreflight.value.mos = false; }
-            // impresora — usar el state cacheado
+        // ── [v2.5.34] Pre-flight check usando cache pre-cargado ──
+        // Ya no hace ping en vivo: usamos los datos que el boot ya cargó.
+        const _wizPreflightRun = () => {
+            const tieneCacheMos = Object.keys(wizCajerosActivosPorZona.value || {}).length > 0
+                                  || Object.keys(wizImpresorasStatus.value || {}).length > 0;
             const pid = String(configWizard.value.estacion?.PrintNode_ID || '').trim();
             const imp = wizImpresorasStatus.value[pid];
-            wizPreflight.value.impresora = true;
-            wizPreflight.value.impresoraOk = imp?.state === 'online';
-            // ocultar pre-flight tras 3s si todo ok
+            wizPreflight.value = {
+                run: true,
+                catalogo:    !!dbCargada.value,
+                mos:         tieneCacheMos,
+                impresora:   !!imp,
+                impresoraOk: imp?.state === 'online'
+            };
+            // Ocultar tras 2s si todo OK
             setTimeout(() => {
                 if (wizPreflight.value.mos && wizPreflight.value.catalogo) {
                     wizPreflight.value.run = false;
                 }
-            }, 3000);
+            }, 2000);
         };
 
         // ── Dictado por voz para monto ──
@@ -7682,12 +7863,33 @@
             try { lsSet('mosexpress_wiz_tutorial_seen', '1'); } catch(e) {}
         };
 
-        // ── Boot: cargar todo cuando arranca la app ──
+        // ── [v2.5.34] Boot: precarga AGRESIVA desde el paso 1 ──
+        // Carga en paralelo todo lo que los pasos 2/3/4 podrían necesitar:
+        //   · cajeros activos por zona (1 fetch bulk)
+        //   · estado impresoras de TODAS las zonas (1 fetch bulk)
+        //   · últimos users, mensaje del jefe, clima (localStorage / fetch ligero)
+        // El catálogo ya lo descarga `cargarDatos()` en paralelo.
         const wizBootData = () => {
             _wizCargarUltimosUsers();
             _wizCargarMensajeJefe();
             _wizCargarClima();
             wizTutorialCheckShow();
+            // Cajeros activos (1 fetch para todas las zonas)
+            _wizCargarCajerosActivos();
+            // Impresoras de todas las zonas — esperar a que catálogo esté para tener IDs
+            const _intentarImpresoras = (intentos = 0) => {
+                if (db.value.ZONAS_CONFIG && db.value.ZONAS_CONFIG.length) {
+                    _wizCargarImpresorasTodas();
+                } else if (intentos < 30) {
+                    setTimeout(() => _intentarImpresoras(intentos + 1), 500); // máx 15s
+                }
+            };
+            _intentarImpresoras();
+            // Re-poll cajeros activos cada 30s mientras el wizard está abierto
+            // (no parpadea — solo actualiza el cache silencioso)
+            setInterval(() => {
+                if (!config.value.completado) _wizCargarCajerosActivos();
+            }, 30000);
         };
         // Ejecutarlo cuando se monte
         setTimeout(() => { try { wizBootData(); } catch(e) {} }, 100);
