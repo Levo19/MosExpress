@@ -1973,22 +1973,31 @@
 
   <div id="app" class="h-full flex flex-col relative" v-cloak>
     
-    <!-- [v2.5.13] FAB etiquetas pendientes — ahora visible POR ENCIMA del nav
-         inferior (que es h-16 = 64px). Antes en bottom-4 quedaba TAPADO bajo
-         el nav. Ahora bottom-20 (80px) lo deja flotando claramente sobre el
-         nav. z-50 garantiza que no lo tape ningún otro overlay. Glow pulsante
-         + escala mayor para llamar la atención cuando hay no-vistas. -->
-    <button v-if="etiqsPendientes.length > 0"
+    <!-- [v2.5.36] FAB etiquetas — inteligente: grande cuando carrito vacío
+         (estado inicial, llama la atención), compacto cuando agregas al
+         carrito (no estorba el total). Solo visible en módulo POS. -->
+    <button v-if="etiqsPendientes.length > 0 && currentModule === 'POS'"
             @click="abrirEtiqsModal"
-            class="fixed bottom-20 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl active:scale-95 transition-all hover:scale-105"
-            :class="etiqsPendientes.some(e => !e._vistoPorMi) ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white animate-pulse-glow' : 'bg-gradient-to-br from-emerald-500 to-emerald-700 text-white'"
+            :class="['fixed z-50 active:scale-95 transition-all',
+                     carrito.length === 0
+                       ? 'bottom-20 right-4 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl hover:scale-105'
+                       : 'bottom-24 right-2 w-10 h-10 rounded-full shadow-lg flex items-center justify-center',
+                     etiqsPendientes.some(e => !e._vistoPorMi)
+                       ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white animate-pulse-glow'
+                       : 'bg-gradient-to-br from-emerald-500 to-emerald-700 text-white']"
             style="box-shadow: 0 10px 28px -6px rgba(245,158,11,.85), 0 0 0 2px rgba(255,255,255,.15);">
-      <span class="text-3xl leading-none">🏷</span>
-      <div class="flex flex-col items-start leading-tight">
+      <!-- Modo compacto: solo icono pequeño + badge con número -->
+      <span v-if="carrito.length > 0" class="text-lg leading-none relative">
+        🏷
+        <span class="absolute -top-2 -right-3 bg-rose-500 text-white text-[10px] font-black rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center ring-2 ring-white">{{ etiqsPendientes.length }}</span>
+      </span>
+      <!-- Modo grande: icono + label + contador -->
+      <span v-else class="text-3xl leading-none">🏷</span>
+      <div v-if="carrito.length === 0" class="flex flex-col items-start leading-tight">
         <span class="text-[10px] uppercase tracking-widest font-black opacity-90">Etiquetas</span>
         <span class="text-xl font-black">{{ etiqsPendientes.length }}</span>
       </div>
-      <span v-if="etiqsPendientes.some(e => !e._vistoPorMi)"
+      <span v-if="carrito.length === 0 && etiqsPendientes.some(e => !e._vistoPorMi)"
             class="absolute -top-2 -right-2 bg-rose-500 text-white text-xs font-black rounded-full w-6 h-6 flex items-center justify-center animate-bounce shadow-lg ring-2 ring-white">!</span>
     </button>
 
@@ -4866,9 +4875,15 @@
           },
           async set(key, value) {
             const d = await this._open();
+            // [v2.5.36] Vue reactive Proxies tienen Symbols que IndexedDB no
+            // puede clonar → DataCloneError. Deep clone via JSON antes del put.
+            // Esto evitaba que el catálogo se persistiera y forzaba fallback a
+            // localStorage (con quota issues) → demora al iniciar turno.
+            let clean = value;
+            try { clean = JSON.parse(JSON.stringify(value)); } catch(_) {}
             return new Promise((resolve, reject) => {
               const tx = d.transaction('kv', 'readwrite');
-              tx.objectStore('kv').put(value, key);
+              tx.objectStore('kv').put(clean, key);
               tx.oncomplete = () => resolve(true);
               tx.onerror = () => reject(tx.error);
             });
