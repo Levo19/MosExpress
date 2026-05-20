@@ -3830,10 +3830,13 @@
     <!-- ═════════════════════════════════════════════════════════
          [v40.3] MODAL: COBRAR CRÉDITO ASIGNADO POR ADMIN
     ═════════════════════════════════════════════════════════ -->
+    <!-- [v2.5.26] FIX pantalla blanca: dvh roto en Chromium viejo de tablets POS.
+         Cambiado a vh (compatible 100%). Memoria persistente registra este patrón
+         como regla universal para apps del ecosistema MOS. -->
     <div v-if="modalCobrarAsignado && cobroAsignadoActivo" class="fixed inset-0 bg-gray-900/80 z-[210] flex flex-col justify-end backdrop-blur-sm"
-         style="height:100dvh">
+         style="height:100vh">
         <div class="bg-white rounded-t-3xl shadow-2xl flex flex-col"
-             style="max-height:85dvh; min-height:300px">
+             style="max-height:85vh; min-height:300px">
 
             <!-- HEADER FIJO arriba -->
             <div class="p-5 pb-3 shrink-0 flex justify-between items-center border-b border-gray-100">
