@@ -3449,24 +3449,34 @@
                     🔐 Ingresa <strong>8 dígitos</strong>: los 4 de la clave global (la verifica el master en MOS) seguidos de tu PIN personal de admin.
                 </p>
             </div>
-            <!-- [v2.5.25] Dots indicadores 4+4 con separador (alineado con MOS AdminAuthModal) -->
+            <!-- [v2.5.29] FIX pantalla blanca: el :key estaba en <template> directo
+                 (sintaxis Vue 3 incorrecta → rompía el render entero). Migrado a
+                 array de números con span único + separador como elemento aparte. -->
             <div class="flex justify-center items-center gap-1.5 mb-2 mt-1">
-                <template v-for="i in 8" :key="i">
-                    <span :class="[
-                        'w-3 h-3 rounded-full transition-all',
-                        i <= pinInput.length
-                            ? 'bg-amber-500 scale-110 shadow-[0_0_6px_rgba(245,158,11,.5)]'
-                            : 'border-2 border-gray-300'
-                    ]"></span>
-                    <span v-if="i === 4" class="text-gray-400 text-base mx-1">·</span>
-                </template>
+                <span v-for="i in [1,2,3,4]" :key="'g'+i"
+                      :class="[
+                          'w-3 h-3 rounded-full transition-all',
+                          i <= pinInput.length
+                              ? 'bg-amber-500 scale-110 shadow-[0_0_6px_rgba(245,158,11,.5)]'
+                              : 'border-2 border-gray-300'
+                      ]"></span>
+                <span class="text-gray-400 text-base mx-1">·</span>
+                <span v-for="i in [5,6,7,8]" :key="'p'+i"
+                      :class="[
+                          'w-3 h-3 rounded-full transition-all',
+                          i <= pinInput.length
+                              ? 'bg-amber-500 scale-110 shadow-[0_0_6px_rgba(245,158,11,.5)]'
+                              : 'border-2 border-gray-300'
+                      ]"></span>
             </div>
             <div class="flex justify-center gap-[60px] text-[9px] uppercase tracking-wider text-gray-400 font-bold mb-3">
                 <span>global</span><span>personal</span>
             </div>
-            <!-- Input oculto para teclado físico (sigue funcionando) -->
-            <input v-model="pinInput" @keyup.enter="confirmarPin" type="password" inputmode="none" maxlength="8"
-                   class="absolute opacity-0 pointer-events-none" tabindex="-1">
+            <!-- [v2.5.29] Input oculto sin inputmode="none" (no estándar HTML5).
+                 Sigue siendo accesible para teclado físico via v-model. -->
+            <input v-model="pinInput" @keyup.enter="confirmarPin" type="password" maxlength="8"
+                   class="absolute opacity-0 pointer-events-none" tabindex="-1"
+                   style="width:0;height:0;border:0;padding:0">
             <p v-if="pinError" class="text-red-500 text-xs font-bold text-center mb-2">{{ pinError }}</p>
 
             <!-- [v2.5.25] Keypad numérico táctil 3×4 -->
