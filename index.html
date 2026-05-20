@@ -5089,6 +5089,15 @@
           window.addEventListener('offline', updateOnlineStatus);
           handleResize();
 
+          // [v2.5.30] Al ABRIR/ACTUALIZAR la app, ir a POS + foco scanner
+          // automático después de que Vue monte todo el árbol (1s buffer
+          // para que el modal de login se evalúe primero si no hay sesión).
+          setTimeout(() => {
+            if (config.value.completado && currentModule.value === 'POS' && scannerInput.value) {
+              try { scannerInput.value.focus({ preventScroll: true }); } catch(_){}
+            }
+          }, 1200);
+
           // Reloj header — actualizar cada minuto
           setInterval(() => { horaActual.value = _fmtHora(); }, 60000);
 
@@ -5285,9 +5294,11 @@
               const configLocal = localStorage.getItem('mosexpress_config');
               if (configLocal) {
                   const _parsed = JSON.parse(configLocal);
-                  // Fijar módulo ANTES de asignar config para que <main v-if="config.completado">
-                  // aparezca ya en el módulo correcto y no flashee CAJA por un frame
-                  if (_parsed.completado && !_parsed.esCajero) currentModule.value = 'POS';
+                  // [v2.5.30] Fijar módulo POS al arrancar SIEMPRE (no solo vendedor).
+                  // El cajero también arranca en POS si tiene caja abierta — su flujo
+                  // diario es vender, no administrar. Si no tiene caja, queda en CAJA.
+                  // El foco al scanner se setea más abajo en _aplicarSesion via setTimeout.
+                  if (_parsed.completado) currentModule.value = 'POS';
                   config.value = _parsed;
               }
           } catch(e) {
@@ -6554,17 +6565,86 @@
         };
 
         // ── Ocultar salvapantalla ────────────────────────────
-        const ocultarSalvapantalla = () => {
-            if (!idleScreen.value.visible || idleScreen.value.fading) return;
+        // [v2.5.30] Al salir del salvapantallas SIEMPRE volver a POS con
+        // foco en scanner. Patrón "all roads lead to POS" — el flujo natural
+        // de la tienda es vender, no administrar. Si no hay caja abierta y
+        // es cajero, queda donde estaba (POS module igual visible).
+        const ocultarSalvapantalla = (opts) => {
+            opts = opts || {};
+            if (!idleScreen.value.visible || idleScreen.value.fading) {
+                // Por si llaman cuando ya está oculto (fast-path)
+                if (opts.forceFocus && scannerInput.value) {
+                    try { scannerInput.value.focus({ preventScroll: true }); } catch(_){}
+                }
+                return;
+            }
             idleScreen.value.fading = true;
             if (_idleClockInterval) { clearInterval(_idleClockInterval); _idleClockInterval = null; }
             if (_idleQuoteInterval) { clearInterval(_idleQuoteInterval); _idleQuoteInterval = null; }
             setTimeout(() => {
                 idleScreen.value.visible = false;
                 idleScreen.value.fading = false;
+                // [v2.5.30] Volver a POS + foco scanner
+                if (config.value.completado) {
+                    currentModule.value = 'POS';
+                    nextTick(() => {
+                        if (scannerInput.value) {
+                            try { scannerInput.value.focus({ preventScroll: true }); } catch(_){}
+                        }
+                    });
+                }
                 _resetIdleTimer(); // arrancar countdown de nuevo
-            }, 380);
+            }, opts.forceFocus ? 50 : 380); // fast unmount si vino de scan
         };
+
+        // [v2.5.30] Listener global de teclas durante salvapantallas.
+        // Si el scanner físico envía dígitos + Enter mientras está la pantalla
+        // de inactividad, capturamos el código → ocultamos salvapantallas
+        // rápido → cambiamos a POS → inyectamos código → procesamos como scan.
+        // Patrón scanner USB típico: ráfaga de dígitos en <200ms + Enter.
+        let _idleScanBuffer = '';
+        let _idleScanTimer = null;
+        const _onIdleKeydown = (e) => {
+            // Solo activo cuando salvapantallas está visible
+            if (!idleScreen.value.visible) return;
+            // Ignorar si hay modales bloqueantes (poco probable bajo salva)
+            if (!config.value.completado) return;
+            // Dígito → acumular en buffer
+            if (/^[0-9]$/.test(e.key)) {
+                _idleScanBuffer += e.key;
+                if (_idleScanTimer) clearTimeout(_idleScanTimer);
+                // Si pasa más de 400ms entre teclas, considerar que NO es scanner sino teclado humano
+                _idleScanTimer = setTimeout(() => { _idleScanBuffer = ''; }, 400);
+                return;
+            }
+            // Enter con buffer mínimo de 4 dígitos → procesar como scan
+            if (e.key === 'Enter' && _idleScanBuffer.length >= 4) {
+                const codigo = _idleScanBuffer;
+                _idleScanBuffer = '';
+                if (_idleScanTimer) { clearTimeout(_idleScanTimer); _idleScanTimer = null; }
+                // Ocultar salvapantallas rápido + ir a POS + setear código
+                ocultarSalvapantalla({ forceFocus: true });
+                currentModule.value = 'POS';
+                bBuscador.value = codigo;
+                nextTick(() => {
+                    if (scannerInput.value) {
+                        scannerInput.value.value = codigo;
+                        try { scannerInput.value.focus({ preventScroll: true }); } catch(_){}
+                    }
+                    // Disparar el handler de Enter (mismo que cuando escribes manual)
+                    if (typeof procesarEscaneoOBusqueda === 'function') {
+                        procesarEscaneoOBusqueda();
+                    }
+                });
+                return;
+            }
+            // Otra tecla no-dígito → resetear buffer
+            if (e.key !== 'Enter') {
+                _idleScanBuffer = '';
+                if (_idleScanTimer) { clearTimeout(_idleScanTimer); _idleScanTimer = null; }
+            }
+        };
+        window.addEventListener('keydown', _onIdleKeydown);
 
         // ── Listeners de actividad ───────────────────────────
         ['touchstart', 'click', 'keydown', 'mousemove', 'scroll'].forEach(ev => {
