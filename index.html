@@ -2487,7 +2487,7 @@
                 <!-- Chips de monto rápido -->
                 <div class="grid grid-cols-5 gap-1 mb-1.5">
                   <button v-for="m in [50, 100, 200, 300, 500]" :key="m"
-                          @click="configWizard.monto = m; _wizBeep('tap')"
+                          @click="configWizard.monto = m; wizBeep('tap')"
                           :class="['py-2 rounded-lg text-xs font-black border-2 active:scale-95 transition-all',
                                    configWizard.monto === m ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
                                    : 'bg-white border-gray-200 text-gray-500 hover:border-emerald-300']">
@@ -2509,9 +2509,9 @@
                 </ul>
               </div>
 
-              <!-- Botón abrir turno -->
+              <!-- Botón abrir turno — monto 0 SÍ es válido (caja vacía) -->
               <button @click="iniciarTurno"
-                      :disabled="(!configWizard.vendedor || !configWizard.estacion || procesandoCaja || (configWizard.esCajero && (!configWizard.monto || configWizard.monto < 0)))"
+                      :disabled="(!configWizard.vendedor || !configWizard.estacion || procesandoCaja || (configWizard.esCajero && (configWizard.monto == null || configWizard.monto === '' || configWizard.monto < 0)))"
                       :class="['w-full py-3 rounded-2xl font-black text-base shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-white',
                                configWizard.esCajero ? 'bg-gradient-to-br from-emerald-500 to-emerald-700'
                                : 'bg-gradient-to-br from-blue-500 to-blue-700']">
@@ -7485,7 +7485,7 @@
 
         // ── SFX (sonidos sintetizados con Web Audio) ──
         let _wizAudioCtx = null;
-        const _wizBeep = (tipo = 'tap') => {
+        const wizBeep = (tipo = 'tap') => {
             try {
                 if (!_wizAudioCtx) _wizAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const ctx = _wizAudioCtx;
@@ -7581,7 +7581,7 @@
         // ── Métodos de navegación ──
         const wizNextStep = async (target) => {
             if (target === 2 && !configWizard.value.vendedor?.trim()) return;
-            _wizBeep('next');
+            wizBeep('next');
             // Al pasar al paso 2 → cargar cajeros activos en bulk
             if (target === 2) _wizCargarCajerosActivos();
             // Atajo: si solo hay una zona, saltear directamente al paso 3
@@ -7594,12 +7594,12 @@
             wizStep.value = target;
         };
         const wizPrevStep = () => {
-            _wizBeep('tap');
+            wizBeep('tap');
             if (wizStep.value > 1) wizStep.value -= 1;
         };
 
         const wizSelectUser = (u) => {
-            _wizBeep('tap');
+            wizBeep('tap');
             configWizard.value.vendedor = u.nombre;
             // si solo hay 1 zona, autoavanzar
             if (zonasUnicas.value.length === 1) {
@@ -7615,7 +7615,7 @@
         };
 
         const wizSelectZona = async (zInfo) => {
-            _wizBeep('tap');
+            wizBeep('tap');
             await seleccionarZonaWizard(zInfo.zona);
             // Cargar estado impresoras de la zona
             _wizCargarImpresorasZona();
@@ -7623,7 +7623,7 @@
         };
 
         const wizSelectEstacion = (estInfo) => {
-            _wizBeep('tap');
+            wizBeep('tap');
             configWizard.value.estacion = estInfo.estacion;
             // pasar a paso 4 + lanzar pre-flight + monto sugerido
             _wizCalcularMontoSugerido();
@@ -7633,10 +7633,10 @@
 
         const wizSelectRol = (esCajero) => {
             if (esCajero && wizardCajeroOcupado.value) {
-                _wizBeep('error');
+                wizBeep('error');
                 return;
             }
-            _wizBeep('tap');
+            wizBeep('tap');
             configWizard.value.esCajero = !!esCajero;
             if (!esCajero) configWizard.value.monto = 0;
         };
@@ -7645,7 +7645,7 @@
         const wizFastTrack = () => {
             const u = wizUltimoTurno.value;
             if (!u) return;
-            _wizBeep('success');
+            wizBeep('success');
             configWizard.value.vendedor = u.nombre;
             const est = (db.value.ZONAS_CONFIG || []).find(x => x.Estacion_Nombre === u.estacionNombre && x.Zona_ID === u.zona);
             if (est) {
@@ -7765,7 +7765,7 @@
             try {
                 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
                 if (!SR) {
-                    _wizBeep('error');
+                    wizBeep('error');
                     agregarToast('Sin soporte', 'Tu navegador no permite dictado por voz', 'warning');
                     return;
                 }
@@ -7773,27 +7773,27 @@
                 rec.lang = 'es-PE';
                 rec.continuous = false;
                 rec.interimResults = false;
-                _wizBeep('tap');
+                wizBeep('tap');
                 rec.onresult = (e) => {
                     const transcript = (e.results[0]?.[0]?.transcript || '').toLowerCase().trim();
                     const num = parseFloat(transcript.replace(/[^\d.,]/g, '').replace(',', '.'));
                     if (!isNaN(num) && num >= 0) {
                         configWizard.value.monto = num;
-                        _wizBeep('success');
+                        wizBeep('success');
                         agregarToast('💵 Monto dictado', `S/ ${num.toFixed(2)}`, 'success');
                     } else {
-                        _wizBeep('error');
+                        wizBeep('error');
                         agregarToast('No entendí', `Escuché "${transcript}". Intenta de nuevo.`, 'warning');
                     }
                 };
                 rec.onerror = (ev) => {
-                    _wizBeep('error');
+                    wizBeep('error');
                     if (ev.error === 'not-allowed') agregarToast('Micrófono', 'Permiso de micrófono denegado', 'error');
                 };
                 rec.start();
                 agregarToast('🎤 Escuchando', 'Decí el monto en voz alta', 'info');
             } catch(e) {
-                _wizBeep('error');
+                wizBeep('error');
                 agregarToast('Error', 'No se pudo iniciar dictado: ' + (e?.message || ''), 'error');
             }
         };
@@ -7851,7 +7851,7 @@
             } catch(e) {}
         };
         const wizTutorialNext = () => {
-            _wizBeep('tap');
+            wizBeep('tap');
             if (wizTutorial.value.idx + 1 < wizTutorial.value.pasos.length) {
                 wizTutorial.value.idx += 1;
             } else {
@@ -7862,6 +7862,16 @@
             wizTutorial.value.visible = false;
             try { lsSet('mosexpress_wiz_tutorial_seen', '1'); } catch(e) {}
         };
+
+        // [v2.5.34] Watch: cuando el catálogo termine de descargar, disparar
+        // la precarga de impresoras de TODAS las zonas. Esto cubre el caso de
+        // que wizBootData() corra antes de que db.value.ZONAS_CONFIG exista.
+        watch(() => dbCargada.value, (val) => {
+            if (val) {
+                _wizCargarImpresorasTodas();
+                _wizCargarCajerosActivos();
+            }
+        });
 
         // ── [v2.5.34] Boot: precarga AGRESIVA desde el paso 1 ──
         // Carga en paralelo todo lo que los pasos 2/3/4 podrían necesitar:
@@ -8083,11 +8093,11 @@
             if (wizardCajeroOcupado.value && configWizard.value.esCajero) {
                 agregarToast('Acceso bloqueado', 'Ya hay un cajero activo en esta zona. Entra como vendedor.');
                 configWizard.value.esCajero = false;
-                _wizBeep('error');
+                wizBeep('error');
                 return;
             }
             detenerPollingWizard();
-            try { _wizBeep('success'); } catch(_){}
+            try { wizBeep('success'); } catch(_){}
             // [v2.5.33] Guardar user en historial + arrancar progreso visual real
             try { wizGuardarUserEnHistorial(); } catch(_){}
             wizProgreso.value = {
@@ -11881,7 +11891,7 @@
           wizCajerosActivosPorZona, wizImpresorasStatus, wizMontoSugerido, wizProgreso, wizPreflight,
           wizSaludo, wizTitulo, wizZonasInfo, wizEstacionesInfo,
           wizNextStep, wizPrevStep, wizSelectUser, wizOnNombreInput, wizSelectZona, wizSelectEstacion,
-          wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, _wizBeep,
+          wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
           wizTutorial, wizTutorialNext, wizTutorialClose,
           darkMode, toggleDarkMode,
           anularVenta,
