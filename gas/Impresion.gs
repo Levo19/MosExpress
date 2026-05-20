@@ -4,6 +4,54 @@
 // Script Property requerida: PRINTNODE_API_KEY
 // ============================================================
 
+// [v2.5.33] Estado bulk de impresoras — usado por el wizard moderno para mostrar
+// el icono 🟢/🔴/🟡 en cada card de estación EN VIVO. Una sola llamada GET
+// /printers/{ids} consulta varias IDs separadas por coma. Si PrintNode falla,
+// devolvemos cada impresora en estado "checking" para que la UI sea graceful.
+function estadoImpresoras(idsCsv) {
+  var printNodeKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+  if (!printNodeKey) return generarRespuestaError('PRINTNODE_API_KEY no configurada');
+  var ids = String(idsCsv || '').split(',').map(function(x){ return String(x).trim(); }).filter(Boolean);
+  if (!ids.length) return ContentService.createTextOutput(JSON.stringify({ status: 'success', impresoras: [] })).setMimeType(ContentService.MimeType.JSON);
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printers/' + ids.join(','), {
+      method:  'get',
+      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(printNodeKey + ':') },
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    var lista = [];
+    if (code === 200) {
+      var arr = JSON.parse(resp.getContentText());
+      arr.forEach(function(p){
+        var pState    = String(p.state || 'unknown').toLowerCase();
+        var compState = String((p.computer && p.computer.state) || 'unknown').toLowerCase();
+        var online    = (pState === 'online') && (compState === 'connected');
+        lista.push({
+          id:       p.id,
+          name:     String(p.name || ('#' + p.id)),
+          online:   online,
+          state:    pState,
+          computerState: compState,
+          computer: String((p.computer && p.computer.name) || ''),
+          reason:   online ? 'Lista para imprimir'
+                  : (pState !== 'online' ? 'Impresora ' + pState
+                  : 'Agente PrintNode ' + compState)
+        });
+      });
+    }
+    // Cualquier ID que no haya devuelto PrintNode → marcar offline
+    var devueltos = {};
+    lista.forEach(function(p){ devueltos[String(p.id)] = true; });
+    ids.forEach(function(id){
+      if (!devueltos[id]) lista.push({ id: id, name: '#' + id, online: false, state: 'not_found', reason: 'No registrada en PrintNode' });
+    });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', impresoras: lista })).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return generarRespuestaError('Error consultando PrintNode (bulk): ' + err.toString());
+  }
+}
+
 // [v2.5.16] Verifica estado de impresora en PrintNode antes de enviar print job.
 // Si la impresora local está offline (agente PrintNode caído, USB desconectada,
 // computador apagado), PrintNode acepta el job pero NUNCA imprime → el cajero

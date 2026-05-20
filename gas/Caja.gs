@@ -477,6 +477,27 @@ function cerrarCajaForzado(data) {
   });
 }
 
+// [v2.5.33] Devuelve TODOS los cajeros activos por zona en una sola llamada.
+// El wizard moderno lo usa para poblar las cards de zona en el paso 2 con la
+// info de "🔴 cajero ya activo: X" sin tener que disparar N requests.
+function cajerosActivosTodos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("CAJAS");
+  if (!sheet) return generarRespuestaError("CAJAS no encontrada");
+  var _cerradas = _autoCerrarCajasViejas(sheet);
+  var data = sheet.getDataRange().getValues();
+  var porZona = {};
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][5]) === 'ABIERTA') {
+      var z = String(data[i][8] || '');
+      if (!porZona[z]) porZona[z] = { vendedor: String(data[i][1]), idCaja: String(data[i][0]), desde: data[i][3] };
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', porZona: porZona, cajasAutoCerradas: _cerradas
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function cajeroActivo(zona) {
   if (!zona) return generarRespuestaError("zona requerida");
   var ss = SpreadsheetApp.getActiveSpreadsheet();

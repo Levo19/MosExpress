@@ -29,6 +29,10 @@ function doGet(e) {
     if (accion === 'stock_zonas')           return getStockZonas();
     if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
     if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
+    // [v2.5.33] Wizard moderno — estado bulk de impresoras + ping + cajeros activos
+    if (accion === 'estado_impresoras')     return estadoImpresoras(e.parameter.ids);
+    if (accion === 'cajeros_activos_todos') return cajerosActivosTodos();
+    if (accion === 'ping')                  return ContentService.createTextOutput(JSON.stringify({ status: 'success', ok: true, ts: Date.now() })).setMimeType(ContentService.MimeType.JSON);
     if (accion === 'listar_guias')          return listarGuias(e.parameter.zona);
     if (accion === 'detalle_guia')          return detalleGuia(e.parameter.id_guia);
     if (accion === 'traslados_entrantes')   return trasladosEntrantes(e.parameter.zona, e.parameter.desde);

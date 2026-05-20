@@ -1166,6 +1166,48 @@
       font-weight:800; font-size:.85rem; letter-spacing:.04em;
     }
     .me-des-ok:disabled { opacity:.6; cursor:not-allowed; }
+
+    /* ═══════════════════════════════════════════════════════════
+       [v2.5.33] WIZARD MODERNO — fondo gradient · cards animadas
+       · silueta SVG · slide entre pasos
+    ═══════════════════════════════════════════════════════════ */
+    .wiz-bg {
+      background: linear-gradient(135deg, #064e3b 0%, #047857 25%, #065f46 60%, #064e3b 100%);
+      background-size: 200% 200%;
+      animation: wizBgShift 14s ease-in-out infinite;
+    }
+    @keyframes wizBgShift {
+      0%, 100% { background-position: 0% 0%; }
+      50% { background-position: 100% 100%; }
+    }
+    /* Animación de cada paso al entrar */
+    .wiz-card-anim {
+      animation: wizSlideUp .35s cubic-bezier(.16,1,.3,1) both;
+    }
+    @keyframes wizSlideUp {
+      0% { opacity: 0; transform: translateY(18px) scale(.98); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    /* Silueta avatar — círculo con inicial */
+    .wiz-silueta {
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; color: #fff; font-weight: 900;
+      box-shadow: 0 4px 10px rgba(0,0,0,.15);
+      position: relative; overflow: hidden;
+    }
+    .wiz-silueta::after {
+      content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+      width: 60%; height: 38%; border-radius: 50% 50% 0 0; background: rgba(255,255,255,.18);
+    }
+    .wiz-silueta-grande { width: 48px; height: 48px; font-size: 1.2rem; }
+    .wiz-silueta-mid    { width: 36px; height: 36px; font-size: 0.95rem; }
+    /* Card de user con hover sutil */
+    .wiz-user-card {
+      background: #fff;
+      transition: all .15s ease;
+    }
+    .wiz-user-card:hover { border-color: #10b981; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(16,185,129,.15); }
+
   </style>
   <div id="meCerradoOverlay">
     <div class="me-cer-emoji">🌙</div>
@@ -2083,106 +2125,280 @@
       </div>
     </div>
 
-    <!-- WIZARD INICIAL -->
-    <div v-if="!config.completado && !mostrarModalSesionAnterior" class="absolute inset-0 z-50 bg-posBg flex flex-col items-center justify-center p-5">
-      <div class="w-full max-w-md bg-white p-7 rounded-3xl shadow-2xl border border-gray-100">
-        <h2 class="text-2xl font-black text-center mb-6">Iniciar sesión</h2>
-
-        <!-- Nombre -->
-        <input v-model="configWizard.vendedor" type="text" placeholder="Tu nombre completo"
-               class="w-full p-4 mb-5 border-2 border-gray-100 rounded-xl focus:border-posPrimary outline-none font-bold text-gray-800">
-
-        <!-- Cargando -->
-        <div v-if="!dbCargada" class="flex flex-col items-center justify-center gap-2 text-sm text-gray-400 font-bold mb-5 py-3">
-          <svg class="animate-spin w-6 h-6 text-emerald-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-          <span>Descargando catálogo del servidor...</span>
-          <span class="text-xs text-gray-300 font-normal">Primera carga — puede demorar unos segundos</span>
-        </div>
-
-        <!-- Zonas como botones -->
-        <div v-if="dbCargada" class="mb-5">
-          <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Zona de trabajo</p>
-          <div class="flex flex-wrap gap-2">
-            <button v-for="z in zonasUnicas" :key="z" @click="seleccionarZonaWizard(z)"
-                    class="px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 border-2"
-                    :class="configWizard.zona === z
-                      ? 'bg-posPrimary text-white border-posPrimary shadow-md'
-                      : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-posPrimary hover:text-posPrimary'">
-              {{ z }}
-            </button>
+    <!-- ═══════════════════════════════════════════════════════════
+         [v2.5.33] WIZARD MODERNO — paso a paso con cards · efectos
+         visuales/sonoros · estado impresora en vivo · ultimos users
+    ═══════════════════════════════════════════════════════════ -->
+    <div v-if="!config.completado && !mostrarModalSesionAnterior" class="absolute inset-0 z-50 wiz-bg flex flex-col items-center justify-center p-4 overflow-y-auto">
+      <div class="w-full max-w-md">
+        <!-- Header con saludo + progreso -->
+        <div class="text-center mb-4">
+          <p class="text-white/70 font-semibold text-sm">{{ wizSaludo }}</p>
+          <h1 class="text-3xl font-black text-white drop-shadow-lg">{{ wizTitulo }}</h1>
+          <div class="flex justify-center gap-1.5 mt-3">
+            <span v-for="n in 4" :key="n"
+                  :class="['w-8 h-1.5 rounded-full transition-all duration-300',
+                           wizStep >= n ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,.6)]' : 'bg-white/20']">
+            </span>
           </div>
         </div>
 
-        <!-- Estaciones: mostrar siempre que haya zona seleccionada (incluso si es una sola) -->
-        <div v-if="configWizard.zona && estacionesFiltradas.length > 0" class="mb-5">
-          <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Estación</p>
-          <div class="flex flex-wrap gap-2">
-            <button v-for="est in estacionesFiltradas" :key="est.Estacion_Nombre"
-                    @click="configWizard.estacion = est"
-                    class="px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 border-2"
-                    :class="configWizard.estacion?.Estacion_Nombre === est.Estacion_Nombre
-                      ? 'bg-gray-800 text-white border-gray-800 shadow-md'
-                      : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-gray-400 hover:text-gray-700'">
-              {{ est.Estacion_Nombre }}
-            </button>
-          </div>
-        </div>
+        <div class="bg-white p-5 rounded-3xl shadow-2xl wiz-card-anim" :key="'step'+wizStep">
 
-        <!-- Selección de rol: visible solo cuando hay estación seleccionada -->
-        <div v-if="configWizard.estacion" class="mt-5">
-
-          <!-- Verificando zona -->
-          <div v-if="wizardVerificando" class="flex items-center justify-center gap-2 py-5 text-sm text-gray-400 font-bold">
-            <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-            Verificando zona...
-          </div>
-
-          <!-- Sin cajero activo: mostrar las dos opciones -->
-          <div v-else-if="!wizardCajeroOcupado">
-            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3 text-center">¿Cuál es tu rol hoy?</p>
-
-            <!-- CAJERO -->
-            <button @click="configWizard.esCajero = true"
-                    class="w-full py-4 rounded-2xl font-black text-sm border-2 transition-all active:scale-95 mb-2 flex flex-col items-center"
-                    :class="configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-emerald-400 hover:text-emerald-600'">
-              <span class="text-base tracking-wide">CAJERO</span>
-              <span class="text-[11px] font-semibold mt-0.5 opacity-70">Abre la caja y gestiona cobros</span>
-            </button>
-
-            <!-- Monto inicial (aparece al elegir cajero) -->
-            <div v-if="configWizard.esCajero" class="mb-3 px-1">
-              <p class="text-xs text-gray-500 font-bold mb-1.5 text-center">Saldo inicial de caja (S/)</p>
-              <input v-model.number="configWizard.monto" type="number" placeholder="0.00" inputmode="decimal"
-                     class="w-full p-3 text-3xl font-black text-center border-2 border-emerald-300 rounded-xl focus:border-emerald-500 outline-none bg-emerald-50 text-emerald-800">
+          <!-- ═══ PASO 1 · ¿QUIÉN SOS? ═══ -->
+          <div v-if="wizStep === 1">
+            <!-- Fast-track: ultimo turno de hoy (si existe) -->
+            <div v-if="wizUltimoTurno && wizUltimoTurno.esHoy" class="mb-4 p-3 rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-300 cursor-pointer active:scale-95 transition-transform" @click="wizFastTrack">
+              <div class="flex items-center gap-3">
+                <div class="wiz-silueta wiz-silueta-grande" :style="{ background: wizUltimoTurno.color || '#10b981' }">
+                  <span>{{ (wizUltimoTurno.nombre || '?')[0] }}</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs text-emerald-700 font-bold uppercase tracking-wider">⚡ Continuar tu turno</p>
+                  <p class="text-base font-black text-emerald-900 truncate">{{ wizUltimoTurno.nombre }}</p>
+                  <p class="text-[11px] text-emerald-600">{{ wizUltimoTurno.zona }} · {{ wizUltimoTurno.estacionNombre }}</p>
+                </div>
+                <span class="text-2xl">→</span>
+              </div>
             </div>
 
-            <!-- VENDEDOR -->
-            <button @click="configWizard.esCajero = false"
-                    class="w-full py-3 rounded-2xl font-black text-sm border-2 transition-all active:scale-95"
-                    :class="!configWizard.esCajero ? 'bg-blue-500 text-white border-blue-500' : 'bg-gray-50 text-gray-400 border-gray-100 hover:border-blue-300 hover:text-blue-500'">
-              Solo vendedor
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">¿Quién entra?</p>
+
+            <!-- Cards de últimos 5 usuarios -->
+            <div v-if="wizUltimosUsers.length" class="grid grid-cols-3 gap-2 mb-3">
+              <button v-for="u in wizUltimosUsers" :key="u.nombre" @click="wizSelectUser(u)"
+                      class="wiz-user-card flex flex-col items-center p-2 rounded-xl border-2 border-gray-100 active:scale-95 transition-transform">
+                <div class="wiz-silueta wiz-silueta-mid" :style="{ background: u.color || '#94a3b8' }">
+                  <span>{{ (u.nombre || '?')[0] }}</span>
+                </div>
+                <p class="text-[11px] font-black text-gray-700 mt-1.5 truncate w-full text-center">{{ u.nombre.split(' ')[0] }}</p>
+                <p class="text-[9px] text-gray-400 truncate w-full text-center">{{ u.esCajero ? 'cajero' : 'vendedor' }}</p>
+              </button>
+            </div>
+
+            <!-- Input para usuario nuevo -->
+            <div class="mb-3">
+              <input v-model="configWizard.vendedor" type="text" placeholder="✏ Tipea tu nombre completo"
+                     @input="wizOnNombreInput"
+                     class="w-full p-3 border-2 border-gray-100 rounded-xl focus:border-emerald-400 outline-none font-bold text-gray-800">
+            </div>
+
+            <!-- Mensaje del jefe -->
+            <div v-if="wizMensajeJefe" class="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <p class="text-[10px] uppercase text-amber-600 font-bold tracking-wider mb-0.5">📣 Del jefe</p>
+              <p class="text-xs text-amber-800 font-semibold">{{ wizMensajeJefe }}</p>
+            </div>
+
+            <button @click="wizNextStep(2)"
+                    :disabled="!configWizard.vendedor || !configWizard.vendedor.trim() || !dbCargada"
+                    class="w-full mt-4 bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 disabled:from-gray-200 disabled:to-gray-300 disabled:text-gray-500 text-white font-black text-base py-3 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+              <span v-if="!dbCargada" class="flex items-center gap-2">
+                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                Descargando catálogo...
+              </span>
+              <span v-else>Continuar →</span>
             </button>
           </div>
 
-          <!-- Con cajero activo: solo puede entrar como vendedor -->
-          <div v-else>
-            <div class="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-3">
-              <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shrink-0"></span>
-              <p class="text-sm text-emerald-700 font-bold">Cajero activo: <span class="font-black">{{ cajeroWizardInfo?.vendedor || '...' }}</span></p>
+          <!-- ═══ PASO 2 · ZONA ═══ -->
+          <div v-else-if="wizStep === 2">
+            <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">¿Dónde vas a trabajar?</p>
+
+            <div class="space-y-2">
+              <button v-for="zInfo in wizZonasInfo" :key="zInfo.zona"
+                      @click="wizSelectZona(zInfo)"
+                      :class="['w-full text-left p-3 rounded-2xl border-2 active:scale-[.98] transition-all',
+                               configWizard.zona === zInfo.zona
+                                 ? 'border-emerald-400 bg-emerald-50 shadow-md'
+                                 : 'border-gray-100 hover:border-emerald-300 bg-white']">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xl">📍</span>
+                  <strong class="text-base font-black text-gray-800 flex-1">{{ zInfo.zona }}</strong>
+                  <span v-if="zInfo.cajeroActivo"
+                        class="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-300">
+                    🔴 Cajero ya activo
+                  </span>
+                  <span v-else class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
+                    🟢 Libre
+                  </span>
+                </div>
+                <div class="text-[11px] text-gray-500 flex gap-3 flex-wrap">
+                  <span>{{ zInfo.cantEstaciones }} estación{{ zInfo.cantEstaciones !== 1 ? 'es' : '' }}</span>
+                  <span v-if="zInfo.ventasPendientes > 0">📋 {{ zInfo.ventasPendientes }} pendientes</span>
+                </div>
+                <p v-if="zInfo.cajeroActivo" class="text-[10px] text-orange-700 mt-1 font-semibold">
+                  💡 Si entras aquí, será como VENDEDOR (cajero ya es {{ zInfo.cajeroNombre }})
+                </p>
+              </button>
             </div>
-            <div class="w-full py-4 rounded-2xl text-sm border-2 bg-blue-100 text-blue-700 border-blue-200 text-center font-black">
-              ENTRAR COMO VENDEDOR
+          </div>
+
+          <!-- ═══ PASO 3 · ESTACIÓN ═══ -->
+          <div v-else-if="wizStep === 3">
+            <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">Elegí tu estación · {{ configWizard.zona }}</p>
+
+            <div class="space-y-2">
+              <button v-for="estInfo in wizEstacionesInfo" :key="estInfo.estacion.Estacion_Nombre"
+                      @click="wizSelectEstacion(estInfo)"
+                      :class="['w-full text-left p-3 rounded-2xl border-2 active:scale-[.98] transition-all',
+                               configWizard.estacion?.Estacion_Nombre === estInfo.estacion.Estacion_Nombre
+                                 ? 'border-emerald-400 bg-emerald-50 shadow-md'
+                                 : 'border-gray-100 hover:border-emerald-300 bg-white']">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xl">🛒</span>
+                  <strong class="text-sm font-black text-gray-800 flex-1">{{ estInfo.estacion.Estacion_Nombre }}</strong>
+                </div>
+                <!-- Estado impresora en vivo -->
+                <div class="text-[11px] flex items-center gap-2 mt-1.5 px-2 py-1.5 rounded-lg"
+                     :class="estInfo.impStateClass">
+                  <span class="text-base">{{ estInfo.impIcon }}</span>
+                  <div class="flex-1 min-w-0">
+                    <p class="font-black truncate">{{ estInfo.impNombre || 'Sin impresora asignada' }}</p>
+                    <p class="text-[9px] opacity-80 truncate">{{ estInfo.impReason }}</p>
+                  </div>
+                </div>
+                <p v-if="estInfo.usersActivos && estInfo.usersActivos.length"
+                   class="text-[10px] text-gray-500 mt-1.5 italic">
+                  👥 También en esta estación: {{ estInfo.usersActivos.join(', ') }}
+                </p>
+              </button>
+            </div>
+          </div>
+
+          <!-- ═══ PASO 4 · ROL + MONTO (si cajero) ═══ -->
+          <div v-else-if="wizStep === 4">
+            <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3 text-center">Una última cosa, {{ (configWizard.vendedor || '').split(' ')[0] }}</p>
+
+            <div v-if="wizardVerificando" class="flex items-center justify-center gap-2 py-3 text-xs text-gray-400 font-bold">
+              <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+              Verificando si hay cajero activo en {{ configWizard.zona }}...
+            </div>
+
+            <div v-else>
+              <!-- Cajero ya ocupado -->
+              <div v-if="wizardCajeroOcupado" class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-3 mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="w-3 h-3 bg-orange-500 rounded-full animate-pulse shrink-0"></span>
+                  <div>
+                    <p class="text-xs font-black text-orange-700">Cajero activo: {{ cajeroWizardInfo?.vendedor || '...' }}</p>
+                    <p class="text-[10px] text-orange-600">Solo puedes entrar como VENDEDOR aquí</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Cards rol grandes -->
+              <div class="grid grid-cols-2 gap-2 mb-3">
+                <button @click="!wizardCajeroOcupado && wizSelectRol(true)"
+                        :disabled="wizardCajeroOcupado"
+                        :class="['p-3 rounded-2xl border-2 active:scale-95 transition-all flex flex-col items-center',
+                                 wizardCajeroOcupado ? 'opacity-40 cursor-not-allowed border-gray-200 bg-gray-50'
+                                 : configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg'
+                                 : 'border-gray-200 hover:border-emerald-400 bg-white']">
+                  <span class="text-2xl mb-1">💰</span>
+                  <span class="font-black text-sm">CAJERO</span>
+                  <span :class="['text-[9px] mt-0.5', configWizard.esCajero && !wizardCajeroOcupado ? 'opacity-80' : 'text-gray-400']">Abre caja</span>
+                </button>
+                <button @click="wizSelectRol(false)"
+                        :class="['p-3 rounded-2xl border-2 active:scale-95 transition-all flex flex-col items-center',
+                                 !configWizard.esCajero ? 'bg-blue-500 text-white border-blue-600 shadow-lg'
+                                 : 'border-gray-200 hover:border-blue-400 bg-white']">
+                  <span class="text-2xl mb-1">🛍</span>
+                  <span class="font-black text-sm">VENDEDOR</span>
+                  <span :class="['text-[9px] mt-0.5', !configWizard.esCajero ? 'opacity-80' : 'text-gray-400']">Solo vende</span>
+                </button>
+              </div>
+
+              <!-- Monto inicial (cajero) -->
+              <div v-if="configWizard.esCajero" class="mb-3">
+                <label class="block text-[10px] uppercase tracking-wider text-gray-400 font-black mb-2 text-center">💵 Monto inicial de caja</label>
+                <div class="flex items-center gap-1 bg-emerald-50 border-2 border-emerald-300 rounded-2xl px-3 py-2 mb-2">
+                  <span class="text-2xl font-black text-emerald-700">S/</span>
+                  <input v-model.number="configWizard.monto" type="number" inputmode="decimal"
+                         class="flex-1 text-2xl font-black text-center bg-transparent outline-none text-emerald-900" placeholder="0.00">
+                  <button @click="wizDictarMonto" class="p-1 rounded-lg bg-emerald-200 text-emerald-700 active:scale-90" title="Dictar por voz">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+                  </button>
+                </div>
+                <!-- Chips de monto rápido -->
+                <div class="grid grid-cols-5 gap-1 mb-1.5">
+                  <button v-for="m in [50, 100, 200, 300, 500]" :key="m"
+                          @click="configWizard.monto = m; _wizBeep('tap')"
+                          :class="['py-2 rounded-lg text-xs font-black border-2 active:scale-95 transition-all',
+                                   configWizard.monto === m ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
+                                   : 'bg-white border-gray-200 text-gray-500 hover:border-emerald-300']">
+                    {{ m }}
+                  </button>
+                </div>
+                <p v-if="wizMontoSugerido > 0" class="text-[10px] text-gray-500 text-center">
+                  💡 Sugerido <strong class="text-emerald-700">S/ {{ wizMontoSugerido }}</strong> (cierre del último turno)
+                </p>
+              </div>
+
+              <!-- Pre-flight check -->
+              <div v-if="wizPreflight.run" class="bg-blue-50 border border-blue-200 rounded-xl p-2 mb-3">
+                <p class="text-[10px] font-bold text-blue-700 mb-1">🔍 Verificando todo...</p>
+                <ul class="text-[10px] text-blue-900 space-y-0.5">
+                  <li>{{ wizPreflight.mos ? '✓' : '⏳' }} Conexión a MOS</li>
+                  <li>{{ wizPreflight.impresora ? '✓' : '⏳' }} Impresora {{ wizPreflight.impresoraOk ? 'lista' : '' }}</li>
+                  <li>{{ wizPreflight.catalogo ? '✓' : '⏳' }} Catálogo cargado</li>
+                </ul>
+              </div>
+
+              <!-- Botón abrir turno -->
+              <button @click="iniciarTurno"
+                      :disabled="(!configWizard.vendedor || !configWizard.estacion || procesandoCaja || (configWizard.esCajero && (!configWizard.monto || configWizard.monto < 0)))"
+                      :class="['w-full py-3 rounded-2xl font-black text-base shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-white',
+                               configWizard.esCajero ? 'bg-gradient-to-br from-emerald-500 to-emerald-700'
+                               : 'bg-gradient-to-br from-blue-500 to-blue-700']">
+                <svg v-if="procesandoCaja" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                <span>{{ procesandoCaja ? 'Abriendo turno...' : (configWizard.esCajero ? '🎉 ABRIR CAJA' : '🛍 ENTRAR') }}</span>
+              </button>
+
+              <!-- Progress bar real -->
+              <div v-if="procesandoCaja && wizProgreso.activo" class="mt-3 space-y-1.5">
+                <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                  <div class="bg-emerald-500 h-full transition-all duration-300" :style="{ width: wizProgreso.pct + '%' }"></div>
+                </div>
+                <ul class="text-[10px] text-gray-600 space-y-0.5">
+                  <li v-for="(p, i) in wizProgreso.pasos" :key="i" :class="p.done ? 'text-emerald-600 font-bold' : ''">
+                    {{ p.done ? '✓' : (i === wizProgreso.actualIdx ? '⏳' : '○') }} {{ p.label }}
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
 
-        <button @click="iniciarTurno"
-                :disabled="!configWizard.vendedor || !configWizard.estacion || wizardVerificando || procesandoCaja"
-                class="w-full mt-4 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-300 disabled:shadow-none transition-all flex items-center justify-center gap-2"
-                :class="configWizard.esCajero ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-posPrimary hover:bg-emerald-600'">
-          <svg v-if="procesandoCaja" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-          <span>{{ procesandoCaja ? 'Abriendo caja...' : configWizard.esCajero ? 'APERTURA DE CAJA' : 'ENTRAR COMO VENDEDOR' }}</span>
-        </button>
+        <!-- Footer info: clima + hora -->
+        <div v-if="wizClima.texto" class="text-center mt-3">
+          <p class="text-[11px] text-white/70 font-semibold">{{ wizClima.texto }}</p>
+        </div>
+
+        <!-- Tutorial onboarding (1ra vez) -->
+        <div v-if="wizTutorial.visible" class="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 pointer-events-none">
+          <div class="max-w-md w-full bg-white/95 backdrop-blur rounded-2xl shadow-2xl border border-emerald-200 p-3 pointer-events-auto wiz-card-anim">
+            <div class="flex items-start gap-2">
+              <span class="text-2xl">{{ wizTutorial.pasos[wizTutorial.idx].emoji }}</span>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-black text-emerald-700 uppercase tracking-wider">Tip {{ wizTutorial.idx + 1 }}/{{ wizTutorial.pasos.length }}</p>
+                <p class="text-sm text-gray-700 font-semibold leading-snug">{{ wizTutorial.pasos[wizTutorial.idx].texto }}</p>
+              </div>
+              <button @click="wizTutorialClose" class="text-gray-300 hover:text-gray-500 text-lg leading-none">×</button>
+            </div>
+            <div class="flex justify-between items-center mt-2">
+              <div class="flex gap-1">
+                <span v-for="(p, i) in wizTutorial.pasos" :key="i"
+                      :class="['w-2 h-2 rounded-full', i === wizTutorial.idx ? 'bg-emerald-500' : 'bg-gray-300']"></span>
+              </div>
+              <button @click="wizTutorialNext" class="px-3 py-1 bg-emerald-500 text-white text-xs font-black rounded-lg active:scale-95">
+                {{ wizTutorial.idx + 1 === wizTutorial.pasos.length ? '¡Listo!' : 'Siguiente →' }}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -7066,6 +7282,416 @@
             }
         };
 
+        // ═══════════════════════════════════════════════════════════
+        // [v2.5.33] WIZARD MODERNO — state, computed y métodos
+        // ═══════════════════════════════════════════════════════════
+        const wizStep = ref(1);
+        const wizUltimosUsers = ref([]); // {nombre, color, esCajero, zona, estacion} ultimos 5
+        const wizUltimoTurno = ref(null); // fast-track: ultimo turno hoy
+        const wizMensajeJefe = ref(''); // mensaje opcional del jefe
+        const wizClima = ref({ texto: '' });
+        const wizCajerosActivosPorZona = ref({}); // { zonaId: { vendedor, idCaja } }
+        const wizImpresorasStatus = ref({}); // { printerId: { state, name, reason } }
+        const wizMontoSugerido = ref(0);
+        const wizProgreso = ref({ activo: false, pct: 0, pasos: [], actualIdx: 0 });
+        const wizPreflight = ref({ run: false, mos: false, impresora: false, impresoraOk: false, catalogo: false });
+
+        // ── Helpers visuales ──
+        const _wizColorParaUser = (nombre) => {
+            const n = String(nombre || '').toLowerCase();
+            let h = 0;
+            for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) >>> 0;
+            const colores = ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316'];
+            return colores[h % colores.length];
+        };
+
+        // ── SFX (sonidos sintetizados con Web Audio) ──
+        let _wizAudioCtx = null;
+        const _wizBeep = (tipo = 'tap') => {
+            try {
+                if (!_wizAudioCtx) _wizAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _wizAudioCtx;
+                const presets = {
+                    tap:     { freq: 800, dur: 0.05, vol: 0.08, type: 'sine' },
+                    next:    { freq: 1200, dur: 0.08, vol: 0.10, type: 'sine' },
+                    success: { freq: 1600, dur: 0.18, vol: 0.12, type: 'triangle' },
+                    error:   { freq: 200, dur: 0.20, vol: 0.10, type: 'sawtooth' }
+                };
+                const p = presets[tipo] || presets.tap;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = p.type; osc.frequency.value = p.freq;
+                gain.gain.value = p.vol;
+                osc.connect(gain).connect(ctx.destination);
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + p.dur);
+                osc.stop(ctx.currentTime + p.dur);
+            } catch(e) {}
+        };
+
+        // ── Saludo según hora ──
+        const wizSaludo = computed(() => {
+            const h = new Date().getHours();
+            if (h < 6)  return '✨ Buenas madrugadas';
+            if (h < 12) return '☀ Buenos días';
+            if (h < 19) return '🌤 Buenas tardes';
+            return '🌙 Buenas noches';
+        });
+        const wizTitulo = computed(() => {
+            const titulos = ['', 'Inicia tu turno', '¿Dónde trabajas?', 'Tu estación', 'Casi listo'];
+            return titulos[wizStep.value] || 'Iniciar';
+        });
+
+        // ── Zonas con metadata (cajero activo, estaciones, pendientes) ──
+        const wizZonasInfo = computed(() => {
+            return zonasUnicas.value.map(z => {
+                const ests = (db.value.ZONAS_CONFIG || []).filter(x => x.Zona_ID === z);
+                const cajero = wizCajerosActivosPorZona.value[z];
+                return {
+                    zona: z,
+                    cantEstaciones: ests.length,
+                    cajeroActivo: !!cajero,
+                    cajeroNombre: cajero?.vendedor || '',
+                    ventasPendientes: 0 // placeholder, se llenará si hay info
+                };
+            });
+        });
+
+        // ── Estaciones con metadata (impresora live + users) ──
+        const wizEstacionesInfo = computed(() => {
+            return estacionesFiltradas.value.map(est => {
+                const pid = String(est.PrintNode_ID || '').trim();
+                const imp = wizImpresorasStatus.value[pid];
+                let impIcon = '⚪', impStateClass = 'bg-gray-50 text-gray-500 border border-gray-200', impReason = 'Consultando...';
+                if (!pid) {
+                    impIcon = '🚫'; impStateClass = 'bg-gray-100 text-gray-500 border border-gray-200'; impReason = 'No configurada';
+                } else if (imp) {
+                    if (imp.state === 'online') { impIcon = '🟢'; impStateClass = 'bg-emerald-50 text-emerald-700 border border-emerald-200'; impReason = imp.reason || 'Lista para imprimir'; }
+                    else if (imp.state === 'offline') { impIcon = '🔴'; impStateClass = 'bg-red-50 text-red-700 border border-red-200'; impReason = imp.reason || 'Apagada / sin conexión'; }
+                    else { impIcon = '🟡'; impStateClass = 'bg-amber-50 text-amber-700 border border-amber-200'; impReason = imp.reason || 'Verificando...'; }
+                }
+                return {
+                    estacion: est,
+                    impNombre: imp?.name || ('Impresora #' + pid),
+                    impIcon, impStateClass, impReason,
+                    usersActivos: [] // placeholder, se llena con polling si hay endpoint
+                };
+            });
+        });
+
+        // ── Cargar cajeros activos por zona (bulk) ──
+        const _wizCargarCajerosActivos = async () => {
+            try {
+                if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+                const r = await fetch(`${API_URL}?accion=cajeros_activos_todos`);
+                const d = await r.json();
+                if (d.status === 'success' && d.porZona) {
+                    wizCajerosActivosPorZona.value = d.porZona;
+                }
+            } catch(e) {}
+        };
+
+        // ── Métodos de navegación ──
+        const wizNextStep = async (target) => {
+            if (target === 2 && !configWizard.value.vendedor?.trim()) return;
+            _wizBeep('next');
+            // Al pasar al paso 2 → cargar cajeros activos en bulk
+            if (target === 2) _wizCargarCajerosActivos();
+            // Atajo: si solo hay una zona, saltear directamente al paso 3
+            if (target === 2 && zonasUnicas.value.length === 1) {
+                await seleccionarZonaWizard(zonasUnicas.value[0]);
+                _wizCargarImpresorasZona();
+                wizStep.value = 3;
+                return;
+            }
+            wizStep.value = target;
+        };
+        const wizPrevStep = () => {
+            _wizBeep('tap');
+            if (wizStep.value > 1) wizStep.value -= 1;
+        };
+
+        const wizSelectUser = (u) => {
+            _wizBeep('tap');
+            configWizard.value.vendedor = u.nombre;
+            // si solo hay 1 zona, autoavanzar
+            if (zonasUnicas.value.length === 1) {
+                seleccionarZonaWizard(zonasUnicas.value[0]);
+                wizStep.value = 3;
+            } else {
+                wizStep.value = 2;
+            }
+        };
+
+        const wizOnNombreInput = () => {
+            // intenta sugerir avatar color en vivo
+        };
+
+        const wizSelectZona = async (zInfo) => {
+            _wizBeep('tap');
+            await seleccionarZonaWizard(zInfo.zona);
+            // Cargar estado impresoras de la zona
+            _wizCargarImpresorasZona();
+            wizStep.value = 3;
+        };
+
+        const wizSelectEstacion = (estInfo) => {
+            _wizBeep('tap');
+            configWizard.value.estacion = estInfo.estacion;
+            // pasar a paso 4 + lanzar pre-flight + monto sugerido
+            _wizCalcularMontoSugerido();
+            _wizPreflightRun();
+            wizStep.value = 4;
+        };
+
+        const wizSelectRol = (esCajero) => {
+            if (esCajero && wizardCajeroOcupado.value) {
+                _wizBeep('error');
+                return;
+            }
+            _wizBeep('tap');
+            configWizard.value.esCajero = !!esCajero;
+            if (!esCajero) configWizard.value.monto = 0;
+        };
+
+        // ── Fast-track: continuar turno de hoy ──
+        const wizFastTrack = () => {
+            const u = wizUltimoTurno.value;
+            if (!u) return;
+            _wizBeep('success');
+            configWizard.value.vendedor = u.nombre;
+            const est = (db.value.ZONAS_CONFIG || []).find(x => x.Estacion_Nombre === u.estacionNombre && x.Zona_ID === u.zona);
+            if (est) {
+                configWizard.value.zona = u.zona;
+                configWizard.value.estacion = est;
+                configWizard.value.esCajero = !!u.esCajero;
+                configWizard.value.monto = u.esCajero ? (u.monto || 0) : 0;
+                seleccionarZonaWizard(u.zona).then(() => {
+                    _wizCargarImpresorasZona();
+                    _wizCalcularMontoSugerido();
+                    wizStep.value = 4;
+                });
+            }
+        };
+
+        // ── localStorage: últimos 5 users ──
+        const _wizCargarUltimosUsers = () => {
+            try {
+                const raw = localStorage.getItem('mosexpress_ultimos_users');
+                const lista = raw ? JSON.parse(raw) : [];
+                wizUltimosUsers.value = (Array.isArray(lista) ? lista : []).slice(0, 5).map(u => ({
+                    ...u, color: u.color || _wizColorParaUser(u.nombre)
+                }));
+                // último turno (el más reciente HOY)
+                const hoy = new Date().toISOString().slice(0, 10);
+                const reciente = lista.find(u => (u.fecha || '').slice(0, 10) === hoy);
+                if (reciente) {
+                    wizUltimoTurno.value = { ...reciente, esHoy: true, color: reciente.color || _wizColorParaUser(reciente.nombre) };
+                }
+            } catch(e) {}
+        };
+
+        const wizGuardarUserEnHistorial = () => {
+            try {
+                const cw = configWizard.value;
+                if (!cw.vendedor || !cw.estacion) return;
+                const raw = localStorage.getItem('mosexpress_ultimos_users');
+                const lista = raw ? JSON.parse(raw) : [];
+                const nuevo = {
+                    nombre: cw.vendedor.trim(),
+                    color: _wizColorParaUser(cw.vendedor),
+                    esCajero: !!cw.esCajero,
+                    zona: cw.zona,
+                    estacionNombre: cw.estacion.Estacion_Nombre,
+                    monto: Number(cw.monto) || 0,
+                    fecha: new Date().toISOString()
+                };
+                const dedup = (lista || []).filter(u => u.nombre.toLowerCase() !== nuevo.nombre.toLowerCase());
+                dedup.unshift(nuevo);
+                lsSet('mosexpress_ultimos_users', JSON.stringify(dedup.slice(0, 8)));
+            } catch(e) {}
+        };
+
+        // ── Cargar impresoras de la zona (PrintNode states) ──
+        const _wizCargarImpresorasZona = async () => {
+            const ests = estacionesFiltradas.value;
+            const ids = [...new Set(ests.map(e => String(e.PrintNode_ID || '').trim()).filter(Boolean))];
+            if (!ids.length) return;
+            // Inicializar todas en "checking"
+            ids.forEach(pid => {
+                if (!wizImpresorasStatus.value[pid]) wizImpresorasStatus.value[pid] = { state: 'checking', name: '', reason: 'Consultando...' };
+            });
+            try {
+                if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' || offlineMode.value) {
+                    ids.forEach(pid => { wizImpresorasStatus.value[pid] = { state: 'checking', name: '#' + pid, reason: 'Sin red — no se puede verificar' }; });
+                    return;
+                }
+                const r = await fetch(`${API_URL}?accion=estado_impresoras&ids=${ids.join(',')}`);
+                const d = await r.json();
+                if (d.status === 'success' && d.impresoras) {
+                    d.impresoras.forEach(p => {
+                        wizImpresorasStatus.value[String(p.id)] = {
+                            state: p.online ? 'online' : 'offline',
+                            name: p.name || ('#' + p.id),
+                            reason: p.reason || (p.online ? 'Lista para imprimir' : 'Apagada o sin red')
+                        };
+                    });
+                }
+            } catch(e) {
+                ids.forEach(pid => { wizImpresorasStatus.value[pid] = { state: 'checking', name: '#' + pid, reason: 'No se pudo verificar' }; });
+            }
+        };
+
+        // ── Monto sugerido (último cierre del cajero) ──
+        const _wizCalcularMontoSugerido = () => {
+            // Si tenemos sesionAnteriorInfo o algún hint, usarlo. Por ahora 100 por default.
+            wizMontoSugerido.value = sesionAnteriorInfo.value?.cierreCaja || 100;
+            if (configWizard.value.esCajero && !configWizard.value.monto) {
+                configWizard.value.monto = wizMontoSugerido.value;
+            }
+        };
+
+        // ── Pre-flight check ──
+        const _wizPreflightRun = async () => {
+            wizPreflight.value = { run: true, mos: false, impresora: false, impresoraOk: false, catalogo: false };
+            // catálogo
+            wizPreflight.value.catalogo = !!dbCargada.value;
+            // MOS — un ping rápido
+            try {
+                if (API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                    const ctl = new AbortController();
+                    const tid = setTimeout(() => ctl.abort(), 3000);
+                    const r = await fetch(`${API_URL}?accion=ping`, { signal: ctl.signal });
+                    clearTimeout(tid);
+                    wizPreflight.value.mos = r.ok;
+                }
+            } catch(e) { wizPreflight.value.mos = false; }
+            // impresora — usar el state cacheado
+            const pid = String(configWizard.value.estacion?.PrintNode_ID || '').trim();
+            const imp = wizImpresorasStatus.value[pid];
+            wizPreflight.value.impresora = true;
+            wizPreflight.value.impresoraOk = imp?.state === 'online';
+            // ocultar pre-flight tras 3s si todo ok
+            setTimeout(() => {
+                if (wizPreflight.value.mos && wizPreflight.value.catalogo) {
+                    wizPreflight.value.run = false;
+                }
+            }, 3000);
+        };
+
+        // ── Dictado por voz para monto ──
+        const wizDictarMonto = () => {
+            try {
+                const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SR) {
+                    _wizBeep('error');
+                    agregarToast('Sin soporte', 'Tu navegador no permite dictado por voz', 'warning');
+                    return;
+                }
+                const rec = new SR();
+                rec.lang = 'es-PE';
+                rec.continuous = false;
+                rec.interimResults = false;
+                _wizBeep('tap');
+                rec.onresult = (e) => {
+                    const transcript = (e.results[0]?.[0]?.transcript || '').toLowerCase().trim();
+                    const num = parseFloat(transcript.replace(/[^\d.,]/g, '').replace(',', '.'));
+                    if (!isNaN(num) && num >= 0) {
+                        configWizard.value.monto = num;
+                        _wizBeep('success');
+                        agregarToast('💵 Monto dictado', `S/ ${num.toFixed(2)}`, 'success');
+                    } else {
+                        _wizBeep('error');
+                        agregarToast('No entendí', `Escuché "${transcript}". Intenta de nuevo.`, 'warning');
+                    }
+                };
+                rec.onerror = (ev) => {
+                    _wizBeep('error');
+                    if (ev.error === 'not-allowed') agregarToast('Micrófono', 'Permiso de micrófono denegado', 'error');
+                };
+                rec.start();
+                agregarToast('🎤 Escuchando', 'Decí el monto en voz alta', 'info');
+            } catch(e) {
+                _wizBeep('error');
+                agregarToast('Error', 'No se pudo iniciar dictado: ' + (e?.message || ''), 'error');
+            }
+        };
+
+        // ── Mensaje del jefe ──
+        const _wizCargarMensajeJefe = () => {
+            try {
+                wizMensajeJefe.value = localStorage.getItem('mosexpress_mensaje_jefe') || '';
+            } catch(e) {}
+        };
+
+        // ── Clima opcional ──
+        const _wizCargarClima = () => {
+            try {
+                const cached = localStorage.getItem('mosexpress_clima_v1');
+                if (cached) {
+                    const c = JSON.parse(cached);
+                    if (Date.now() - (c.ts || 0) < 3600000) { // 1h cache
+                        wizClima.value.texto = c.texto || '';
+                        return;
+                    }
+                }
+                // intento ligero — open-meteo no requiere API key
+                // skip si offline
+                if (!navigator.onLine) return;
+                fetch('https://api.open-meteo.com/v1/forecast?latitude=-12.046&longitude=-77.042&current_weather=true&timezone=America/Lima')
+                    .then(r => r.json())
+                    .then(d => {
+                        const t = Math.round(d?.current_weather?.temperature ?? 0);
+                        const code = d?.current_weather?.weathercode ?? 0;
+                        const emoji = code === 0 ? '☀' : code < 3 ? '🌤' : code < 50 ? '☁' : code < 70 ? '🌧' : '⛈';
+                        const texto = `${emoji} Lima · ${t}°C`;
+                        wizClima.value.texto = texto;
+                        lsSet('mosexpress_clima_v1', JSON.stringify({ texto, ts: Date.now() }));
+                    })
+                    .catch(() => {});
+            } catch(e) {}
+        };
+
+        // ── Tutorial onboarding (1ra vez) ──
+        const wizTutorial = ref({
+            visible: false, idx: 0,
+            pasos: [
+                { emoji: '👤', texto: 'Tipea tu nombre o tocá una de las caritas si ya entraste antes — la app recuerda los últimos 5 usuarios.' },
+                { emoji: '📍', texto: 'Cada zona te muestra si ya hay un cajero activo. Si lo hay y querés ir como vendedor, igual podés entrar.' },
+                { emoji: '🖨', texto: 'En el paso 3 ves el estado de la impresora EN VIVO (🟢 lista · 🔴 apagada · 🟡 verificando). Elegí tranquilo.' },
+                { emoji: '💵', texto: 'Si abrís como cajero, podés dictar el monto inicial con el botón 🎤 — sin teclado.' }
+            ]
+        });
+        const wizTutorialCheckShow = () => {
+            try {
+                if (!localStorage.getItem('mosexpress_wiz_tutorial_seen')) {
+                    setTimeout(() => { wizTutorial.value.visible = true; }, 600);
+                }
+            } catch(e) {}
+        };
+        const wizTutorialNext = () => {
+            _wizBeep('tap');
+            if (wizTutorial.value.idx + 1 < wizTutorial.value.pasos.length) {
+                wizTutorial.value.idx += 1;
+            } else {
+                wizTutorialClose();
+            }
+        };
+        const wizTutorialClose = () => {
+            wizTutorial.value.visible = false;
+            try { lsSet('mosexpress_wiz_tutorial_seen', '1'); } catch(e) {}
+        };
+
+        // ── Boot: cargar todo cuando arranca la app ──
+        const wizBootData = () => {
+            _wizCargarUltimosUsers();
+            _wizCargarMensajeJefe();
+            _wizCargarClima();
+            wizTutorialCheckShow();
+        };
+        // Ejecutarlo cuando se monte
+        setTimeout(() => { try { wizBootData(); } catch(e) {} }, 100);
+
         const abrirModoCajero = () => {
             modoCajero.value = true;
             cajeroBusqueda.value = '';
@@ -7255,9 +7881,28 @@
             if (wizardCajeroOcupado.value && configWizard.value.esCajero) {
                 agregarToast('Acceso bloqueado', 'Ya hay un cajero activo en esta zona. Entra como vendedor.');
                 configWizard.value.esCajero = false;
+                _wizBeep('error');
                 return;
             }
             detenerPollingWizard();
+            try { _wizBeep('success'); } catch(_){}
+            // [v2.5.33] Guardar user en historial + arrancar progreso visual real
+            try { wizGuardarUserEnHistorial(); } catch(_){}
+            wizProgreso.value = {
+                activo: true, pct: 0, actualIdx: 0,
+                pasos: [
+                    { label: 'Guardando perfil...', done: false },
+                    { label: 'Conectando con servidor...', done: false },
+                    { label: 'Abriendo turno...', done: false },
+                    { label: 'Cargando módulos...', done: false }
+                ]
+            };
+            const _wizAvanzarProgreso = (idx, pct) => {
+                if (wizProgreso.value.pasos[idx]) wizProgreso.value.pasos[idx].done = true;
+                wizProgreso.value.actualIdx = Math.min(idx + 1, wizProgreso.value.pasos.length - 1);
+                wizProgreso.value.pct = pct;
+            };
+            setTimeout(() => _wizAvanzarProgreso(0, 25), 150);
 
             const esCajero = configWizard.value.esCajero;
             config.value = {
@@ -7330,14 +7975,17 @@
                         }
                     } catch(e) { /* sin red: CAJA-LOCAL reintentará después */ }
                 }
+                _wizAvanzarProgreso(1, 55);
                 // Guard final: sesión cerrada durante el await — misma limpieza
                 // anti "sesión cajero fantasma".
                 if (!config.value.completado) {
                     localStorage.removeItem('mosexpress_config');
                     localStorage.removeItem('mosexpress_session_date');
                     procesandoCaja.value = false;
+                    wizProgreso.value.activo = false;
                     return;
                 }
+                _wizAvanzarProgreso(2, 80);
                 idCajaActual.value = cid;
                 cajaAbierta.value = true;
                 montoAperturaMemoria.value = monto;
@@ -11026,6 +11674,13 @@
           mostrarTeclado, toggleTeclado,
           esPantallaVertical,
           wizardCajeroOcupado, wizardVerificando, cajeroWizardInfo, seleccionarZonaWizard,
+          // [v2.5.33] Wizard moderno
+          wizStep, wizUltimosUsers, wizUltimoTurno, wizMensajeJefe, wizClima,
+          wizCajerosActivosPorZona, wizImpresorasStatus, wizMontoSugerido, wizProgreso, wizPreflight,
+          wizSaludo, wizTitulo, wizZonasInfo, wizEstacionesInfo,
+          wizNextStep, wizPrevStep, wizSelectUser, wizOnNombreInput, wizSelectZona, wizSelectEstacion,
+          wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, _wizBeep,
+          wizTutorial, wizTutorialNext, wizTutorialClose,
           darkMode, toggleDarkMode,
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
