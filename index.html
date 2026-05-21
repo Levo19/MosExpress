@@ -954,6 +954,19 @@
           }
         });
       }
+      // [v2.5.43] Timeout de seguridad — si el banner está visible >90s sin
+      // marcar ready (el evento sw-install-done no llegó por race condition),
+      // forzar ready=true. Probablemente el SW ya está instalado pero el
+      // postMessage al cliente se perdió. Sin este timeout, el banner queda
+      // en "Descargando..." eternamente.
+      setTimeout(() => {
+        const stillVisible = b && b.classList.contains('visible');
+        if (stillVisible && !_meSwProgress.ready) {
+          console.warn('[ME update] Forzando ready=true tras 90s sin sw-install-done');
+          _meSwProgress.ready = true;
+          _meUpdateProgressBar();
+        }
+      }, 90000);
     }
 
     function _hideBanner() {
@@ -984,6 +997,29 @@
         }
       } catch(_){}
     }, 8000);
+
+    // [v2.5.43] Timeout MASTER — si el banner lleva >10min visible sin que
+    // el user lo aplique (ignorado o trabado), forzar _hideBanner. El user
+    // verá el banner de nuevo la próxima vez que entre a la app si el update
+    // sigue pendiente. Evita que estorbe permanente.
+    let _meBannerVisibleSince = null;
+    setInterval(() => {
+      try {
+        const b = document.getElementById('meUpdateBanner');
+        const visible = b && b.classList.contains('visible');
+        if (visible) {
+          if (!_meBannerVisibleSince) _meBannerVisibleSince = Date.now();
+          // 10 minutos = 600000 ms
+          if (Date.now() - _meBannerVisibleSince > 600000) {
+            console.warn('[ME update] Banner > 10min visible — auto-dismiss');
+            _hideBanner();
+            _meBannerVisibleSince = null;
+          }
+        } else {
+          _meBannerVisibleSince = null;
+        }
+      } catch(_){}
+    }, 30000);
 
     // Aplicar update — 250ms (cohete arranca) + fallback reload 3s.
     // Antes esperaba 900ms y sin fallback: si el SW se trababa el overlay
