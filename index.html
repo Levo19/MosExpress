@@ -11868,24 +11868,16 @@
                throw ultimoError || new Error('Sin respuesta tras 3 reintentos');
            };
 
-           // [v2.5.46] ─── REFACTOR: 3 capas separadas (online prioritario,
-           // offline respaldo, CPE transparente) ───────────────────────────
-           // 1) IMPRIMIR YA con correlativo LOCAL — el cajero entrega ticket
-           //    en <500ms, sin esperar respuesta de GAS.
-           // 2) ALWAYS push a pendingSales — la cola es la fuente de verdad.
-           //    Si online, intenta sync inmediato (background, no await).
-           //    Si falla / offline, sincronizarDatos polling se encarga.
-           // 3) CPE NubeFact transparente — si emite OK con QR SUNAT, reimprimir
-           //    silencioso. Si falla, queda en estado ERROR (admin lo ve desde
-           //    MOS, NO se toasta al cajero — él no debe ser molestado).
+           // [v2.5.48] ─── FLUJO BALANCEADO ─────────────────────────────────
+           // Cambia v2.5.46: en lugar de imprimir SIEMPRE con LOCAL, ahora:
+           //   1. Si offline → imprimir LOCAL + push cola (sigue igual)
+           //   2. Si online → ESPERAR a GAS hasta 4s. Si responde, imprimir
+           //      con correlativo DEFINITIVO. Si no responde en 4s, caer a
+           //      LOCAL y push cola (modo respaldo).
+           // El cajero espera máximo 4s (típico ~1s) y casi siempre obtiene
+           // el correlativo real. LOCAL aparece solo si GAS está realmente
+           // caído o lento.
            // ─────────────────────────────────────────────────────────────────
-
-           // [A] Imprimir YA con correlativo local — operación crítica del cajero
-           imprimirTicketVenta(correlativoLocal, false, null);
-
-           // [B] Push a pendingSales ALWAYS — la cola lo gestiona todo
-           pendingSales.value.push({ id: localId, raw_data: ventaBase });
-           lsSet('pending_sales', JSON.stringify(pendingSales.value));
 
            // Heartbeat MOS — fire-and-forget, no bloquea nada
            try {
@@ -11898,74 +11890,101 @@
                fetch(hbUrl).catch(() => {});
            } catch(_) {}
 
-           // [C] Si online, intentar sync INMEDIATO en background (NO await)
-           //     Si falla, pendingSales lo reintentará en el próximo polling.
-           if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-               _enviarVentaConReintentos(ventaBase)
-                   .then(res => {
-                       // Sync OK → actualizar UI con correlativo definitivo
-                       const idx = ventasHoy.value.findIndex(v => v.id === localId);
-                       if (idx !== -1) {
-                           ventasHoy.value[idx].correlativo  = res.correlativo;
-                           ventasHoy.value[idx].id_venta_gas = res.idVenta;
-                           ventasHoy.value[idx].syncStatus   = 'synced';
-                           ventasHoy.value[idx].raw_data.status = 'synced';
-                           if (res.nfEstado) ventasHoy.value[idx].nfEstado = res.nfEstado;
-                           if (res.nfHash)   ventasHoy.value[idx].nfHash   = res.nfHash;
-                           if (res.nfEnlace) ventasHoy.value[idx].nfEnlace = res.nfEnlace;
-                           if (res.nfQrString) ventasHoy.value[idx].nfQrString = res.nfQrString;
-                           ventasHoy.value[idx].isNew = true;
-                           lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
-                           setTimeout(() => { if (ventasHoy.value[idx]) ventasHoy.value[idx].isNew = false; }, 4000);
+           // ── Modo offline puro ─────────────────────────────────────────
+           if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+               imprimirTicketVenta(correlativoLocal, false, null);
+               pendingSales.value.push({ id: localId, raw_data: ventaBase });
+               lsSet('pending_sales', JSON.stringify(pendingSales.value));
+               // No toast — el cajero ya tiene su ticket (con LOCAL es esperado offline)
+               return;
+           }
+
+           // ── Online: intentar obtener correlativo definitivo (timeout 4s) ──
+           // Más allá de eso, el cajero no debería esperar más → caer a LOCAL.
+           let _fastTimeoutHit = false;
+           const _fastTimeoutMs = 4000;
+           const _fastTimer = setTimeout(() => {
+               if (_fastTimeoutHit) return;
+               _fastTimeoutHit = true;
+               // Timeout: imprimir con LOCAL + push cola, GAS sigue intentando
+               // en background y reemplaza correlativo cuando llegue.
+               console.info('[ME venta] GAS lento (>4s) — imprimo con LOCAL, sync sigue en bg');
+               imprimirTicketVenta(correlativoLocal, false, null);
+               pendingSales.value.push({ id: localId, raw_data: ventaBase });
+               lsSet('pending_sales', JSON.stringify(pendingSales.value));
+           }, _fastTimeoutMs);
+
+           _enviarVentaConReintentos(ventaBase)
+               .then(res => {
+                   clearTimeout(_fastTimer);
+                   const idx = ventasHoy.value.findIndex(v => v.id === localId);
+                   if (idx !== -1) {
+                       ventasHoy.value[idx].correlativo  = res.correlativo;
+                       ventasHoy.value[idx].id_venta_gas = res.idVenta;
+                       ventasHoy.value[idx].syncStatus   = 'synced';
+                       ventasHoy.value[idx].raw_data.status = 'synced';
+                       if (res.nfEstado)   ventasHoy.value[idx].nfEstado   = res.nfEstado;
+                       if (res.nfHash)     ventasHoy.value[idx].nfHash     = res.nfHash;
+                       if (res.nfEnlace)   ventasHoy.value[idx].nfEnlace   = res.nfEnlace;
+                       if (res.nfQrString) ventasHoy.value[idx].nfQrString = res.nfQrString;
+                       ventasHoy.value[idx].isNew = true;
+                       lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                       setTimeout(() => { if (ventasHoy.value[idx]) ventasHoy.value[idx].isNew = false; }, 4000);
+                   }
+                   const nfData = (res.nfEstado === 'EMITIDO' && res.nfQrString)
+                       ? { hash: res.nfHash, enlace: res.nfEnlace, qrString: res.nfQrString }
+                       : null;
+                   if (!_fastTimeoutHit) {
+                       // ✅ A tiempo: imprimir con CORRELATIVO DEFINITIVO en el primer ticket
+                       imprimirTicketVenta(res.correlativo, true, nfData);
+                   } else {
+                       // ⏰ Tarde: ya imprimimos LOCAL. Si CPE EMITIDO con QR,
+                       // reimprimir silencioso con QR oficial. Si no, dejarlo.
+                       const esCPE = (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA');
+                       if (esCPE && nfData) {
+                           setTimeout(() => imprimirTicketVenta(res.correlativo, true, nfData), 200);
                        }
                        // Quitar de pendingSales (ya está sincronizada)
                        pendingSales.value = pendingSales.value.filter(v => v.id !== localId);
                        lsSet('pending_sales', JSON.stringify(pendingSales.value));
-
-                       // [C.1] CPE NubeFact emitido con QR SUNAT → reimprimir SILENCIOSO
-                       //   Es BOLETA o FACTURA y NubeFact respondió EMITIDO.
-                       //   El cajero ya entregó su ticket inicial; ahora sale uno
-                       //   con QR oficial de SUNAT que reemplaza al primero.
-                       //   No toast — invisible para el cajero.
-                       const esCPE = (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA');
-                       if (esCPE && res.nfEstado === 'EMITIDO' && res.nfQrString) {
-                           const nfData = { hash: res.nfHash, enlace: res.nfEnlace, qrString: res.nfQrString };
-                           setTimeout(() => imprimirTicketVenta(res.correlativo, true, nfData), 200);
-                       }
-                       // CPE en estado ERROR/PENDIENTE → NO toast. NubeFact maneja
-                       // sus propios reintentos a SUNAT. Admin ve los pendientes
-                       // desde el panel MOS, no se molesta al cajero.
-
-                       // Crédito autorizado: SÍ avisar al cajero que el admin fue notificado
-                       if (metodoVenta === 'CREDITO' && adminAuthVenta) {
-                           agregarToast('✓ Admins notificados', 'Crédito S/ ' + totalVenta.toFixed(2) + ' autorizado por ' + (adminAuthVenta.nombre || 'admin'));
-                       }
-                   })
-                   .catch(e => {
-                       // [v2.5.46] Si el backend rechaza el payload (guard), NO queda
-                       // en cola — es un bug local que un retry no soluciona.
-                       if (e.code === 'PAYLOAD_INVALIDO') {
-                           console.error('[ME venta] PAYLOAD_INVALIDO — venta descartada (no reintento):', e.message);
+                   }
+                   // Crédito autorizado: SÍ avisar al cajero
+                   if (metodoVenta === 'CREDITO' && adminAuthVenta) {
+                       agregarToast('✓ Admins notificados',
+                           'Crédito S/ ' + totalVenta.toFixed(2) + ' autorizado por ' + (adminAuthVenta.nombre || 'admin'));
+                   }
+               })
+               .catch(e => {
+                   clearTimeout(_fastTimer);
+                   if (e.code === 'PAYLOAD_INVALIDO') {
+                       console.error('[ME venta] PAYLOAD_INVALIDO — descartada:', e.message);
+                       if (!_fastTimeoutHit) {
+                           // No imprimimos todavía y GAS rechazó: NO imprimir.
+                           agregarToast('⚠ Venta no procesada',
+                               'Sesión incompleta — reinicia sesión', 'warning');
+                       } else {
+                           // Ya imprimimos LOCAL pero GAS rechaza → quitar de cola
                            pendingSales.value = pendingSales.value.filter(v => v.id !== localId);
                            lsSet('pending_sales', JSON.stringify(pendingSales.value));
-                           // El cajero YA tiene el ticket impreso. Avisamos discretamente
-                           // para que un admin sepa que la venta NO quedó persistida.
                            agregarToast('⚠ Sesión incompleta',
-                               'Venta impresa pero no persistida — reinicia sesión',
-                               'warning');
-                           return;
+                               'Venta impresa pero no persistida — reinicia sesión', 'warning');
                        }
-                       // Sync inicial falló por red/timeout — queda en pendingSales,
-                       // el polling lo reintenta. NO toast molesto al cajero.
-                       console.info('[ME venta] sync inicial falló, queda en cola:', e.message);
-                   });
-           } else {
-               // [D] Modo offline puro — la venta ya está en pendingSales,
-               //     sincronizarDatos la enviará cuando vuelva la red.
-               //     No toast — el cajero ya tiene su ticket.
-           }
-           // FIN del refactor v2.5.46 — el cajero NO espera GAS, NO ve errores
-           // de CPE, y la cola gestiona todo silenciosamente.
+                       return;
+                   }
+                   // Falla red/timeout post-cola — si NO imprimimos todavía,
+                   // imprimimos con LOCAL ahora y push a cola.
+                   if (!_fastTimeoutHit) {
+                       console.info('[ME venta] GAS error/red → LOCAL + cola:', e.message);
+                       imprimirTicketVenta(correlativoLocal, false, null);
+                       pendingSales.value.push({ id: localId, raw_data: ventaBase });
+                       lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                   } else {
+                       // Ya está en cola por timeout — sync polling reintenta
+                       console.info('[ME venta] sync inicial post-timeout falló, cola sigue:', e.message);
+                   }
+               });
+           // FIN refactor v2.5.48 — flujo balanceado: correlativo definitivo si
+           // GAS responde <4s, sino LOCAL + cola transparente.
         };
 
         const finalizarPostPago = (totalCobrado = 0) => {
