@@ -6764,6 +6764,38 @@
             } catch(e) {}
         };
 
+        // [v2.5.39] Sonido FUERTE y distintivo para cobro asignado nuevo —
+        // melodía 6 notas ascendente que llama la atención (~1.4s total).
+        // Independiente de soundEnabled porque es notificación crítica del flujo
+        // de caja (el cajero NECESITA enterarse aunque tenga el sonido bajo).
+        const playSonidoCobroAsignado = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                // Resume si está suspendido (Chromium suspende AudioContext sin gesture)
+                if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
+                const notas = [
+                    { t: 0.00, f: 880,  v: 0.85, d: 0.14 }, // A5
+                    { t: 0.18, f: 1108, v: 0.85, d: 0.14 }, // C#6
+                    { t: 0.36, f: 1318, v: 0.85, d: 0.18 }, // E6
+                    { t: 0.62, f: 880,  v: 0.85, d: 0.14 },
+                    { t: 0.80, f: 1108, v: 0.85, d: 0.14 },
+                    { t: 0.98, f: 1568, v: 0.95, d: 0.30 }, // G6 sostenida
+                ];
+                notas.forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(0, ctx.currentTime + t);
+                    gain.gain.linearRampToValueAtTime(v, ctx.currentTime + t + 0.01);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t);
+                    osc.stop(ctx.currentTime + t + d + 0.02);
+                });
+            } catch(e) { console.warn('[ME] playSonidoCobroAsignado fallo:', e); }
+        };
+
         // Ding extra para promociones — campanada brillante después del beep OK
         const playPromoDing = () => {
             if (!soundEnabled.value) return;
@@ -9626,6 +9658,61 @@
         // cajero reabre la app salta el modal y queda pantalla blanca en bucle.
         // Solo auto-abrimos cuando llega un cobro DURANTE la sesión activa.
         let _primerPollCobros = true;
+        // [v2.5.39] Para detectar cobros NUEVOS aunque el primer poll los traiga
+        // (caso "el admin asignó mientras yo refrescaba app"). Usamos localStorage
+        // para no notificar dos veces el mismo cobro.
+        const _cobrosYaNotificados = () => {
+            try { return JSON.parse(localStorage.getItem('mosexpress_cobros_notif') || '[]'); }
+            catch(_) { return []; }
+        };
+        const _marcarCobroNotificado = (idCobro) => {
+            try {
+                const arr = _cobrosYaNotificados();
+                if (!arr.includes(idCobro)) {
+                    arr.push(idCobro);
+                    // Mantener últimos 50 para no crecer indefinido
+                    lsSet('mosexpress_cobros_notif', JSON.stringify(arr.slice(-50)));
+                }
+            } catch(_){}
+        };
+
+        // [v2.5.39] Imprime ticket físico de aviso al cajero cuando llega un cobro
+        // nuevo. Usa la impresora de la estación del cajero.
+        const _imprimirAvisoCobroAsignado = async (cobro) => {
+            const printerId = config.value.estacion?.PrintNode_ID;
+            if (!printerId || !/^\d+$/.test(String(printerId))) return;
+            try {
+                let txt = "\x1b\x40\x1b\x61\x01"; // init + center
+                txt += "\x1b\x21\x30!!! COBRO PENDIENTE !!!\n\x1b\x21\x00";
+                txt += "================================================\n";
+                txt += "\x1b\x21\x10ASIGNADO POR ADMIN\n\x1b\x21\x00";
+                txt += "================================================\n\n";
+                txt += "\x1b\x61\x00"; // left
+                txt += "Cliente   : " + (cobro.cliente || 'VARIOS').substring(0, 40) + "\n";
+                if (cobro.correlativo) txt += "Ticket    : " + cobro.correlativo + "\n";
+                txt += "Monto     : S/ " + parseFloat(cobro.monto).toFixed(2) + "\n";
+                if (cobro.metodoSug) txt += "Sugerido  : " + cobro.metodoSug + "\n";
+                if (cobro.asignadoPor) txt += "De parte de: " + cobro.asignadoPor + "\n";
+                if (cobro.horasTTL) txt += "Vence en  : " + cobro.horasTTL + "h\n";
+                if (cobro.mensajeAdmin) {
+                    txt += "\n";
+                    txt += "------------------------------------------------\n";
+                    txt += "\x1b\x45\x01Mensaje del admin:\x1b\x45\x00\n";
+                    txt += cobro.mensajeAdmin + "\n";
+                    txt += "------------------------------------------------\n";
+                }
+                txt += "\n";
+                txt += "\x1b\x61\x01"; // center
+                txt += "\x1b\x21\x10>>> TOCA EN LA APP <<<\n";
+                txt += "PARA COBRAR ESTE TICKET\x1b\x21\x00\n";
+                txt += "\n" + new Date().toLocaleString() + "\n";
+                txt += "\n\n\n\n\x1d\x56\x00"; // cut
+                await mandarImpresionPrintNode(printerId, "Aviso Cobro Asignado", b64ESC(txt));
+            } catch(e) {
+                agregarToast('🖨 Aviso no impreso', 'El cobro llegó OK pero el ticket no salió: ' + (e.message || ''), 'warning');
+            }
+        };
+
         const cargarCobrosAsignados = async () => {
             if (!config.value.esCajero || !cajaAbierta.value) return;
             if (!idCajaActual.value || idCajaActual.value.startsWith('CAJA-LOCAL-')) return;
@@ -9633,38 +9720,49 @@
                 const r = await fetch(`${API_URL}?accion=cobros_asignados_cajero&cajaId=${encodeURIComponent(idCajaActual.value)}`);
                 const d = await r.json();
                 if (d && d.status === 'success') {
-                    const previo = cobrosAsignados.value.length;
                     const esPrimerPoll = _primerPollCobros;
                     _primerPollCobros = false;
                     cobrosAsignados.value = d.cobros || [];
-                    // Si entró uno NUEVO durante la sesión → sonido + vibración + voz + modal.
-                    // En el primer poll, NO disparamos nada — solo cargamos el banner naranja.
-                    if (!esPrimerPoll && cobrosAsignados.value.length > previo) {
-                        try { playBeepNameMatch?.(); } catch(_){}
-                        try { if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); } catch(_){}
-                        const ultimo = cobrosAsignados.value[cobrosAsignados.value.length - 1];
-                        if (ultimo) {
-                            agregarToast('🔔 Nuevo cobro asignado', (ultimo.cliente || 'cliente') + ' · S/ ' + parseFloat(ultimo.monto).toFixed(2));
+                    // [v2.5.39] Detectar cualquier cobro NUEVO comparando con la lista
+                    // de ya-notificados en localStorage (persiste reabriendo app).
+                    const yaNotif = _cobrosYaNotificados();
+                    const nuevos = cobrosAsignados.value.filter(c => !yaNotif.includes(c.idCobro));
+                    if (nuevos.length > 0) {
+                        // [v2.5.39] Sonido fuerte distintivo + vibración larga
+                        try { playSonidoCobroAsignado(); } catch(_){}
+                        try { if (navigator.vibrate) navigator.vibrate([200, 80, 200, 80, 200, 80, 300]); } catch(_){}
+                        for (const cobro of nuevos) {
+                            // Imprimir ticket físico de aviso
+                            _imprimirAvisoCobroAsignado(cobro);
+                            // Toast por cada uno
+                            agregarToast('🔔 Nuevo cobro asignado',
+                                (cobro.cliente || 'cliente') + ' · S/ ' + parseFloat(cobro.monto).toFixed(2),
+                                'info');
+                            // Speech synthesis
                             try {
                                 if (window.speechSynthesis) {
+                                    const metodoFrase = cobro.metodoSug
+                                        ? ', sugerido ' + cobro.metodoSug
+                                        : ', el método lo eliges tú';
                                     const u = new SpeechSynthesisUtterance(
-                                        'Cobro pendiente: ' + (ultimo.cliente || 'cliente') +
-                                        ', ' + Math.round(ultimo.monto) + ' soles, ' + (ultimo.metodoSug || 'efectivo')
+                                        'Cobro asignado, ' + (cobro.cliente || 'cliente') +
+                                        ', ' + Math.round(cobro.monto) + ' soles' + metodoFrase
                                     );
-                                    u.lang = 'es-PE'; u.rate = 0.95;
-                                    window.speechSynthesis.cancel();
+                                    u.lang = 'es-PE'; u.rate = 0.95; u.volume = 1.0;
+                                    if (!esPrimerPoll) window.speechSynthesis.cancel();
                                     window.speechSynthesis.speak(u);
                                 }
                             } catch(_){}
-                            // ── AUTO-ABRIR la vista grande (modalCobrarAsignado) ──────────
-                            // Antes solo se reproducía audio + toast: el cajero tenía que
-                            // estar en CAJA y ver el banner naranja para tocar "COBRAR".
-                            // Si estaba en POS no veía nada → "pantalla en blanco".
-                            // Ahora: si no hay otro modal abierto, lo llevamos a CAJA y
-                            // abrimos el modal grande automáticamente con el último cobro.
+                            _marcarCobroNotificado(cobro.idCobro);
+                        }
+                        // ── AUTO-ABRIR el modal solo en cobros llegados DURANTE la sesión ──
+                        // En el primer poll (reabrir app con cobros pendientes viejos), NO
+                        // abrimos modal automático para no asustar al cajero.
+                        if (!esPrimerPoll) {
+                            const ultimo = nuevos[nuevos.length - 1];
                             const haySolapamiento = modalCobrarAsignado.value || modalCobro.value
                                 || modalCredito.value || modalExtra.value || procesandoCobroAsig.value;
-                            if (!haySolapamiento) {
+                            if (!haySolapamiento && ultimo) {
                                 currentModule.value = 'CAJA';
                                 nextTick(() => abrirModalCobrarAsignado(ultimo));
                             }

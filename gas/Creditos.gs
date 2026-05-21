@@ -63,10 +63,12 @@ function _getHojaCobrosAsignados() {
 function asignarCobroACajero(data) {
   if (!data.idVenta)         return generarRespuestaError('idVenta requerido');
   if (!data.cajaDestino)     return generarRespuestaError('cajaDestino requerida');
-  if (!data.metodoSugerido)  return generarRespuestaError('metodoSugerido requerido');
+  // [v2.5.39] metodoSugerido ya no es obligatorio — el cajero elige al cobrar
   if (!data.adminAuth || !data.adminAuth.nombre) {
     return generarRespuestaError('adminAuth requerido (esta acción requiere admin/master)');
   }
+  // Normalizar método (puede venir vacío = "cajero decide")
+  var metodoSugStr = String(data.metodoSugerido || '').toUpperCase().trim();
 
   var ss     = SpreadsheetApp.getActiveSpreadsheet();
   var ventas = ss.getSheetByName('VENTAS_CABECERA');
@@ -131,7 +133,7 @@ function asignarCobroACajero(data) {
   var mensajeAdmin = String(data.mensajeAdmin || '').substring(0, 140).trim();
   hoja.appendRow([
     idCobro, data.idVenta, data.cajaDestino, cajaInfo.vendedor,
-    String(data.metodoSugerido).toUpperCase(),
+    metodoSugStr, // [v2.5.39] puede ser '' (cajero decide al cobrar)
     'ASIGNADO',
     String(data.adminAuth.nombre || '').replace(/^admin:/i, ''),
     ahora, '', '',
@@ -146,9 +148,10 @@ function asignarCobroACajero(data) {
     var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
     if (url) {
       var titulo = '💳 Cobro pendiente · ' + (ventaData.cliente || 'cliente');
+      // [v2.5.39] No mencionar método si está vacío (cajero decide al cobrar)
       var cuerpo = (data.adminAuth.nombre || 'Admin').replace(/^admin:/i, '') +
                    ' te asignó un crédito de S/ ' + ventaData.total.toFixed(2) +
-                   ' (' + String(data.metodoSugerido).toUpperCase() + '). Tocá para cobrar.';
+                   (metodoSugStr ? ' (' + metodoSugStr + ')' : '') + '. Tocá para cobrar.';
       UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
