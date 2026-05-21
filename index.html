@@ -5545,6 +5545,19 @@
             if (_mePollImpresoraTimer) { clearInterval(_mePollImpresoraTimer); _mePollImpresoraTimer = null; }
         };
 
+        // [v2.5.45] Valida que un raw_data de pendingSales sea enviable. Si NO,
+        // se considera corrupto y se filtra (no se reenvía → no genera huérfana).
+        // Definido temprano porque cargarDatos() lo usa en el cleanup de boot.
+        const _esVentaValidaParaSync = (raw) => {
+            if (!raw || typeof raw !== 'object') return false;
+            if (!raw.auth?.vendedor || String(raw.auth.vendedor).trim() === '') return false;
+            if (!raw.pos_config?.serieActual || String(raw.pos_config.serieActual).trim() === '') return false;
+            if (!Array.isArray(raw.items) || raw.items.length === 0) return false;
+            const total = parseFloat(raw.header?.total);
+            if (isNaN(total) || total <= 0) return false;
+            return true;
+        };
+
         // Computed: icono, label, clase, nombre, razón, última impresión
         const meImpresoraIcon = computed(() => {
             const s = meImpresoraEstado.value.state;
@@ -6626,7 +6639,22 @@
           }
           
           const pendingLocal = localStorage.getItem('pending_sales');
-          if (pendingLocal) pendingSales.value = JSON.parse(pendingLocal);
+          if (pendingLocal) {
+              try {
+                  const parsed = JSON.parse(pendingLocal);
+                  // [v2.5.45] Cleanup en boot: descartar ventas corruptas que
+                  // generarían huérfanas en VENTAS_CABECERA al re-sync.
+                  const validas = (parsed || []).filter(v => _esVentaValidaParaSync(v.raw_data));
+                  const descartadas = (parsed || []).length - validas.length;
+                  if (descartadas > 0) {
+                      console.warn('[ME boot] Descartadas ' + descartadas + ' venta(s) corrupta(s) de pendingSales');
+                      lsSet('pending_sales', JSON.stringify(validas));
+                  }
+                  pendingSales.value = validas;
+              } catch(_) {
+                  pendingSales.value = [];
+              }
+          }
 
           if (!offlineMode.value) await sincronizarDatos();
 
@@ -7139,6 +7167,15 @@
            lsSet('_mos_syncing', String(Date.now()));
            isSyncing.value = true;
            let exitos = 0;
+           // [v2.5.45] Filtrar ventas corruptas ANTES de enviarlas — evita
+           // generar filas "undefined-XXX" en VENTAS_CABECERA.
+           const corruptas = pendingSales.value.filter(v => !_esVentaValidaParaSync(v.raw_data));
+           if (corruptas.length > 0) {
+               console.warn('[ME sync] Filtrando ' + corruptas.length + ' venta(s) corrupta(s) de pendingSales:', corruptas);
+               pendingSales.value = pendingSales.value.filter(v => _esVentaValidaParaSync(v.raw_data));
+               lsSet('pending_sales', JSON.stringify(pendingSales.value));
+               agregarToast('🧹 Cola limpiada', corruptas.length + ' venta(s) con datos incompletos descartadas', 'warning');
+           }
            const ventasAProcesar = [...pendingSales.value];
            const reimprimirCola = [];   // F3: tickets a reimprimir tras sync (CPEs con QR SUNAT)
 

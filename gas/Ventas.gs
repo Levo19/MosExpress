@@ -16,6 +16,32 @@ function procesarVenta(data) {
   var header = data.header      || {};
   var items  = data.items       || [];
 
+  // [v2.5.45] GUARD ANTI-HUÉRFANAS — Rechazar payloads malformados ANTES de
+  // generar un correlativo "undefined-XXX" que ensucia VENTAS_CABECERA.
+  // Causas históricas: pendingSales con raw_data corrupto · venta disparada
+  // con config.estacion=null · POST vacío de algún probe externo · SW
+  // reintentando jobs incompletos.
+  var _missing = [];
+  if (!auth.vendedor || String(auth.vendedor).trim() === '') _missing.push('auth.vendedor');
+  if (!pos.serieActual || String(pos.serieActual).trim() === '') _missing.push('pos_config.serieActual');
+  if (!Array.isArray(items) || items.length === 0)              _missing.push('items (lista vacía)');
+  var _totalNum = parseFloat(header.total);
+  if (isNaN(_totalNum) || _totalNum <= 0)                       _missing.push('header.total (debe ser > 0)');
+  if (_missing.length > 0) {
+    try {
+      Logger.log('[procesarVenta] RECHAZADA — payload inválido. Faltan: ' + _missing.join(', ') +
+                 ' · refLocal=' + (data.data_sync && data.data_sync.last_sync) +
+                 ' · deviceId=' + (auth.deviceId || '(sin)') +
+                 ' · raw=' + JSON.stringify(data).substring(0, 500));
+    } catch(_) {}
+    return {
+      idVenta: null, correlativo: null, printDispatched: false, dedupVenta: false,
+      error: 'PAYLOAD_INVALIDO',
+      campos_faltantes: _missing,
+      mensaje: 'Venta rechazada: faltan ' + _missing.join(', ')
+    };
+  }
+
   // Seguridad de rol: dispositivo cajero sin caja abierta → POR_COBRAR
   if (auth.esCajero && !pos.cajaId) {
     header.metodo = 'POR_COBRAR';
@@ -404,6 +430,35 @@ function verificarYAgregaCliente(doc, nombre, tipoDoc, direccion) {
 // Timeout subido a 30s y SIN fallback Math.max() (peligroso: bajo carga simultánea
 // dos requests podían retornar el mismo número). Si timeout, se LANZA EXCEPCIÓN
 // con código RESERVA_OCUPADA para que el frontend reintente con backoff exponencial.
+// [v2.5.45] Limpia las filas huérfanas históricas de VENTAS_CABECERA generadas
+// antes del guard. Las marca con Estado_Envio='HUERFANA_LIMPIADA' para que NO
+// aparezcan en KPIs/reportes pero queden trazables en historialCambios para
+// auditoría. Es admin-only — invocar desde editor GAS o desde MOS via PIN.
+function limpiarVentasHuerfanas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('VENTAS_CABECERA');
+  if (!sheet) return { ok: false, error: 'VENTAS_CABECERA no encontrada' };
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var idxCorr = headers.indexOf('Correlativo');
+  var idxEstado = headers.indexOf('Estado_Envio');
+  if (idxCorr < 0 || idxEstado < 0) return { ok: false, error: 'Columnas Correlativo/Estado_Envio no encontradas' };
+  var limpiadas = 0;
+  var detalles = [];
+  for (var i = 1; i < data.length; i++) {
+    var corr = String(data[i][idxCorr] || '');
+    var estadoActual = String(data[i][idxEstado] || '');
+    if (corr.indexOf('undefined-') === 0 && estadoActual !== 'HUERFANA_LIMPIADA') {
+      sheet.getRange(i + 1, idxEstado + 1).setValue('HUERFANA_LIMPIADA');
+      limpiadas++;
+      detalles.push({ fila: i + 1, correlativo: corr, idVenta: String(data[i][0] || '') });
+    }
+  }
+  SpreadsheetApp.flush();
+  Logger.log('[limpiarVentasHuerfanas] ' + limpiadas + ' filas marcadas como HUERFANA_LIMPIADA');
+  return { ok: true, limpiadas: limpiadas, detalles: detalles };
+}
+
 function obtenerSiguienteCorrelativoRapido(ss, serie) {
   var sheet = ss.getSheetByName('CORRELATIVOS');
   if (!sheet) {

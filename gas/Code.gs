@@ -256,6 +256,15 @@ function doPost(e) {
 
     // Default: registrar venta
     var response = procesarVenta(data);
+    // [v2.5.45] Propagar error de payload inválido del guard anti-huérfanas
+    if (response && response.error === 'PAYLOAD_INVALIDO') {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        error: 'PAYLOAD_INVALIDO',
+        mensaje: response.mensaje,
+        campos_faltantes: response.campos_faltantes
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
     return ContentService.createTextOutput(JSON.stringify({
       status:         "success",
       idVenta:        response.idVenta,
