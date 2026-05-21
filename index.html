@@ -5306,12 +5306,40 @@
 
         const _mePollEstadoImpresora = async () => {
             const pid = String(config.value?.estacion?.PrintNode_ID || '').trim();
-            if (!pid || !/^\d+$/.test(pid)) return;
-            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            // [v2.5.41] No volver silenciosamente — mostrar motivo real en el chip
+            if (!pid) {
+                meImpresoraEstado.value = { state: 'offline', name: '(sin asignar)', reason: 'Estación sin PrintNode_ID configurado', lastPrintTs: 0 };
+                return;
+            }
+            if (!/^\d+$/.test(pid)) {
+                meImpresoraEstado.value = { state: 'offline', name: '#' + pid, reason: 'PrintNode_ID inválido: ' + pid, lastPrintTs: 0 };
+                return;
+            }
+            if (offlineMode.value) {
+                meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'Sin conexión a internet' };
+                return;
+            }
+            if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                meImpresoraEstado.value = { state: 'online', name: 'Mock', reason: 'Modo dev', lastPrintTs: 0 };
+                return;
+            }
             try {
                 const r = await fetch(`${API_URL}?accion=estado_impresoras&ids=${pid}`);
+                if (!r.ok) {
+                    meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'HTTP ' + r.status + ' del GAS' };
+                    console.warn('[ME chip imp] fetch HTTP', r.status, 'pid=', pid);
+                    return;
+                }
                 const d = await r.json();
-                if (d.status !== 'success' || !d.impresoras || !d.impresoras.length) return;
+                if (d.status !== 'success') {
+                    meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'GAS error: ' + (d.mensaje || 'desconocido') };
+                    console.warn('[ME chip imp] GAS error:', d);
+                    return;
+                }
+                if (!d.impresoras || !d.impresoras.length) {
+                    meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'offline', reason: 'Sin datos PrintNode' };
+                    return;
+                }
                 const p = d.impresoras[0];
                 const nuevoEstado = p.online ? 'online' : 'offline';
                 const previo = _meEstadoPrevio;
@@ -5319,7 +5347,7 @@
                     state: nuevoEstado,
                     name: p.name || ('#' + p.id),
                     reason: p.reason || (p.online ? 'Lista para imprimir' : 'Apagada o sin red'),
-                    lastPrintTs: meImpresoraEstado.value.lastPrintTs
+                    lastPrintTs: meImpresoraEstado.value.lastPrintTs || 0
                 };
                 // Sonido en transición online↔offline (no en el primer poll)
                 if (previo && previo !== nuevoEstado) {
@@ -5337,8 +5365,9 @@
                     }
                 }
                 _meEstadoPrevio = nuevoEstado;
-            } catch(_) {
-                meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'Sin conexión a MOS' };
+            } catch(e) {
+                meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'Error red: ' + (e.message || 'desconocido') };
+                console.warn('[ME chip imp] catch:', e);
             }
         };
 
@@ -8361,8 +8390,11 @@
         // [v2.5.40] Polling de estado impresora — arranca cuando hay estación
         // configurada (config.completado=true). Se reinicia si cambia el PrintNode_ID
         // (por ejemplo, después de un cambio de impresora desde el modal admin).
-        watch(() => config.value?.estacion?.PrintNode_ID, (newPid, oldPid) => {
-            if (config.value?.completado && newPid && /^\d+$/.test(String(newPid))) {
+        // [v2.5.41] Watch sobre ambos campos para cubrir caso "config se carga
+        // desde localStorage en boot, PrintNode_ID se setea cuando completado
+        // aún era false → polling nunca arrancaba".
+        watch(() => [config.value?.completado, config.value?.estacion?.PrintNode_ID], ([compl, pid]) => {
+            if (compl && pid && /^\d+$/.test(String(pid))) {
                 iniciarPollingImpresora();
             } else {
                 detenerPollingImpresora();
