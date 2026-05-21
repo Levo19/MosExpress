@@ -33,6 +33,12 @@ function doGet(e) {
     if (accion === 'estado_impresoras')     return estadoImpresoras(e.parameter.ids);
     if (accion === 'cajeros_activos_todos') return cajerosActivosTodos();
     if (accion === 'ping')                  return ContentService.createTextOutput(JSON.stringify({ status: 'success', ok: true, ts: Date.now() })).setMimeType(ContentService.MimeType.JSON);
+    // [v2.5.47] Endpoints para el Centro Tributario en MOS
+    if (accion === 'tributario_ventas_mes')        return tributarioVentasMes(e.parameter.mes, e.parameter.anio);
+    if (accion === 'tributario_cpe_mes')           return tributarioCPEMes(e.parameter.mes, e.parameter.anio);
+    if (accion === 'tributario_reintentar_cpe')    return tributarioReintentarCPE(e.parameter.idVenta);
+    if (accion === 'tributario_limpiar_huerfanas') return limpiarVentasHuerfanas();
+    if (accion === 'tributario_reconciliar')       return reconciliarCPEsPendientes(35);
     if (accion === 'listar_guias')          return listarGuias(e.parameter.zona);
     if (accion === 'detalle_guia')          return detalleGuia(e.parameter.id_guia);
     if (accion === 'traslados_entrantes')   return trasladosEntrantes(e.parameter.zona, e.parameter.desde);
