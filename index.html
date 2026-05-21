@@ -10485,9 +10485,11 @@
                                     const metodoFrase = cobro.metodoSug
                                         ? ', sugerido ' + cobro.metodoSug
                                         : ', el método lo eliges tú';
+                                    // [v2.5.49] Usar _precioVoz para decir decimales correctamente
+                                    // (74.4 → "74 con 40 soles", no "74 soles")
                                     const u = new SpeechSynthesisUtterance(
                                         'Cobro asignado, ' + (cobro.cliente || 'cliente') +
-                                        ', ' + Math.round(cobro.monto) + ' soles' + metodoFrase
+                                        ', ' + _precioVoz(cobro.monto) + metodoFrase
                                     );
                                     u.lang = 'es-PE'; u.rate = 0.95; u.volume = 1.0;
                                     if (!esPrimerPoll) window.speechSynthesis.cancel();
@@ -10567,7 +10569,7 @@
         const confirmarCobrarAsignado = async () => {
             const cobro = cobroAsignadoActivo.value;
             if (!cobro) return;
-            // Validación MIXTO
+            // Validación MIXTO antes de cerrar
             let payload = {
                 tipoEvento: 'CONFIRMAR_COBRO_ASIGNADO',
                 idCobro: cobro.idCobro,
@@ -10589,45 +10591,62 @@
                 payload.montoEfectivo = ef;
                 payload.montoVirtual  = vi;
             }
-            procesandoCobroAsig.value = true;
+
+            // [v2.5.49] FLUJO OPTIMISTA — confirmar al cajero INMEDIATO,
+            // procesar en background. Evita los ~3-5s que el modal mostraba
+            // "PROCESANDO..." mientras GAS escribía VENTAS_CABECERA +
+            // MOVIMIENTOS_EXTRA + actualizaba CREDITOS_COBRO_ASIGNADO.
+            try { playVentaOK?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate([40, 30, 80]); } catch(_){}
             try {
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                const d = await r.json();
-                if (d && d.status === 'success') {
-                    // 🎉 Confetti + sonido + voz
-                    try { playVentaOK?.(); } catch(_){}
-                    try { if (navigator.vibrate) navigator.vibrate([40, 30, 80]); } catch(_){}
-                    try {
-                        if (window.speechSynthesis) {
-                            const u = new SpeechSynthesisUtterance(
-                                'Cobro confirmado. ' + Math.round(cobro.monto) + ' soles de ' + (cobro.cliente || 'cliente')
-                            );
-                            u.lang = 'es-PE'; u.rate = 0.95;
-                            window.speechSynthesis.cancel();
-                            window.speechSynthesis.speak(u);
-                        }
-                    } catch(_){}
-                    agregarToast('✓ Cobro confirmado', 'S/ ' + parseFloat(cobro.monto).toFixed(2) + ' · ' + (cobro.cliente || ''));
-                    // [v2.5.27] Sello PAGADO sobre la card 1.2s antes de quitarla
-                    const idx = cobrosAsignados.value.findIndex(c => c.idCobro === cobro.idCobro);
-                    if (idx >= 0) {
-                        cobrosAsignados.value[idx]._justPaid = true;
-                        cobrosAsignados.value = [...cobrosAsignados.value]; // forzar reactividad
-                    }
-                    cerrarCobrarAsignado();
-                    // Después de 1.2s quitar del listado + refresh
-                    setTimeout(() => {
-                        cobrosAsignados.value = cobrosAsignados.value.filter(c => c.idCobro !== cobro.idCobro);
-                        cargarCobrosAsignados();
-                    }, 1200);
-                } else {
-                    agregarToast('Error', d.mensaje || 'No se pudo procesar el cobro');
+                if (window.speechSynthesis) {
+                    const u = new SpeechSynthesisUtterance(
+                        'Cobro confirmado. ' + _precioVoz(cobro.monto) + ' de ' + (cobro.cliente || 'cliente')
+                    );
+                    u.lang = 'es-PE'; u.rate = 0.95;
+                    window.speechSynthesis.cancel();
+                    window.speechSynthesis.speak(u);
                 }
-            } catch(e) {
-                agregarToast('Error de red', e.message || 'sin conexión');
-            } finally {
-                procesandoCobroAsig.value = false;
+            } catch(_){}
+            agregarToast('✓ Cobro confirmado', 'S/ ' + parseFloat(cobro.monto).toFixed(2) + ' · ' + (cobro.cliente || ''));
+            const idx = cobrosAsignados.value.findIndex(c => c.idCobro === cobro.idCobro);
+            if (idx >= 0) {
+                cobrosAsignados.value[idx]._justPaid = true;
+                cobrosAsignados.value = [...cobrosAsignados.value];
             }
+            cerrarCobrarAsignado();
+            // Después de 1.2s quitar de la lista visualmente
+            setTimeout(() => {
+                cobrosAsignados.value = cobrosAsignados.value.filter(c => c.idCobro !== cobro.idCobro);
+            }, 1200);
+
+            // POST en background sin bloquear UI
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
+                .then(r => r.json())
+                .then(d => {
+                    if (d && d.status === 'success') {
+                        // OK — refresh silencioso del listado
+                        setTimeout(() => cargarCobrosAsignados(), 800);
+                    } else {
+                        // Backend rechazó — restaurar el cobro en la lista y avisar
+                        agregarToast('⚠ Error al guardar',
+                            d?.mensaje || 'No se pudo procesar — restaurando cobro',
+                            'error');
+                        if (idx >= 0) {
+                            cobrosAsignados.value[idx]._justPaid = false;
+                            cobrosAsignados.value = [...cobrosAsignados.value];
+                        }
+                        // Refresh para resincronizar estado real
+                        setTimeout(() => cargarCobrosAsignados(), 500);
+                    }
+                })
+                .catch(e => {
+                    // Red caída — el polling lo reintentará al recuperar
+                    console.warn('[ME cobro async] falló:', e.message);
+                    agregarToast('Sin conexión',
+                        'Cobro registrado local — se sincroniza al volver red',
+                        'warning');
+                });
         };
 
         const abrirRechazarAsignado = () => {

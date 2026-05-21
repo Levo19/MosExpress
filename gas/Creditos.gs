@@ -603,6 +603,41 @@ function escalarCobrosVencidos() {
     }
     if (isNaN(fVencMs) || ahora < fVencMs) continue;
 
+    // [v2.5.49] GUARD CRÍTICO — ANTES de marcar EXPIRADO, verificar que la
+    // venta original NO haya sido cobrada por otra vía. Si ya está en
+    // EFECTIVO/VIRTUAL/MIXTO, el cajero la cobró → NO expirar (sería falso
+    // positivo) y NO revertir VENTAS_CABECERA (perdería la trazabilidad
+    // del cobro real). En vez, sincronizar el row a COBRADO.
+    var idVentaCheck = String(fa[i][iIdVenta]);
+    var fpVentaActual = '';
+    try {
+      if (ventasSh) {
+        var vdCheck = ventasSh.getDataRange().getValues();
+        var vHdrsCheck = vdCheck[0].map(function(h){ return String(h || '').trim(); });
+        var iVId    = vHdrsCheck.indexOf('ID_Venta') >= 0 ? vHdrsCheck.indexOf('ID_Venta')
+                    : vHdrsCheck.indexOf('ID') >= 0 ? vHdrsCheck.indexOf('ID') : 0;
+        var iVFpCk  = vHdrsCheck.indexOf('FormaPago') >= 0 ? vHdrsCheck.indexOf('FormaPago')
+                    : vHdrsCheck.indexOf('Forma_Pago') >= 0 ? vHdrsCheck.indexOf('Forma_Pago') : 8;
+        for (var kk = vdCheck.length - 1; kk > 0; kk--) {
+          if (String(vdCheck[kk][iVId]) === idVentaCheck) {
+            fpVentaActual = String(vdCheck[kk][iVFpCk] || '').toUpperCase();
+            break;
+          }
+        }
+      }
+    } catch(eCheck) { Logger.log('Check fp venta: ' + eCheck.message); }
+
+    // Si la venta YA fue cobrada (no es CREDITO/POR_COBRAR), sincronizar
+    // el row a COBRADO en vez de expirarlo. Sin push falso al admin.
+    if (fpVentaActual && fpVentaActual !== 'CREDITO' && fpVentaActual !== 'POR_COBRAR') {
+      hoja.getRange(i + 1, iEstado + 1).setValue('COBRADO');
+      hoja.getRange(i + 1, iRes + 1).setValue(new Date());
+      hoja.getRange(i + 1, iRazon + 1).setValue('Cobrado fuera del flujo · auto-reconciliado');
+      Logger.log('[escalarCobros] cobro ' + fa[i][0] + ' YA cobrado (' + fpVentaActual +
+                 ') · marcado COBRADO en vez de EXPIRADO');
+      continue; // no contar como vencido, no mandar push
+    }
+
     // VENCIDO — marcar y restaurar
     hoja.getRange(i + 1, iEstado + 1).setValue('EXPIRADO');
     hoja.getRange(i + 1, iRes + 1).setValue(new Date());
