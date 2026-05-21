@@ -1397,6 +1397,66 @@
     .me-des-ok:disabled { opacity:.6; cursor:not-allowed; }
 
     /* ═══════════════════════════════════════════════════════════
+       [v2.5.44] KPI CARDS — info no monetaria del turno
+    ═══════════════════════════════════════════════════════════ */
+    .me-kpi-card {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 10px 4px;
+      border-radius: 14px; border-width: 2px; border-style: solid;
+      transition: all .18s ease;
+      cursor: pointer; gap: 1px;
+      min-height: 78px;
+    }
+    .me-kpi-card.me-kpi-static { cursor: default; }
+    .me-kpi-card:not(.me-kpi-static):hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 14px -4px rgba(0,0,0,.08);
+    }
+    .me-kpi-card:not(.me-kpi-static):active { transform: scale(.97); }
+    .me-kpi-icon { font-size: 1.35rem; line-height: 1; }
+    .me-kpi-num {
+      font-size: 1.5rem; font-weight: 900; color: #1e293b;
+      line-height: 1.1; font-variant-numeric: tabular-nums;
+    }
+    .me-kpi-time { font-size: 1.1rem; letter-spacing: -.02em; }
+    .me-kpi-lbl {
+      font-size: 9px; font-weight: 700; color: #64748b;
+      text-transform: uppercase; letter-spacing: .04em;
+      line-height: 1.2; text-align: center;
+    }
+    .me-kpi-pulse { animation: meKpiPulse 1.8s ease-in-out infinite; }
+    @keyframes meKpiPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,.4); }
+      50%      { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+    }
+
+    /* Tabs modernos pill con badge */
+    .me-tab-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: 99px;
+      font-size: 11px; font-weight: 800;
+      letter-spacing: .04em; text-transform: uppercase;
+      border: 1.5px solid transparent;
+      transition: all .15s;
+      cursor: pointer; background: #f1f5f9; color: #64748b;
+    }
+    .me-tab-pill:hover { background: #e2e8f0; color: #334155; }
+    .me-tab-pill.active {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      color: #fff;
+      box-shadow: 0 3px 8px -2px rgba(15,23,42,.3);
+    }
+    .me-tab-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 5px;
+      border-radius: 99px; font-size: 9px; font-weight: 900;
+      background: rgba(255,255,255,.25);
+    }
+    .me-tab-pill:not(.active) .me-tab-badge {
+      background: #cbd5e1; color: #475569;
+    }
+
+    /* ═══════════════════════════════════════════════════════════
        [v2.5.40] CHIP IMPRESORA — estados visuales con glow
     ═══════════════════════════════════════════════════════════ */
     .me-imp-chip { color: #fff; }
@@ -2725,6 +2785,45 @@
                   </div>
                 </div>
 
+                <!-- [v2.5.44] KPI cards prominentes — info NO MONETARIA del turno.
+                     Visible para cajero y vendedor. Click en cualquier card filtra/scrollea. -->
+                <div v-if="config.completado && (config.esCajero || !config.esCajero)" class="grid grid-cols-4 gap-2 mb-4">
+                  <button @click="tabCajaActivo='NOTAS'"
+                          class="me-kpi-card bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 hover:border-emerald-400">
+                    <span class="me-kpi-icon">🧾</span>
+                    <span class="me-kpi-num">{{ cantTicketsTurno }}</span>
+                    <span class="me-kpi-lbl">Tickets</span>
+                  </button>
+                  <div class="me-kpi-card bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 me-kpi-static">
+                    <span class="me-kpi-icon">⏱</span>
+                    <span class="me-kpi-num me-kpi-time">{{ tiempoTurnoTexto || '—' }}</span>
+                    <span class="me-kpi-lbl">Turno</span>
+                  </div>
+                  <button v-if="config.esCajero"
+                          @click="cantCobrosPendientesTurno > 0 && (modalCobrarAsignado = false)"
+                          class="me-kpi-card border-2"
+                          :class="cantCobrosPendientesTurno > 0
+                            ? 'bg-gradient-to-br from-amber-50 to-amber-100 border-amber-400 me-kpi-pulse'
+                            : 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200'">
+                    <span class="me-kpi-icon">✈</span>
+                    <span class="me-kpi-num" :class="cantCobrosPendientesTurno > 0 ? 'text-amber-700' : ''">{{ cantCobrosPendientesTurno }}</span>
+                    <span class="me-kpi-lbl">Por cobrar (asig.)</span>
+                  </button>
+                  <div v-else class="me-kpi-card bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 me-kpi-static">
+                    <span class="me-kpi-icon">📒</span>
+                    <span class="me-kpi-num text-blue-700">{{ cantPorCobrarTurno }}</span>
+                    <span class="me-kpi-lbl">Por cobrar</span>
+                  </div>
+                  <div class="me-kpi-card border-2"
+                       :class="cantAnuladosTurno > 0
+                         ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'
+                         : 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200'">
+                    <span class="me-kpi-icon">🚫</span>
+                    <span class="me-kpi-num" :class="cantAnuladosTurno > 0 ? 'text-red-700' : ''">{{ cantAnuladosTurno }}</span>
+                    <span class="me-kpi-lbl">Anulados</span>
+                  </div>
+                </div>
+
                 <!-- Header Cajero: info + botones apilados -->
                 <div v-if="config.esCajero" class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-5 rounded-3xl shadow-lg mb-6 relative overflow-hidden">
                     <!-- Fila superior: caja activa + saldo -->
@@ -2862,10 +2961,19 @@
                             <svg class="w-4 h-4" :class="{'animate-spin': cargandoZona}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                         </button>
                     </div>
-                    <div class="flex space-x-1">
-                        <button @click="tabCajaActivo = 'NOTAS'" :class="tabCajaActivo === 'NOTAS' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'" class="px-3 py-1.5 rounded-t-lg font-bold text-xs uppercase transition-colors">Notas</button>
-                        <button @click="tabCajaActivo = 'BOLETAS'" :class="tabCajaActivo === 'BOLETAS' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'" class="px-3 py-1.5 rounded-t-lg font-bold text-xs uppercase transition-colors">Boletas</button>
-                        <button @click="tabCajaActivo = 'FACTURAS'" :class="tabCajaActivo === 'FACTURAS' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'" class="px-3 py-1.5 rounded-t-lg font-bold text-xs uppercase transition-colors">Facturas</button>
+                    <div class="flex gap-1.5 flex-wrap">
+                        <button @click="tabCajaActivo = 'NOTAS'"
+                                :class="['me-tab-pill', tabCajaActivo === 'NOTAS' ? 'active' : '']">
+                            Notas <span class="me-tab-badge">{{ conteoNotas }}</span>
+                        </button>
+                        <button @click="tabCajaActivo = 'BOLETAS'"
+                                :class="['me-tab-pill', tabCajaActivo === 'BOLETAS' ? 'active' : '']">
+                            Boletas <span class="me-tab-badge">{{ conteoBoletas }}</span>
+                        </button>
+                        <button @click="tabCajaActivo = 'FACTURAS'"
+                                :class="['me-tab-pill', tabCajaActivo === 'FACTURAS' ? 'active' : '']">
+                            Facturas <span class="me-tab-badge">{{ conteoFacturas }}</span>
+                        </button>
                     </div>
                 </div>
                 
@@ -5954,6 +6062,32 @@
         });
         const cantCobrosPendientesTurno = computed(() => {
             return (cobrosAsignados.value || []).filter(c => !c.cobrado && !c._justPaid).length;
+        });
+        // [v2.5.44] KPIs adicionales para mostrar en cards prominentes
+        const cantAnuladosTurno = computed(() => {
+            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (fuente || []).filter(v => v.anulada).length;
+        });
+        const cantPorCobrarTurno = computed(() => {
+            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (fuente || []).filter(v => !v.anulada && v.raw_data?.header?.metodo === 'POR_COBRAR').length;
+        });
+        const cantCreditoTurno = computed(() => {
+            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (fuente || []).filter(v => !v.anulada && v.credito).length;
+        });
+        // Para los tabs modernos con conteo
+        const conteoNotas = computed(() => {
+            const f = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (f || []).filter(v => v.tipo === 'NOTA_DE_VENTA').length;
+        });
+        const conteoBoletas = computed(() => {
+            const f = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (f || []).filter(v => v.tipo === 'BOLETA').length;
+        });
+        const conteoFacturas = computed(() => {
+            const f = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (f || []).filter(v => v.tipo === 'FACTURA').length;
         });
         // [v2.5.42] Último ticket emitido (no anulado) — para atajo de reimprimir
         const ultimoTicketReimprimible = computed(() => {
@@ -12592,6 +12726,9 @@
           tiempoTurnoTexto, cantTicketsTurno, cantCobrosPendientesTurno,
           // [v2.5.42] Atajo reimprimir último ticket
           ultimoTicketReimprimible, reimprimirUltimoTicket,
+          // [v2.5.44] KPI cards + tabs modernos
+          cantAnuladosTurno, cantPorCobrarTurno, cantCreditoTurno,
+          conteoNotas, conteoBoletas, conteoFacturas,
           darkMode, toggleDarkMode,
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
