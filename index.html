@@ -146,7 +146,19 @@
       50%      { box-shadow: 0 10px 32px -4px rgba(245,158,11,1),   0 0 0 2px rgba(255,255,255,.25), 0 0 0 14px rgba(245,158,11,0); }
     }
     .animate-pulse-glow { animation: etiqsPulseGlow 1.8s ease-in-out infinite; }
-    .ticket-nuevo { animation: pulseNuevo 1s ease-out infinite; border-color: #10b981 !important; }
+    /* [v2.5.42] Ticket nuevo: slide-in elegante + pulse glow verde
+       Antes solo pulsaba el borde. Ahora también desliza hacia abajo desde -8px
+       con fade-in suave + glow ámbar→verde. Mucho más perceptible. */
+    .ticket-nuevo {
+      animation: pulseNuevo 1s ease-out infinite, ticketSlideIn .55s cubic-bezier(.16,1,.3,1) 1;
+      border-color: #10b981 !important;
+      position: relative;
+    }
+    @keyframes ticketSlideIn {
+      0%   { opacity: 0; transform: translateY(-12px) scale(.98); box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+      40%  { opacity: 1; transform: translateY(2px)   scale(1.005); box-shadow: 0 0 0 6px rgba(16,185,129,.35); }
+      100% { opacity: 1; transform: translateY(0)    scale(1);     box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+    }
     @keyframes frameFlash { 0%, 100% { box-shadow: inset 0 0 0 0px rgba(16,185,129,0); } 50% { box-shadow: inset 0 0 0 6px rgba(16,185,129,0.85); } }
     .frame-nuevo { animation: frameFlash 0.5s ease-in-out 4; }
     /* Modal de pago no se sale del viewport en pantallas pequeñas */
@@ -2710,6 +2722,14 @@
                         <button @click="modalExtra = true" class="flex-1 bg-amber-400 hover:bg-amber-300 text-amber-900 font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                             EXTRA
+                        </button>
+                        <!-- [v2.5.42] Reimprimir último ticket — atajo rápido para no expandir la lista -->
+                        <button @click="reimprimirUltimoTicket"
+                                :disabled="!ultimoTicketReimprimible"
+                                class="flex-1 bg-white/20 hover:bg-white/30 disabled:opacity-40 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5 border border-white/30"
+                                :title="ultimoTicketReimprimible ? 'Reimprimir ' + ultimoTicketReimprimible.correlativo : 'Sin tickets para reimprimir'">
+                            <span class="text-base">🧾</span>
+                            REIMPR
                         </button>
                         <button @click="cerrarCaja" :disabled="procesandoCierre" class="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                             <svg v-if="procesandoCierre" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -5899,6 +5919,21 @@
         const cantCobrosPendientesTurno = computed(() => {
             return (cobrosAsignados.value || []).filter(c => !c.cobrado && !c._justPaid).length;
         });
+        // [v2.5.42] Último ticket emitido (no anulado) — para atajo de reimprimir
+        const ultimoTicketReimprimible = computed(() => {
+            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            const list = (fuente || []).filter(v => !v.anulada);
+            return list.length > 0 ? list[0] : null; // ya viene ordenado más-reciente-primero
+        });
+        const reimprimirUltimoTicket = () => {
+            const t = ultimoTicketReimprimible.value;
+            if (!t) {
+                agregarToast('Sin tickets', 'No hay tickets para reimprimir', 'warning');
+                return;
+            }
+            try { playCashRing(); } catch(_){}
+            reimprimirTicket(t);
+        };
 
         const vueltoCobro = computed(() => {
             if (!ventaCobrar.value) return 0;
@@ -7201,6 +7236,26 @@
                     osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
                 });
             } catch(e) {}
+        };
+
+        // [v2.5.42] Sonido cashRing — beep corto y agradable cuando aparece
+        // un ticket nuevo en la lista. Más sutil que el de cobro asignado.
+        const playCashRing = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
+                [
+                    { t: 0.00, f: 1200, v: 0.45, d: 0.08 },
+                    { t: 0.09, f: 1600, v: 0.50, d: 0.14 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator(), gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.02);
+                });
+            } catch(_){}
         };
 
         // [v2.5.39] Sonido FUERTE y distintivo para cobro asignado nuevo —
@@ -8508,8 +8563,12 @@
 
                 if (nuevas.length > 0) {
                     ventasZona.value.unshift(...nuevas);
-                    // Solo sonar si hay tickets POR_COBRAR nuevos (no crédito, no cobrado)
-                    if (nuevas.some(t => !t.cobrado && !t.anulada && !t.credito)) playCoinSound();
+                    // [v2.5.42] Sonido cashRing en cualquier ticket nuevo (más distintivo)
+                    playCashRing();
+                    // Solo sonar coin si hay POR_COBRAR (acento adicional)
+                    if (nuevas.some(t => !t.cobrado && !t.anulada && !t.credito)) {
+                        setTimeout(() => playCoinSound(), 200);
+                    }
                     // Flash del marco completo
                     flashNuevosTickets.value = false;
                     nextTick(() => { flashNuevosTickets.value = true; });
@@ -12495,6 +12554,8 @@
           cambioImpSeleccionada, cambioImpProcesando,
           // [v2.5.40] Info no-monetaria del turno
           tiempoTurnoTexto, cantTicketsTurno, cantCobrosPendientesTurno,
+          // [v2.5.42] Atajo reimprimir último ticket
+          ultimoTicketReimprimible, reimprimirUltimoTicket,
           darkMode, toggleDarkMode,
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
