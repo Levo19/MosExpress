@@ -1349,6 +1349,34 @@
     .me-des-ok:disabled { opacity:.6; cursor:not-allowed; }
 
     /* ═══════════════════════════════════════════════════════════
+       [v2.5.40] CHIP IMPRESORA — estados visuales con glow
+    ═══════════════════════════════════════════════════════════ */
+    .me-imp-chip { color: #fff; }
+    .me-imp-online {
+      background: linear-gradient(135deg, #059669, #10b981);
+      box-shadow: 0 4px 14px -2px rgba(16,185,129,.4), 0 0 0 1px rgba(16,185,129,.2);
+    }
+    .me-imp-busy {
+      background: linear-gradient(135deg, #d97706, #f59e0b);
+      box-shadow: 0 4px 14px -2px rgba(245,158,11,.4);
+    }
+    .me-imp-offline {
+      background: linear-gradient(135deg, #b91c1c, #dc2626);
+      box-shadow: 0 4px 14px -2px rgba(220,38,38,.5);
+      animation: meImpOfflinePulse 2s ease-in-out infinite;
+    }
+    @keyframes meImpOfflinePulse {
+      0%, 100% { box-shadow: 0 4px 14px -2px rgba(220,38,38,.5); }
+      50%      { box-shadow: 0 4px 22px -2px rgba(220,38,38,.85), 0 0 0 4px rgba(220,38,38,.2); }
+    }
+    .me-imp-checking {
+      background: linear-gradient(135deg, #475569, #64748b);
+      box-shadow: 0 4px 14px -2px rgba(71,85,105,.3);
+    }
+    .me-imp-checking .me-imp-icon { animation: meImpShimmer 1.4s ease-in-out infinite; }
+    @keyframes meImpShimmer { 0%,100% { opacity: .5 } 50% { opacity: 1 } }
+
+    /* ═══════════════════════════════════════════════════════════
        [v2.5.33] WIZARD MODERNO — fondo gradient · cards animadas
        · silueta SVG · slide entre pasos
     ═══════════════════════════════════════════════════════════ */
@@ -2625,6 +2653,30 @@
             </div>
 
             <div v-else class="max-w-4xl mx-auto">
+                <!-- [v2.5.40] Chip impresora con estado en vivo — visible para
+                     cajero y vendedor. Tap "CAMBIAR" abre modal (pide PIN admin)
+                     y filtra solo impresoras de SU MISMA zona. -->
+                <div v-if="config.estacion" class="mb-3">
+                  <div class="me-imp-chip flex items-center gap-3 p-3 rounded-2xl shadow-md transition-all duration-300"
+                       :class="meImpresoraClass">
+                    <span class="text-2xl shrink-0">{{ meImpresoraIcon }}</span>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <p class="font-black text-sm truncate">🖨 {{ meImpresoraNombre }}</p>
+                        <span class="text-[10px] uppercase tracking-wider font-black px-1.5 py-0.5 rounded bg-white/20">{{ meImpresoraEstadoLabel }}</span>
+                      </div>
+                      <p class="text-xs opacity-90 truncate">{{ meImpresoraReason }}</p>
+                      <p v-if="meImpresoraUltimaImpTexto" class="text-[10px] opacity-70 mt-0.5">⚡ Última impresión: {{ meImpresoraUltimaImpTexto }}</p>
+                    </div>
+                    <button @click="abrirModalCambioImpresora"
+                            class="shrink-0 px-3 py-2 rounded-xl bg-white/25 hover:bg-white/35 text-white font-black text-[11px] active:scale-95 transition-transform flex items-center gap-1"
+                            title="Cambiar impresora (requiere PIN admin)">
+                      🔄 CAMBIAR
+                      <span class="text-[10px] opacity-80">🔐</span>
+                    </button>
+                  </div>
+                </div>
+
                 <!-- Header Cajero: info + botones apilados -->
                 <div v-if="config.esCajero" class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-5 rounded-3xl shadow-lg mb-6 relative overflow-hidden">
                     <!-- Fila superior: caja activa + saldo -->
@@ -2642,6 +2694,11 @@
                         <div class="text-right">
                             <p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">SALDO INICIAL</p>
                             <h2 class="text-2xl font-black mt-0.5">S/ {{ montoAperturaMemoria.toFixed(2) }}</h2>
+                            <!-- [v2.5.40] Info NO MONETARIA: tiempo de turno + ticket count -->
+                            <p class="text-emerald-200 text-[10px] font-bold mt-1.5 tracking-wider">
+                                ⏱ {{ tiempoTurnoTexto || 'recién abierta' }}
+                                <span v-if="cantTicketsTurno > 0" class="ml-1.5">· 🧾 {{ cantTicketsTurno }} tickets</span>
+                            </p>
                         </div>
                     </div>
                     <!-- Fila inferior: botones apilados -->
@@ -2717,16 +2774,29 @@
                 <!-- [v40.4] FIX: antes v-else se enlazaba al v-if de cobrosAsignados,
                      no al de esCajero. Resultado: cajero SIN cobros veía DOS botones
                      (CERRAR + CERRAR SESIÓN). Ahora v-if explícito: solo vendedores. -->
-                <div v-if="!config.esCajero" class="bg-gray-800 text-white p-5 rounded-3xl shadow-lg mb-6 flex justify-between items-center gap-4">
-                    <div>
-                        <p class="text-gray-400 font-bold uppercase text-xs tracking-wider">SESIÓN ACTIVA</p>
-                        <h2 class="text-xl font-black mt-0.5">{{ config.vendedor }}</h2>
-                        <p class="text-gray-400 text-xs font-bold mt-0.5">{{ config.estacion ? config.estacion.Estacion_Nombre : '' }}</p>
+                <div v-if="!config.esCajero" class="bg-gradient-to-br from-blue-700 to-blue-900 text-white p-5 rounded-3xl shadow-lg mb-6">
+                    <div class="flex justify-between items-start gap-4 mb-3">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-blue-200 font-bold uppercase text-xs tracking-wider">SESIÓN VENDEDOR</p>
+                            <h2 class="text-xl font-black mt-0.5">{{ config.vendedor }}</h2>
+                            <p class="text-blue-200 text-xs font-bold mt-0.5">{{ config.estacion ? config.estacion.Estacion_Nombre : '' }}</p>
+                            <p class="text-blue-200 text-[10px] font-bold mt-1.5 tracking-wider">
+                                ⏱ {{ tiempoTurnoTexto || 'recién abierta' }}
+                                <span v-if="cantTicketsTurno > 0" class="ml-1.5">· 🧾 {{ cantTicketsTurno }} mis tickets</span>
+                            </p>
+                        </div>
+                        <button @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
+                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                            CERRAR
+                        </button>
                     </div>
-                    <button @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
-                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                        CERRAR SESIÓN
-                    </button>
+                    <!-- [v2.5.40] Reglas claras para el vendedor: visibilidad de su rol -->
+                    <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-2.5 text-[11px] leading-snug">
+                        <p class="text-blue-100">
+                            💡 Solo emites <strong>POR_COBRAR</strong>. El cajero cobra y cierra.
+                            Para <strong>crédito</strong> necesitas autorización admin en el momento.
+                        </p>
+                    </div>
                 </div>
 
                 <div class="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
@@ -3836,6 +3906,95 @@
     </div>
 
     <!-- ===== MODAL: PIN DE ADMINISTRADOR (clave 8 dígitos = global+tu PIN) ===== -->
+    <!-- ════════════════════════════════════════════════════════════════
+         [v2.5.40] MODAL CAMBIO DE IMPRESORA — filtrado por zona + PIN admin
+         Reglas: solo impresoras de la MISMA zona; cualquier cambio requiere
+         PIN admin; queda log en AUDITORIA_ADMIN de MOS.
+    ════════════════════════════════════════════════════════════════ -->
+    <div v-if="modalCambioImp" @click.self="cerrarModalCambioImp"
+         class="fixed inset-0 bg-gray-900/80 z-[55] flex items-end sm:items-center justify-center backdrop-blur-sm p-3">
+      <div class="bg-white rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div class="p-5 pb-3 border-b border-gray-100 flex items-start justify-between">
+          <div>
+            <h2 class="text-xl font-black text-gray-800 flex items-center gap-2">
+              <span class="text-2xl">🖨</span> Cambiar impresora
+            </h2>
+            <p class="text-xs text-gray-500 mt-1">
+              Zona: <strong>{{ config.zona }}</strong> · Actual: <strong>{{ config.estacion?.Estacion_Nombre }}</strong>
+            </p>
+          </div>
+          <button @click="cerrarModalCambioImp" class="text-2xl text-gray-400 hover:text-gray-700 leading-none">×</button>
+        </div>
+
+        <div class="px-5 py-3 bg-amber-50 border-b border-amber-100">
+          <p class="text-xs text-amber-800 font-bold">🔐 Esta acción requiere autorización admin</p>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-2">
+          <p class="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-2">
+            IMPRESORAS DE TU ZONA ({{ cambioImpEstaciones.length }})
+          </p>
+
+          <div v-if="cambioImpEstaciones.length === 0" class="text-center py-8 text-gray-400 text-sm">
+            No hay otras impresoras configuradas en {{ config.zona }}
+          </div>
+
+          <button v-for="item in cambioImpEstaciones" :key="item.estacion.Estacion_Nombre"
+                  @click="seleccionarImpresoraCambio(item)"
+                  :disabled="item.esActual"
+                  :class="['w-full text-left p-3 rounded-2xl border-2 transition-all active:scale-[.98]',
+                           item.esActual
+                             ? 'bg-emerald-50 border-emerald-300 cursor-default'
+                             : cambioImpSeleccionada?.estacion?.Estacion_Nombre === item.estacion.Estacion_Nombre
+                               ? 'bg-blue-50 border-blue-400 shadow-md'
+                               : item.status.state === 'offline'
+                                 ? 'bg-red-50 border-red-200 opacity-70'
+                                 : 'bg-white border-gray-200 hover:border-emerald-300']">
+            <div class="flex items-start gap-3">
+              <span class="text-2xl shrink-0">
+                {{ item.status.state === 'online' ? '🟢' : item.status.state === 'offline' ? '🔴' : '⚪' }}
+              </span>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <strong class="text-sm font-black text-gray-800 truncate">
+                    {{ item.status.name || item.estacion.Estacion_Nombre }}
+                  </strong>
+                  <span v-if="item.esActual" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
+                    ✓ ACTUAL
+                  </span>
+                </div>
+                <p class="text-[11px] text-gray-500 truncate">📍 {{ item.estacion.Estacion_Nombre }}</p>
+                <p class="text-[11px] mt-0.5"
+                   :class="item.status.state === 'online' ? 'text-emerald-600 font-semibold' : item.status.state === 'offline' ? 'text-red-600 font-semibold' : 'text-gray-500'">
+                  {{ item.status.reason }}
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 mt-3">
+            <p class="text-[11px] text-blue-800 leading-relaxed">
+              ℹ Solo se muestran impresoras de <strong>{{ config.zona }}</strong>. Para usar una impresora de otra zona, cerrar sesión y reabrir en esa tienda.
+            </p>
+          </div>
+        </div>
+
+        <div class="p-4 border-t border-gray-100 shrink-0 grid grid-cols-2 gap-2">
+          <button @click="cerrarModalCambioImp"
+                  class="bg-gray-100 text-gray-700 font-black py-3 rounded-xl text-sm active:scale-95">
+            Cancelar
+          </button>
+          <button @click="confirmarCambioImpresora"
+                  :disabled="!cambioImpSeleccionada || cambioImpProcesando"
+                  class="bg-gradient-to-br from-emerald-500 to-emerald-700 disabled:from-gray-300 disabled:to-gray-300 text-white font-black py-3 rounded-xl text-sm active:scale-95 flex items-center justify-center gap-1.5">
+            <svg v-if="cambioImpProcesando" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            🖨 CAMBIAR
+            <span class="text-[10px] opacity-80">🔐</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="modalPin" class="fixed inset-0 bg-gray-900/80 z-[60] flex items-end justify-center backdrop-blur-sm">
         <div class="bg-white rounded-t-3xl p-6 w-full max-w-sm shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-4">
@@ -5105,6 +5264,232 @@
         const modalCredito = ref(false);
         const ticketParaCredito = ref(null);
         const obsCredito = ref('');
+        // [v2.5.40] Chip impresora — estado live de la impresora de la estación
+        // del usuario actual (cajero o vendedor). Polling 30s al endpoint bulk
+        // `estado_impresoras` para detectar offline/online en vivo.
+        const meImpresoraEstado = ref({ state: 'checking', name: '', reason: 'Verificando estado...', lastPrintTs: 0 });
+        let _mePollImpresoraTimer = null;
+        let _meEstadoPrevio = null;
+
+        // Sonido warn (descendente) — impresora pasa a offline
+        const playMeImpWarn = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
+                [{ f: 600, d: 0.12 }, { f: 360, d: 0.18 }].forEach(({ f, d }, i) => {
+                    const t = i * 0.13;
+                    const osc = ctx.createOscillator(), gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(0.35, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.02);
+                });
+            } catch(_){}
+        };
+        // Sonido done (ascendente, campanita) — impresora vuelve online
+        const playMeImpDone = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
+                [{ f: 880, d: 0.12 }, { f: 1318, d: 0.16 }].forEach(({ f, d }, i) => {
+                    const t = i * 0.10;
+                    const osc = ctx.createOscillator(), gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'triangle'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(0.5, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.02);
+                });
+            } catch(_){}
+        };
+
+        const _mePollEstadoImpresora = async () => {
+            const pid = String(config.value?.estacion?.PrintNode_ID || '').trim();
+            if (!pid || !/^\d+$/.test(pid)) return;
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            try {
+                const r = await fetch(`${API_URL}?accion=estado_impresoras&ids=${pid}`);
+                const d = await r.json();
+                if (d.status !== 'success' || !d.impresoras || !d.impresoras.length) return;
+                const p = d.impresoras[0];
+                const nuevoEstado = p.online ? 'online' : 'offline';
+                const previo = _meEstadoPrevio;
+                meImpresoraEstado.value = {
+                    state: nuevoEstado,
+                    name: p.name || ('#' + p.id),
+                    reason: p.reason || (p.online ? 'Lista para imprimir' : 'Apagada o sin red'),
+                    lastPrintTs: meImpresoraEstado.value.lastPrintTs
+                };
+                // Sonido en transición online↔offline (no en el primer poll)
+                if (previo && previo !== nuevoEstado) {
+                    if (nuevoEstado === 'offline') {
+                        playMeImpWarn();
+                        try { if (navigator.vibrate) navigator.vibrate([150, 80, 150]); } catch(_){}
+                        agregarToast('🖨 Impresora offline',
+                            (p.name || 'Impresora #' + pid) + ' · ' + (p.reason || ''),
+                            'error');
+                    } else if (nuevoEstado === 'online') {
+                        playMeImpDone();
+                        agregarToast('🖨 Impresora online',
+                            (p.name || 'Impresora #' + pid) + ' · lista para imprimir',
+                            'success');
+                    }
+                }
+                _meEstadoPrevio = nuevoEstado;
+            } catch(_) {
+                meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'Sin conexión a MOS' };
+            }
+        };
+
+        const iniciarPollingImpresora = () => {
+            if (_mePollImpresoraTimer) clearInterval(_mePollImpresoraTimer);
+            _meEstadoPrevio = null;
+            _mePollEstadoImpresora(); // primer poll inmediato
+            _mePollImpresoraTimer = setInterval(_mePollEstadoImpresora, 30000);
+        };
+        const detenerPollingImpresora = () => {
+            if (_mePollImpresoraTimer) { clearInterval(_mePollImpresoraTimer); _mePollImpresoraTimer = null; }
+        };
+
+        // Computed: icono, label, clase, nombre, razón, última impresión
+        const meImpresoraIcon = computed(() => {
+            const s = meImpresoraEstado.value.state;
+            if (s === 'online')   return '🟢';
+            if (s === 'busy')     return '🟡';
+            if (s === 'offline')  return '🔴';
+            return '⚪';
+        });
+        const meImpresoraEstadoLabel = computed(() => {
+            const s = meImpresoraEstado.value.state;
+            if (s === 'online')   return 'Online';
+            if (s === 'busy')     return 'Imprimiendo';
+            if (s === 'offline')  return 'Offline';
+            return 'Verificando';
+        });
+        const meImpresoraClass = computed(() => 'me-imp-' + meImpresoraEstado.value.state);
+        const meImpresoraNombre = computed(() => meImpresoraEstado.value.name || ('#' + (config.value?.estacion?.PrintNode_ID || '?')));
+        const meImpresoraReason = computed(() => meImpresoraEstado.value.reason || '');
+        const meImpresoraUltimaImpTexto = computed(() => {
+            const ts = meImpresoraEstado.value.lastPrintTs;
+            if (!ts) return '';
+            const min = Math.floor((Date.now() - ts) / 60000);
+            if (min < 1) return 'recién';
+            if (min < 60) return 'hace ' + min + 'min';
+            const h = Math.floor(min / 60);
+            return 'hace ' + h + 'h';
+        });
+        // Hook para registrar última impresión (cualquier print exitoso actualiza el ts)
+        const registrarUltimaImpresion = () => {
+            meImpresoraEstado.value = { ...meImpresoraEstado.value, lastPrintTs: Date.now() };
+        };
+
+        // ═══════════════════════════════════════════════════════════
+        // [v2.5.40] MODAL CAMBIO DE IMPRESORA — solo misma zona + PIN admin
+        // ═══════════════════════════════════════════════════════════
+        const modalCambioImp = ref(false);
+        const cambioImpEstaciones = ref([]); // estaciones de la misma zona con su status
+        const cambioImpSeleccionada = ref(null); // estación elegida (pendiente confirmar)
+        const cambioImpProcesando = ref(false);
+
+        const abrirModalCambioImpresora = async () => {
+            if (!config.value?.estacion || !config.value?.zona) {
+                agregarToast('Sin estación', 'No hay una estación activa configurada', 'warning');
+                return;
+            }
+            cambioImpSeleccionada.value = null;
+            // Filtrar estaciones de la MISMA zona (regla del admin: no cruzar tiendas)
+            const misZona = (db.value.ZONAS_CONFIG || []).filter(e => String(e.Zona_ID || '') === String(config.value.zona));
+            cambioImpEstaciones.value = misZona.map(est => {
+                const pid = String(est.PrintNode_ID || '').trim();
+                const status = wizImpresorasStatus.value[pid] || { state: 'checking', name: '#' + pid, reason: 'Verificando...' };
+                return { estacion: est, status, esActual: est.Estacion_Nombre === config.value.estacion.Estacion_Nombre };
+            });
+            modalCambioImp.value = true;
+            // Refrescar estados en bulk
+            try { await _wizCargarImpresorasTodas(); } catch(_) {}
+            // Re-mapear con datos frescos
+            cambioImpEstaciones.value = cambioImpEstaciones.value.map(item => {
+                const pid = String(item.estacion.PrintNode_ID || '').trim();
+                const status = wizImpresorasStatus.value[pid] || item.status;
+                return { ...item, status };
+            });
+        };
+        const cerrarModalCambioImp = () => {
+            modalCambioImp.value = false;
+            cambioImpSeleccionada.value = null;
+            cambioImpProcesando.value = false;
+        };
+        const seleccionarImpresoraCambio = (item) => {
+            if (item.esActual) return;
+            cambioImpSeleccionada.value = item;
+            try { playBeepNameMatch?.(); } catch(_){}
+        };
+
+        const confirmarCambioImpresora = () => {
+            const item = cambioImpSeleccionada.value;
+            if (!item) return;
+            cambioImpProcesando.value = true;
+            // Pedir PIN admin
+            pedirPin(async (resultadoAuth) => {
+                try {
+                    const estPrevia = config.value.estacion;
+                    const estNueva = item.estacion;
+                    // [v2.5.40] Si hay caja ABIERTA, actualizar también la hoja CAJAS
+                    // (col Estacion + PrintNode_ID) para que el flujo cobro/ingreso
+                    // proveedor/cierre Z apunte a la nueva impresora.
+                    if (config.value.esCajero && cajaAbierta.value && idCajaActual.value &&
+                        !idCajaActual.value.startsWith('CAJA-LOCAL-') &&
+                        API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                        try {
+                            const resp = await fetch(API_URL, {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    tipoEvento: 'CAMBIO_IMPRESORA_CAJA',
+                                    idCaja: idCajaActual.value,
+                                    estacionNombre: estNueva.Estacion_Nombre,
+                                    printNodeId: String(estNueva.PrintNode_ID || ''),
+                                    motivo: 'Cambio admin desde ME',
+                                    adminAuth: {
+                                        nombre: String((resultadoAuth && resultadoAuth.validadoPor) || ''),
+                                        rol:    String((resultadoAuth && resultadoAuth.rol) || 'ADMIN'),
+                                        via:    'PIN_8DIG'
+                                    }
+                                })
+                            });
+                            const j = await resp.json();
+                            if (j.status !== 'success') {
+                                throw new Error(j.mensaje || 'No se pudo actualizar la caja');
+                            }
+                        } catch(eCaja) {
+                            agregarToast('⚠ Caja no actualizada',
+                                'La impresora se cambió localmente pero la hoja CAJAS no se actualizó: ' + (eCaja.message || ''),
+                                'warning');
+                        }
+                    }
+                    // Actualizar config en memoria + localStorage
+                    config.value.estacion = { ...estNueva };
+                    lsSet('mosexpress_config', JSON.stringify(config.value));
+                    // Sonido de "lockOpen" — confirmación de auth admin
+                    playMeImpDone();
+                    try { if (navigator.vibrate) navigator.vibrate([60, 30, 100]); } catch(_){}
+                    agregarToast('🖨 Impresora cambiada',
+                        'De ' + (estPrevia.Estacion_Nombre || '?') + ' → ' + estNueva.Estacion_Nombre,
+                        'success');
+                    // La auditoría queda en AUDITORIA_ADMIN automáticamente porque
+                    // verificarClaveAdmin (en MOS GAS) registra cada validación de PIN
+                    // con accion='CAMBIO_IMPRESORA' y refDocumento=Estacion_Nombre.
+                    cerrarModalCambioImp();
+                    // Forzar refresh inmediato del chip
+                    setTimeout(() => _mePollEstadoImpresora(), 200);
+                } catch(e) {
+                    agregarToast('Error', 'No se pudo cambiar la impresora: ' + (e.message || ''), 'error');
+                } finally {
+                    cambioImpProcesando.value = false;
+                }
+            }, { accion: 'CAMBIO_IMPRESORA', refDocumento: (item.estacion.Estacion_Nombre || '') });
+        };
+
         // Estado PIN de administrador (guarda acciones protegidas: Crédito, Moneda)
         const modalPin = ref(false);
         const pinInput = ref('');
@@ -5459,6 +5844,31 @@
             // Cajero: tickets de toda la zona (GAS). Vendedor: sus tickets locales del dispositivo.
             const fuente = config.value.esCajero ? ventasZona.value : ventasHoy.value;
             return fuente.filter(v => v.tipo === tipoFiltro);
+        });
+
+        // [v2.5.40] Info no-monetaria del turno para el header (sin balance en vivo).
+        // El cajero NO debe ver totales — solo conteos y tiempo de turno.
+        // Tick reactivo cada 60s para que el tiempoTurnoTexto se actualice solo
+        const _tiempoTurnoNow = ref(Date.now());
+        setInterval(() => { _tiempoTurnoNow.value = Date.now(); }, 60000);
+        const tiempoTurnoTexto = computed(() => {
+            const st = sessionStartTime.value;
+            if (!st) return '';
+            const now = _tiempoTurnoNow.value; // dependencia reactiva
+            const ms = now - new Date(st).getTime();
+            if (isNaN(ms) || ms < 0) return '';
+            const mins = Math.floor(ms / 60000);
+            if (mins < 60) return mins + 'm';
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            return h + 'h ' + (m < 10 ? '0' + m : m) + 'm';
+        });
+        const cantTicketsTurno = computed(() => {
+            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (fuente || []).filter(v => !v.anulada).length;
+        });
+        const cantCobrosPendientesTurno = computed(() => {
+            return (cobrosAsignados.value || []).filter(c => !c.cobrado && !c._justPaid).length;
         });
 
         const vueltoCobro = computed(() => {
@@ -7947,6 +8357,17 @@
                 _wizCargarCajerosActivos();
             }
         });
+
+        // [v2.5.40] Polling de estado impresora — arranca cuando hay estación
+        // configurada (config.completado=true). Se reinicia si cambia el PrintNode_ID
+        // (por ejemplo, después de un cambio de impresora desde el modal admin).
+        watch(() => config.value?.estacion?.PrintNode_ID, (newPid, oldPid) => {
+            if (config.value?.completado && newPid && /^\d+$/.test(String(newPid))) {
+                iniciarPollingImpresora();
+            } else {
+                detenerPollingImpresora();
+            }
+        }, { immediate: true });
 
         // ── [v2.5.34] Boot: precarga AGRESIVA desde el paso 1 ──
         // Carga en paralelo todo lo que los pasos 2/3/4 podrían necesitar:
@@ -12034,6 +12455,14 @@
           wizNextStep, wizPrevStep, wizSelectUser, wizOnNombreInput, wizSelectZona, wizSelectEstacion,
           wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
           wizTutorial, wizTutorialNext, wizTutorialClose,
+          // [v2.5.40] Chip impresora live + cambio impresora
+          meImpresoraEstado, meImpresoraIcon, meImpresoraEstadoLabel, meImpresoraClass,
+          meImpresoraNombre, meImpresoraReason, meImpresoraUltimaImpTexto,
+          abrirModalCambioImpresora, cerrarModalCambioImp, seleccionarImpresoraCambio,
+          confirmarCambioImpresora, modalCambioImp, cambioImpEstaciones,
+          cambioImpSeleccionada, cambioImpProcesando,
+          // [v2.5.40] Info no-monetaria del turno
+          tiempoTurnoTexto, cantTicketsTurno, cantCobrosPendientesTurno,
           darkMode, toggleDarkMode,
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,

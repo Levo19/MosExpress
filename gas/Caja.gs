@@ -498,6 +498,58 @@ function cajerosActivosTodos() {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+// [v2.5.40] Cambiar la impresora ASIGNADA de una caja ABIERTA.
+// Usado cuando el cajero/vendedor cambia de impresora desde el modal admin.
+// Actualiza CAJAS col 3 (Estacion) y col 10 (PrintNode_ID) para que cualquier
+// flujo que use estos datos (ticket cobro, ingreso proveedor desde almacén,
+// reimpresión, cierre Z) imprima en la nueva impresora.
+function cambiarImpresoraCaja(data) {
+  if (!data.idCaja)        return generarRespuestaError('idCaja requerido');
+  if (!data.estacionNombre) return generarRespuestaError('estacionNombre requerido');
+  if (!data.printNodeId)   return generarRespuestaError('printNodeId requerido');
+  if (!data.adminAuth || !data.adminAuth.nombre) {
+    return generarRespuestaError('adminAuth requerido (requiere admin/master)');
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('CAJAS');
+  if (!sheet) return generarRespuestaError('CAJAS no encontrada');
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(data.idCaja)) {
+      if (String(rows[i][5]) !== 'ABIERTA') {
+        return generarRespuestaError('La caja no está ABIERTA — no se puede cambiar impresora');
+      }
+      var estacionPrev = String(rows[i][2] || '');
+      var printNodePrev = String(rows[i][9] || '');
+      // Update Estacion (col 3 = index 2) y PrintNode_ID (col 10 = index 9)
+      sheet.getRange(i + 1, 3).setValue(String(data.estacionNombre));
+      sheet.getRange(i + 1, 10).setValue(String(data.printNodeId));
+      SpreadsheetApp.flush();
+      // Auditar
+      try {
+        auditarLog('CAJAS_CAMBIO_IMPRESORA', data.idCaja, {
+          usuario: 'MOS-Admin', rol: 'ADMIN',
+          source: 'ME_CAMBIO_IMPRESORA',
+          accion: 'update_PrintNode_ID',
+          autorizadoPor: { nombre: data.adminAuth.nombre, rol: data.adminAuth.rol || 'ADMIN', via: 'PIN_8DIG' },
+          ref: {
+            idCaja: data.idCaja,
+            estacionPrev: estacionPrev, printNodePrev: printNodePrev,
+            estacionNueva: data.estacionNombre, printNodeNuevo: data.printNodeId
+          },
+          motivo: String(data.motivo || '')
+        });
+      } catch(_) {}
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success', idCaja: data.idCaja,
+        estacionPrev: estacionPrev, printNodePrev: printNodePrev,
+        estacionNueva: data.estacionNombre, printNodeNuevo: data.printNodeId
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return generarRespuestaError('Caja ' + data.idCaja + ' no encontrada');
+}
+
 function cajeroActivo(zona) {
   if (!zona) return generarRespuestaError("zona requerida");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
