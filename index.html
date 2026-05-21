@@ -3165,6 +3165,14 @@
                            </h3>
                            <div v-if="item.ahorroPromo > 0" class="inline-flex items-center mt-1 bg-red-50 text-red-600 text-[9px] font-black px-1.5 py-0.5 rounded border border-red-100 uppercase">★ Ahorro S/ {{ item.ahorroPromo.toFixed(2) }}</div>
                            <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ item.precioUnitario.toFixed(2) }} {{ esGranel(item) ? '/ kg' : 'ud.' }}</div>
+                           <!-- [v2.5.50] Badge segmento aplicado (solo si granel con tramo activo) -->
+                           <div v-if="item.segmentoAplicado"
+                                class="inline-flex items-center mt-1 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider"
+                                :class="item.segmentoAjustePct > 0
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'">
+                             🎚 {{ item.segmentoAplicado }} ({{ item.segmentoAjustePct > 0 ? '+' : '' }}{{ item.segmentoAjustePct }}%)
+                           </div>
                          </div>
                          <div class="flex flex-col items-end shrink-0 pl-2 relative">
                            <span class="font-black text-gray-800">S/ {{ item.subtotal.toFixed(2) }}</span>
@@ -10974,6 +10982,18 @@
                 }
             }
 
+            // [v2.5.50] Si es granel, parsear segmentos_precio del canónico
+            let _segmentosPrecio = null;
+            if (_esGranel) {
+                const presCanonica = (prodBase.presentaciones || []).find(p => parseFloat(p.Factor) === 1);
+                const segRaw = presCanonica?.segmentos_precio || prodBase.segmentos_precio || '';
+                if (segRaw) {
+                    try {
+                        const parsed = typeof segRaw === 'string' ? JSON.parse(segRaw) : segRaw;
+                        if (Array.isArray(parsed) && parsed.length) _segmentosPrecio = parsed;
+                    } catch(_) {}
+                }
+            }
             const item = {
                 sku:          String(pres.SKU || prodBase.skuBase || prodBase.sku), // idProducto de esta presentación
                 skuBase:      String(prodBase.skuBase || prodBase.sku),             // SKU_Base del grupo
@@ -10985,6 +11005,7 @@
                 tipoIgv:      prodBase.tipoIgv,
                 unidadMedida: prodBase.unidadMedida,
                 precio:       precioFinal,
+                segmentosPrecio: _segmentosPrecio, // [v2.5.50] tramos de pricing granel
                 imagen:       prodBase.imagen,
                 promoStr:     prodBase.promoStr
             };
@@ -11139,6 +11160,7 @@
               unidadMedida: prodObj.unidadMedida || 'NIU',
               precioUnitario: prodObj.precio, cantidad: cantInicial, subtotal: 0,
               ahorroPromo: 0, imagen: prodObj.imagen,
+              segmentosPrecio: prodObj.segmentosPrecio || null, // [v2.5.50]
               flashing: false, qtyBadge: 0
             };
             calcularImportes(item);
@@ -11245,9 +11267,48 @@
         const esGranel = (item) => String(item && item.unidadMedida || '').toUpperCase() === 'KGM';
         const _round1Dec = (n) => Math.round((parseFloat(n) || 0) * 10) / 10;
 
+        // [v2.5.50] Helper: cálculo de precio en granel con segmentos.
+        // Espejo en cliente de la función calcularPrecioGranel del backend.
+        const _meCalcPrecioGranel = (precioCanonico, gramos, segmentos) => {
+            const pc = parseFloat(precioCanonico) || 0;
+            const g  = parseFloat(gramos) || 0;
+            if (pc <= 0 || g <= 0) return { precio: 0, ajustePct: 0, segmento: null };
+            const lista = Array.isArray(segmentos) ? segmentos : [];
+            let aplicado = null;
+            for (const s of lista) {
+                const cumpleMin = s.minIncl ? g >= s.min : g > s.min;
+                if (!cumpleMin) continue;
+                const cumpleMax = s.max === null ? true : (s.maxIncl ? g <= s.max : g < s.max);
+                if (cumpleMax) { aplicado = s; break; }
+            }
+            const ajuste = aplicado ? aplicado.ajustePct : 0;
+            const precioKg = pc * (1 + ajuste / 100);
+            return {
+                precio: Math.round(precioKg * (g / 1000) * 100) / 100,
+                ajustePct: ajuste,
+                segmento: aplicado
+            };
+        };
+
         const calcularImportes = (item) => {
           // Reset metadata de promo (se recalcula globalmente en aplicarPromosCarrito)
-          let pNormal = item.cantidad * item.precioUnitario;
+          // [v2.5.50] Si el producto es granel con segmentos_precio, aplicar el
+          // ajuste del segmento que contiene la cantidad. El cajero NO ve la
+          // matemática — solo el precio final y un badge del segmento.
+          const _esGranelItem = String(item.unidadMedida || '').toUpperCase() === 'KGM';
+          let pNormal;
+          item.segmentoAplicado = null;
+          item.segmentoAjustePct = 0;
+          if (_esGranelItem && Array.isArray(item.segmentosPrecio) && item.segmentosPrecio.length) {
+            const calc = _meCalcPrecioGranel(item.precioUnitario, item.cantidad * 1000, item.segmentosPrecio);
+            pNormal = calc.precio;
+            if (calc.segmento) {
+              item.segmentoAplicado = calc.segmento.nombre || 'segmento';
+              item.segmentoAjustePct = calc.ajustePct;
+            }
+          } else {
+            pNormal = item.cantidad * item.precioUnitario;
+          }
           let ttl = pNormal;
           const promo = (db.value.PROMOCIONES || []).find(pr =>
             pr.Tipo_Promo !== 'COMBO' && pr.SKU_Base === (item.skuBase || item.sku) && _promoIsVigente(pr)
