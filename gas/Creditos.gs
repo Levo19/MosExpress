@@ -371,6 +371,62 @@ function getCobrosAsignadosCajero(cajaId) {
   var hoja = _getHojaCobrosAsignados();
   var fa = hoja.getDataRange().getValues();
   var result = [];
+  // [v2.5.51] Pre-cargar items del ticket original para imprimirlos como
+  // copia adjunta al aviso de cobro asignado (cliente pregunta "por qué tanto").
+  // Construimos un map idVenta → { items, vendedor } leyendo una sola vez.
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var itemsPorVenta = {};
+  var vendedorPorVenta = {};
+  try {
+    var detSh = ss.getSheetByName('VENTAS_DETALLE');
+    if (detSh) {
+      var fd = detSh.getDataRange().getValues();
+      if (fd.length >= 2) {
+        var hdrsD = fd[0].map(function(h){ return String(h).trim(); });
+        var iIdD   = hdrsD.indexOf('ID_Venta');
+        var iNomD  = hdrsD.indexOf('Nombre');
+        var iCantD = hdrsD.indexOf('Cantidad');
+        var iPrecD = hdrsD.indexOf('Precio');
+        var iSubD  = hdrsD.indexOf('Subtotal');
+        if (iIdD   < 0) iIdD   = 0;
+        if (iNomD  < 0) iNomD  = 2;
+        if (iCantD < 0) iCantD = 3;
+        if (iPrecD < 0) iPrecD = 4;
+        if (iSubD  < 0) iSubD  = 5;
+        for (var dd = 1; dd < fd.length; dd++) {
+          var idVD = String(fd[dd][iIdD]);
+          if (!idVD) continue;
+          if (!itemsPorVenta[idVD]) itemsPorVenta[idVD] = [];
+          if (itemsPorVenta[idVD].length >= 20) continue;
+          var cantD = parseFloat(fd[dd][iCantD]) || 0;
+          var subD  = parseFloat(fd[dd][iSubD])  || 0;
+          var precD = parseFloat(fd[dd][iPrecD]) || 0;
+          if (!subD) subD = cantD * precD;
+          itemsPorVenta[idVD].push({
+            nombre:   String(fd[dd][iNomD] || ''),
+            cantidad: cantD,
+            precio:   precD,
+            subtotal: subD
+          });
+        }
+      }
+    }
+  } catch(eDet) { Logger.log('items detalle: ' + eDet.message); }
+  // Cargar vendedor original desde VENTAS_CABECERA
+  try {
+    var venSh = ss.getSheetByName('VENTAS_CABECERA');
+    if (venSh) {
+      var fv = venSh.getDataRange().getValues();
+      var hdrsV = fv[0].map(function(h){ return String(h).trim(); });
+      var iIdV = hdrsV.indexOf('ID_Venta');
+      var iVndV = hdrsV.indexOf('Vendedor');
+      if (iIdV < 0) iIdV = 0;
+      if (iVndV < 0) iVndV = 2;
+      for (var vv = 1; vv < fv.length; vv++) {
+        vendedorPorVenta[String(fv[vv][iIdV])] = String(fv[vv][iVndV] || '');
+      }
+    }
+  } catch(eVen) { Logger.log('vendedor cabec: ' + eVen.message); }
   // [v2.5.27] Indexar columnas por header para soportar columnas nuevas
   var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
   var iIdCobro   = hdrs.indexOf('ID_Cobro');
@@ -413,7 +469,10 @@ function getCobrosAsignadosCajero(cajaId) {
       cliente:           String(fa[i][iCliente]),
       correlativo:       String(fa[i][iCorrel]),
       // [v2.5.28] Mensaje opcional del admin
-      mensajeAdmin:      iMsgAdmin >= 0 ? String(fa[i][iMsgAdmin] || '') : ''
+      mensajeAdmin:      iMsgAdmin >= 0 ? String(fa[i][iMsgAdmin] || '') : '',
+      // [v2.5.51] Copia del ticket original para reimprimirlo abajo del aviso
+      itemsOriginal:     itemsPorVenta[String(fa[i][iIdVenta])] || [],
+      vendedorOriginal:  vendedorPorVenta[String(fa[i][iIdVenta])] || ''
     });
   }
   return ContentService.createTextOutput(JSON.stringify({

@@ -29,6 +29,8 @@ function doGet(e) {
     if (accion === 'stock_zonas')           return getStockZonas();
     if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
     if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
+    // [v2.5.51] Retomar caja cuando localStorage se perdió pero la caja sigue ABIERTA
+    if (accion === 'retomar_caja_device')   return retomarCajaPorDeviceId(e.parameter.deviceId);
     // [v2.5.33] Wizard moderno — estado bulk de impresoras + ping + cajeros activos
     if (accion === 'estado_impresoras')     return estadoImpresoras(e.parameter.ids);
     if (accion === 'cajeros_activos_todos') return cajerosActivosTodos();

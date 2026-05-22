@@ -2457,6 +2457,56 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════
+         [v2.5.51] CAJA DETECTADA EN BACKEND — la PWA perdió localStorage
+         pero el dispositivo tiene caja ABIERTA en backend. Le ofrecemos
+         retomar sin pasar por el wizard. Z más alto que cualquier otro
+         modal para que el cajero lo vea de inmediato.
+    ═══════════════════════════════════════════════════════════ -->
+    <div v-if="cajaDetectadaBackend && !config.completado"
+         class="absolute inset-0 z-[70] bg-gray-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-6">
+      <div class="w-full max-w-md bg-gradient-to-br from-emerald-900 to-emerald-950 p-8 rounded-3xl shadow-2xl border-2 border-emerald-400"
+           style="animation: scaleIn .4s cubic-bezier(.34,1.56,.64,1)">
+        <div class="text-center mb-5">
+          <div class="text-6xl mb-3" style="animation: bounce 1.4s ease-in-out infinite">🔄</div>
+          <h2 class="text-2xl font-black text-white">Tu caja sigue abierta</h2>
+          <p class="text-emerald-200 text-sm mt-2">Detectamos tu sesión en el servidor — puedes retomarla sin perder tickets ni movimientos del día.</p>
+        </div>
+        <div class="bg-emerald-950/60 rounded-2xl p-4 mb-5 text-sm space-y-2 border border-emerald-700/50">
+          <div class="flex justify-between">
+            <span class="text-emerald-300">Vendedor</span>
+            <span class="text-white font-bold">{{ cajaDetectadaBackend.vendedor }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-emerald-300">Zona</span>
+            <span class="text-white font-bold">{{ cajaDetectadaBackend.zona }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-emerald-300">Monto inicial</span>
+            <span class="text-emerald-200 font-black text-base">S/ {{ parseFloat(cajaDetectadaBackend.monto).toFixed(2) }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-emerald-300">ID Caja</span>
+            <span class="text-emerald-200 font-mono text-xs">{{ cajaDetectadaBackend.idCaja }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-emerald-300">Estación</span>
+            <span class="text-white">{{ cajaDetectadaBackend.estacion?.Estacion_Nombre || '—' }}</span>
+          </div>
+        </div>
+        <button @click="retomarCajaBackend"
+                :disabled="retomandoCaja"
+                class="w-full mb-3 bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-60 text-white font-black text-lg py-4 rounded-xl transition-all shadow-lg shadow-emerald-500/40">
+          <span v-if="!retomandoCaja">🔄 Retomar mi caja</span>
+          <span v-else>⌛ Restaurando sesión…</span>
+        </button>
+        <button @click="cajaDetectadaBackend = null"
+                class="w-full bg-gray-700 hover:bg-gray-600 active:scale-95 text-gray-300 font-bold py-2 rounded-xl transition-all text-sm">
+          Ignorar y abrir nueva sesión
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
          [v2.5.33] WIZARD MODERNO — paso a paso con cards · efectos
          visuales/sonoros · estado impresora en vivo · ultimos users
     ═══════════════════════════════════════════════════════════ -->
@@ -6001,6 +6051,9 @@
         let _wizardPollingTimer = null;
         const sesionAnteriorInfo = ref(null);
         const mostrarModalSesionAnterior = ref(false);
+        // [v2.5.51] Caja detectada en backend para retomar (cuando localStorage se perdió)
+        const cajaDetectadaBackend = ref(null);
+        const retomandoCaja        = ref(false);
 
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
@@ -6460,6 +6513,13 @@
               localStorage.removeItem('mosexpress_config');
           }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
+
+          // [v2.5.51] Si la PWA perdió localStorage (no hay config completada)
+          // pero el dispositivo tiene caja ABIERTA en backend, ofrecer retomar
+          // en lugar de forzar wizard nuevo (que perdería tickets/movimientos).
+          if (!config.value.completado) {
+            verificarCajaPorDeviceId();
+          }
 
           // [v2.5.14] Detectar nueva jornada → CERRAR SESIÓN de AMBOS (vendedor + cajero).
           // Antes solo aplicaba a cajeros y los vendedores se "renovaban" silenciosamente.
@@ -8885,6 +8945,65 @@
           }
         };
 
+        // [v2.5.51] Auto-detección al arranque: si tenemos deviceId pero no config
+        // completada, preguntar al backend si este dispositivo tiene una caja
+        // ABIERTA. Si la encuentra, mostramos el card "Retomar mi caja" antes
+        // del wizard / modal sesión anterior, evitando que el cajero pierda
+        // tickets/movimientos por un localStorage borrado.
+        const verificarCajaPorDeviceId = async () => {
+            try {
+                const id = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
+                if (!id) return;
+                if (config.value.completado) return;
+                const r = await fetch(`${API_URL}?accion=retomar_caja_device&deviceId=${encodeURIComponent(id)}`);
+                const d = await r.json();
+                if (d && d.status === 'success' && d.encontrada) {
+                    cajaDetectadaBackend.value = {
+                        idCaja:   d.idCaja,
+                        vendedor: d.vendedor,
+                        zona:     d.zona,
+                        monto:    d.monto,
+                        estacion: d.estacion,
+                        fechaApertura: d.fechaApertura
+                    };
+                }
+            } catch(e) {
+                console.warn('[retomar] error:', e?.message || e);
+            }
+        };
+
+        // Acción del botón "Retomar mi caja" — restaura localStorage con los datos
+        // del backend y recarga la app, que arrancará directo en POS con la caja viva.
+        const retomarCajaBackend = async () => {
+            const c = cajaDetectadaBackend.value;
+            if (!c || retomandoCaja.value) return;
+            retomandoCaja.value = true;
+            try {
+                localStorage.setItem('mosexpress_config', JSON.stringify({
+                    completado: true,
+                    vendedor:   c.vendedor,
+                    esCajero:   true,
+                    zona:       c.zona,
+                    estacion:   c.estacion
+                }));
+                localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
+                    idCaja: c.idCaja,
+                    monto:  c.monto,
+                    fecha:  Date.now()
+                }));
+                localStorage.setItem('mosexpress_session_date', new Date().toDateString());
+                localStorage.setItem('mosexpress_session_start', new Date().toISOString());
+                if (c.estacion?.PrintNode_ID) {
+                    localStorage.setItem('mosexpress_deviceId', String(c.estacion.PrintNode_ID));
+                }
+                agregarToast('🔄 Sesión restaurada', 'Bienvenido de vuelta ' + c.vendedor, 'success');
+                setTimeout(() => location.reload(), 400);
+            } catch(e) {
+                agregarToast('Error restaurando', e.message || String(e), 'error');
+                retomandoCaja.value = false;
+            }
+        };
+
         const imprimirAvisoCierrePendiente = () => {
             if (!sesionAnteriorInfo.value?.estacion?.PrintNode_ID) return;
             const info = sesionAnteriorInfo.value;
@@ -10455,6 +10574,43 @@
                 txt += "\x1b\x21\x10>>> TOCA EN LA APP <<<\n";
                 txt += "PARA COBRAR ESTE TICKET\x1b\x21\x00\n";
                 txt += "\n" + new Date().toLocaleString() + "\n";
+                // [v2.5.51] Copia del ticket original adjunta para que el cliente
+                // entienda "por qué sale tanto" sin que el cajero busque/explique.
+                const items = Array.isArray(cobro.itemsOriginal) ? cobro.itemsOriginal : [];
+                if (items.length) {
+                    txt += "\n";
+                    txt += "================================================\n";
+                    txt += "\x1b\x21\x10  COPIA TICKET ORIGINAL\x1b\x21\x00\n";
+                    txt += "================================================\n";
+                    txt += "\x1b\x61\x00"; // left
+                    if (cobro.correlativo) txt += "Ticket: " + cobro.correlativo + "\n";
+                    if (cobro.vendedorOriginal) txt += "Vendio: " + cobro.vendedorOriginal + "\n";
+                    txt += "Cliente: " + (cobro.cliente || 'VARIOS').substring(0, 40) + "\n";
+                    txt += "------------------------------------------------\n";
+                    let totalCalc = 0;
+                    for (const it of items) {
+                        const nom = String(it.nombre || '').substring(0, 30);
+                        const cant = parseFloat(it.cantidad) || 0;
+                        const sub  = parseFloat(it.subtotal) || 0;
+                        totalCalc += sub;
+                        // Formato: NOMBRE                       Nx       S/SUB
+                        const cantStr = (cant % 1 === 0 ? cant.toFixed(0) : cant.toFixed(2)) + 'x';
+                        const subStr  = 'S/ ' + sub.toFixed(2);
+                        const espNom  = 30;
+                        const linea1 = nom.padEnd(espNom);
+                        // Línea 2 sangrada para no romper layout: cant a la izq, sub a la der
+                        txt += linea1 + "\n";
+                        txt += '  ' + cantStr.padEnd(14) + subStr.padStart(32) + "\n";
+                    }
+                    txt += "------------------------------------------------\n";
+                    const total = parseFloat(cobro.monto) || totalCalc;
+                    txt += "\x1b\x21\x10";
+                    txt += "TOTAL".padEnd(20) + ("S/ " + total.toFixed(2)).padStart(28) + "\n";
+                    txt += "\x1b\x21\x00";
+                    txt += "\n\x1b\x61\x01"; // center
+                    txt += "*** Copia para referencia ***\n";
+                    txt += "*** No es comprobante valido ***\n";
+                }
                 txt += "\n\n\n\n\x1d\x56\x00"; // cut
                 await mandarImpresionPrintNode(printerId, "Aviso Cobro Asignado", b64ESC(txt));
             } catch(e) {
@@ -12870,6 +13026,8 @@
           actInSituShow, actInSituNombre, actInSituClave, actInSituErr, actInSituBusy,
           abrirActivarInSitu, confirmarActivarInSitu,
           sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
+          // [v2.5.51] Retomar caja por deviceId
+          cajaDetectadaBackend, retomandoCaja, retomarCajaBackend,
           flashNuevosTickets,
           sincronizarDatos, isSyncing, pendingSales,
           procesandoCatalogo, sincronizarCatalogoBase,

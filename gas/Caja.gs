@@ -572,6 +572,80 @@ function cajeroActivo(zona) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+// [v2.5.51] Retomar caja por deviceId — para cuando la PWA pierde localStorage
+// pero la caja sigue ABIERTA en backend. Devuelve la info completa para que el
+// frontend repueble localStorage sin pasar por el wizard. Evita perder tickets
+// y movimientos del día.
+//
+// Match strategy: PrintNode_ID = deviceId (que es el mismo número en la
+// configuración estándar del ecosistema InversionMos). Si encuentra una caja
+// ABIERTA con ese PrintNode_ID, devuelve toda la info necesaria para restaurar.
+function retomarCajaPorDeviceId(deviceId) {
+  if (!deviceId) return generarRespuestaError("deviceId requerido");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("CAJAS");
+  if (!sheet) return generarRespuestaError("CAJAS no encontrada");
+  _autoCerrarCajasViejas(sheet);
+  var data = sheet.getDataRange().getValues();
+  // Columnas CAJAS: 0=ID_Caja, 1=Vendedor, 2=Estacion, 3=Fecha_Apertura,
+  //                 4=Monto_Inicial, 5=Estado, 6=Monto_Final, 7=Fecha_Cierre,
+  //                 8=Zona_ID, 9=PrintNode_ID
+  var encontrada = null;
+  for (var i = data.length - 1; i > 0; i--) {
+    if (String(data[i][5]) !== 'ABIERTA') continue;
+    if (String(data[i][9] || '') !== String(deviceId)) continue;
+    encontrada = {
+      idCaja:    String(data[i][0]),
+      vendedor:  String(data[i][1]),
+      estacion:  String(data[i][2]),
+      fechaApertura: data[i][3] instanceof Date ? data[i][3].toISOString() : String(data[i][3]),
+      monto:     parseFloat(data[i][4]) || 0,
+      zona:      String(data[i][8] || ''),
+      printNodeId: String(data[i][9] || '')
+    };
+    break;
+  }
+  if (!encontrada) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success', encontrada: false
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  // Resolver datos de la estación para que el frontend pueda repoblar el
+  // objeto config.estacion con todos los campos que usa al imprimir.
+  var estacionObj = { Estacion_Codigo: encontrada.estacion, Estacion_Nombre: encontrada.estacion, PrintNode_ID: encontrada.printNodeId };
+  try {
+    var shEst = ss.getSheetByName('ESTACIONES');
+    if (shEst) {
+      var fe = shEst.getDataRange().getValues();
+      var hdrs = fe[0].map(function(h){ return String(h).trim(); });
+      var iCod = hdrs.indexOf('Estacion_Codigo');
+      var iNom = hdrs.indexOf('Estacion_Nombre');
+      var iPN  = hdrs.indexOf('PrintNode_ID');
+      if (iCod < 0) iCod = 0;
+      for (var k = 1; k < fe.length; k++) {
+        if (String(fe[k][iCod]) === encontrada.estacion) {
+          estacionObj = {
+            Estacion_Codigo: String(fe[k][iCod] || encontrada.estacion),
+            Estacion_Nombre: String(fe[k][iNom >= 0 ? iNom : iCod] || encontrada.estacion),
+            PrintNode_ID:    String(fe[k][iPN >= 0 ? iPN : 0] || encontrada.printNodeId)
+          };
+          break;
+        }
+      }
+    }
+  } catch(eEst) { Logger.log('estaciones retomar: ' + eEst.message); }
+  return ContentService.createTextOutput(JSON.stringify({
+    status:    'success',
+    encontrada: true,
+    idCaja:    encontrada.idCaja,
+    vendedor:  encontrada.vendedor,
+    zona:      encontrada.zona,
+    monto:     encontrada.monto,
+    fechaApertura: encontrada.fechaApertura,
+    estacion:  estacionObj
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function cobrarVentaExistente(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
