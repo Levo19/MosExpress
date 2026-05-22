@@ -3788,16 +3788,32 @@
         <div class="modal-pago-inner bg-white rounded-t-[2.5rem] p-6 max-h-[92vh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-5 shrink-0">
                <h2 class="text-3xl font-black text-gray-800 tracking-tight">{{ config.esCajero ? 'COBRO' : 'REGISTRAR VENTA' }}</h2>
-               <button @click="modalPago = false" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+               <button @click="modalPago = false; _prereservaCancelar()" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
             </div>
     
             <div class="flex-1 overflow-y-auto space-y-5 px-1 scrollbar-hide pb-8">
                <div>
-                  <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Comprobante</label>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">Comprobante</label>
+                    <!-- [v2.5.58] Badge correlativo pre-reservado (NV) — visible solo si hay reserva activa -->
+                    <span v-if="pago.tipoDoc === 'NOTA_DE_VENTA' && _correlativoEnMano"
+                          class="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-300 rounded-full px-2 py-0.5"
+                          style="animation: scaleIn .3s cubic-bezier(.34,1.56,.64,1)">
+                      ✓ #{{ _correlativoEnMano.correlativoFmt }}
+                    </span>
+                    <span v-else-if="pago.tipoDoc === 'NOTA_DE_VENTA' && _prereservaCargando"
+                          class="text-[10px] font-bold text-amber-500 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                      <span class="inline-block animate-spin">⏳</span> reservando...
+                    </span>
+                    <span v-else-if="pago.tipoDoc === 'BOLETA' || pago.tipoDoc === 'FACTURA'"
+                          class="text-[10px] font-bold text-blue-500 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">
+                      número al cobrar
+                    </span>
+                  </div>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
-                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios()" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
-                      <button @click="pago.tipoDoc = 'BOLETA'; limpiarCliente()" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
-                      <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente()" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
+                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios(); _onCambioTipoDoc('NOTA_DE_VENTA')" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
+                      <button @click="pago.tipoDoc = 'BOLETA'; limpiarCliente(); _onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
+                      <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente(); _onCambioTipoDoc('FACTURA')" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
                   </div>
                </div>
 
@@ -12111,10 +12127,96 @@
             pago.value.metodo = (config.value.esCajero && cajaAbierta.value) ? 'EFECTIVO' : 'POR_COBRAR';
             pago.value.montoRecibido = granTotal.value;
             pago.value.montoVirtual = 0;
-            // En NV: cargar cliente VARIOS por default. Cajero puede cambiarlo.
             limpiarCliente();
             cargarClienteVarios();
             modalPago.value = true;
+            // [v2.5.58] Pre-reservar correlativo de NV en BACKGROUND mientras
+            // el cajero teclea monto/cliente. Cuando llega "Cobrar", el
+            // correlativo ya está en mano → impresión instant sin LOCAL.
+            // Si el cajero cambia tipoDoc a Boleta/Factura, _onCambioTipoDoc
+            // libera esta reserva.
+            _prereservaIniciar('NOTA_DE_VENTA');
+        };
+
+        // [v2.5.58] Estado de la pre-reserva en curso
+        const _correlativoEnMano = ref(null); // { numero, idReserva, correlativoFmt, serie, tipoDoc }
+        const _prereservaCargando = ref(false);
+
+        const _prereservaIniciar = async (tipoDoc) => {
+            if (tipoDoc !== 'NOTA_DE_VENTA') return; // Solo NV pre-reserva
+            // Si ya hay reserva activa de la misma serie, no pedir otra
+            const serieEsperada = (config.value.estacion && config.value.estacion.SerieNV) ||
+                                  (config.value.estacion && config.value.estacion.Serie_NV) ||
+                                  'NVa2';
+            if (_correlativoEnMano.value && _correlativoEnMano.value.serie === serieEsperada) return;
+            _prereservaCargando.value = true;
+            try {
+                const r = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        tipoEvento: 'RESERVAR_CORRELATIVO',
+                        serie:      serieEsperada,
+                        vendedor:   config.value.vendedor || '',
+                        deviceId:   deviceId.value || ''
+                    })
+                });
+                const d = await r.json();
+                if (d && d.status === 'success') {
+                    _correlativoEnMano.value = {
+                        numero:         d.numero,
+                        idReserva:      d.idReserva,
+                        correlativoFmt: d.correlativoFmt,
+                        serie:          serieEsperada,
+                        tipoDoc:        'NOTA_DE_VENTA'
+                    };
+                    try { playBeepSuave?.(); } catch(_) {}
+                } else {
+                    console.warn('[prereserva] falló:', d?.mensaje || d?.error);
+                }
+            } catch(e) {
+                console.warn('[prereserva] error red:', e?.message || e);
+            } finally {
+                _prereservaCargando.value = false;
+            }
+        };
+
+        const _prereservaCancelar = async () => {
+            const res = _correlativoEnMano.value;
+            if (!res || !res.idReserva) return;
+            _correlativoEnMano.value = null;
+            // Fire-and-forget: no bloquea UI
+            fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    tipoEvento: 'CANCELAR_RESERVA_CORRELATIVO',
+                    idReserva:  res.idReserva
+                })
+            }).catch(() => {});
+        };
+
+        // Si el cajero cambia tipoDoc, libera reserva de NV (CPE no pre-reserva)
+        const _onCambioTipoDoc = (nuevoTipo) => {
+            if (nuevoTipo !== 'NOTA_DE_VENTA') {
+                _prereservaCancelar();
+            } else {
+                _prereservaIniciar('NOTA_DE_VENTA');
+            }
+        };
+
+        // Beep suave para "correlativo en mano" — discreto, no invasivo
+        const playBeepSuave = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const o = ctx.createOscillator();
+                const g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination);
+                o.frequency.value = 880;
+                g.gain.setValueAtTime(0.04, ctx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+                o.start(); o.stop(ctx.currentTime + 0.15);
+            } catch(_) {}
         };
         const setMonto = (m) => { pago.value.montoRecibido = parseFloat(m); };
         const buscarClienteAPI = async () => {
@@ -12235,7 +12337,7 @@
            if(pago.value.tipoDoc === 'FACTURA') serieElegida = _est.Serie_Factura || 'F001';
 
            const localId = Date.now();
-           const correlativoLocal = serieElegida + "-LOCAL";
+           let correlativoLocal = serieElegida + "-LOCAL";
 
            // Capturar todo antes de limpiar el carrito
            const tipoDocVenta        = pago.value.tipoDoc;
@@ -12346,11 +12448,26 @@
                       nombre:    nombreClienteVenta,
                       tipo:      tipoDocCliente,      // 0/1/4/6 para NubeFact
                       direccion: direccionClienteVenta // requerido en FACTURA
-                  }
+                  },
+                  // [v2.5.58] Pre-reserva: si hay correlativo en mano de NV,
+                  // GAS lo usa en lugar de generar uno nuevo → impresión instant
+                  idReserva: (tipoDocVenta === 'NOTA_DE_VENTA' && _correlativoEnMano.value && _correlativoEnMano.value.idReserva)
+                             ? _correlativoEnMano.value.idReserva : ''
               },
               status: 'pending',
               items: itemsParaImprimir
            };
+
+           // [v2.5.58] Si tenemos correlativo pre-reservado de NV, usarlo como
+           // correlativoLocal también (el ticket ya saldrá con número definitivo
+           // INSTANT, sin esperar respuesta de GAS).
+           let _usandoReserva = false;
+           if (tipoDocVenta === 'NOTA_DE_VENTA'
+               && _correlativoEnMano.value
+               && _correlativoEnMano.value.correlativoFmt) {
+               correlativoLocal = _correlativoEnMano.value.correlativoFmt;
+               _usandoReserva = true;
+           }
 
            // 1. Guardar en historial local inmediatamente (para mostrar en UI)
            const ht = { id: localId, tipo: tipoDocVenta, correlativo: correlativoLocal, total: totalVenta, timestamp: localId, cliente_doc: docClienteVenta || '-', cliente_nombre: nombreClienteVenta || 'Genérico', items_count: itemsParaImprimir.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
@@ -12623,6 +12740,8 @@
           limpiarCliente();
           pago.value.tipoDoc = 'NOTA_DE_VENTA';
           pago.value.metodo = 'EFECTIVO';
+          // [v2.5.58] Limpiar reserva consumida (la próxima venta pedirá nueva)
+          _correlativoEnMano.value = null;
           // Reset autorización crédito directo para próxima venta
           pago.value.ventaCreditoDirecto = false;
           pago.value.adminAuth = null;
@@ -13395,6 +13514,8 @@
           idleScreen, idleConfig, ocultarSalvapantalla,
           toggleWakeLock, toggleSaver, setSaverMinutos, setMetaDiaria,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
+          // [v2.5.58] Pre-reserva correlativo
+          _correlativoEnMano, _prereservaCargando, _onCambioTipoDoc, _prereservaCancelar,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
           reintentarBuscarCliente,

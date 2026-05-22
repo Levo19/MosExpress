@@ -72,9 +72,26 @@ function procesarVenta(data) {
     }
   }
 
-  // ── Correlativo O(1) con LockService ────────────────────────────────────
-  var correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
-  var correlativoFinal  = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
+  // ── Correlativo: pre-reserva (NV) o atómico (CPE) ───────────────────────
+  // [v2.5.58] Si el cliente pre-reservó al abrir el modal de pago (caso NV),
+  // viene `idReserva` en el header y usamos ese número. Eso garantiza
+  // impresión instantánea sin esperar GAS para numerar. Para CPE
+  // (boleta/factura) NO pre-reservamos (gaps requieren reporte SUNAT) →
+  // sigue el flujo legacy con obtenerSiguienteCorrelativoRapido.
+  var correlativoNumero, correlativoFinal;
+  if (header.idReserva && String(header.tipoDoc || '').toUpperCase() === 'NOTA_DE_VENTA') {
+    var consumido = _consumirReserva(header.idReserva, idVenta, auth.deviceId);
+    if (!consumido.ok) {
+      // Reserva inválida — fallback al método atómico
+      Logger.log('[Venta] Reserva inválida (' + consumido.error + ') — cayendo a método atómico');
+      correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
+    } else {
+      correlativoNumero = consumido.numero;
+    }
+  } else {
+    correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
+  }
+  correlativoFinal = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
 
   // ── VENTAS_CABECERA (19 columnas) ────────────────────────────────────────
   // ID_Venta | Fecha | Vendedor | Estacion | Cliente_Doc | Cliente_Nombre | Total
@@ -642,6 +659,175 @@ function obtenerSiguienteCorrelativoRapido(ss, serie) {
   } finally {
     if (lockOK) lock.releaseLock();
   }
+}
+
+// ============================================================
+// [v2.5.58] PRE-RESERVA DE CORRELATIVOS (NV) — anti-LOCAL
+// ============================================================
+// El cliente reserva el correlativo en el momento que abre el modal
+// de pago (con tipoDoc default NV). Cuando el cajero presiona Cobrar,
+// la venta se procesa CON el correlativo ya en mano — impresión
+// instantánea sin esperar GAS para numerar.
+//
+// Filosofía:
+//   - Pre-reserva solo se usa para NV (gaps internos son OK)
+//   - BOLETA/FACTURA NO usa pre-reserva (gaps requieren reporte SUNAT)
+//   - LockService garantiza no-colisiones entre cajeros simultáneos
+//   - Si la reserva se cancela o expira (>5min), queda como GAP en NV
+//   - Trigger de limpieza cada hora marca ACTIVAS viejas como EXPIRADA
+// ============================================================
+var RES_CORR_HEADERS = [
+  'idReserva', 'serie', 'numero', 'vendedor', 'deviceId',
+  'reservadoAt', 'estado', 'usadoAt', 'idVenta'
+];
+
+function _getHojaReservasCorrelativos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('RESERVAS_CORRELATIVOS');
+  if (!sh) {
+    sh = ss.insertSheet('RESERVAS_CORRELATIVOS');
+    sh.getRange(1, 1, 1, RES_CORR_HEADERS.length).setValues([RES_CORR_HEADERS]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+// ─────────────────────────────────────────────────────────────
+// reservarCorrelativo({serie, vendedor, deviceId})
+// LockService asegura no-colisión. Devuelve {numero, idReserva}.
+// ─────────────────────────────────────────────────────────────
+function reservarCorrelativo(data) {
+  if (!data || !data.serie) return generarRespuestaError('serie requerida');
+  var serie = String(data.serie).trim();
+  var vendedor = String(data.vendedor || 'desconocido');
+  var deviceId = String(data.deviceId || '');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // 1. Obtener número atómicamente
+  var numero;
+  try {
+    numero = obtenerSiguienteCorrelativoRapido(ss, serie);
+  } catch(e) {
+    return generarRespuestaError('No se pudo reservar: ' + e.message);
+  }
+  // 2. Registrar la reserva
+  var idReserva = 'RES-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+  try {
+    var sh = _getHojaReservasCorrelativos();
+    sh.appendRow([
+      idReserva, serie, numero, vendedor, deviceId,
+      new Date(), 'ACTIVA', '', ''
+    ]);
+    SpreadsheetApp.flush();
+  } catch(eR) {
+    // Si falla el log, igual devolvemos el número (ya está reservado en CORRELATIVOS)
+    Logger.log('Reserva log fallo: ' + eR.message);
+  }
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success',
+    numero: numero,
+    idReserva: idReserva,
+    correlativoFmt: serie + '-' + ('000000' + numero).slice(-6)
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ─────────────────────────────────────────────────────────────
+// cancelarReservaCorrelativo({idReserva})
+// Marca la reserva como CANCELADA. El número NO se reusa (gap).
+// Para NV el gap es OK. Para CPE no aplica porque no pre-reservamos.
+// ─────────────────────────────────────────────────────────────
+function cancelarReservaCorrelativo(data) {
+  if (!data || !data.idReserva) return generarRespuestaError('idReserva requerida');
+  var idReserva = String(data.idReserva);
+  var sh = _getHojaReservasCorrelativos();
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === idReserva) {
+      if (String(rows[i][6]) !== 'ACTIVA') {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'success', yaProcesada: true, estado: String(rows[i][6])
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      sh.getRange(i + 1, 7).setValue('CANCELADA');
+      sh.getRange(i + 1, 8).setValue(new Date());
+      SpreadsheetApp.flush();
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success', cancelada: true
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return generarRespuestaError('idReserva no encontrada');
+}
+
+// ─────────────────────────────────────────────────────────────
+// _consumirReserva(idReserva, idVentaFinal) — interno
+// Llamado desde procesarVenta cuando viene idReserva en payload.
+// Valida estado ACTIVA + marca USADA. Retorna {ok, numero} o {ok:false}.
+// ─────────────────────────────────────────────────────────────
+function _consumirReserva(idReserva, idVentaFinal, deviceIdActual) {
+  var sh = _getHojaReservasCorrelativos();
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) !== String(idReserva)) continue;
+    if (String(rows[i][6]) !== 'ACTIVA') {
+      return { ok: false, error: 'Reserva no ACTIVA (estado: ' + rows[i][6] + ')' };
+    }
+    // Defensa: deviceId debe coincidir (anti-fraude entre cajeros)
+    if (deviceIdActual && String(rows[i][4]) && String(rows[i][4]) !== String(deviceIdActual)) {
+      return { ok: false, error: 'deviceId no coincide con reserva' };
+    }
+    sh.getRange(i + 1, 7).setValue('USADA');
+    sh.getRange(i + 1, 8).setValue(new Date());
+    sh.getRange(i + 1, 9).setValue(String(idVentaFinal || ''));
+    SpreadsheetApp.flush();
+    return {
+      ok: true,
+      serie: String(rows[i][1]),
+      numero: parseInt(rows[i][2], 10)
+    };
+  }
+  return { ok: false, error: 'idReserva no encontrada' };
+}
+
+// ─────────────────────────────────────────────────────────────
+// _limpiarReservasViejas — trigger horario, marca ACTIVAS>5min
+// como EXPIRADA. Auto-instala el trigger al primer uso.
+// ─────────────────────────────────────────────────────────────
+function _limpiarReservasViejas() {
+  try {
+    var sh = _getHojaReservasCorrelativos();
+    var rows = sh.getDataRange().getValues();
+    var ahora = Date.now();
+    var LIMITE_MS = 5 * 60 * 1000; // 5 minutos
+    var n = 0;
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][6]) !== 'ACTIVA') continue;
+      var t = rows[i][5] instanceof Date ? rows[i][5].getTime() : new Date(rows[i][5]).getTime();
+      if (isNaN(t)) continue;
+      if (ahora - t > LIMITE_MS) {
+        sh.getRange(i + 1, 7).setValue('EXPIRADA');
+        sh.getRange(i + 1, 8).setValue(new Date());
+        n++;
+      }
+    }
+    if (n > 0) {
+      SpreadsheetApp.flush();
+      Logger.log('[ReservasCorrelativos] ' + n + ' reservas marcadas EXPIRADA');
+    }
+    return { ok: true, expiradas: n };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+function _ensureTriggerLimpiarReservas() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === '_limpiarReservasViejas') return;
+    }
+    ScriptApp.newTrigger('_limpiarReservasViejas')
+      .timeBased().everyHours(1).create();
+    Logger.log('Trigger _limpiarReservasViejas instalado');
+  } catch(eT) { Logger.log('Trigger reservas: ' + eT.message); }
 }
 
 // Fallback O(n): scan de VENTAS_CABECERA. Solo se usa cuando CORRELATIVOS no existe todavía.

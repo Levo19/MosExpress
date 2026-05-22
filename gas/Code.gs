@@ -29,6 +29,9 @@ function doGet(e) {
     if (accion === 'stock_zonas')           return getStockZonas();
     if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
     if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
+    // [v2.5.58] Pre-reserva de correlativo (NV) — anti-LOCAL
+    if (accion === 'reservarCorrelativo')   return reservarCorrelativo(e.parameter);
+    if (accion === 'cancelarReservaCorrelativo') return cancelarReservaCorrelativo(e.parameter);
     // [v2.5.51] Retomar caja cuando localStorage se perdió pero la caja sigue ABIERTA
     if (accion === 'retomar_caja_device')   return retomarCajaPorDeviceId(e.parameter.deviceId);
     // [v2.5.55] Proxy GET para recuperar device state desde MOS (DEVICE_STATE)
@@ -231,6 +234,9 @@ function doPost(e) {
     if (data.tipoEvento === 'CONFIRMAR_RETOMA_CAJA') return confirmarRetomaCaja(data);
     // [v2.5.55] Sync de DEVICE_STATE a MOS (ME actúa como proxy con MOS_WEB_APP_URL)
     if (data.tipoEvento === 'SYNC_DEVICE_STATE') return syncDeviceStateProxy(data);
+    // [v2.5.58] Pre-reserva correlativo vía POST (acepta header)
+    if (data.tipoEvento === 'RESERVAR_CORRELATIVO') return reservarCorrelativo(data);
+    if (data.tipoEvento === 'CANCELAR_RESERVA_CORRELATIVO') return cancelarReservaCorrelativo(data);
     if (data.tipoEvento === 'CAMBIO_IMPRESORA_CAJA') return cambiarImpresoraCaja(data);
     if (data.tipoEvento === 'LIMPIAR_DUPLICADOS') {
       var _r = limpiarGuiasDuplicadasCaja(data.cajaId);
