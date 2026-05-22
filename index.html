@@ -10487,7 +10487,7 @@
         };
 
         const revertirCobro = (venta) => {
-            pedirPin(() => {
+            pedirPin(async () => {
                 if (!await _meModalConfirm(`¿Quitar cobro de ${venta.correlativo}?\n\nEl ticket pasará a SIN PAGAR.`, { warning: true, titulo: 'Quitar cobro', okText: 'Quitar' })) return;
                 // Actualizar local — splice fuerza reactividad inmediata en Vue
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -10515,7 +10515,7 @@
 
         // Versión desde modal Moneda: cierra el modal después del PIN+confirm
         const revertirCobroDesdeModal = (venta) => {
-            pedirPin(() => {
+            pedirPin(async () => {
                 if (!await _meModalConfirm(`¿Quitar cobro de ${venta.correlativo}?\n\nEl ticket pasará a SIN PAGAR.`, { warning: true, titulo: 'Quitar cobro', okText: 'Quitar' })) return;
                 modalMoneda.value = false;
                 ticketParaMoneda.value = null;
@@ -11366,7 +11366,7 @@
         };
 
         // Cierre de sesión para vendedores (sin caja)
-        const cerrarSesion = () => {
+        const cerrarSesion = async () => {
              if (!await _meModalConfirm(`¿Cerrar sesión de ${config.value.vendedor}?`, { warning: true, titulo: 'Cerrar sesión', okText: 'Cerrar sesión' })) return;
              clearInterval(_intervalVendedorCajeroCheck);
              _intervalVendedorCajeroCheck = null;
