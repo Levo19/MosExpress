@@ -318,13 +318,39 @@ function verificarDispositivo(deviceId) {
 // Consulta DNI/RUC vía APISPeru
 // Script Property requerida: APISPERU_TOKEN
 // ============================================================
-function consultarCliente(doc) {
+// [v2.5.59] consultarCliente — mejorado con:
+//  · Respeta tipoDoc del frontend (FACTURA → solo RUC, NV/BOLETA → DNI o RUC)
+//  · Reintentos automáticos (1 retry con 800ms backoff si falla red)
+//  · Diagnóstico claro: distingue 'no_found' vs 'token_invalido' vs 'net_error'
+//  · Logging del HTTP code y body para depurar
+function consultarCliente(doc, tipoDocSolicitado) {
   if (!doc) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error', message: 'Documento requerido'
     })).setMimeType(ContentService.MimeType.JSON);
   }
   doc = String(doc).trim();
+  tipoDocSolicitado = String(tipoDocSolicitado || '').toUpperCase();
+
+  // [v2.5.59] Validación previa por tipoDoc — falla rápido sin gastar quota
+  if (tipoDocSolicitado === 'FACTURA') {
+    if (!/^\d{11}$/.test(doc)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'validacion',
+        message: 'FACTURA requiere RUC de 11 dígitos. Recibido: ' + doc.length + ' caracteres',
+        codigo: 'FACTURA_NO_RUC'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  } else {
+    // NV / BOLETA: aceptar DNI (8) o RUC (11)
+    if (!/^\d{8}$/.test(doc) && !/^\d{11}$/.test(doc)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'validacion',
+        message: 'Documento inválido. DNI son 8 dígitos, RUC son 11. Recibido: ' + doc.length,
+        codigo: 'LONGITUD_INVALIDA'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
 
   // 1. Buscar en CLIENTES_FRECUENTES local
   var ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -356,43 +382,135 @@ function consultarCliente(doc) {
   if (!token) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
-      message: 'Token no configurado. Agregar APISPERU_TOKEN en Propiedades del script.'
+      codigo: 'TOKEN_NO_CONFIGURADO',
+      message: 'APISPERU_TOKEN no está en Script Properties. Contacta al admin del sistema.'
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  try {
-    var tipo     = doc.length === 11 ? 'ruc' : 'dni';
-    var url      = 'https://dniruc.apisperu.com/api/v1/' + tipo + '/' + doc + '?token=' + token;
-    var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    var json     = JSON.parse(response.getContentText());
+  var tipo = doc.length === 11 ? 'ruc' : 'dni';
+  var url  = 'https://dniruc.apisperu.com/api/v1/' + tipo + '/' + doc + '?token=' + token;
 
-    var nombre    = '';
-    var direccion = '';
-    if (tipo === 'dni') {
-      nombre = [json.nombres, json.apellidoPaterno, json.apellidoMaterno].filter(Boolean).join(' ').trim();
-    } else {
-      nombre    = (json.razonSocial || '').trim();
-      direccion = (json.direccion   || '').trim();
+  // [v2.5.59] Reintentos: 1 retry con 800ms backoff si falla red o 5xx
+  function _intentar(esRetry) {
+    try {
+      var response = UrlFetchApp.fetch(url, {
+        muteHttpExceptions: true,
+        // Timeout no es configurable en UrlFetchApp pero por defecto ~60s
+      });
+      var code = response.getResponseCode();
+      var body = response.getContentText();
+      // 401/403 = token rechazado · 402 = sin saldo · 404 = no encontrado · 5xx = error servidor
+      if (code === 401 || code === 403) {
+        Logger.log('[APISPeru] Token rechazado HTTP ' + code + ' body=' + body.substring(0, 200));
+        return { _ko: true, status: 'error', codigo: 'TOKEN_RECHAZADO', message: 'Token APISPeru inválido o expirado (HTTP ' + code + '). Renovar.' };
+      }
+      if (code === 402 || /sin saldo|limit|excedid/i.test(body)) {
+        Logger.log('[APISPeru] Sin saldo HTTP ' + code + ' body=' + body.substring(0, 200));
+        return { _ko: true, status: 'error', codigo: 'SIN_SALDO', message: 'Token APISPeru sin saldo o cuota agotada. Renovar plan.' };
+      }
+      if (code === 404) {
+        return { _ko: true, status: 'not_found', codigo: 'DOC_NO_ENCONTRADO', message: 'Documento ' + doc + ' no figura en ' + (tipo === 'ruc' ? 'SUNAT' : 'RENIEC') + '.' };
+      }
+      if (code >= 500 && code < 600) {
+        Logger.log('[APISPeru] 5xx HTTP ' + code + ' body=' + body.substring(0, 200));
+        if (!esRetry) return { _retry: true };
+        return { _ko: true, status: 'error', codigo: 'API_5XX', message: 'APISPeru no responde (HTTP ' + code + '). Reintenta en unos segundos.' };
+      }
+      if (code !== 200) {
+        Logger.log('[APISPeru] HTTP inesperado ' + code + ' body=' + body.substring(0, 200));
+        return { _ko: true, status: 'error', codigo: 'HTTP_INESPERADO', message: 'APISPeru respondió HTTP ' + code };
+      }
+      var json;
+      try { json = JSON.parse(body); }
+      catch(eP) { return { _ko: true, status: 'error', codigo: 'PARSE_FAIL', message: 'APISPeru devolvió texto inválido: ' + body.substring(0, 100) }; }
+
+      var nombre    = '';
+      var direccion = '';
+      if (tipo === 'dni') {
+        nombre = [json.nombres, json.apellidoPaterno, json.apellidoMaterno].filter(Boolean).join(' ').trim();
+      } else {
+        nombre    = (json.razonSocial || json.nombre || '').trim();
+        direccion = (json.direccion   || '').trim();
+      }
+      if (!nombre) {
+        return { _ko: true, status: 'not_found', codigo: 'NOMBRE_VACIO', message: 'APISPeru no devolvió nombre para ' + doc };
+      }
+      return {
+        _ok: true,
+        status:    'success',
+        nombre:    nombre,
+        documento: doc,
+        tipo:      tipo === 'ruc' ? 'RUC' : 'DNI',
+        fuente:    'api',
+        direccion: direccion
+      };
+    } catch(eN) {
+      Logger.log('[APISPeru] Network/Exception: ' + eN.message);
+      if (!esRetry) return { _retry: true };
+      return { _ko: true, status: 'error', codigo: 'NET_ERROR', message: 'Error de red: ' + eN.message };
     }
+  }
 
-    if (!nombre) {
-      return ContentService.createTextOutput(JSON.stringify({
-        status: 'not_found', message: 'No se encontró información para ' + doc
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
+  var resultado = _intentar(false);
+  if (resultado._retry) {
+    Utilities.sleep(800);
+    resultado = _intentar(true);
+  }
+  // Limpiar flags internos antes de devolver
+  delete resultado._ok; delete resultado._ko; delete resultado._retry;
+  return ContentService.createTextOutput(JSON.stringify(resultado)).setMimeType(ContentService.MimeType.JSON);
+}
 
+// [v2.5.59] testApiSperu — endpoint diagnóstico para verificar que el token
+// está vivo y la API responde. Útil cuando el cajero reporta que "no encuentra".
+// Llamar: ?accion=test_apisperu
+function testApiSperu() {
+  var token = PropertiesService.getScriptProperties().getProperty('APISPERU_TOKEN');
+  if (!token) {
     return ContentService.createTextOutput(JSON.stringify({
-      status:    'success',
-      nombre:    nombre,
-      documento: doc,
-      tipo:      tipo === 'ruc' ? 'RUC' : 'DNI',
-      fuente:    'api',
-      direccion: direccion
+      ok: false, codigo: 'TOKEN_NO_CONFIGURADO',
+      detalle: 'APISPERU_TOKEN no está en Script Properties'
     })).setMimeType(ContentService.MimeType.JSON);
-
+  }
+  var tokenTail = token.length > 8 ? '...' + token.substring(token.length - 6) : token;
+  // Consulta de prueba con un RUC público conocido (SUNAT mismo)
+  var rucPrueba = '20131312955'; // SUNAT
+  var url = 'https://dniruc.apisperu.com/api/v1/ruc/' + rucPrueba + '?token=' + token;
+  try {
+    var t0 = Date.now();
+    var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    var ms = Date.now() - t0;
+    var code = resp.getResponseCode();
+    var body = resp.getContentText();
+    var bodySnap = body.substring(0, 250);
+    var diag = {
+      ok: code === 200,
+      tokenTail:   tokenTail,
+      httpCode:    code,
+      latenciaMs:  ms,
+      bodyPreview: bodySnap
+    };
+    if (code === 200) {
+      try {
+        var j = JSON.parse(body);
+        diag.razonSocial = j.razonSocial || j.nombre || '(sin campo)';
+        diag.mensaje     = '✓ API funcionando. Token vivo. Consulta de prueba a SUNAT RUC ' + rucPrueba + ' en ' + ms + 'ms.';
+      } catch(_){ diag.mensaje = 'HTTP 200 pero respuesta no es JSON válido.'; }
+    } else if (code === 401 || code === 403) {
+      diag.codigo  = 'TOKEN_INVALIDO';
+      diag.mensaje = '✗ Token rechazado (HTTP ' + code + '). Renovar.';
+    } else if (code === 402) {
+      diag.codigo  = 'SIN_SALDO';
+      diag.mensaje = '✗ Token sin saldo / cuota agotada (HTTP 402). Renovar plan.';
+    } else {
+      diag.codigo  = 'HTTP_' + code;
+      diag.mensaje = '✗ HTTP inesperado ' + code + '. Ver bodyPreview.';
+    }
+    return ContentService.createTextOutput(JSON.stringify(diag)).setMimeType(ContentService.MimeType.JSON);
   } catch(e) {
     return ContentService.createTextOutput(JSON.stringify({
-      status: 'error', message: 'Error consultando API: ' + e.toString()
+      ok: false, codigo: 'NET_ERROR', tokenTail: tokenTail,
+      mensaje: 'Error de red al llamar APISPeru: ' + e.message
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }

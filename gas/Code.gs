@@ -49,7 +49,9 @@ function doGet(e) {
     if (accion === 'listar_guias')          return listarGuias(e.parameter.zona);
     if (accion === 'detalle_guia')          return detalleGuia(e.parameter.id_guia);
     if (accion === 'traslados_entrantes')   return trasladosEntrantes(e.parameter.zona, e.parameter.desde);
-    if (accion === 'consultar_cliente')     return consultarCliente(e.parameter.doc);
+    if (accion === 'consultar_cliente')     return consultarCliente(e.parameter.doc, e.parameter.tipoDoc);
+    // [v2.5.59] Diagnóstico APISPeru (verifica token + saldo + respuesta)
+    if (accion === 'test_apisperu')         return testApiSperu();
     if (accion === 'extras_caja')           return getExtrasCaja(e.parameter.cajaId);
     // [v40.3] Sistema de cobro asignado de créditos (MOS ↔ ME)
     if (accion === 'creditos_pendientes')      return getCreditosPendientes(e.parameter.diasAtras);

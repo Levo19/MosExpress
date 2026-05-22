@@ -3853,9 +3853,24 @@
                        <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                      </button>
                    </div>
-                   <!-- Hint doc detectado -->
-                   <p v-if="clienteBusqEsDocumento && !sugerenciasCliente.length" class="mt-1 text-[10px] text-gray-400 font-semibold">
-                     {{ busquedaNombre.length === 8 ? 'DNI · consulta RENIEC' : 'RUC · consulta SUNAT' }} — toca la lupa
+                   <!-- [v2.5.59] Hint contextual según tipoDoc -->
+                   <p v-if="busquedaNombre && pago.tipoDoc === 'FACTURA' && busquedaNombre.length !== 11"
+                      class="mt-1 text-[10px] text-rose-500 font-bold flex items-center gap-1">
+                     <span>⚠</span>
+                     <span>FACTURA requiere RUC de 11 dígitos · llevas {{ busquedaNombre.length }}</span>
+                   </p>
+                   <p v-else-if="clienteBusqEsDocumento && !sugerenciasCliente.length"
+                      class="mt-1 text-[10px] text-gray-400 font-semibold">
+                     {{ busquedaNombre.length === 8 ? 'DNI · consulta RENIEC' : 'RUC · consulta SUNAT' }}
+                     · auto-buscando...
+                   </p>
+                   <p v-else-if="busquedaNombre && pago.tipoDoc !== 'FACTURA' && /^\d{1,7}$/.test(busquedaNombre)"
+                      class="mt-1 text-[10px] text-gray-400 font-semibold">
+                     Sigue escribiendo · DNI (8) o RUC (11)
+                   </p>
+                   <p v-else-if="busquedaNombre && /^\d{9,10}$/.test(busquedaNombre)"
+                      class="mt-1 text-[10px] text-amber-500 font-bold">
+                     RUC incompleto · faltan {{ 11 - busquedaNombre.length }} dígito(s)
                    </p>
                    <!-- Dropdown sugerencias locales -->
                    <div v-if="sugerenciasCliente.length > 0" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
@@ -12222,32 +12237,45 @@
         const buscarClienteAPI = async () => {
            if (!clienteBusqEsDocumento.value) return;
            const doc = busquedaNombre.value.trim();
+           const tipoDoc = pago.value.tipoDoc;
            buscandoCliente.value = true;
            clienteModoManual.value = false;
            clienteNombreManual.value = '';
            try {
                if (offlineMode.value) throw new Error('Sin conexión');
-               const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}`);
+               // [v2.5.59] Pasar tipoDoc al backend para validación contextual
+               const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}&tipoDoc=${encodeURIComponent(tipoDoc)}`);
                const d = await r.json();
                if (d.status === 'success') {
-                   // Encontrado: auto-rellenar directamente
                    pago.value.docCliente       = d.documento;
                    pago.value.nombreCliente    = d.nombre;
                    pago.value.direccionCliente = d.direccion || '';
                    busquedaNombre.value = '';
-                   // [v40] Sonido + vibración: confirma encontrado
                    try { playBeepNameMatch?.(); } catch(_){}
                    try { if (navigator.vibrate) navigator.vibrate([20,40,20]); } catch(_){}
                    agregarToast('✓ Cliente ' + d.tipo, d.nombre + (d.fuente === 'api' ? ' · RENIEC/SUNAT' : ' · frecuente'));
-               } else {
-                   // No encontrado en CF ni en API: mostrar opciones (no acepta texto libre)
+               } else if (d.status === 'validacion') {
+                   // [v2.5.59] Validación previa falla → no caer a modo manual,
+                   // solo mostrar hint claro. El usuario sigue tipeando.
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('⚠ Documento incompleto', d.message || 'Ajusta el documento', 'warning');
+                   // NO setear clienteModoManual — el input sigue activo
+               } else if (d.codigo === 'TOKEN_RECHAZADO' || d.codigo === 'TOKEN_NO_CONFIGURADO' || d.codigo === 'SIN_SALDO') {
+                   // [v2.5.59] Problema con el token/saldo de APISPeru — admin debe arreglar
                    pago.value.docCliente = doc;
                    clienteModoManual.value = true;
                    try { playBeepError?.(); } catch(_){}
-                   agregarToast('Sin coincidencias', 'Doc ' + doc + ' no está en RENIEC/SUNAT. Reintentá o usá VARIOS.');
+                   agregarToast('⚠ API SUNAT/RENIEC caída', d.message + ' · usá VARIOS por ahora', 'error', 10000);
+                   console.error('[APISPeru]', d.codigo, '·', d.message);
+               } else {
+                   // not_found / NET_ERROR / API_5XX → opciones manuales
+                   pago.value.docCliente = doc;
+                   clienteModoManual.value = true;
+                   try { playBeepError?.(); } catch(_){}
+                   const msg = d.message || 'Doc ' + doc + ' no está en RENIEC/SUNAT';
+                   agregarToast('Sin coincidencias', msg + ' · reintentá o usá VARIOS/CE');
                }
            } catch(e) {
-               // Error de red: mostrar opciones también
                pago.value.docCliente = doc;
                clienteModoManual.value = true;
                try { playBeepError?.(); } catch(_){}
@@ -12257,21 +12285,43 @@
            }
         };
 
-        // [v40] Auto-disparar consulta APISPeru cuando el operador completa 8 o 11
-        // dígitos (DNI o RUC). Evita que tenga que tocar la lupa manualmente.
-        // Debounce 400ms para no spamear si está corrigiendo el número.
+        // [v2.5.59] Auto-disparar consulta APISPeru con debounce inteligente
+        // basado en tipoDoc:
+        //  · FACTURA: solo dispara con RUC (11 dig). Ignora 8 dig completamente.
+        //  · NV / BOLETA: 11 dig dispara rápido (500ms). 8 dig espera 1500ms
+        //    y RE-VERIFICA antes de disparar (si subió a 9+ dig, cancela).
+        // Esto evita el bug histórico: tipear RUC pasa por "8 dígitos" → disparaba
+        // como DNI antes de que termine el tipeo → UI cambiaba a modo manual.
         let _autoSearchTimer = null;
         watch(busquedaNombre, (nuevo) => {
             if (_autoSearchTimer) clearTimeout(_autoSearchTimer);
             const q = String(nuevo || '').trim();
-            // Solo disparar si es doc completo (8 o 11 dig) y NO hay match local en CF
-            if (!/^\d{8}$/.test(q) && !/^\d{11}$/.test(q)) return;
-            if (sugerenciasCliente.value.length > 0) return; // ya hay matches en CF
-            if (pago.value.nombreCliente) return; // ya hay cliente
+            const tipoDoc = pago.value.tipoDoc;
+            if (sugerenciasCliente.value.length > 0) return;
+            if (pago.value.nombreCliente) return;
             if (buscandoCliente.value) return;
-            _autoSearchTimer = setTimeout(() => {
-                buscarClienteAPI();
-            }, 400);
+
+            // FACTURA: ignorar 8 dig completamente, solo dispara con 11
+            if (tipoDoc === 'FACTURA') {
+                if (!/^\d{11}$/.test(q)) return;
+                _autoSearchTimer = setTimeout(buscarClienteAPI, 500);
+                return;
+            }
+            // NV / BOLETA
+            if (/^\d{11}$/.test(q)) {
+                _autoSearchTimer = setTimeout(buscarClienteAPI, 500);
+                return;
+            }
+            if (/^\d{8}$/.test(q)) {
+                // [v2.5.59] espera 1500ms para dar tiempo a completar RUC
+                _autoSearchTimer = setTimeout(() => {
+                    // Doble-check: si el usuario siguió escribiendo, abortar
+                    const qActual = busquedaNombre.value.trim();
+                    if (qActual.length !== 8) return;
+                    // 8 dig consolidados → dispara como DNI
+                    buscarClienteAPI();
+                }, 1500);
+            }
         });
         // [v40] Reintentar consulta APISPeru. Reaprovecha el doc tipeado.
         const reintentarBuscarCliente = () => {
