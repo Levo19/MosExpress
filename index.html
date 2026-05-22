@@ -19,6 +19,87 @@
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleIn { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+
+    /* [v2.5.54] Modales custom genéricos (reemplazan confirm/prompt/alert) */
+    .me-modal-generic-backdrop {
+      position: fixed; inset: 0; z-index: 1500;
+      background: rgba(2, 6, 23, .72);
+      backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      opacity: 0; pointer-events: none;
+      transition: opacity .18s ease-out;
+    }
+    .me-modal-generic-backdrop.is-open { opacity: 1; pointer-events: auto; }
+    .me-modal-generic {
+      width: 100%; max-width: 440px; max-height: 86vh;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-radius: 22px;
+      box-shadow: 0 32px 64px -16px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.04);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      transform: scale(.92) translateY(10px);
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+      border: 2px solid transparent;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .me-modal-generic-backdrop.is-open .me-modal-generic { transform: scale(1) translateY(0); }
+    .me-modal-generic-primary { border-color: rgba(16,185,129,.5); }
+    .me-modal-generic-warn    { border-color: rgba(245,158,11,.5); }
+    .me-modal-generic-danger  { border-color: rgba(239,68,68,.5); }
+    .me-modal-generic-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .me-modal-generic-head strong {
+      flex: 1; color: #f1f5f9; font-size: 15px; font-weight: 900;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .me-modal-generic-ico {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .me-modal-generic-primary .me-modal-generic-ico { background: rgba(16,185,129,.2); color: #6ee7b7; }
+    .me-modal-generic-warn .me-modal-generic-ico    { background: rgba(245,158,11,.2); color: #fcd34d; }
+    .me-modal-generic-danger .me-modal-generic-ico  { background: rgba(239,68,68,.2);  color: #fca5a5; }
+    .me-modal-generic-close {
+      background: rgba(255,255,255,.06); color: #cbd5e1;
+      width: 28px; height: 28px; border-radius: 50%;
+      border: none; cursor: pointer; font-size: 12px;
+    }
+    .me-modal-generic-close:hover { background: rgba(239,68,68,.4); color: #fff; }
+    .me-modal-generic-body {
+      padding: 16px 20px; overflow-y: auto; flex: 1;
+      color: #cbd5e1; font-size: 13.5px; line-height: 1.55;
+    }
+    .me-modal-generic-body p { margin: 0 0 10px; }
+    .me-modal-generic-body p:last-child { margin-bottom: 0; }
+    .me-modal-generic-foot {
+      display: flex; gap: 8px;
+      padding: 13px 18px;
+      border-top: 1px solid rgba(255,255,255,.06);
+      background: rgba(0,0,0,.22);
+    }
+    .me-modal-generic-btn {
+      flex: 1; padding: 11px 14px;
+      border: none; border-radius: 12px;
+      font-weight: 800; font-size: 13px; cursor: pointer;
+      transition: all .15s;
+      font-family: inherit;
+    }
+    .me-modal-generic-btn-ghost { background: rgba(255,255,255,.06); color: #cbd5e1; }
+    .me-modal-generic-btn-ghost:hover { background: rgba(255,255,255,.12); }
+    .me-modal-generic-btn-primary { background: linear-gradient(135deg, #10b981, #059669); color: #fff; box-shadow: 0 4px 12px rgba(16,185,129,.3); }
+    .me-modal-generic-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(16,185,129,.5); }
+    .me-modal-generic-btn-warn { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; box-shadow: 0 4px 12px rgba(245,158,11,.3); }
+    .me-modal-generic-btn-warn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(245,158,11,.5); }
+    .me-modal-generic-btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; box-shadow: 0 4px 12px rgba(239,68,68,.3); }
+    .me-modal-generic-btn-danger:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(239,68,68,.5); }
+
     /* [v40.3] Widget cobros asignados — pulse + slide-in */
     @keyframes cobroPulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,.5); }
@@ -1923,7 +2004,7 @@
         } else if (perm === 'install') {
           const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
           if (isIOS) {
-            alert('📱 Instalar en iOS:\n\n1. Toca el botón Compartir\n2. Desliza y elige "Añadir a inicio"\n3. Toca "Añadir"\n\nLa app aparecerá en tu pantalla de inicio.');
+            _meModalAlert('📱 Instalar en iOS:\n\n1. Toca el botón Compartir\n2. Desliza y elige "Añadir a inicio"\n3. Toca "Añadir"\n\nLa app aparecerá en tu pantalla de inicio.', { titulo: 'Cómo instalar en iOS' });
             try {
               const v = window._ME_PERMS_VERSION || 'unk';
               localStorage.setItem('me_install_dismissed_v' + v, '1');
@@ -6004,7 +6085,7 @@
         }
 
         async function etiqMarcarTodasPegadas() {
-          if (!confirm('¿Marcar las ' + etiqsPendientes.value.length + ' etiquetas como pegadas?')) return;
+          if (!await _meModalConfirm('¿Marcar las ' + etiqsPendientes.value.length + ' etiquetas como pegadas?', { titulo: 'Etiquetas pegadas' })) return;
           etiqsProcesando.value = true;
           try {
             const usr = config.value.vendedor || '';
@@ -6545,6 +6626,77 @@
                 try { localStorage.setItem('mosexpress_last_error', JSON.stringify({ title, msg, at: new Date().toISOString() })); } catch(_){}
             }
             setTimeout(() => toasts.value = toasts.value.filter(t => t.id !== id), dur);
+        };
+
+        // [v2.5.54] Helpers modales custom (matan confirm/prompt/alert nativos).
+        // Vanilla DOM — funciona dentro del setup Vue sin necesitar refs adicionales.
+        // Paleta MOS: emerald primary, amber warn, red danger, slate dark.
+        const _meEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const _meModalConfirm = (msg, opts) => {
+            opts = opts || {};
+            return new Promise((resolve) => {
+                const accent = opts.danger ? 'danger' : (opts.warning ? 'warn' : 'primary');
+                const icoMap = { danger: '⚠', warn: '🟡', primary: '❓' };
+                const titulo = opts.titulo || (opts.danger ? 'Confirmar acción' : '¿Continuar?');
+                const okTxt = opts.okText || (opts.danger ? 'Sí, continuar' : 'Aceptar');
+                const backdrop = document.createElement('div');
+                backdrop.className = 'me-modal-generic-backdrop';
+                backdrop.innerHTML = `
+                  <div class="me-modal-generic me-modal-generic-${accent}" role="dialog" aria-modal="true">
+                    <div class="me-modal-generic-head">
+                      <span class="me-modal-generic-ico">${icoMap[accent]}</span>
+                      <strong>${_meEsc(titulo)}</strong>
+                      <button class="me-modal-generic-close" data-cancel>✕</button>
+                    </div>
+                    <div class="me-modal-generic-body">${(msg || '').split('\n\n').map(p => '<p>' + _meEsc(p).replace(/\n/g, '<br>') + '</p>').join('')}</div>
+                    <div class="me-modal-generic-foot">
+                      <button class="me-modal-generic-btn me-modal-generic-btn-ghost" data-cancel>${_meEsc(opts.cancelText || 'Cancelar')}</button>
+                      <button class="me-modal-generic-btn me-modal-generic-btn-${accent}" data-ok>${_meEsc(okTxt)}</button>
+                    </div>
+                  </div>`;
+                const cerrar = (v) => {
+                    backdrop.classList.remove('is-open');
+                    setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+                    resolve(v);
+                };
+                backdrop.addEventListener('click', (ev) => {
+                    const t = ev.target;
+                    if (t === backdrop || (t.closest && t.closest('[data-cancel]'))) cerrar(false);
+                    else if (t.closest && t.closest('[data-ok]')) cerrar(true);
+                });
+                document.body.appendChild(backdrop);
+                requestAnimationFrame(() => backdrop.classList.add('is-open'));
+                setTimeout(() => { try { backdrop.querySelector('[data-ok]')?.focus(); } catch(_){} }, 220);
+            });
+        };
+        const _meModalAlert = (msg, opts) => {
+            opts = opts || {};
+            return new Promise((resolve) => {
+                const backdrop = document.createElement('div');
+                backdrop.className = 'me-modal-generic-backdrop';
+                backdrop.innerHTML = `
+                  <div class="me-modal-generic me-modal-generic-primary" role="dialog" aria-modal="true">
+                    <div class="me-modal-generic-head">
+                      <span class="me-modal-generic-ico">💡</span>
+                      <strong>${_meEsc(opts.titulo || 'Aviso')}</strong>
+                      <button class="me-modal-generic-close" data-ok>✕</button>
+                    </div>
+                    <div class="me-modal-generic-body">${(msg || '').split('\n\n').map(p => '<p>' + _meEsc(p).replace(/\n/g, '<br>') + '</p>').join('')}</div>
+                    <div class="me-modal-generic-foot">
+                      <button class="me-modal-generic-btn me-modal-generic-btn-primary" data-ok>OK</button>
+                    </div>
+                  </div>`;
+                const cerrar = () => {
+                    backdrop.classList.remove('is-open');
+                    setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+                    resolve();
+                };
+                backdrop.addEventListener('click', (ev) => {
+                    if (ev.target === backdrop || ev.target.closest('[data-ok]')) cerrar();
+                });
+                document.body.appendChild(backdrop);
+                requestAnimationFrame(() => backdrop.classList.add('is-open'));
+            });
         };
 
         // --- NAVEGACIÓN MODULAR Y MIDDLEWARE DE CAJA ---
@@ -9484,7 +9636,7 @@
              }
              const _esLocal = _idCaja.startsWith('CAJA-LOCAL-');
              if (_esLocal) {
-                 const _ok = confirm('⚠ Esta caja fue abierta sin conexión al servidor.\n\nEl cierre NO se enviará al sistema (la fila en el Sheet no existirá).\n\n¿Deseas cerrar el turno localmente de todas formas?');
+                 const _ok = await _meModalConfirm('⚠ Esta caja fue abierta sin conexión al servidor.\n\nEl cierre NO se enviará al sistema (la fila en el Sheet no existirá).\n\n¿Deseas cerrar el turno localmente de todas formas?', { warning: true, titulo: 'Caja sin conexión', okText: 'Cerrar local' });
                  if (!_ok) return;
              }
 
@@ -9555,10 +9707,10 @@
              const horaApertura = sessionStartTime.value ? new Date(sessionStartTime.value).toLocaleString() : '-';
 
              const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtualFinal.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nNo cobrados a anular: ${idsAnular.length}\nEn crédito (no se anulan): ${ticketsCredito.length}`;
-             if(!confirm(`¿Cerrar Turno?\n\n${resumen}`)) return;
+             if(!await _meModalConfirm(`¿Cerrar Turno?\n\n${resumen}`, { titulo: 'Cerrar turno', okText: 'Cerrar turno' })) return;
 
 
-             if(!confirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)\n\nSe abrirá el reporte del turno.`)) return;
+             if(!await _meModalConfirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)\n\nSe abrirá el reporte del turno.`, { warning: true, titulo: 'Confirmar cierre', okText: 'Cerrar caja' })) return;
 
              // Abrir ventana ANTES del primer await — único momento en que el browser
              // la acepta sin popup-blocker (sigue en contexto del gesto del usuario)
@@ -10268,7 +10420,7 @@
 
         const revertirCobro = (venta) => {
             pedirPin(() => {
-                if (!confirm(`¿Quitar cobro de ${venta.correlativo}?\nEl ticket pasará a SIN PAGAR.`)) return;
+                if (!await _meModalConfirm(`¿Quitar cobro de ${venta.correlativo}?\n\nEl ticket pasará a SIN PAGAR.`, { warning: true, titulo: 'Quitar cobro', okText: 'Quitar' })) return;
                 // Actualizar local — splice fuerza reactividad inmediata en Vue
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
                 if (idx !== -1) {
@@ -10296,7 +10448,7 @@
         // Versión desde modal Moneda: cierra el modal después del PIN+confirm
         const revertirCobroDesdeModal = (venta) => {
             pedirPin(() => {
-                if (!confirm(`¿Quitar cobro de ${venta.correlativo}?\nEl ticket pasará a SIN PAGAR.`)) return;
+                if (!await _meModalConfirm(`¿Quitar cobro de ${venta.correlativo}?\n\nEl ticket pasará a SIN PAGAR.`, { warning: true, titulo: 'Quitar cobro', okText: 'Quitar' })) return;
                 modalMoneda.value = false;
                 ticketParaMoneda.value = null;
                 // reutilizar la lógica central (sin pedir PIN de nuevo)
@@ -10511,7 +10663,7 @@
             const venta = ticketParaAdmin.value;
             const e = adminConvEstado.value;
             if (!venta?.id_venta_gas) { agregarToast('Error', 'Ticket no sincronizado'); return; }
-            if (!confirm(`¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`)) return;
+            if (!await _meModalConfirm(`¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
             adminProcesando.value = true;
             try {
                 const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
@@ -10553,7 +10705,7 @@
             const venta = ticketParaAdmin.value;
             const motivo = (adminBajaEstado.value.motivo || adminBajaEstado.value.motivoTxt || '').trim();
             if (!venta?.id_venta_gas || motivo.length < 3) return;
-            if (!confirm(`¿Comunicar baja del ${venta.tipo} ${venta.correlativo} a SUNAT?\n\nEsta acción es irreversible.`)) return;
+            if (!await _meModalConfirm(`¿Comunicar baja del ${venta.tipo} ${venta.correlativo} a SUNAT?\n\nEsta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
             adminProcesando.value = true;
             try {
                 const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
@@ -11130,7 +11282,7 @@
 
         // Cierre de sesión para vendedores (sin caja)
         const cerrarSesion = () => {
-             if (!confirm(`¿Cerrar sesión de ${config.value.vendedor}?`)) return;
+             if (!await _meModalConfirm(`¿Cerrar sesión de ${config.value.vendedor}?`, { warning: true, titulo: 'Cerrar sesión', okText: 'Cerrar sesión' })) return;
              clearInterval(_intervalVendedorCajeroCheck);
              _intervalVendedorCajeroCheck = null;
              ventasHoy.value = [];
