@@ -31,6 +31,8 @@ function doGet(e) {
     if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
     // [v2.5.51] Retomar caja cuando localStorage se perdió pero la caja sigue ABIERTA
     if (accion === 'retomar_caja_device')   return retomarCajaPorDeviceId(e.parameter.deviceId);
+    // [v2.5.55] Proxy GET para recuperar device state desde MOS (DEVICE_STATE)
+    if (accion === 'getDeviceStateProxy')   return getDeviceStateProxy(e.parameter.deviceId);
     // [v2.5.33] Wizard moderno — estado bulk de impresoras + ping + cajeros activos
     if (accion === 'estado_impresoras')     return estadoImpresoras(e.parameter.ids);
     if (accion === 'cajeros_activos_todos') return cajerosActivosTodos();
@@ -227,6 +229,8 @@ function doPost(e) {
     if (data.tipoEvento === 'CIERRE_CAJA_FORZADO') return cerrarCajaForzado(data);
     // [v2.5.52] Retoma de caja por deviceId con autorización admin
     if (data.tipoEvento === 'CONFIRMAR_RETOMA_CAJA') return confirmarRetomaCaja(data);
+    // [v2.5.55] Sync de DEVICE_STATE a MOS (ME actúa como proxy con MOS_WEB_APP_URL)
+    if (data.tipoEvento === 'SYNC_DEVICE_STATE') return syncDeviceStateProxy(data);
     if (data.tipoEvento === 'CAMBIO_IMPRESORA_CAJA') return cambiarImpresoraCaja(data);
     if (data.tipoEvento === 'LIMPIAR_DUPLICADOS') {
       var _r = limpiarGuiasDuplicadasCaja(data.cajaId);
@@ -324,6 +328,68 @@ function obtenerDatosHojaComoJSON(sheet) {
     result.push(rowData);
   }
   return result;
+}
+
+// [v2.5.55] Proxy a MOS para sincronizar DEVICE_STATE. ME ya tiene
+// MOS_WEB_APP_URL configurado en Script Properties — no es necesario
+// exponer esa URL al cliente frontend.
+function syncDeviceStateProxy(data) {
+  if (!data || !data.deviceId) return generarRespuestaError('deviceId requerido');
+  var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+  if (!url) return generarRespuestaError('MOS_WEB_APP_URL no configurado');
+  try {
+    var resp = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'text/plain',
+      payload: JSON.stringify({
+        action:      'syncDeviceState',
+        deviceId:    String(data.deviceId),
+        app:         String(data.app || 'ME'),
+        config:      data.config || null,
+        cajaActiva:  data.cajaActiva || null,
+        fechaSesion: String(data.fechaSesion || '')
+      }),
+      followRedirects: true,
+      muteHttpExceptions: true
+    });
+    var txt = resp.getContentText();
+    try {
+      var parsed = JSON.parse(txt);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', proxied: true, mosResponse: parsed })).setMimeType(ContentService.MimeType.JSON);
+    } catch(_) {
+      return generarRespuestaError('MOS respondió no-JSON: ' + txt.substring(0, 150));
+    }
+  } catch(e) {
+    return generarRespuestaError('Proxy MOS error: ' + (e && e.message || e));
+  }
+}
+
+// [v2.5.55] Proxy GET para recuperar el snapshot remoto del device.
+function getDeviceStateProxy(deviceId) {
+  if (!deviceId) return generarRespuestaError('deviceId requerido');
+  var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+  if (!url) return generarRespuestaError('MOS_WEB_APP_URL no configurado');
+  try {
+    var resp = UrlFetchApp.fetch(url + '?action=getDeviceState&deviceId=' + encodeURIComponent(String(deviceId)), {
+      method: 'get',
+      followRedirects: true,
+      muteHttpExceptions: true
+    });
+    var txt = resp.getContentText();
+    try {
+      var parsed = JSON.parse(txt);
+      // Aplanar: el cliente espera data en el top-level
+      var snap = parsed && parsed.data ? parsed.data : parsed;
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        data: snap
+      })).setMimeType(ContentService.MimeType.JSON);
+    } catch(_) {
+      return generarRespuestaError('MOS respondió no-JSON: ' + txt.substring(0, 150));
+    }
+  } catch(e) {
+    return generarRespuestaError('Proxy MOS error: ' + (e && e.message || e));
+  }
 }
 
 // ── Notificar a ProyectoMOS vía push (requiere MOS_WEB_APP_URL en Script Properties) ──

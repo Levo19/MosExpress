@@ -5461,6 +5461,50 @@
                 };
                 await _idbCat.set('session_snapshot_v1', snap);
             } catch(_){}
+            // [v2.5.55] Sync remoto al backend MOS — capa final de resiliencia.
+            // Si la PWA pierde localStorage Y IndexedDB (caso raro: limpiar
+            // datos, reinstalar app), el snapshot vive en MOS y puede recuperarse.
+            // Fire-and-forget: si falla, no rompe el flow local.
+            try { _syncDeviceStateRemoto(); } catch(_){}
+        };
+
+        // [v2.5.55] Sync remoto vía ME backend (que actúa como proxy a MOS
+        // usando MOS_WEB_APP_URL configurado en Script Properties). Evita
+        // exponer la URL de MOS al cliente. Throttled a 1 request/min: si
+        // se llama más seguido, los intermedios se descartan (último gana).
+        let _syncDeviceTimer = null;
+        let _syncDeviceLastCall = 0;
+        const _syncDeviceStateRemoto = () => {
+            const ahora = Date.now();
+            if (ahora - _syncDeviceLastCall < 60000) {
+                if (_syncDeviceTimer) clearTimeout(_syncDeviceTimer);
+                _syncDeviceTimer = setTimeout(_syncDeviceStateRemoto, 60000 - (ahora - _syncDeviceLastCall));
+                return;
+            }
+            _syncDeviceLastCall = ahora;
+            try {
+                const did = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
+                if (!did) return;
+                const cfgRaw = localStorage.getItem('mosexpress_config');
+                const caRaw  = localStorage.getItem('mosexpress_caja_activa');
+                if (!cfgRaw) return;
+                let cfg = null, ca = null;
+                try { cfg = JSON.parse(cfgRaw); } catch(_){}
+                try { ca  = caRaw ? JSON.parse(caRaw) : null; } catch(_){}
+                if (!cfg || !cfg.completado) return;
+                fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        tipoEvento: 'SYNC_DEVICE_STATE',
+                        deviceId:   did,
+                        app:        'ME',
+                        config:     cfg,
+                        cajaActiva: ca,
+                        fechaSesion: localStorage.getItem('mosexpress_session_date') || new Date().toDateString()
+                    })
+                }).catch(() => {}); // fire-and-forget
+            } catch(_){}
         };
         // Al cargar, si localStorage está vacío de config pero IDB tiene snapshot
         // reciente, hidratar localStorage SIN tocar nada del flow normal.
@@ -9212,6 +9256,30 @@
                 const id = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
                 if (!id) return;
                 if (config.value.completado) return;
+                // [v2.5.55] Paso intermedio: ANTES de pedir retoma con PIN admin,
+                // intentar recovery silencioso desde DEVICE_STATE en MOS. Si la
+                // PWA perdió localStorage Y IDB, pero el último snapshot remoto
+                // sigue siendo de HOY, repueblar localStorage sin pedir nada al
+                // usuario — no es "retoma" porque no toca caja en backend, solo
+                // recupera la sesión que ya estaba activa.
+                try {
+                    const rs = await fetch(`${API_URL}?accion=getDeviceStateProxy&deviceId=${encodeURIComponent(id)}`);
+                    const ds = await rs.json();
+                    const snap = ds && ds.data && ds.data.encontrado ? ds.data : null;
+                    if (snap && snap.config && snap.fechaSesion === new Date().toDateString()) {
+                        // Recovery silencioso: repueblar localStorage desde snapshot
+                        localStorage.setItem('mosexpress_config', JSON.stringify(snap.config));
+                        if (snap.cajaActiva && snap.cajaActiva.idCaja) {
+                            localStorage.setItem('mosexpress_caja_activa', JSON.stringify(snap.cajaActiva));
+                        }
+                        localStorage.setItem('mosexpress_session_date', snap.fechaSesion);
+                        console.log('[boot] Sesión recuperada desde DEVICE_STATE remoto (silent)');
+                        agregarToast('🔄 Sesión recuperada', 'Bienvenido de vuelta ' + (snap.vendedor || ''), 'info');
+                        setTimeout(() => location.reload(), 500);
+                        return;
+                    }
+                } catch(eDS) { console.warn('[boot] getDeviceState falló:', eDS?.message || eDS); }
+                // Fallback: si no había snapshot remoto, pedir retoma con PIN admin
                 const r = await fetch(`${API_URL}?accion=retomar_caja_device&deviceId=${encodeURIComponent(id)}`);
                 const d = await r.json();
                 if (d && d.status === 'success' && d.encontrada) {
