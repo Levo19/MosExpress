@@ -34,7 +34,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.5.52';
+const VERSION = '2.5.53';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
@@ -93,21 +93,58 @@ self.addEventListener('activate', e => {
   );
 });
 
-// ── Fetch: caché primero, red como fallback ──────────────────
+// ── Fetch: estrategia híbrida (network-first crítico, cache-first assets) ─
+// [v2.5.53] Network-first con timeout 2.5s para HTML/JS críticos. Resuelve
+// el dolor histórico de "deployé v.X pero el SW sirve v.X-2 cacheado por
+// horas". Ahora cuando deployo, en el siguiente refresh la versión nueva
+// llega de inmediato (siempre que haya red — si offline, fallback a cache).
+// Para imágenes/fonts/manifest seguimos cache-first (cambian poco y mejora
+// performance percibida en arranque offline).
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
 
-  // No interceptar GAS ni PrintNode
+  // No interceptar GAS ni PrintNode (delegamos al fetch nativo)
   if (url.hostname.includes('script.google.com') ||
       url.hostname.includes('printnode.com')) return;
 
-  // version.json: siempre desde red para detectar cambios
+  // version.json: siempre desde red (detecta nuevas versiones rápido)
   if (url.pathname.endsWith('version.json')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }
 
+  const path = url.pathname;
+  const esCritico =
+    path === '/' ||
+    path.endsWith('/') ||
+    path.endsWith('.html') ||
+    path.endsWith('.js') ||
+    path.endsWith('manifest.json');
+
+  if (esCritico && url.origin === self.location.origin) {
+    // Network-first con timeout 2.5s → cache fallback
+    e.respondWith((async () => {
+      try {
+        const netPromise = fetch(e.request);
+        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
+        const res = await Promise.race([netPromise, timeout]);
+        if (res && res.status === 200 && res.type !== 'opaque') {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone)).catch(() => {});
+        }
+        return res;
+      } catch(_) {
+        const cached = await caches.match(e.request);
+        if (cached) return cached;
+        // Último recurso: red sin timeout
+        return fetch(e.request).catch(() => Response.error());
+      }
+    })());
+    return;
+  }
+
+  // Cache-first para assets estáticos (imágenes, fonts, CDN externos cacheados)
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
