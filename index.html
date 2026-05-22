@@ -10987,11 +10987,23 @@
             }
         };
 
+        // [v2.5.56] FIX CRASH: fetch sin timeout colgaba la app indefinido
+        // cuando ME GAS tardaba en responder. AbortController con timeout +
+        // toast claro + reset de estado. Si timeout, el user puede reintentar.
+        // Helper compartido por TODOS los fetchs críticos del flow de cobros.
+        const _meFetchTimeout = (url, opts, ms) => {
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), ms || 20000);
+            return fetch(url, { ...opts, signal: ctrl.signal })
+                .finally(() => clearTimeout(tid));
+        };
+
         const cargarCobrosAsignados = async () => {
             if (!config.value.esCajero || !cajaAbierta.value) return;
             if (!idCajaActual.value || idCajaActual.value.startsWith('CAJA-LOCAL-')) return;
             try {
-                const r = await fetch(`${API_URL}?accion=cobros_asignados_cajero&cajaId=${encodeURIComponent(idCajaActual.value)}`);
+                // [v2.5.56] Timeout 15s — el polling no debe colgar la app si GAS lentea
+                const r = await _meFetchTimeout(`${API_URL}?accion=cobros_asignados_cajero&cajaId=${encodeURIComponent(idCajaActual.value)}`, {}, 15000);
                 const d = await r.json();
                 if (d && d.status === 'success') {
                     const esPrimerPoll = _primerPollCobros;
@@ -11190,9 +11202,10 @@
             const cobro = cobroAsignadoActivo.value;
             const razon = razonRechazoAsig.value.trim();
             if (!cobro || !razon) return;
+            if (procesandoCobroAsig.value) return; // guard dobles clicks
             procesandoCobroAsig.value = true;
             try {
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                const r = await _meFetchTimeout(API_URL, { method: 'POST', body: JSON.stringify({
                     tipoEvento: 'RECHAZAR_COBRO_ASIGNADO',
                     idCobro: cobro.idCobro,
                     razon: razon,
@@ -11201,7 +11214,7 @@
                         esCajero: true, rol: 'CAJERO',
                         deviceId: deviceId.value
                     }
-                })});
+                })}, 20000);
                 const d = await r.json();
                 if (d && d.status === 'success') {
                     try { playBeepError?.(); } catch(_){}
@@ -11209,12 +11222,16 @@
                     cobrosAsignados.value = cobrosAsignados.value.filter(c => c.idCobro !== cobro.idCobro);
                     cerrarCobrarAsignado();
                 } else {
-                    agregarToast('Error', d.mensaje || 'No se pudo rechazar');
+                    agregarToast('Error', d.mensaje || 'No se pudo rechazar', 'error');
                 }
             } catch(e) {
-                agregarToast('Error de red', e.message || 'sin conexión');
+                if (e.name === 'AbortError') {
+                    agregarToast('⏱ Tiempo agotado', 'GAS tardó >20s. Reintenta o revisa conexión.', 'error');
+                } else {
+                    agregarToast('Error de red', e.message || 'sin conexión', 'error');
+                }
             } finally {
-                procesandoCobroAsig.value = false;
+                procesandoCobroAsig.value = false; // SIEMPRE resetea — desbloquea el botón
             }
         };
 
