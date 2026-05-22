@@ -283,12 +283,17 @@ function _cerrarCajaAtomicoCore(opts) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // ── 2. Anular POR_COBRAR ──
-    // Si el frontend mandó idsAnular, usar esa lista. Si no, detectar
-    // automáticamente todos los POR_COBRAR de esta caja.
+    // ── 2. Devolver POR_COBRAR a CRÉDITO (NO anular) ──
+    // [v2.5.52] Cambio importante: antes los POR_COBRAR de la caja se anulaban
+    // al cerrar — pero eso significaba PERDER plata que el cliente todavía
+    // debía. Ahora vuelven a estado CRÉDITO, limpiamos su ID_Caja (ya no
+    // pertenecen a esta caja cerrada) y reaparecen en la mesa de póker de MOS
+    // para que el admin pueda reasignar a otro cajero.
+    // El campo idsAnulados se mantiene por compat con frontend viejo, pero
+    // semánticamente ahora son "devueltos a crédito".
     var idsTarget = Array.isArray(opts.idsAnular) ? opts.idsAnular.map(String) : null;
     var filasV = sheetVentas.getDataRange().getValues();
-    var idsAnulados = [];
+    var idsDevueltosACredito = [];
     var efectivoVentas = 0;
     for (var v = 1; v < filasV.length; v++) {
       var idCajaV = String(filasV[v][10] || '');
@@ -296,17 +301,18 @@ function _cerrarCajaAtomicoCore(opts) {
       var formaPago = String(filasV[v][8] || '').toUpperCase();
       var total = parseFloat(filasV[v][6]) || 0;
 
-      // Anular POR_COBRAR: usar lista explícita si vino, si no auto-detectar
-      // por caja actual. Importante: nunca anular CREDITO, ya está formal.
-      var debeAnular = false;
+      // Devolver POR_COBRAR: usar lista explícita si vino, si no auto-detectar
+      // por caja actual. Importante: nunca tocar CREDITO ya formales.
+      var debeDevolver = false;
       if (idsTarget) {
-        if (idsTarget.indexOf(idV) !== -1) debeAnular = true;
+        if (idsTarget.indexOf(idV) !== -1) debeDevolver = true;
       } else if (idCajaV === idCaja && formaPago === 'POR_COBRAR') {
-        debeAnular = true;
+        debeDevolver = true;
       }
-      if (debeAnular && formaPago === 'POR_COBRAR') {
-        sheetVentas.getRange(v + 1, 9).setValue('ANULADO');
-        idsAnulados.push(idV);
+      if (debeDevolver && formaPago === 'POR_COBRAR') {
+        sheetVentas.getRange(v + 1, 9).setValue('CREDITO');        // col 9 = FormaPago: vuelve a crédito
+        sheetVentas.getRange(v + 1, 11).setValue('');              // col 11 = ID_Caja: limpiar (la caja se cerró)
+        idsDevueltosACredito.push(idV);
         continue;
       }
 
@@ -382,7 +388,10 @@ function _cerrarCajaAtomicoCore(opts) {
           ],
           ref: {
             idCaja: idCaja, vendedor: cajaVendedor, zona: cajaZona,
-            idsAnulados: idsAnulados.length, montoFinal: montoFinal,
+            // [v2.5.52] Cambio nomenclatura — antes anulados, ahora devueltos a CRÉDITO
+            devueltosACredito: idsDevueltosACredito.length,
+            idsDevueltosACredito: idsDevueltosACredito,
+            montoFinal: montoFinal,
             montoFinalAuto: montoFinalAuto, descuadre: montoFinal - montoFinalAuto
           },
           motivo: String(opts.motivo || ''),
@@ -410,16 +419,55 @@ function _cerrarCajaAtomicoCore(opts) {
       } catch(eU) { Logger.log('Push cajero: ' + eU.message); }
     }
 
-    // ── 9. Push a MOS confirmando ──
+    // ── 8b. [v2.5.52] Cancelar cobros ASIGNADOS pendientes de esta caja ──
+    // Si la caja tenía cobros asignados sin cobrar, no pueden quedar pegados
+    // a una caja CERRADA. Los marcamos CANCELADO_CIERRE_CAJA. La venta original
+    // ya volvió a CRÉDITO en el paso 2, así que el admin podrá reasignar.
+    var cobrosLiberados = 0;
+    try {
+      var hojaCobros = ss.getSheetByName('CREDITOS_COBRO_ASIGNADO');
+      if (hojaCobros) {
+        var fc = hojaCobros.getDataRange().getValues();
+        var hdrsCC = fc[0].map(function(h){ return String(h || '').trim(); });
+        var iIdCobro   = hdrsCC.indexOf('ID_Cobro');
+        var iCajaDest  = hdrsCC.indexOf('Caja_Destino');
+        var iEstadoCC  = hdrsCC.indexOf('Estado');
+        var iFRes      = hdrsCC.indexOf('Fecha_Res');
+        if (iIdCobro < 0) iIdCobro = 0;
+        if (iCajaDest < 0) iCajaDest = 2;
+        if (iEstadoCC < 0) iEstadoCC = 5;
+        if (iFRes < 0) iFRes = 8;
+        for (var c = 1; c < fc.length; c++) {
+          if (String(fc[c][iCajaDest]) === idCaja && String(fc[c][iEstadoCC]) === 'ASIGNADO') {
+            hojaCobros.getRange(c + 1, iEstadoCC + 1).setValue('CANCELADO_CIERRE_CAJA');
+            hojaCobros.getRange(c + 1, iFRes + 1).setValue(new Date());
+            cobrosLiberados++;
+          }
+        }
+      }
+    } catch(eCobr) { Logger.log('Cancelar cobros asignados de caja cerrada: ' + eCobr.message); }
+
+    // ── 9. Push a MOS confirmando + alerta de tickets devueltos ──
     try {
       var hora = Utilities.formatDate(new Date(), tz, 'HH:mm');
       var titulo = opts.esForzado
         ? ('🔐 Cierre forzado · ' + cajaVendedor)
         : ('🔐 Caja cerrada · ' + hora);
       var detalle = opts.esForzado
-        ? (String((opts.adminAuth && opts.adminAuth.nombre) || 'admin') + ' · S/ ' + montoFinal.toFixed(2) + (idsAnulados.length ? ' · ' + idsAnulados.length + ' anulados' : ''))
+        ? (String((opts.adminAuth && opts.adminAuth.nombre) || 'admin') + ' · S/ ' + montoFinal.toFixed(2) + (idsDevueltosACredito.length ? ' · ' + idsDevueltosACredito.length + ' → mesa créditos' : ''))
         : (cajaVendedor + (cajaZona ? ' · ' + cajaZona : '') + ' · S/ ' + montoFinal.toFixed(2));
       _notificarMOS(titulo, detalle, cajaVendedor, opts.esForzado ? 'ME_CAJA_CIERRE_FORZADO' : 'ME_CAJA_CIERRE');
+      // [v2.5.52] Notificación separada de TICKETS DEVUELTOS a la mesa de póker.
+      // Tono crítico para que el admin actúe (reasignar a otra caja antes de fin
+      // del día). Solo se manda si hubo tickets devueltos.
+      if (idsDevueltosACredito.length > 0) {
+        _notificarMOS(
+          '⚠ ' + idsDevueltosACredito.length + ' ticket(s) volvieron a CRÉDITO',
+          'Caja ' + cajaVendedor + ' cerró sin cobrar · revisa la mesa de póker para reasignar',
+          cajaVendedor,
+          'ME_TICKETS_DEVUELTOS_CREDITO'
+        );
+      }
     } catch(eM) { Logger.log('Push MOS cierre: ' + eM.message); }
 
     return ContentService.createTextOutput(JSON.stringify({
@@ -436,8 +484,13 @@ function _cerrarCajaAtomicoCore(opts) {
       montoFinal:     montoFinal,
       montoFinalAuto: montoFinalAuto,
       descuadre:      Math.round((montoFinal - montoFinalAuto) * 100) / 100,
-      anulados:       idsAnulados.length,
-      idsAnulados:    idsAnulados,
+      // [v2.5.52] Nuevos campos (preferidos) — antes anulados, ahora devueltos a CRÉDITO
+      devueltosACredito:    idsDevueltosACredito.length,
+      idsDevueltosACredito: idsDevueltosACredito,
+      cobrosLiberados:      cobrosLiberados,
+      // Legacy alias (frontend viejo lee estos) — apuntan a los mismos datos
+      anulados:       idsDevueltosACredito.length,
+      idsAnulados:    idsDevueltosACredito,
       fechaCierre:    fechaCierre,
       cerradoPor:     String((opts.adminAuth && opts.adminAuth.nombre) || cajaVendedor),
       esForzado:      !!opts.esForzado,
@@ -610,6 +663,30 @@ function retomarCajaPorDeviceId(deviceId) {
       status: 'success', encontrada: false
     })).setMimeType(ContentService.MimeType.JSON);
   }
+  // [v2.5.52] Verificar que el vendedor sea cajero (los vendedores no tienen
+  // caja → no aplica el retomar). El cliente puede confiar en este check para
+  // no mostrar el modal si el rol no corresponde.
+  var esCajero = false;
+  try {
+    var shPers = ss.getSheetByName('PERSONAL_MASTER');
+    if (shPers) {
+      var fp = shPers.getDataRange().getValues();
+      var hdrsP = fp[0].map(function(h){ return String(h || '').trim(); });
+      var iNom = hdrsP.indexOf('nombre'); if (iNom < 0) iNom = 1;
+      var iRol = hdrsP.indexOf('rol');    if (iRol < 0) iRol = 5;
+      for (var pp = 1; pp < fp.length; pp++) {
+        if (String(fp[pp][iNom]).toLowerCase() === String(encontrada.vendedor).toLowerCase()) {
+          esCajero = String(fp[pp][iRol] || '').toUpperCase().indexOf('CAJERO') >= 0;
+          break;
+        }
+      }
+    }
+  } catch(eP) { Logger.log('check cajero: ' + eP.message); }
+  if (!esCajero) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success', encontrada: false, razon: 'vendedor_no_es_cajero'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
   // Resolver datos de la estación para que el frontend pueda repoblar el
   // objeto config.estacion con todos los campos que usa al imprimir.
   var estacionObj = { Estacion_Codigo: encontrada.estacion, Estacion_Nombre: encontrada.estacion, PrintNode_ID: encontrada.printNodeId };
@@ -643,6 +720,132 @@ function retomarCajaPorDeviceId(deviceId) {
     monto:     encontrada.monto,
     fechaApertura: encontrada.fechaApertura,
     estacion:  estacionObj
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// [v2.5.52] Confirmar retoma de caja con autorización ADMIN — antes de aplicar
+// los cambios al localStorage de la PWA, exigir PIN admin (8 dígitos). Esto
+// previene que alguien tome la tablet y se apropie de la caja de otro cajero.
+// El endpoint valida la clave vía bridge a MOS y deja registro en auditoría.
+//
+// payload: { deviceId, claveAdmin (8 dígitos), nombreAdminClaim (info opcional) }
+function confirmarRetomaCaja(data) {
+  if (!data || !data.deviceId)   return generarRespuestaError('deviceId requerido');
+  if (!data.claveAdmin)          return generarRespuestaError('claveAdmin requerida (8 dígitos)');
+  if (String(data.claveAdmin).length !== 8 || !/^\d{8}$/.test(String(data.claveAdmin))) {
+    return generarRespuestaError('claveAdmin debe ser 8 dígitos numéricos');
+  }
+  // 1. Buscar la caja ABIERTA del deviceId (reutilizamos helper interno)
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('CAJAS');
+  if (!sheet) return generarRespuestaError('CAJAS no encontrada');
+  _autoCerrarCajasViejas(sheet);
+  var rows = sheet.getDataRange().getValues();
+  var encontrada = null;
+  for (var i = rows.length - 1; i > 0; i--) {
+    if (String(rows[i][5]) !== 'ABIERTA') continue;
+    if (String(rows[i][9] || '') !== String(data.deviceId)) continue;
+    encontrada = {
+      idCaja:    String(rows[i][0]),
+      vendedor:  String(rows[i][1]),
+      estacion:  String(rows[i][2]),
+      monto:     parseFloat(rows[i][4]) || 0,
+      zona:      String(rows[i][8] || ''),
+      printNodeId: String(rows[i][9] || '')
+    };
+    break;
+  }
+  if (!encontrada) return generarRespuestaError('No hay caja ABIERTA para este deviceId');
+
+  // 2. Validar clave admin vía bridge a MOS
+  var validacion;
+  try {
+    var mosUrl = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+    if (!mosUrl) return generarRespuestaError('MOS_WEB_APP_URL no configurado en ME');
+    var rr = UrlFetchApp.fetch(mosUrl, {
+      method: 'post',
+      contentType: 'text/plain',
+      payload: JSON.stringify({
+        action: 'verificarClaveAdmin',
+        clave: String(data.claveAdmin),
+        accion: 'RETOMA_CAJA_DESPUES_LOST_SESSION',
+        refDocumento: encontrada.idCaja,
+        appOrigen: 'ME',
+        detalle: 'Retoma caja por deviceId ' + data.deviceId + ' · vendedor ' + encontrada.vendedor,
+        tier: 2
+      }),
+      followRedirects: true,
+      muteHttpExceptions: true
+    });
+    validacion = JSON.parse(rr.getContentText());
+  } catch(eV) {
+    return generarRespuestaError('Error validando clave: ' + (eV && eV.message || eV));
+  }
+  var dataV = validacion && validacion.data;
+  if (!dataV || !dataV.autorizado) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error', autorizado: false,
+      mensaje: (dataV && dataV.error) || 'Clave incorrecta'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 3. Resolver datos de la estación
+  var estacionObj = { Estacion_Codigo: encontrada.estacion, Estacion_Nombre: encontrada.estacion, PrintNode_ID: encontrada.printNodeId };
+  try {
+    var shEst = ss.getSheetByName('ESTACIONES');
+    if (shEst) {
+      var fe = shEst.getDataRange().getValues();
+      var hdrsE = fe[0].map(function(h){ return String(h).trim(); });
+      var iCodE = hdrsE.indexOf('Estacion_Codigo');
+      var iNomE = hdrsE.indexOf('Estacion_Nombre');
+      var iPNE  = hdrsE.indexOf('PrintNode_ID');
+      if (iCodE < 0) iCodE = 0;
+      for (var k = 1; k < fe.length; k++) {
+        if (String(fe[k][iCodE]) === encontrada.estacion) {
+          estacionObj = {
+            Estacion_Codigo: String(fe[k][iCodE] || encontrada.estacion),
+            Estacion_Nombre: String(fe[k][iNomE >= 0 ? iNomE : iCodE] || encontrada.estacion),
+            PrintNode_ID:    String(fe[k][iPNE >= 0 ? iPNE : 0] || encontrada.printNodeId)
+          };
+          break;
+        }
+      }
+    }
+  } catch(_){}
+
+  // 4. Registrar auditoría EN ME (independiente del log de MOS que ya queda en verificarClaveAdmin)
+  try {
+    if (typeof auditarLog === 'function') {
+      auditarLog('CAJAS', encontrada.idCaja, {
+        usuario: String(dataV.nombre || dataV.validadoPor || 'admin-ME'),
+        rol:     String(dataV.rol || 'ADMIN'),
+        source:  'ME_RETOMA_CAJA_POST_LOST_SESSION',
+        accion:  'retomar_caja_por_deviceId',
+        autorizadoPor: {
+          nombre:     String(dataV.nombre || dataV.validadoPor || ''),
+          rol:        String(dataV.rol || 'ADMIN'),
+          via:        'PIN_8DIG',
+          idPersonal: String(dataV.idPersonal || '')
+        },
+        ref: {
+          idCaja: encontrada.idCaja, vendedor: encontrada.vendedor,
+          zona: encontrada.zona, deviceId: data.deviceId, monto: encontrada.monto
+        },
+        motivo: 'PWA perdió localStorage — admin autorizó retoma para no perder tickets/movimientos',
+        ts: new Date().toISOString()
+      });
+    }
+  } catch(eA) { Logger.log('Audit retoma: ' + eA.message); }
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status:        'success',
+    autorizado:    true,
+    autorizadoPor: String(dataV.nombre || dataV.validadoPor || 'admin'),
+    idCaja:        encontrada.idCaja,
+    vendedor:      encontrada.vendedor,
+    zona:          encontrada.zona,
+    monto:         encontrada.monto,
+    estacion:      estacionObj
   })).setMimeType(ContentService.MimeType.JSON);
 }
 

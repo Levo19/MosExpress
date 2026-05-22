@@ -225,6 +225,8 @@ function doPost(e) {
     if (data.tipoEvento === 'APERTURA_CAJA')      return procesarAperturaCaja(data);
     if (data.tipoEvento === 'CIERRE_CAJA')         return procesarCierreCaja(data);
     if (data.tipoEvento === 'CIERRE_CAJA_FORZADO') return cerrarCajaForzado(data);
+    // [v2.5.52] Retoma de caja por deviceId con autorización admin
+    if (data.tipoEvento === 'CONFIRMAR_RETOMA_CAJA') return confirmarRetomaCaja(data);
     if (data.tipoEvento === 'CAMBIO_IMPRESORA_CAJA') return cambiarImpresoraCaja(data);
     if (data.tipoEvento === 'LIMPIAR_DUPLICADOS') {
       var _r = limpiarGuiasDuplicadasCaja(data.cajaId);

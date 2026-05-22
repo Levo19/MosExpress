@@ -2493,15 +2493,58 @@
             <span class="text-white">{{ cajaDetectadaBackend.estacion?.Estacion_Nombre || '—' }}</span>
           </div>
         </div>
-        <button @click="retomarCajaBackend"
-                :disabled="retomandoCaja"
-                class="w-full mb-3 bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-60 text-white font-black text-lg py-4 rounded-xl transition-all shadow-lg shadow-emerald-500/40">
-          <span v-if="!retomandoCaja">🔄 Retomar mi caja</span>
-          <span v-else>⌛ Restaurando sesión…</span>
+        <button @click="abrirModalPinRetomaCaja"
+                class="w-full mb-3 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black text-lg py-4 rounded-xl transition-all shadow-lg shadow-emerald-500/40">
+          🔐 Retomar (requiere PIN admin)
         </button>
         <button @click="cajaDetectadaBackend = null"
                 class="w-full bg-gray-700 hover:bg-gray-600 active:scale-95 text-gray-300 font-bold py-2 rounded-xl transition-all text-sm">
           Ignorar y abrir nueva sesión
+        </button>
+        <p class="text-emerald-300/70 text-xs mt-3 text-center">⚠ Acción auditada · solo el admin puede autorizar la retoma</p>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         [v2.5.52] MODAL PIN ADMIN para confirmar retoma de caja
+    ═══════════════════════════════════════════════════════════ -->
+    <div v-if="pinRetomaAbierto"
+         class="absolute inset-0 z-[75] bg-gray-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6"
+         style="animation: fadeIn .2s ease-out">
+      <div class="w-full max-w-sm bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-3xl shadow-2xl border-2 border-amber-400/60"
+           style="animation: scaleIn .3s cubic-bezier(.34,1.56,.64,1)">
+        <div class="text-center mb-4">
+          <div class="text-5xl mb-2">🔐</div>
+          <h3 class="text-xl font-black text-white">Autorización admin</h3>
+          <p class="text-amber-200 text-xs mt-1">Ingresá tu clave de 8 dígitos (4 global + 4 personal)</p>
+        </div>
+        <div class="bg-slate-950/60 rounded-xl p-3 mb-4 text-xs space-y-1 border border-slate-700">
+          <div class="flex justify-between"><span class="text-slate-400">Cajero</span><span class="text-white font-bold">{{ cajaDetectadaBackend?.vendedor }}</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">Caja</span><span class="text-emerald-300 font-mono">{{ cajaDetectadaBackend?.idCaja }}</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">Monto inicial</span><span class="text-emerald-200 font-bold">S/ {{ parseFloat(cajaDetectadaBackend?.monto || 0).toFixed(2) }}</span></div>
+        </div>
+        <input v-model="pinRetomaValor"
+               type="tel"
+               inputmode="numeric"
+               maxlength="8"
+               pattern="[0-9]{8}"
+               autofocus
+               placeholder="________"
+               @keyup.enter="confirmarRetomaConPin"
+               class="w-full text-center text-3xl font-mono font-bold tracking-[0.5em] bg-slate-950 border-2 border-amber-500/40 focus:border-amber-400 text-emerald-300 rounded-xl px-4 py-4 mb-3 outline-none transition-all"
+               style="letter-spacing:0.5em" />
+        <div v-if="pinRetomaError" class="mb-3 p-2 bg-red-950/40 border border-red-500/50 text-red-300 text-xs rounded-lg text-center font-bold">
+          ⚠ {{ pinRetomaError }}
+        </div>
+        <button @click="confirmarRetomaConPin"
+                :disabled="pinRetomaValor.length !== 8 || retomandoCaja"
+                class="w-full mb-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 text-white font-black py-3 rounded-xl transition-all shadow-lg shadow-emerald-500/40">
+          <span v-if="!retomandoCaja">✓ Autorizar retoma</span>
+          <span v-else>⌛ Validando…</span>
+        </button>
+        <button @click="pinRetomaAbierto = false; pinRetomaValor = ''; pinRetomaError = ''"
+                class="w-full bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 font-bold py-2 rounded-xl transition-all text-sm">
+          Cancelar
         </button>
       </div>
     </div>
@@ -5204,8 +5247,18 @@
             });
             return liberados;
           };
+          // [v2.5.52] Keys de sesión que también se respaldan en IndexedDB
+          // — IDB sobrevive a muchos cleanups que matan a localStorage.
+          const _esKeySesion = (k) =>
+            k === 'mosexpress_config' || k === 'mosexpress_caja_activa' ||
+            k === 'mosexpress_session_date' || k === 'mosexpress_session_start' ||
+            k === 'mosexpress_deviceId';
           try {
             localStorage.setItem(key, value);
+            if (_esKeySesion(key)) {
+              // Fire-and-forget: si IDB falla, no afecta el flow.
+              try { _persistSesionEnIDB && _persistSesionEnIDB(); } catch(_){}
+            }
             return true;
           } catch(e) {
             const isQuota = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
@@ -5309,6 +5362,49 @@
             } catch(_) { return false; }
           }
         };
+        // [v2.5.52] Mirror de SESIÓN en IndexedDB (no solo el catálogo).
+        // Resuelve el caso "localStorage se borra → app pierde caja viva".
+        // IDB es muchísimo más resistente al cleanup automático del browser/OS.
+        // Cada cambio crítico (config + caja_activa + session_date + deviceId)
+        // se replica acá. Al boot, si localStorage está vacío, hidratamos desde
+        // IDB antes de pedir retoma al backend.
+        const _persistSesionEnIDB = async () => {
+            try {
+                const snap = {
+                    config:        localStorage.getItem('mosexpress_config'),
+                    caja_activa:   localStorage.getItem('mosexpress_caja_activa'),
+                    session_date:  localStorage.getItem('mosexpress_session_date'),
+                    session_start: localStorage.getItem('mosexpress_session_start'),
+                    deviceId:      localStorage.getItem('mosexpress_deviceId'),
+                    savedAt:       Date.now()
+                };
+                await _idbCat.set('session_snapshot_v1', snap);
+            } catch(_){}
+        };
+        // Al cargar, si localStorage está vacío de config pero IDB tiene snapshot
+        // reciente, hidratar localStorage SIN tocar nada del flow normal.
+        // Eso evita disparar el modal "Retomar mi caja" cuando IDB ya tiene la data.
+        const _hidratarSesionDesdeIDB = async () => {
+            try {
+                const hayConfig = localStorage.getItem('mosexpress_config');
+                if (hayConfig) return false; // localStorage OK, no hace falta
+                const snap = await _idbCat.get('session_snapshot_v1');
+                if (!snap || !snap.config) return false;
+                // Solo hidratar si el snapshot es de hoy (sesión fresca)
+                if (snap.session_date && snap.session_date !== new Date().toDateString()) return false;
+                try { localStorage.setItem('mosexpress_config',        snap.config); } catch(_){}
+                try { if (snap.caja_activa)   localStorage.setItem('mosexpress_caja_activa',   snap.caja_activa); } catch(_){}
+                try { if (snap.session_date)  localStorage.setItem('mosexpress_session_date',  snap.session_date); } catch(_){}
+                try { if (snap.session_start) localStorage.setItem('mosexpress_session_start', snap.session_start); } catch(_){}
+                try { if (snap.deviceId)      localStorage.setItem('mosexpress_deviceId',      snap.deviceId); } catch(_){}
+                console.log('[boot] Sesión hidratada desde IndexedDB (localStorage estaba vacío)');
+                return true;
+            } catch(e) {
+                console.warn('[boot] hidratar IDB falló:', e);
+                return false;
+            }
+        };
+
         // Guarda el catálogo en IndexedDB (fire-and-forget con fallback a
         // localStorage). Limpia el mosexpress_db viejo de localStorage para
         // liberar esos ~MB. Nunca lanza — si todo falla, queda en memoria.
@@ -6054,6 +6150,10 @@
         // [v2.5.51] Caja detectada en backend para retomar (cuando localStorage se perdió)
         const cajaDetectadaBackend = ref(null);
         const retomandoCaja        = ref(false);
+        // [v2.5.52] Modal PIN admin obligatorio para autorizar retoma
+        const pinRetomaAbierto = ref(false);
+        const pinRetomaValor   = ref('');
+        const pinRetomaError   = ref('');
 
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
@@ -6489,6 +6589,11 @@
           
           await verificarDispositivoActivo();
           if (dispositivoAutorizado.value === false) return; // Detener carga si bloqueado
+
+          // [v2.5.52] Si localStorage está vacío, intentar hidratar desde IndexedDB
+          // ANTES de leer config. Resuelve el caso "localStorage purged by browser
+          // pero IDB sigue intacto" — recupera la sesión silenciosamente.
+          await _hidratarSesionDesdeIDB();
 
           try {
               const configLocal = localStorage.getItem('mosexpress_config');
@@ -8972,34 +9077,76 @@
             }
         };
 
-        // Acción del botón "Retomar mi caja" — restaura localStorage con los datos
-        // del backend y recarga la app, que arrancará directo en POS con la caja viva.
-        const retomarCajaBackend = async () => {
+        // [v2.5.52] Abrir el sub-modal de PIN admin antes de retomar
+        const abrirModalPinRetomaCaja = () => {
+            pinRetomaError.value   = '';
+            pinRetomaValor.value   = '';
+            pinRetomaAbierto.value = true;
+            // Focus al input cuando se monte
+            setTimeout(() => {
+                try { document.querySelector('input[v-model="pinRetomaValor"], input[autofocus]')?.focus(); } catch(_){}
+            }, 100);
+        };
+
+        // [v2.5.52] Confirmar retoma con PIN admin: validar via bridge a MOS,
+        // si OK repueblar localStorage + reload. Si NO: mostrar error sin cerrar
+        // el modal (admin puede reintentar). Las acciones quedan en AUDITORIA.
+        const confirmarRetomaConPin = async () => {
+            if (retomandoCaja.value) return;
+            const clave = String(pinRetomaValor.value || '').trim();
+            if (clave.length !== 8 || !/^\d{8}$/.test(clave)) {
+                pinRetomaError.value = 'La clave debe tener 8 dígitos numéricos';
+                return;
+            }
             const c = cajaDetectadaBackend.value;
-            if (!c || retomandoCaja.value) return;
+            if (!c) {
+                pinRetomaError.value = 'Caja no detectada — cierra y vuelve a intentar';
+                return;
+            }
+            const id = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
             retomandoCaja.value = true;
+            pinRetomaError.value = '';
             try {
+                const r = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        tipoEvento: 'CONFIRMAR_RETOMA_CAJA',
+                        deviceId:   id,
+                        claveAdmin: clave
+                    })
+                });
+                const d = await r.json();
+                if (!d || d.status !== 'success' || !d.autorizado) {
+                    pinRetomaError.value = (d && d.mensaje) || 'Clave incorrecta';
+                    retomandoCaja.value = false;
+                    return;
+                }
+                // Autorizado — repueblar localStorage con la info validada por backend
                 localStorage.setItem('mosexpress_config', JSON.stringify({
                     completado: true,
-                    vendedor:   c.vendedor,
+                    vendedor:   d.vendedor,
                     esCajero:   true,
-                    zona:       c.zona,
-                    estacion:   c.estacion
+                    zona:       d.zona,
+                    estacion:   d.estacion
                 }));
                 localStorage.setItem('mosexpress_caja_activa', JSON.stringify({
-                    idCaja: c.idCaja,
-                    monto:  c.monto,
+                    idCaja: d.idCaja,
+                    monto:  d.monto,
                     fecha:  Date.now()
                 }));
                 localStorage.setItem('mosexpress_session_date', new Date().toDateString());
                 localStorage.setItem('mosexpress_session_start', new Date().toISOString());
-                if (c.estacion?.PrintNode_ID) {
-                    localStorage.setItem('mosexpress_deviceId', String(c.estacion.PrintNode_ID));
+                if (d.estacion?.PrintNode_ID) {
+                    localStorage.setItem('mosexpress_deviceId', String(d.estacion.PrintNode_ID));
                 }
-                agregarToast('🔄 Sesión restaurada', 'Bienvenido de vuelta ' + c.vendedor, 'success');
-                setTimeout(() => location.reload(), 400);
+                // [v2.5.52] Mirror inmediato a IndexedDB para que la próxima vez
+                // que se borre localStorage, no perdamos esta sesión recién restaurada.
+                try { await _persistSesionEnIDB(); } catch(_){}
+                agregarToast('🔐 Retoma autorizada', 'Por ' + (d.autorizadoPor || 'admin') + ' · Bienvenido ' + d.vendedor, 'success');
+                setTimeout(() => location.reload(), 500);
             } catch(e) {
-                agregarToast('Error restaurando', e.message || String(e), 'error');
+                pinRetomaError.value = 'Error de red: ' + (e.message || e);
                 retomandoCaja.value = false;
             }
         };
@@ -9153,6 +9300,8 @@
                 localStorage.setItem('mosexpress_session_start', sessionStartTime.value);
                 localStorage.removeItem('mosexpress_cobrados_sesion');
                 localStorage.removeItem('mosexpress_extras_sesion');
+                // [v2.5.52] Backup en IndexedDB (sobrevive cleanup de localStorage)
+                try { _persistSesionEnIDB(); } catch(_){}
                 procesandoCaja.value = false;
                 // Dejar al cajero 100% operativo sin necesitar recargar la app:
                 // polling de zona + carga inicial de ventas + auto-print de
@@ -13026,8 +13175,10 @@
           actInSituShow, actInSituNombre, actInSituClave, actInSituErr, actInSituBusy,
           abrirActivarInSitu, confirmarActivarInSitu,
           sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
-          // [v2.5.51] Retomar caja por deviceId
-          cajaDetectadaBackend, retomandoCaja, retomarCajaBackend,
+          // [v2.5.51-52] Retomar caja por deviceId con PIN admin obligatorio
+          cajaDetectadaBackend, retomandoCaja,
+          pinRetomaAbierto, pinRetomaValor, pinRetomaError,
+          abrirModalPinRetomaCaja, confirmarRetomaConPin,
           flashNuevosTickets,
           sincronizarDatos, isSyncing, pendingSales,
           procesandoCatalogo, sincronizarCatalogoBase,
