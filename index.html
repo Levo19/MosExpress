@@ -12045,10 +12045,14 @@
         };
 
         const busquedaNombre = ref('');
-        // [v2.5.60] Búsqueda inteligente multi-token en CLIENTES_FRECUENTES.
-        // Filtra siempre en Documento + Nombre. Score por tokens (cada palabra
-        // del query suma puntos si está en algún campo). Match exacto del doc
-        // tiene prioridad máxima → se usa para auto-seleccionar.
+        // [v2.5.61] Búsqueda inteligente multi-token en CLIENTES_FRECUENTES.
+        // Reglas distintas según el tipo de token:
+        //  · Token NUMÉRICO (doc): solo PREFIX MATCH en Documento.
+        //    "35" NO matchea "45114935" (substring) — los docs son completos,
+        //    se tipean desde el inicio. "451" SÍ matchea "45114935".
+        //  · Token TEXTO (nombre): SUBSTRING OK en Nombre (es búsqueda fuzzy).
+        //    "uan" matchea "Juan", "Juana", "Juancito".
+        //  · Dirección: substring OK (campo descriptivo, no estructurado).
         const sugerenciasCliente = computed(() => {
             const q = busquedaNombre.value.trim().toLowerCase();
             if (!q || q.length < 2) return [];
@@ -12063,16 +12067,21 @@
                 let score = 0;
                 let matchesAll = true;
                 for (const t of tokens) {
-                    // +10 si el doc empieza con el token (más preciso)
-                    // +5  si el doc contiene el token
-                    // +4  si el nombre empieza con el token
-                    // +3  si el nombre contiene el token
-                    // +1  si la dirección contiene el token
+                    const esTokenNum = /^\d+$/.test(t);
                     let s = 0;
-                    if (doc.startsWith(t)) s += 10;
-                    else if (doc.includes(t)) s += 5;
-                    if (nom.startsWith(t)) s += 4;
-                    else if (nom.includes(t)) s += 3;
+                    if (esTokenNum) {
+                        // Token numérico: SOLO prefix match en documento
+                        if (doc.startsWith(t)) s += 10;
+                        // En nombre puede aparecer (raro: "Empresa 234 SAC")
+                        if (nom.includes(t)) s += 2;
+                    } else {
+                        // Token texto: prefix más fuerte, substring también vale
+                        if (nom.startsWith(t)) s += 5;
+                        else if (nom.includes(t)) s += 3;
+                        // Doc empezando con texto es raro pero puede pasar (CE alfanum)
+                        if (doc.startsWith(t)) s += 1;
+                    }
+                    // Dirección: substring vale para ambos tipos
                     if (dir.includes(t)) s += 1;
                     if (s === 0) { matchesAll = false; break; }
                     score += s;
