@@ -3853,31 +3853,49 @@
                        <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                      </button>
                    </div>
-                   <!-- [v2.5.59] Hint contextual según tipoDoc -->
+                   <!-- [v2.5.60] Hint contextual de 2 capas: local + API -->
+                   <!-- FACTURA con RUC incompleto: error duro -->
                    <p v-if="busquedaNombre && pago.tipoDoc === 'FACTURA' && busquedaNombre.length !== 11"
                       class="mt-1 text-[10px] text-rose-500 font-bold flex items-center gap-1">
                      <span>⚠</span>
                      <span>FACTURA requiere RUC de 11 dígitos · llevas {{ busquedaNombre.length }}</span>
                    </p>
-                   <p v-else-if="clienteBusqEsDocumento && !sugerenciasCliente.length"
-                      class="mt-1 text-[10px] text-gray-400 font-semibold">
-                     {{ busquedaNombre.length === 8 ? 'DNI · consulta RENIEC' : 'RUC · consulta SUNAT' }}
-                     · auto-buscando...
+                   <!-- Sugerencias locales encontradas -->
+                   <p v-else-if="sugerenciasCliente.length > 0"
+                      class="mt-1 text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                     <span>🔎</span>
+                     <span>{{ sugerenciasCliente.length }} cliente{{ sugerenciasCliente.length === 1 ? '' : 's' }} encontrado{{ sugerenciasCliente.length === 1 ? '' : 's' }} en tabla · toca para elegir</span>
                    </p>
-                   <p v-else-if="busquedaNombre && pago.tipoDoc !== 'FACTURA' && /^\d{1,7}$/.test(busquedaNombre)"
+                   <!-- Doc completo sin coincidencias locales → API -->
+                   <p v-else-if="clienteBusqEsDocumento"
+                      class="mt-1 text-[10px] text-blue-500 font-semibold flex items-center gap-1">
+                     <span class="inline-block animate-pulse">⏳</span>
+                     <span>{{ busquedaNombre.length === 8 ? 'DNI · consultando RENIEC' : 'RUC · consultando SUNAT' }}</span>
+                   </p>
+                   <!-- RUC parcial (9-10) -->
+                   <p v-else-if="busquedaNombre && /^\d{9,10}$/.test(busquedaNombre)"
+                      class="mt-1 text-[10px] text-amber-500 font-bold">
+                     RUC · faltan {{ 11 - busquedaNombre.length }} dígito(s)
+                   </p>
+                   <!-- DNI/RUC parcial (1-7) -->
+                   <p v-else-if="busquedaNombre && /^\d{1,7}$/.test(busquedaNombre)"
                       class="mt-1 text-[10px] text-gray-400 font-semibold">
                      Sigue escribiendo · DNI (8) o RUC (11)
                    </p>
-                   <p v-else-if="busquedaNombre && /^\d{9,10}$/.test(busquedaNombre)"
-                      class="mt-1 text-[10px] text-amber-500 font-bold">
-                     RUC incompleto · faltan {{ 11 - busquedaNombre.length }} dígito(s)
+                   <!-- Texto sin matches locales -->
+                   <p v-else-if="busquedaNombre && busquedaNombre.length >= 2 && !sugerenciasCliente.length && !clienteBusqEsDocumento"
+                      class="mt-1 text-[10px] text-gray-400 font-semibold">
+                     Sin coincidencias locales · escribe DNI/RUC completo para SUNAT/RENIEC
                    </p>
-                   <!-- Dropdown sugerencias locales -->
-                   <div v-if="sugerenciasCliente.length > 0" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                   <!-- [v2.5.60] Dropdown sugerencias locales — muestra doc + nombre + dirección -->
+                   <div v-if="sugerenciasCliente.length > 0" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-72 overflow-y-auto">
                      <div v-for="c in sugerenciasCliente" :key="c.Documento" @click="elegirClienteFrecuente(c)"
-                          class="p-3 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-50 last:border-0 flex justify-between items-center gap-2">
-                       <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre }}</span>
-                       <span class="text-xs text-gray-500 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full">{{ c.Documento }}</span>
+                          class="px-3 py-2.5 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-100 last:border-0 transition-colors">
+                       <div class="flex justify-between items-center gap-2">
+                         <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre }}</span>
+                         <span class="text-[10px] text-gray-600 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full font-bold">{{ c.Documento }}</span>
+                       </div>
+                       <div v-if="c.Direccion" class="text-[10px] text-gray-400 mt-0.5 truncate">📍 {{ c.Direccion }}</div>
                      </div>
                    </div>
                  </div>
@@ -12027,15 +12045,51 @@
         };
 
         const busquedaNombre = ref('');
+        // [v2.5.60] Búsqueda inteligente multi-token en CLIENTES_FRECUENTES.
+        // Filtra siempre en Documento + Nombre. Score por tokens (cada palabra
+        // del query suma puntos si está en algún campo). Match exacto del doc
+        // tiene prioridad máxima → se usa para auto-seleccionar.
         const sugerenciasCliente = computed(() => {
-            const q = busquedaNombre.value.trim();
+            const q = busquedaNombre.value.trim().toLowerCase();
             if (!q || q.length < 2) return [];
-            const esNum = /^\d+$/.test(q);
-            return (db.value.CLIENTES_FRECUENTES || [])
-                .filter(c => esNum
-                    ? String(c.Documento || '').includes(q)
-                    : (c.Nombre || '').toLowerCase().includes(q.toLowerCase()))
-                .slice(0, 6);
+            const tokens = q.split(/\s+/).filter(t => t.length >= 1);
+            if (!tokens.length) return [];
+            const lista = (db.value.CLIENTES_FRECUENTES || []);
+            const scored = [];
+            for (const c of lista) {
+                const doc = String(c.Documento || '').toLowerCase();
+                const nom = String(c.Nombre || '').toLowerCase();
+                const dir = String(c.Direccion || '').toLowerCase();
+                let score = 0;
+                let matchesAll = true;
+                for (const t of tokens) {
+                    // +10 si el doc empieza con el token (más preciso)
+                    // +5  si el doc contiene el token
+                    // +4  si el nombre empieza con el token
+                    // +3  si el nombre contiene el token
+                    // +1  si la dirección contiene el token
+                    let s = 0;
+                    if (doc.startsWith(t)) s += 10;
+                    else if (doc.includes(t)) s += 5;
+                    if (nom.startsWith(t)) s += 4;
+                    else if (nom.includes(t)) s += 3;
+                    if (dir.includes(t)) s += 1;
+                    if (s === 0) { matchesAll = false; break; }
+                    score += s;
+                }
+                if (matchesAll) scored.push({ c, score });
+            }
+            scored.sort((a, b) => b.score - a.score);
+            return scored.slice(0, 6).map(s => s.c);
+        });
+
+        // [v2.5.60] Match exacto del documento — usado para AUTO-SELECT y
+        // evitar la consulta API cuando el cliente ya está registrado.
+        const clienteMatchExactoDoc = computed(() => {
+            const q = busquedaNombre.value.trim();
+            if (!/^\d{8}$/.test(q) && !/^\d{11}$/.test(q)) return null;
+            const lista = (db.value.CLIENTES_FRECUENTES || []);
+            return lista.find(c => String(c.Documento || '').trim() === q) || null;
         });
         const clienteBusqEsDocumento = computed(() => /^\d{8}$/.test(busquedaNombre.value.trim()) || /^\d{11}$/.test(busquedaNombre.value.trim()));
         const elegirClienteFrecuente = (c) => {
@@ -12285,40 +12339,56 @@
            }
         };
 
-        // [v2.5.59] Auto-disparar consulta APISPeru con debounce inteligente
-        // basado en tipoDoc:
-        //  · FACTURA: solo dispara con RUC (11 dig). Ignora 8 dig completamente.
-        //  · NV / BOLETA: 11 dig dispara rápido (500ms). 8 dig espera 1500ms
-        //    y RE-VERIFICA antes de disparar (si subió a 9+ dig, cancela).
-        // Esto evita el bug histórico: tipear RUC pasa por "8 dígitos" → disparaba
-        // como DNI antes de que termine el tipeo → UI cambiaba a modo manual.
+        // [v2.5.60] Búsqueda 2 capas con prioridad LOCAL:
+        // 1. Cada keystroke filtra CLIENTES_FRECUENTES instantáneo (computed)
+        // 2. Si hay match EXACTO del doc completo → AUTO-SELECCIONAR
+        //    (cliente ya registrado, ahorra quota API)
+        // 3. Si hay sugerencias (substring) → mostrar dropdown · no llamar API
+        // 4. Si NO hay sugerencias Y doc completo → consultar APISPeru con
+        //    debounce inteligente según tipoDoc (8 dig → 1500ms, 11 dig → 500ms)
         let _autoSearchTimer = null;
         watch(busquedaNombre, (nuevo) => {
             if (_autoSearchTimer) clearTimeout(_autoSearchTimer);
             const q = String(nuevo || '').trim();
             const tipoDoc = pago.value.tipoDoc;
-            if (sugerenciasCliente.value.length > 0) return;
             if (pago.value.nombreCliente) return;
             if (buscandoCliente.value) return;
 
-            // FACTURA: ignorar 8 dig completamente, solo dispara con 11
+            // [v2.5.60] AUTO-SELECT si hay match exacto del documento en la
+            // tabla local. El cliente ya está registrado, no preguntar API.
+            const exacto = clienteMatchExactoDoc.value;
+            if (exacto) {
+                elegirClienteFrecuente(exacto);
+                return;
+            }
+
+            // Si hay sugerencias locales (substring/nombre) → no llamar API,
+            // el cajero puede elegir del dropdown
+            if (sugerenciasCliente.value.length > 0) return;
+
+            // FACTURA: solo dispara API con RUC completo (11)
             if (tipoDoc === 'FACTURA') {
                 if (!/^\d{11}$/.test(q)) return;
                 _autoSearchTimer = setTimeout(buscarClienteAPI, 500);
                 return;
             }
-            // NV / BOLETA
+            // NV / BOLETA: 11 dig rápido, 8 dig con espera anti-RUC parcial
             if (/^\d{11}$/.test(q)) {
                 _autoSearchTimer = setTimeout(buscarClienteAPI, 500);
                 return;
             }
             if (/^\d{8}$/.test(q)) {
-                // [v2.5.59] espera 1500ms para dar tiempo a completar RUC
                 _autoSearchTimer = setTimeout(() => {
-                    // Doble-check: si el usuario siguió escribiendo, abortar
+                    // Re-validar: si el usuario siguió escribiendo, abortar
                     const qActual = busquedaNombre.value.trim();
                     if (qActual.length !== 8) return;
-                    // 8 dig consolidados → dispara como DNI
+                    // Re-chequear match exacto / sugerencias (puede haberlas
+                    // ahora con los 8 dig completos)
+                    if (clienteMatchExactoDoc.value) {
+                        elegirClienteFrecuente(clienteMatchExactoDoc.value);
+                        return;
+                    }
+                    if (sugerenciasCliente.value.length > 0) return;
                     buscarClienteAPI();
                 }, 1500);
             }
@@ -13567,6 +13637,7 @@
           // [v2.5.58] Pre-reserva correlativo
           _correlativoEnMano, _prereservaCargando, _onCambioTipoDoc, _prereservaCancelar,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
+          clienteMatchExactoDoc,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
           reintentarBuscarCliente,
           iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE,
