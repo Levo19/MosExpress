@@ -3946,8 +3946,8 @@
                       El flujo de "cliente sin doc con autorización admin" se eliminó:
                       el caso de CE cubre extranjeros y casos sin RENIEC/SUNAT. -->
                  <div v-if="clienteModoManual && !pago.nombreCliente" class="space-y-2">
-                   <!-- Caso C1: opciones cuando no hay match -->
-                   <div v-if="!pago.tipoDocClienteCE" class="space-y-2">
+                   <!-- Caso C1: opciones cuando no hay match en API -->
+                   <div v-if="!pago.tipoDocClienteCE && !pago.registroManualDNI" class="space-y-2">
                      <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
                        <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                        <div class="flex-1 min-w-0">
@@ -3956,9 +3956,6 @@
                        </div>
                      </div>
                      <div class="flex gap-2">
-                       <!-- [v2.6.5] Antes 'Reintentar' reciclaba el mismo doc → loop si no
-                            existía en RENIEC. Ahora LIMPIA el campo y devuelve el foco para
-                            que el cajero re-escriba (típico: corregir typo). -->
                        <button @click="corregirDocumento"
                                class="flex-1 bg-blue-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
@@ -3969,6 +3966,16 @@
                          👤 Usar VARIOS
                        </button>
                      </div>
+                     <!-- [v2.7.1] Ingreso manual DNI peruano: cuando APISPeru no lo tiene
+                          pero el cliente está presente y dice su nombre. Tratado como DNI
+                          normal (no CE) — SUNAT recibe tipo=1 (DNI). Visible solo si doc
+                          es 8 dígitos. -->
+                     <button v-if="pago.docCliente && pago.docCliente.length === 8"
+                             @click="iniciarRegistroManualDNI"
+                             class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                       Ingresar nombre manualmente (DNI peruano)
+                     </button>
                      <!-- [v41] Carné de Extranjería: guarda doc tal cual + nombre manual, sin PIN admin -->
                      <button @click="iniciarRegistroCE"
                              class="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
@@ -3976,7 +3983,7 @@
                      </button>
                    </div>
                    <!-- Caso C2 [v41]: registro como CE/Extranjero → input nombre manual sin PIN -->
-                   <div v-else class="space-y-2">
+                   <div v-else-if="pago.tipoDocClienteCE" class="space-y-2">
                      <div class="flex items-start gap-2 bg-indigo-50 border border-indigo-300 rounded-xl px-3 py-2.5">
                        <span class="text-base shrink-0">🪪</span>
                        <div class="flex-1 min-w-0">
@@ -3994,6 +4001,29 @@
                        </button>
                      </div>
                      <button @click="cancelarRegistroCE" class="text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1">← Volver a opciones</button>
+                   </div>
+                   <!-- Caso C3 [v2.7.1]: registro manual DNI peruano (no CE) -->
+                   <div v-else-if="pago.registroManualDNI" class="space-y-2">
+                     <div class="flex items-start gap-2 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-2.5">
+                       <span class="text-base shrink-0">📝</span>
+                       <div class="flex-1 min-w-0">
+                         <p class="text-xs text-emerald-800 font-bold">DNI peruano · ingreso manual</p>
+                         <p class="text-[10px] text-emerald-700 mt-0.5">DNI: <span class="font-mono font-bold">{{ pago.docCliente }}</span> · escribí el nombre del cliente</p>
+                       </div>
+                     </div>
+                     <div class="flex gap-2">
+                       <input v-model="clienteNombreManual" type="text" placeholder="Nombre y apellidos del cliente..."
+                              @keyup.enter="confirmarClienteManualDNI"
+                              class="flex-1 p-3 bg-white border-2 border-emerald-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none">
+                       <button @click="confirmarClienteManualDNI" :disabled="!clienteNombreManual.trim()"
+                               class="bg-emerald-600 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">
+                         ✓ Guardar
+                       </button>
+                     </div>
+                     <p class="text-[9px] text-emerald-700 italic leading-tight px-1">
+                       Se guardará como DNI normal en CLIENTES_FRECUENTES. La próxima venta del mismo cliente lo encontrará al instante.
+                     </p>
+                     <button @click="cancelarRegistroManualDNI" class="text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1">← Volver a opciones</button>
                    </div>
                  </div>
 
@@ -6440,7 +6470,7 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
-        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, tipoDocClienteCE: false });
+        const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, tipoDocClienteCE: false, registroManualDNI: false });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
         const clienteNombreManual = ref('');
@@ -12386,6 +12416,7 @@
             pago.value.nombreCliente    = '';
             pago.value.direccionCliente = '';
             pago.value.tipoDocClienteCE = false; // [v41] limpiar flag CE/Extranjero
+            pago.value.registroManualDNI = false; // [v2.7.1] limpiar flag DNI manual
             busquedaNombre.value = '';
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
@@ -12397,6 +12428,7 @@
         // No requiere PIN admin: el código es real (no es VARIOS anónimo).
         const iniciarRegistroCE = () => {
             pago.value.tipoDocClienteCE = true;
+            pago.value.registroManualDNI = false; // exclusivos
             clienteNombreManual.value = '';
             // mantiene clienteModoManual = true y pago.docCliente con el tipeado
         };
@@ -12415,6 +12447,32 @@
             clienteNombreManual.value = '';
             try { playBeepOK?.(); } catch(_){}
             agregarToast('✓ Cliente CE', nombre + ' · doc ' + pago.value.docCliente);
+        };
+
+        // [v2.7.1] Flujo paralelo al CE: ingreso manual de nombre para DNI peruano
+        // real cuando APISPeru no lo tiene en su base. El doc se mantiene como DNI
+        // (no se marca tipo=4 CE), así SUNAT lo trata como DNI normal.
+        // Útil cuando el cliente está presente y dice su nombre — el cajero lo
+        // tipea y se persiste en CLIENTES_FRECUENTES al procesar la venta.
+        const iniciarRegistroManualDNI = () => {
+            pago.value.registroManualDNI = true;
+            pago.value.tipoDocClienteCE = false; // exclusivos
+            clienteNombreManual.value = '';
+        };
+        const cancelarRegistroManualDNI = () => {
+            pago.value.registroManualDNI = false;
+            clienteNombreManual.value = '';
+        };
+        const confirmarClienteManualDNI = () => {
+            const nombre = clienteNombreManual.value.trim().toUpperCase();
+            if (!nombre) return;
+            pago.value.nombreCliente = nombre;
+            // pago.docCliente ya tiene el DNI tipeado · pago.registroManualDNI=true
+            busquedaNombre.value = '';
+            clienteModoManual.value = false;
+            clienteNombreManual.value = '';
+            try { playBeepOK?.(); } catch(_){}
+            agregarToast('✓ Cliente DNI manual', nombre + ' · DNI ' + pago.value.docCliente);
         };
         // Cliente VARIOS por defecto en Nota de Venta cuando el cajero no quiere
         // tipear nada (el cliente "anónimo"). DNI 66666 ya existe en CLIENTES_FRECUENTES.
@@ -14010,6 +14068,8 @@
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
           reintentarBuscarCliente, corregirDocumento,
           iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE,
+          // [v2.7.1] DNI peruano manual (cuando APISPeru no lo tiene en su base)
+          iniciarRegistroManualDNI, cancelarRegistroManualDNI, confirmarClienteManualDNI,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           bHerramientas, imprimirMembrete, procesandoMembrete,
