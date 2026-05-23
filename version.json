@@ -1,1 +1,1 @@
-{ "version": "2.6.5", "build": "20260523-fix-reintentar-cliente-limpia-y-edita" }
+{ "version": "2.7.0", "build": "20260523-ping-heartbeat-overlay-numeracion-status-tri-state" }
