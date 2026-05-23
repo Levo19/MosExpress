@@ -53,6 +53,7 @@ function doGet(e) {
     if (accion === 'consultar_cliente')     return consultarCliente(e.parameter.doc, e.parameter.tipoDoc);
     // [v2.5.59] Diagnóstico APISPeru (verifica token + saldo + respuesta)
     if (accion === 'test_apisperu')         return testApiSperu();
+    if (accion === 'test_apisperu_doc')     return testApiSperuDoc(e.parameter.doc);
     if (accion === 'extras_caja')           return getExtrasCaja(e.parameter.cajaId);
     // [v40.3] Sistema de cobro asignado de créditos (MOS ↔ ME)
     if (accion === 'creditos_pendientes')      return getCreditosPendientes(e.parameter.diasAtras);

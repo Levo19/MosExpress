@@ -424,16 +424,29 @@ function consultarCliente(doc, tipoDocSolicitado) {
       try { json = JSON.parse(body); }
       catch(eP) { return { _ko: true, status: 'error', codigo: 'PARSE_FAIL', message: 'APISPeru devolvió texto inválido: ' + body.substring(0, 100) }; }
 
+      // [v2.6.4] Detectar formato nuevo: APISPeru a veces devuelve HTTP 200
+      // con {success: false, message: "..."} en vez de HTTP 404 cuando el doc
+      // no existe en su base. Sin esto, caía en NOMBRE_VACIO genérico.
+      if (json && json.success === false) {
+        return { _ko: true, status: 'not_found', codigo: 'DOC_NO_ENCONTRADO',
+                 message: 'Documento ' + doc + ' no figura en ' + (tipo === 'ruc' ? 'SUNAT' : 'RENIEC') + (json.message ? ' (' + json.message + ')' : '') };
+      }
+
       var nombre    = '';
       var direccion = '';
       if (tipo === 'dni') {
-        nombre = [json.nombres, json.apellidoPaterno, json.apellidoMaterno].filter(Boolean).join(' ').trim();
+        // [v2.6.4] Aceptar variantes de nombre de campo (snake_case y camelCase)
+        var nombres = json.nombres || json.nombre || json.first_name || '';
+        var apePat  = json.apellidoPaterno || json.apellido_paterno || json.paterno || json.last_name || '';
+        var apeMat  = json.apellidoMaterno || json.apellido_materno || json.materno || '';
+        nombre = [nombres, apePat, apeMat].filter(Boolean).join(' ').trim();
       } else {
-        nombre    = (json.razonSocial || json.nombre || '').trim();
-        direccion = (json.direccion   || '').trim();
+        nombre    = (json.razonSocial || json.razon_social || json.nombre || '').trim();
+        direccion = (json.direccion   || json.domicilio || '').trim();
       }
       if (!nombre) {
-        return { _ko: true, status: 'not_found', codigo: 'NOMBRE_VACIO', message: 'APISPeru no devolvió nombre para ' + doc };
+        return { _ko: true, status: 'not_found', codigo: 'NOMBRE_VACIO',
+                 message: 'APISPeru no devolvió nombre para ' + doc + ' (revisa /test_apisperu_dni?doc=' + doc + ' para ver respuesta cruda)' };
       }
       return {
         _ok: true,
@@ -511,6 +524,45 @@ function testApiSperu() {
     return ContentService.createTextOutput(JSON.stringify({
       ok: false, codigo: 'NET_ERROR', tokenTail: tokenTail,
       mensaje: 'Error de red al llamar APISPeru: ' + e.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// [v2.6.4] testApiSperuDoc — devuelve el body CRUDO de APISPeru para
+// cualquier DNI/RUC. Útil para diagnosticar por qué un doc específico
+// devuelve NOMBRE_VACIO (shape de respuesta inesperado).
+// Llamar: ?accion=test_apisperu_doc&doc=46027897
+function testApiSperuDoc(doc) {
+  doc = String(doc || '').trim();
+  if (!/^\d{8}$/.test(doc) && !/^\d{11}$/.test(doc)) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false, error: 'doc debe ser DNI(8) o RUC(11). Recibido: ' + doc.length + ' chars'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  var token = PropertiesService.getScriptProperties().getProperty('APISPERU_TOKEN');
+  if (!token) return ContentService.createTextOutput(JSON.stringify({
+    ok: false, error: 'APISPERU_TOKEN no configurado'
+  })).setMimeType(ContentService.MimeType.JSON);
+
+  var tipo = doc.length === 11 ? 'ruc' : 'dni';
+  var url = 'https://dniruc.apisperu.com/api/v1/' + tipo + '/' + doc + '?token=' + token;
+  try {
+    var t0 = Date.now();
+    var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    var ms = Date.now() - t0;
+    var code = resp.getResponseCode();
+    var body = resp.getContentText();
+    var json = null;
+    try { json = JSON.parse(body); } catch(_){}
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, doc: doc, tipo: tipo, httpCode: code, latenciaMs: ms,
+      bodyRaw: body.substring(0, 800),
+      jsonKeys: json ? Object.keys(json) : null,
+      json: json
+    }, null, 2)).setMimeType(ContentService.MimeType.JSON);
+  } catch(e) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false, error: 'NET_ERROR: ' + e.message
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
