@@ -47,6 +47,59 @@ function procesarVenta(data) {
     header.metodo = 'POR_COBRAR';
   }
 
+  // [v2.6.0] DEFENSA: vendedor (no cajero) creando venta debe tener caja
+  // activa en su zona. Si vino con cajaId pero esa caja ya está CERRADA,
+  // buscar la caja activa actual de la zona y reasignar. Si no hay ninguna
+  // caja abierta en la zona → rechazar con código NO_CAJA_ACTIVA_EN_ZONA
+  // (el frontend bloquea el POS con overlay y reintenta cuando reabra caja).
+  if (!auth.esCajero) {
+    var zonaV = String(auth.zona || pos.zona || '').trim();
+    var cajaIdEnviada = String(pos.cajaId || '').trim();
+    var cajaValida = false;
+    if (zonaV) {
+      try {
+        var ssV = SpreadsheetApp.getActiveSpreadsheet();
+        var shCV = ssV.getSheetByName('CAJAS');
+        if (shCV) {
+          var fcv = shCV.getDataRange().getValues();
+          // Cols CAJAS: 0 ID · 1 Vendedor · 2 Estacion · 3 Fec_Ap · 4 Monto_Ini
+          //             · 5 Estado · 6 Mon_Fin · 7 Fec_Cie · 8 Zona · 9 PNode
+          // 1) Si vino cajaId, verificar que esa caja siga ABIERTA en la zona
+          if (cajaIdEnviada) {
+            for (var iv = 1; iv < fcv.length; iv++) {
+              if (String(fcv[iv][0]) === cajaIdEnviada
+                  && String(fcv[iv][5] || '').toUpperCase() === 'ABIERTA'
+                  && String(fcv[iv][8] || '').trim() === zonaV) {
+                cajaValida = true;
+                break;
+              }
+            }
+          }
+          // 2) Si la caja enviada NO está abierta (o no vino), buscar la activa de la zona
+          if (!cajaValida) {
+            for (var jv = fcv.length - 1; jv >= 1; jv--) {
+              if (String(fcv[jv][5] || '').toUpperCase() === 'ABIERTA'
+                  && String(fcv[jv][8] || '').trim() === zonaV) {
+                pos.cajaId = String(fcv[jv][0]);  // reasignar a la caja activa actual
+                cajaValida = true;
+                break;
+              }
+            }
+          }
+        }
+      } catch(eCV) { Logger.log('[procesarVenta] check caja activa zona falló: ' + eCV.message); }
+    }
+    if (!cajaValida) {
+      Logger.log('[procesarVenta] RECHAZADA NO_CAJA_ACTIVA_EN_ZONA · vendedor=' + auth.vendedor + ' zona=' + zonaV);
+      return {
+        idVenta: null, correlativo: null, printDispatched: false, dedupVenta: false,
+        error: 'NO_CAJA_ACTIVA_EN_ZONA',
+        zona: zonaV,
+        mensaje: 'No hay caja abierta en tu zona. Pide al cajero que abra caja antes de vender.'
+      };
+    }
+  }
+
   var fechaActual = new Date();
   var idVenta = "V-" + fechaActual.getTime();
 

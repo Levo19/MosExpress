@@ -100,6 +100,47 @@ function _autoCerrarCajasViejas(sheetCajas) {
   return cerradas;
 }
 
+// ── [v2.6.0] getCajaActivaZona — pulso del vendedor para saber si hay caja
+// abierta en su zona. Si no la hay, el frontend bloquea el POS con overlay
+// elegante. Devuelve también el cajero y el monto inicial para mostrar UX rica.
+//
+// params: { zona } (string, ej "ZONA-02")
+// → { ok, data: { hayCaja: bool, idCaja, cajero, montoInicial, abiertaTs, estacion } }
+//
+// Aplica TAMBIÉN auto-cierre de cajas viejas antes de buscar (mismo guard que
+// procesarAperturaCaja) para no devolver cajas zombi de días anteriores.
+function getCajaActivaZona(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetCajas = ss.getSheetByName('CAJAS');
+  if (!sheetCajas) return { ok: false, error: 'CAJAS no encontrada' };
+  var zona = String((data && data.zona) || '').trim();
+  if (!zona) return { ok: false, error: 'zona requerida' };
+
+  try { _autoCerrarCajasViejas(sheetCajas); } catch(_) {}
+
+  var filas = sheetCajas.getDataRange().getValues();
+  // Cols (0-idx): 0 ID_Caja · 1 Vendedor · 2 Estacion · 3 Fecha_Apertura
+  //               · 4 Monto_Inicial · 5 Estado · 6 Monto_Final · 7 Fecha_Cierre
+  //               · 8 Zona_ID · 9 PrintNode_ID
+  // Buscamos de abajo hacia arriba (la última ABIERTA en la zona es la activa)
+  for (var i = filas.length - 1; i >= 1; i--) {
+    var estado = String(filas[i][5] || '').toUpperCase();
+    var zonaR  = String(filas[i][8] || '').trim();
+    if (estado === 'ABIERTA' && zonaR === zona) {
+      return { ok: true, data: {
+        hayCaja:      true,
+        idCaja:       String(filas[i][0]),
+        cajero:       String(filas[i][1] || ''),
+        estacion:     String(filas[i][2] || ''),
+        montoInicial: parseFloat(filas[i][4]) || 0,
+        abiertaTs:    filas[i][3] instanceof Date ? filas[i][3].toISOString() : String(filas[i][3] || ''),
+        zona:         zona
+      }};
+    }
+  }
+  return { ok: true, data: { hayCaja: false, zona: zona } };
+}
+
 function procesarAperturaCaja(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCajas = ss.getSheetByName("CAJAS");
