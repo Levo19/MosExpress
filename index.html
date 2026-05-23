@@ -3305,8 +3305,8 @@
                   </main>
                 </section>
 
-                <!-- Panel Derecho: Carrito -->
-                <section class="panel-transition bg-gray-50 flex flex-col shadow-[-10px_0_20px_-5px_rgba(0,0,0,0.05)] z-20 overflow-hidden self-stretch pb-nav" :class="getPosRightClasses()">
+                <!-- Panel Derecho: Carrito  (NO usar pb-nav en la section: el footer del COBRAR debe ir pegado al borde inferior, no flotando con 88px en blanco debajo. El pb-nav vive en el <main> interno para que el scroll respete la nav.) -->
+                <section class="panel-transition bg-gray-50 flex flex-col shadow-[-10px_0_20px_-5px_rgba(0,0,0,0.05)] z-20 overflow-hidden self-stretch" :class="getPosRightClasses()">
                    <div class="bg-white border-b border-gray-200 p-3 flex justify-between items-center shrink-0">
                        <div class="flex items-center gap-2">
                           <button v-if="uiState.isMobile" @click="uiState.mobileView = 'catalog'" class="p-2 rounded-lg bg-gray-100 text-gray-600 active:scale-95 shrink-0">
@@ -3393,7 +3393,7 @@
                       </div>
                    </main>
                    
-                   <footer class="bg-white border-t p-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50">
+                   <footer class="bg-white border-t p-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50 shrink-0" style="padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));">
                        <button @click="abrirModalPago" :disabled="carrito.length === 0" class="w-full bg-emerald-500 text-white font-black text-lg py-4 rounded-xl shadow-lg shadow-emerald-200 disabled:bg-gray-300 disabled:shadow-none transition-transform active:scale-95 flex justify-between px-6 items-center">
                          <span>COBRAR</span>
                          <span class="text-2xl">S/ {{ granTotal.toFixed(2) }}</span>
@@ -12200,20 +12200,23 @@
         };
 
         const abrirModalPago = () => {
-            leerMontoEnVoz(granTotal.value);
-            pago.value.tipoDoc = 'NOTA_DE_VENTA';
-            pago.value.metodo = (config.value.esCajero && cajaAbierta.value) ? 'EFECTIVO' : 'POR_COBRAR';
-            pago.value.montoRecibido = granTotal.value;
-            pago.value.montoVirtual = 0;
-            limpiarCliente();
-            cargarClienteVarios();
+            // [v2.5.62] El render del modal NUNCA debe quedar bloqueado si
+            // un side-effect inicial truena (limpiarCliente, cargarClienteVarios,
+            // etc.). Abrimos el modal PRIMERO, luego corremos los efectos.
+            try { leerMontoEnVoz(granTotal.value); } catch(_) {}
+            try {
+                pago.value.tipoDoc       = 'NOTA_DE_VENTA';
+                pago.value.metodo        = (config.value.esCajero && cajaAbierta.value) ? 'EFECTIVO' : 'POR_COBRAR';
+                pago.value.montoRecibido = granTotal.value;
+                pago.value.montoVirtual  = 0;
+            } catch(_) {}
+            // Abrir modal ANTES de los side-effects que podrían fallar.
             modalPago.value = true;
-            // [v2.5.58] Pre-reservar correlativo de NV en BACKGROUND mientras
-            // el cajero teclea monto/cliente. Cuando llega "Cobrar", el
-            // correlativo ya está en mano → impresión instant sin LOCAL.
-            // Si el cajero cambia tipoDoc a Boleta/Factura, _onCambioTipoDoc
-            // libera esta reserva.
-            _prereservaIniciar('NOTA_DE_VENTA');
+            try { limpiarCliente(); } catch(_) {}
+            try { cargarClienteVarios(); } catch(_) {}
+            // [v2.5.58] Pre-reservar correlativo de NV en BACKGROUND.
+            // Si el cajero cambia tipoDoc a Boleta/Factura, _onCambioTipoDoc libera esta reserva.
+            try { _prereservaIniciar('NOTA_DE_VENTA'); } catch(_) {}
         };
 
         // [v2.5.58] Estado de la pre-reserva en curso
