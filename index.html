@@ -12121,7 +12121,12 @@
             const lista = (db.value.CLIENTES_FRECUENTES || []);
             const scored = [];
             for (const c of lista) {
-                const doc = String(c.Documento || '').toLowerCase();
+                // [v2.6.2] DEFENSIVO: Documento puede venir como número (Sheets
+                // sin formato '@') o con espacios. Normalizamos a solo dígitos
+                // y string limpio antes de matchear.
+                const docRaw = String(c.Documento == null ? '' : c.Documento).trim().toLowerCase();
+                const docDigits = docRaw.replace(/\D/g, '');
+                const doc = docDigits || docRaw;
                 const nom = String(c.Nombre || '').toLowerCase();
                 const dir = String(c.Direccion || '').toLowerCase();
                 let score = 0;
@@ -12154,11 +12159,20 @@
 
         // [v2.5.60] Match exacto del documento — usado para AUTO-SELECT y
         // evitar la consulta API cuando el cliente ya está registrado.
+        // [v2.6.2] DEFENSIVO: normaliza el Documento de la fila por si vino
+        // como número (Sheets sin formato '@'), con espacios o caracteres
+        // raros. Ahora compara solo dígitos contra solo dígitos.
         const clienteMatchExactoDoc = computed(() => {
             const q = busquedaNombre.value.trim();
             if (!/^\d{8}$/.test(q) && !/^\d{11}$/.test(q)) return null;
             const lista = (db.value.CLIENTES_FRECUENTES || []);
-            return lista.find(c => String(c.Documento || '').trim() === q) || null;
+            return lista.find(c => {
+                const docRaw = String(c.Documento == null ? '' : c.Documento).trim();
+                if (docRaw === q) return true;
+                // Fallback: comparar solo dígitos (por si guardado con espacios/guiones)
+                const docDigits = docRaw.replace(/\D/g, '');
+                return docDigits === q;
+            }) || null;
         });
         const clienteBusqEsDocumento = computed(() => /^\d{8}$/.test(busquedaNombre.value.trim()) || /^\d{11}$/.test(busquedaNombre.value.trim()));
         const elegirClienteFrecuente = (c) => {
@@ -12411,13 +12425,13 @@
            }
         };
 
-        // [v2.5.60] Búsqueda 2 capas con prioridad LOCAL:
-        // 1. Cada keystroke filtra CLIENTES_FRECUENTES instantáneo (computed)
-        // 2. Si hay match EXACTO del doc completo → AUTO-SELECCIONAR
-        //    (cliente ya registrado, ahorra quota API)
-        // 3. Si hay sugerencias (substring) → mostrar dropdown · no llamar API
-        // 4. Si NO hay sugerencias Y doc completo → consultar APISPeru con
-        //    debounce inteligente según tipoDoc (8 dig → 1500ms, 11 dig → 500ms)
+        // [v2.6.2] Búsqueda 2 capas — refactor con auto-select INSTANT:
+        // 1. Cada keystroke filtra CLIENTES_FRECUENTES (computed instant)
+        // 2. Si hay match EXACTO del doc → AUTO-SELECT INMEDIATO (sin timeout)
+        //    Antes esperaba 1500ms en DNI aunque el match estuviera. Bug.
+        // 3. Si hay sugerencias parciales → mostrar dropdown, no API
+        // 4. Si NO hay nada local Y doc completo → API con debounce corto
+        //    (800ms DNI, 500ms RUC — antes 1500/500)
         let _autoSearchTimer = null;
         watch(busquedaNombre, (nuevo) => {
             if (_autoSearchTimer) clearTimeout(_autoSearchTimer);
@@ -12426,44 +12440,53 @@
             if (pago.value.nombreCliente) return;
             if (buscandoCliente.value) return;
 
-            // [v2.5.60] AUTO-SELECT si hay match exacto del documento en la
-            // tabla local. El cliente ya está registrado, no preguntar API.
+            // [v2.6.2] AUTO-SELECT INSTANT si hay match exacto local.
+            // Antes esto solo corría como "primer chequeo" del watch, pero
+            // luego para DNI se quedaba esperando 1500ms en el timeout y si
+            // por timing el computed no había actualizado, no auto-seleccionaba.
             const exacto = clienteMatchExactoDoc.value;
             if (exacto) {
                 elegirClienteFrecuente(exacto);
                 return;
             }
 
-            // Si hay sugerencias locales (substring/nombre) → no llamar API,
-            // el cajero puede elegir del dropdown
-            if (sugerenciasCliente.value.length > 0) return;
-
             // FACTURA: solo dispara API con RUC completo (11)
             if (tipoDoc === 'FACTURA') {
                 if (!/^\d{11}$/.test(q)) return;
+                if (sugerenciasCliente.value.length > 0) return;
                 _autoSearchTimer = setTimeout(buscarClienteAPI, 500);
                 return;
             }
-            // NV / BOLETA: 11 dig rápido, 8 dig con espera anti-RUC parcial
+
+            // NV / BOLETA: si llega a doc completo, auto-buscar.
+            // Si hay sugerencias parciales (no doc completo todavía), no API.
             if (/^\d{11}$/.test(q)) {
+                // Re-check match exacto post normalización por si computed cache
+                if (clienteMatchExactoDoc.value) { elegirClienteFrecuente(clienteMatchExactoDoc.value); return; }
                 _autoSearchTimer = setTimeout(buscarClienteAPI, 500);
                 return;
             }
             if (/^\d{8}$/.test(q)) {
                 _autoSearchTimer = setTimeout(() => {
-                    // Re-validar: si el usuario siguió escribiendo, abortar
                     const qActual = busquedaNombre.value.trim();
                     if (qActual.length !== 8) return;
-                    // Re-chequear match exacto / sugerencias (puede haberlas
-                    // ahora con los 8 dig completos)
+                    // Re-chequear: el computed pudo haberse refrescado en estos 800ms
                     if (clienteMatchExactoDoc.value) {
                         elegirClienteFrecuente(clienteMatchExactoDoc.value);
                         return;
                     }
-                    if (sugerenciasCliente.value.length > 0) return;
+                    // [v2.6.2] CAMBIO: aunque haya sugerencias parciales por
+                    // nombre, si el doc está COMPLETO (8 dig) y NO matchea
+                    // exacto, vale la pena ir al backend — backend hace su
+                    // propia búsqueda local primero (sin gastar quota) y si
+                    // encuentra, devuelve success. Esto cierra el caso del
+                    // cliente que está en el sheet pero el frontend no tiene
+                    // sincronizado el cache.
                     buscarClienteAPI();
-                }, 1500);
+                }, 800);
+                return;
             }
+            // q < 8 dig: si hay sugerencias, dropdown se muestra solo. Nada más.
         });
         // [v40] Reintentar consulta APISPeru. Reaprovecha el doc tipeado.
         const reintentarBuscarCliente = () => {

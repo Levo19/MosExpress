@@ -1,1 +1,1 @@
-{ "version": "2.6.1", "build": "20260523-vendedor-bloqueo-pos-sin-caja-activa-zona" }
+{ "version": "2.6.2", "build": "20260523-fix-buscador-cliente-dni-match-defensivo" }
