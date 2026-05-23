@@ -12347,7 +12347,9 @@
                 // y string limpio antes de matchear.
                 const docRaw = String(c.Documento == null ? '' : c.Documento).trim().toLowerCase();
                 const docDigits = docRaw.replace(/\D/g, '');
-                const doc = docDigits || docRaw;
+                // [v2.7.2] Si DNI con 7 dígitos (cero perdido), padStart con cero
+                // para que el cajero pueda buscar tipeando "08..." y matchee.
+                const doc = (docDigits.length === 7) ? ('0' + docDigits) : (docDigits || docRaw);
                 // [v2.6.3] El header real de la col nombre es 'Nombre_RazonSocial'.
                 // Aceptamos ambos por compat (algunas hojas pueden tener 'Nombre').
                 const nom = String(c.Nombre || c.Nombre_RazonSocial || '').toLowerCase();
@@ -12385,6 +12387,11 @@
         // [v2.6.2] DEFENSIVO: normaliza el Documento de la fila por si vino
         // como número (Sheets sin formato '@'), con espacios o caracteres
         // raros. Ahora compara solo dígitos contra solo dígitos.
+        // [v2.7.2] DNIs PUEDEN EMPEZAR CON 0 (ej. 08123456). Si el dato en
+        // Sheets se guardó como Number, perdió el 0 inicial → ahora se ve
+        // como "8123456" (7 dígitos). Tercera estrategia: padStart(8,'0')
+        // para matchear "8123456" en sheet contra "08123456" tipeado por el
+        // cajero. RUCs no aplican (siempre 11, nunca arrancan con 0).
         const clienteMatchExactoDoc = computed(() => {
             const q = busquedaNombre.value.trim();
             if (!/^\d{8}$/.test(q) && !/^\d{11}$/.test(q)) return null;
@@ -12392,9 +12399,11 @@
             return lista.find(c => {
                 const docRaw = String(c.Documento == null ? '' : c.Documento).trim();
                 if (docRaw === q) return true;
-                // Fallback: comparar solo dígitos (por si guardado con espacios/guiones)
                 const docDigits = docRaw.replace(/\D/g, '');
-                return docDigits === q;
+                if (docDigits === q) return true;
+                // [v2.7.2] Cero perdido: row tiene 7 dígitos, q tiene 8 con cero al inicio
+                if (q.length === 8 && docDigits.length === 7 && ('0' + docDigits) === q) return true;
+                return false;
             }) || null;
         });
         const clienteBusqEsDocumento = computed(() => /^\d{8}$/.test(busquedaNombre.value.trim()) || /^\d{11}$/.test(busquedaNombre.value.trim()));
@@ -12402,7 +12411,13 @@
             // [v2.6.3] El header real es 'Nombre_RazonSocial' en CLIENTES_FRECUENTES.
             // Aceptamos ambos por compat. ANTES: c.Nombre quedaba undefined → casillero vacío.
             const _nombre = String(c.Nombre || c.Nombre_RazonSocial || '').trim();
-            pago.value.docCliente       = String(c.Documento  || '');
+            // [v2.7.2] DNI cero perdido: si el doc viene como 7 dígitos puros
+            // (almacenado como Number sin formato '@'), padStart con cero para
+            // que NubeFact/SUNAT lo reciba bien (DNI debe ser 8 dígitos exactos).
+            let _doc = String(c.Documento == null ? '' : c.Documento).trim();
+            const _docDigits = _doc.replace(/\D/g, '');
+            if (_docDigits.length === 7) _doc = '0' + _docDigits;
+            pago.value.docCliente       = _doc;
             pago.value.nombreCliente    = _nombre;
             pago.value.direccionCliente = String(c.Direccion  || '');
             busquedaNombre.value = '';

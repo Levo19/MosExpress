@@ -359,15 +359,28 @@ function consultarCliente(doc, tipoDocSolicitado) {
     var rows    = sheet.getDataRange().getValues();
     var headers = rows[0].map(function(h) { return String(h).trim(); });
     var docIdx  = headers.indexOf('Documento');
+    // [v2.7.2] header real puede ser 'Nombre_RazonSocial' — aceptar ambos
     var nomIdx  = headers.indexOf('Nombre');
+    if (nomIdx < 0) nomIdx = headers.indexOf('Nombre_RazonSocial');
     var dirIdx  = headers.indexOf('Direccion');
+    // [v2.7.2] Forzar formato '@' en col Documento (idempotente, ahorra
+    // pérdida de ceros en futuras escrituras desde aquí o desde fuera).
+    if (docIdx >= 0) {
+      try { sheet.getRange(1, docIdx + 1, sheet.getMaxRows(), 1).setNumberFormat('@'); } catch(_) {}
+    }
     if (docIdx >= 0 && nomIdx >= 0) {
+      var qDig = doc.replace(/\D/g, '');
       for (var i = 1; i < rows.length; i++) {
-        if (String(rows[i][docIdx]).trim() === doc) {
+        // [v2.7.2] Comparación tolerante a DNI con cero perdido en row vieja
+        var rawCell = String(rows[i][docIdx] == null ? '' : rows[i][docIdx]).trim();
+        var aDig = rawCell.replace(/\D/g, '');
+        var matchExacto   = (rawCell === doc) || (aDig === qDig);
+        var matchPadStart = (qDig.length === 8 && aDig.length === 7 && ('0' + aDig) === qDig);
+        if (matchExacto || matchPadStart) {
           return ContentService.createTextOutput(JSON.stringify({
             status:    'success',
             nombre:    String(rows[i][nomIdx]),
-            documento: doc,
+            documento: doc,  // siempre devolvemos el doc que el usuario pidió (con su cero)
             tipo:      doc.length === 11 ? 'RUC' : 'DNI',
             fuente:    'local',
             direccion: dirIdx >= 0 ? String(rows[i][dirIdx] || '') : ''

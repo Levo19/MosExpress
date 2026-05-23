@@ -314,10 +314,19 @@ function generarRespuestaError(msg) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
-// Columnas que deben tratarse siempre como texto (nunca como número)
+// Columnas que deben tratarse siempre como texto (nunca como número).
+// [v2.7.2] Agregados campos de documento — los DNIs peruanos pueden empezar
+// con cero (ej. 08123456). Si Sheets los infiere como Number, el cero se
+// PIERDE para siempre. Estos nombres deben coincidir EXACTO con los headers
+// de cada hoja (case-sensitive). NO afecta los datos existentes — solo cómo
+// se LEEN: ahora llegan al frontend como string en vez de Number.
 var COLUMNAS_TEXTO = [
   'Cod_Barras', 'Cod_Barras_Real', 'SKU_Base', 'SKU',
-  'ID_Dispositivo', 'ID_Venta', 'ID_Caja', 'ID_Guia'
+  'ID_Dispositivo', 'ID_Venta', 'ID_Caja', 'ID_Guia',
+  // [v2.7.2] Documentos identificación (DNI puede empezar con 0)
+  'Documento', 'Documento_Cliente', 'doc', 'docCliente',
+  'DNI', 'RUC', 'numero_documento', 'Numero_Documento',
+  'Cliente_Doc', 'Cliente_Documento'
 ];
 
 function obtenerDatosHojaComoJSON(sheet) {

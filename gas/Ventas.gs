@@ -455,24 +455,52 @@ function detalleVenta(idVenta) {
 
 function verificarYAgregaCliente(doc, nombre, tipoDoc, direccion) {
   if (!doc) return;
+  // [v2.7.2] Forzar String SIEMPRE — los DNIs pueden empezar con 0.
+  // Si llega como Number, ya se perdió el 0 antes. Aquí preservamos lo que venga.
+  doc = String(doc).trim();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CLIENTES_FRECUENTES");
   if (!sheet) return;
-  // [v40] Antes: si el cliente ya existía, salía sin hacer nada → si un cliente
-  // viejo no tenía dirección guardada y ahora APISPeru la trajo, no se actualizaba.
-  // Ahora: si existe Y la dirección está vacía Y llega una nueva no vacía, refrescar.
+
   var rangeAll = sheet.getDataRange().getValues();
+  var hdrs   = (rangeAll[0] || []).map(function(h){ return String(h).trim(); });
+  var idxDoc = hdrs.indexOf('Documento');
+  // [v2.7.2] El header REAL del nombre es 'Nombre_RazonSocial' (ver
+  // architecture_me_clientes_frecuentes_keys). Aceptar ambos por compat.
+  var idxNom = hdrs.indexOf('Nombre');
+  if (idxNom < 0) idxNom = hdrs.indexOf('Nombre_RazonSocial');
+  var idxDir = hdrs.indexOf('Direccion');
+
+  // [v2.7.2] Asegurar formato '@' en col Documento ANTES de cualquier
+  // escritura. Idempotente — si ya está, no hace nada.
+  if (idxDoc >= 0) {
+    try {
+      sheet.getRange(1, idxDoc + 1, sheet.getMaxRows(), 1).setNumberFormat('@');
+    } catch(_) {}
+  }
+
   if (rangeAll.length < 2) {
     sheet.appendRow([doc, nombre, tipoDoc, new Date(), String(direccion || '')]);
     return;
   }
-  var hdrs   = rangeAll[0].map(function(h){ return String(h).trim(); });
-  var idxDoc = hdrs.indexOf('Documento');
-  var idxNom = hdrs.indexOf('Nombre');
-  var idxDir = hdrs.indexOf('Direccion');
   if (idxDoc < 0) return;
+
+  // [v2.7.2] Helper de comparación tolerante a cero perdido en DNIs.
+  // Compara doc actual vs row aceptando: (a) match exacto string,
+  // (b) match sin separadores, (c) padStart(8) si row es DNI sin cero.
+  function _docMatch(rowVal, q) {
+    var a = String(rowVal == null ? '' : rowVal).trim();
+    if (a === q) return true;
+    var aDig = a.replace(/\D/g, '');
+    var qDig = q.replace(/\D/g, '');
+    if (aDig === qDig) return true;
+    // Si q tiene 8 dígitos (DNI) y a tiene 7, padStart con cero
+    if (qDig.length === 8 && aDig.length === 7 && ('0' + aDig) === qDig) return true;
+    return false;
+  }
+
   for (var i = 1; i < rangeAll.length; i++) {
-    if (String(rangeAll[i][idxDoc]) === String(doc)) {
+    if (_docMatch(rangeAll[i][idxDoc], doc)) {
       // Ya existe: refrescar dirección y nombre si llegan datos nuevos
       var dirVieja = idxDir >= 0 ? String(rangeAll[i][idxDir] || '').trim() : '';
       var dirNueva = String(direccion || '').trim();
