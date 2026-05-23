@@ -3788,7 +3788,7 @@
         <div class="modal-pago-inner bg-white rounded-t-[2.5rem] p-6 max-h-[92vh] flex flex-col shadow-2xl animate-[slideUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
             <div class="flex justify-between items-center mb-5 shrink-0">
                <h2 class="text-3xl font-black text-gray-800 tracking-tight">{{ config.esCajero ? 'COBRO' : 'REGISTRAR VENTA' }}</h2>
-               <button @click="modalPago = false; _prereservaCancelar()" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+               <button @click="modalPago = false; prereservaCancelar()" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 active:scale-90"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
             </div>
     
             <div class="flex-1 overflow-y-auto space-y-5 px-1 scrollbar-hide pb-8">
@@ -3796,12 +3796,12 @@
                   <div class="flex items-center justify-between mb-1.5">
                     <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">Comprobante</label>
                     <!-- [v2.5.58] Badge correlativo pre-reservado (NV) — visible solo si hay reserva activa -->
-                    <span v-if="pago.tipoDoc === 'NOTA_DE_VENTA' && _correlativoEnMano"
+                    <span v-if="pago.tipoDoc === 'NOTA_DE_VENTA' && correlativoEnMano"
                           class="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-300 rounded-full px-2 py-0.5"
                           style="animation: scaleIn .3s cubic-bezier(.34,1.56,.64,1)">
-                      ✓ #{{ _correlativoEnMano.correlativoFmt }}
+                      ✓ #{{ correlativoEnMano.correlativoFmt }}
                     </span>
-                    <span v-else-if="pago.tipoDoc === 'NOTA_DE_VENTA' && _prereservaCargando"
+                    <span v-else-if="pago.tipoDoc === 'NOTA_DE_VENTA' && prereservaCargando"
                           class="text-[10px] font-bold text-amber-500 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
                       <span class="inline-block animate-spin">⏳</span> reservando...
                     </span>
@@ -3811,9 +3811,9 @@
                     </span>
                   </div>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
-                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios(); _onCambioTipoDoc('NOTA_DE_VENTA')" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
-                      <button @click="pago.tipoDoc = 'BOLETA'; limpiarCliente(); _onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
-                      <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente(); _onCambioTipoDoc('FACTURA')" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
+                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios(); onCambioTipoDoc('NOTA_DE_VENTA')" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
+                      <button @click="pago.tipoDoc = 'BOLETA'; limpiarCliente(); onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
+                      <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente(); onCambioTipoDoc('FACTURA')" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
                   </div>
                </div>
 
@@ -13646,8 +13646,13 @@
           idleScreen, idleConfig, ocultarSalvapantalla,
           toggleWakeLock, toggleSaver, setSaverMinutos, setMetaDiaria,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
-          // [v2.5.58] Pre-reserva correlativo
-          _correlativoEnMano, _prereservaCargando, _onCambioTipoDoc, _prereservaCancelar,
+          // [v2.5.58] Pre-reserva correlativo — alias SIN underscore: Vue 3
+          // bloquea identificadores _xxx en el template (reservados internos),
+          // por eso el render daba "_correlativoEnMano is not defined".
+          correlativoEnMano:   _correlativoEnMano,
+          prereservaCargando:  _prereservaCargando,
+          onCambioTipoDoc:     _onCambioTipoDoc,
+          prereservaCancelar:  _prereservaCancelar,
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteMatchExactoDoc,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
