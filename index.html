@@ -3922,7 +3922,7 @@
                      <div v-for="c in sugerenciasCliente" :key="c.Documento" @click="elegirClienteFrecuente(c)"
                           class="px-3 py-2.5 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-100 last:border-0 transition-colors">
                        <div class="flex justify-between items-center gap-2">
-                         <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre }}</span>
+                         <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre || c.Nombre_RazonSocial }}</span>
                          <span class="text-[10px] text-gray-600 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full font-bold">{{ c.Documento }}</span>
                        </div>
                        <div v-if="c.Direccion" class="text-[10px] text-gray-400 mt-0.5 truncate">📍 {{ c.Direccion }}</div>
@@ -12127,7 +12127,9 @@
                 const docRaw = String(c.Documento == null ? '' : c.Documento).trim().toLowerCase();
                 const docDigits = docRaw.replace(/\D/g, '');
                 const doc = docDigits || docRaw;
-                const nom = String(c.Nombre || '').toLowerCase();
+                // [v2.6.3] El header real de la col nombre es 'Nombre_RazonSocial'.
+                // Aceptamos ambos por compat (algunas hojas pueden tener 'Nombre').
+                const nom = String(c.Nombre || c.Nombre_RazonSocial || '').toLowerCase();
                 const dir = String(c.Direccion || '').toLowerCase();
                 let score = 0;
                 let matchesAll = true;
@@ -12176,14 +12178,17 @@
         });
         const clienteBusqEsDocumento = computed(() => /^\d{8}$/.test(busquedaNombre.value.trim()) || /^\d{11}$/.test(busquedaNombre.value.trim()));
         const elegirClienteFrecuente = (c) => {
+            // [v2.6.3] El header real es 'Nombre_RazonSocial' en CLIENTES_FRECUENTES.
+            // Aceptamos ambos por compat. ANTES: c.Nombre quedaba undefined → casillero vacío.
+            const _nombre = String(c.Nombre || c.Nombre_RazonSocial || '').trim();
             pago.value.docCliente       = String(c.Documento  || '');
-            pago.value.nombreCliente    = c.Nombre     || '';
-            pago.value.direccionCliente = c.Direccion  || '';
+            pago.value.nombreCliente    = _nombre;
+            pago.value.direccionCliente = String(c.Direccion  || '');
             busquedaNombre.value = '';
             // [v40] Sonido + vibración al elegir cliente para confirmar visual+auditivo
             try { playBeepNameMatch?.(); } catch(_){}
             try { if (navigator.vibrate) navigator.vibrate(30); } catch(_){}
-            agregarToast('✓ Cliente', c.Nombre);
+            agregarToast('✓ Cliente', _nombre);
         };
         const limpiarCliente = () => {
             pago.value.docCliente       = '';
