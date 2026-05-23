@@ -1262,7 +1262,7 @@
   <script>
   (function _meVerifDispositivoPreVue() {
     var MOS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
-    var CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+    var CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12h — stale-while-revalidate: la app abre instant si verificó hace <12h, y refresca en background. El interval de re-check sigue corriendo cada 1h en silencio (línea ~7270), así que si master suspende el dispositivo, en max 1h queda bloqueado.
 
     // Generar/recuperar deviceId
     var devId = '';
@@ -7249,12 +7249,16 @@
                dispositivoAutorizado.value = true;
                return;
            }
-           // Cache: si el dispositivo fue verificado en la última hora, no volver a llamar
-           const _authTs = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
-           const _authId = localStorage.getItem('mosexpress_device_auth_id');
-           const _1hora  = 60 * 60 * 1000;
-           if (_authId === deviceId.value && (Date.now() - _authTs) < _1hora) {
+           // Cache: si el dispositivo fue verificado en las últimas 12h, autorizar al
+           // instante y refrescar en background (stale-while-revalidate). El interval
+           // de 1h sigue corriendo en silencio para detectar suspensión.
+           const _authTs   = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
+           const _authId   = localStorage.getItem('mosexpress_device_auth_id');
+           const _CACHE_MS = 12 * 60 * 60 * 1000;
+           if (_authId === deviceId.value && (Date.now() - _authTs) < _CACHE_MS) {
                dispositivoAutorizado.value = true;
+               // Refresh silencioso en background — si master suspendió, lo cazamos
+               setTimeout(() => _verificarDispositivoRed(true).catch(()=>{}), 2000);
                return;
            }
            await _verificarDispositivoRed(false);
