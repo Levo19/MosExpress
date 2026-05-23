@@ -3945,10 +3945,13 @@
                        </div>
                      </div>
                      <div class="flex gap-2">
-                       <button @click="reintentarBuscarCliente"
+                       <!-- [v2.6.5] Antes 'Reintentar' reciclaba el mismo doc → loop si no
+                            existía en RENIEC. Ahora LIMPIA el campo y devuelve el foco para
+                            que el cajero re-escriba (típico: corregir typo). -->
+                       <button @click="corregirDocumento"
                                class="flex-1 bg-blue-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
-                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                         Reintentar
+                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                         Corregir documento
                        </button>
                        <button @click="cargarClienteVarios"
                                class="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">
@@ -12493,17 +12496,28 @@
             }
             // q < 8 dig: si hay sugerencias, dropdown se muestra solo. Nada más.
         });
-        // [v40] Reintentar consulta APISPeru. Reaprovecha el doc tipeado.
-        const reintentarBuscarCliente = () => {
-            const doc = pago.value.docCliente || busquedaNombre.value.trim();
-            if (!doc) return;
-            busquedaNombre.value = doc;
-            clienteModoManual.value = false;
-            pago.value.docCliente = '';
-            pago.value.nombreCliente = '';
-            // Espera microtask para que watch detecte el cambio y dispare auto-search
-            setTimeout(() => buscarClienteAPI(), 50);
+        // [v2.6.5] Corregir documento — LIMPIA el campo y devuelve el foco al input
+        // para que el cajero re-escriba (caso típico: typo en el DNI/RUC).
+        // ANTES (v40 "reintentarBuscarCliente"): reciclaba el mismo doc y disparaba
+        // el API → loop infinito cuando el doc no existía en RENIEC/SUNAT.
+        const corregirDocumento = () => {
+            busquedaNombre.value        = '';
+            pago.value.docCliente       = '';
+            pago.value.nombreCliente    = '';
+            pago.value.direccionCliente = '';
+            pago.value.tipoDocClienteCE = false;
+            clienteModoManual.value     = false;
+            clienteNombreManual.value   = '';
+            // Devolver foco al input del buscador (espera 1 tick para que se re-renderice)
+            nextTick(() => {
+                try {
+                    const inp = document.querySelector('input[placeholder*="DNI"], input[placeholder*="RUC"]');
+                    if (inp) inp.focus();
+                } catch(_) {}
+            });
         };
+        // Alias por compat — código que aún llame al nombre viejo no rompe
+        const reintentarBuscarCliente = corregirDocumento;
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
         const procesarPago = async () => {
@@ -13789,7 +13803,7 @@
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteMatchExactoDoc,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
-          reintentarBuscarCliente,
+          reintentarBuscarCliente, corregirDocumento,
           iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
