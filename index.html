@@ -3393,7 +3393,12 @@
                       </div>
                    </main>
                    
-                   <footer class="bg-white border-t p-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50 shrink-0" style="padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));">
+                   <!-- Footer pegado al fondo del section. El padding-bottom debe igualar
+                        ALTURA DE LA NAV INFERIOR (h-16 = 4rem) + safe-area + 24px de buffer,
+                        idéntico al .pb-nav, para que el botón COBRAR quede 100% encima del nav
+                        en tablets/móviles. En PC se ve igual pero el espacio extra es invisible
+                        porque no hay nav (queda fondo blanco abajo). -->
+                   <footer class="bg-white border-t pt-4 px-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50 shrink-0" style="padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 24px);">
                        <button @click="abrirModalPago" :disabled="carrito.length === 0" class="w-full bg-emerald-500 text-white font-black text-lg py-4 rounded-xl shadow-lg shadow-emerald-200 disabled:bg-gray-300 disabled:shadow-none transition-transform active:scale-95 flex justify-between px-6 items-center">
                          <span>COBRAR</span>
                          <span class="text-2xl">S/ {{ granTotal.toFixed(2) }}</span>
