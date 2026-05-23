@@ -1,1 +1,1 @@
-{ "version": "2.5.65", "build": "20260523-fix-falso-sesion-sin-cerrar-guard-session-start" }
+{ "version": "2.6.0", "build": "20260523-revertir-por_cobrar-a-anulado-en-cierre-caja" }

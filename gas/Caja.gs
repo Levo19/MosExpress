@@ -283,17 +283,24 @@ function _cerrarCajaAtomicoCore(opts) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // ── 2. Devolver POR_COBRAR a CRÉDITO (NO anular) ──
-    // [v2.5.52] Cambio importante: antes los POR_COBRAR de la caja se anulaban
-    // al cerrar — pero eso significaba PERDER plata que el cliente todavía
-    // debía. Ahora vuelven a estado CRÉDITO, limpiamos su ID_Caja (ya no
-    // pertenecen a esta caja cerrada) y reaparecen en la mesa de póker de MOS
-    // para que el admin pueda reasignar a otro cajero.
-    // El campo idsAnulados se mantiene por compat con frontend viejo, pero
-    // semánticamente ahora son "devueltos a crédito".
+    // ── 2. ANULAR POR_COBRAR de esta caja ──
+    // [v2.6.0] REVERTIDO el cambio v2.5.52: ahora POR_COBRAR vuelve a ANULADO
+    // al cerrar caja, como era originalmente. POR_COBRAR NO es deuda formal:
+    // es un pre-cobro cantado por vendedor que el cliente puede o no honrar.
+    // Si al cierre el cliente nunca pagó, significa que el ticket nunca se
+    // materializó → ANULADO (la venta no ocurrió).
+    //
+    // Si el admin quiere preservar un POR_COBRAR concreto como CRÉDITO formal
+    // (porque sabe que ese cliente sí va a pagar), debe usar el flow EXPLÍCITO
+    // 'aprobarComoCredito' desde MOS ANTES de cerrar la caja. Ese flow mueve
+    // el ticket de POR_COBRAR → CREDITO y el cierre lo respeta (no lo toca).
+    //
+    // ID_Caja se MANTIENE en la fila anulada para audit trail (saber en qué
+    // cierre se anuló). Los cobros asignados ligados a esta caja se cancelan
+    // en el paso 8b (CANCELADO_CIERRE_CAJA).
     var idsTarget = Array.isArray(opts.idsAnular) ? opts.idsAnular.map(String) : null;
     var filasV = sheetVentas.getDataRange().getValues();
-    var idsDevueltosACredito = [];
+    var idsAnulados = [];
     var efectivoVentas = 0;
     for (var v = 1; v < filasV.length; v++) {
       var idCajaV = String(filasV[v][10] || '');
@@ -301,18 +308,19 @@ function _cerrarCajaAtomicoCore(opts) {
       var formaPago = String(filasV[v][8] || '').toUpperCase();
       var total = parseFloat(filasV[v][6]) || 0;
 
-      // Devolver POR_COBRAR: usar lista explícita si vino, si no auto-detectar
-      // por caja actual. Importante: nunca tocar CREDITO ya formales.
-      var debeDevolver = false;
+      // Anular POR_COBRAR: usar lista explícita si vino, si no auto-detectar
+      // por caja actual. Importante: nunca tocar CREDITO ya formales (esos son
+      // deuda real aprobada por admin via aprobarComoCredito).
+      var debeAnular = false;
       if (idsTarget) {
-        if (idsTarget.indexOf(idV) !== -1) debeDevolver = true;
+        if (idsTarget.indexOf(idV) !== -1) debeAnular = true;
       } else if (idCajaV === idCaja && formaPago === 'POR_COBRAR') {
-        debeDevolver = true;
+        debeAnular = true;
       }
-      if (debeDevolver && formaPago === 'POR_COBRAR') {
-        sheetVentas.getRange(v + 1, 9).setValue('CREDITO');        // col 9 = FormaPago: vuelve a crédito
-        sheetVentas.getRange(v + 1, 11).setValue('');              // col 11 = ID_Caja: limpiar (la caja se cerró)
-        idsDevueltosACredito.push(idV);
+      if (debeAnular && formaPago === 'POR_COBRAR') {
+        sheetVentas.getRange(v + 1, 9).setValue('ANULADO');        // col 9 = FormaPago
+        // ID_Caja (col 11) se mantiene para audit trail
+        idsAnulados.push(idV);
         continue;
       }
 
@@ -421,8 +429,9 @@ function _cerrarCajaAtomicoCore(opts) {
 
     // ── 8b. [v2.5.52] Cancelar cobros ASIGNADOS pendientes de esta caja ──
     // Si la caja tenía cobros asignados sin cobrar, no pueden quedar pegados
-    // a una caja CERRADA. Los marcamos CANCELADO_CIERRE_CAJA. La venta original
-    // ya volvió a CRÉDITO en el paso 2, así que el admin podrá reasignar.
+    // a una caja CERRADA. Los marcamos CANCELADO_CIERRE_CAJA.
+    // [v2.6.0] La venta original fue ANULADA en el paso 2 (era POR_COBRAR),
+    // así que el cobro asignado ya no tiene sentido — se cancela.
     var cobrosLiberados = 0;
     try {
       var hojaCobros = ss.getSheetByName('CREDITOS_COBRO_ASIGNADO');
@@ -447,25 +456,25 @@ function _cerrarCajaAtomicoCore(opts) {
       }
     } catch(eCobr) { Logger.log('Cancelar cobros asignados de caja cerrada: ' + eCobr.message); }
 
-    // ── 9. Push a MOS confirmando + alerta de tickets devueltos ──
+    // ── 9. Push a MOS confirmando + alerta de tickets anulados ──
     try {
       var hora = Utilities.formatDate(new Date(), tz, 'HH:mm');
       var titulo = opts.esForzado
         ? ('🔐 Cierre forzado · ' + cajaVendedor)
         : ('🔐 Caja cerrada · ' + hora);
       var detalle = opts.esForzado
-        ? (String((opts.adminAuth && opts.adminAuth.nombre) || 'admin') + ' · S/ ' + montoFinal.toFixed(2) + (idsDevueltosACredito.length ? ' · ' + idsDevueltosACredito.length + ' → mesa créditos' : ''))
+        ? (String((opts.adminAuth && opts.adminAuth.nombre) || 'admin') + ' · S/ ' + montoFinal.toFixed(2) + (idsAnulados.length ? ' · ' + idsAnulados.length + ' tickets ANULADOS' : ''))
         : (cajaVendedor + (cajaZona ? ' · ' + cajaZona : '') + ' · S/ ' + montoFinal.toFixed(2));
       _notificarMOS(titulo, detalle, cajaVendedor, opts.esForzado ? 'ME_CAJA_CIERRE_FORZADO' : 'ME_CAJA_CIERRE');
-      // [v2.5.52] Notificación separada de TICKETS DEVUELTOS a la mesa de póker.
-      // Tono crítico para que el admin actúe (reasignar a otra caja antes de fin
-      // del día). Solo se manda si hubo tickets devueltos.
-      if (idsDevueltosACredito.length > 0) {
+      // [v2.6.0] Notificación separada cuando hubo POR_COBRAR anulados en el cierre.
+      // El admin debería poder revisar cuáles fueron y, si alguno era crédito real,
+      // re-emitirlo o aprobar antes del próximo cierre.
+      if (idsAnulados.length > 0) {
         _notificarMOS(
-          '⚠ ' + idsDevueltosACredito.length + ' ticket(s) volvieron a CRÉDITO',
-          'Caja ' + cajaVendedor + ' cerró sin cobrar · revisa la mesa de póker para reasignar',
+          '⚠ ' + idsAnulados.length + ' ticket(s) ANULADOS en el cierre',
+          'Caja ' + cajaVendedor + ' cerró con tickets POR_COBRAR sin pagar · quedaron anulados (cliente nunca pagó)',
           cajaVendedor,
-          'ME_TICKETS_DEVUELTOS_CREDITO'
+          'ME_TICKETS_ANULADOS_CIERRE'
         );
       }
     } catch(eM) { Logger.log('Push MOS cierre: ' + eM.message); }
@@ -484,13 +493,14 @@ function _cerrarCajaAtomicoCore(opts) {
       montoFinal:     montoFinal,
       montoFinalAuto: montoFinalAuto,
       descuadre:      Math.round((montoFinal - montoFinalAuto) * 100) / 100,
-      // [v2.5.52] Nuevos campos (preferidos) — antes anulados, ahora devueltos a CRÉDITO
-      devueltosACredito:    idsDevueltosACredito.length,
-      idsDevueltosACredito: idsDevueltosACredito,
+      // [v2.6.0] Tickets POR_COBRAR anulados en este cierre (revertido v2.5.52)
+      anulados:             idsAnulados.length,
+      idsAnulados:          idsAnulados,
       cobrosLiberados:      cobrosLiberados,
-      // Legacy alias (frontend viejo lee estos) — apuntan a los mismos datos
-      anulados:       idsDevueltosACredito.length,
-      idsAnulados:    idsDevueltosACredito,
+      // Legacy alias (frontend viejo que aún lee los nombres v2.5.52) — apuntan
+      // a los mismos datos para no romper UI durante el rollout.
+      devueltosACredito:    idsAnulados.length,
+      idsDevueltosACredito: idsAnulados,
       fechaCierre:    fechaCierre,
       cerradoPor:     String((opts.adminAuth && opts.adminAuth.nombre) || cajaVendedor),
       esForzado:      !!opts.esForzado,
