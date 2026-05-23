@@ -6581,14 +6581,28 @@
           setInterval(() => { horaActual.value = _fmtHora(); }, 60000);
 
           // [v2.5.14] Check cambio de día (cruzó medianoche con la app abierta).
-          // Si la sesión es del día anterior y estamos en uno nuevo, forzar
-          // logout en vivo. Aplica a AMBOS roles (vendedor + cajero).
+          // [v2.5.65] GUARD DEFENSIVO: solo forzar logout si session_date Y session_start
+          // son ambos del día anterior. Si session_date está raro pero session_start es
+          // < 16h, asumir corrupción del localStorage (cuota llena, race con SW update,
+          // glitch NTP) y REPARAR session_date silenciosamente. Antes esto disparaba
+          // "Sesión sin cerrar" en tablets aunque la jornada fuera de hoy mismo.
           setInterval(() => {
               if (!config.value.completado) return;
               const fechaGuardada = localStorage.getItem('mosexpress_session_date');
               const hoy = new Date().toDateString();
               if (fechaGuardada && fechaGuardada !== hoy) {
-                  console.log('[ME] Cambio de día detectado en vivo · forzando logout');
+                  // Sanity check con session_start (timestamp ISO real, no derivado)
+                  const startIso = localStorage.getItem('mosexpress_session_start');
+                  const startMs  = startIso ? Date.parse(startIso) : 0;
+                  const horasDesdeStart = startMs ? (Date.now() - startMs) / 3600000 : 9999;
+                  if (horasDesdeStart < 16) {
+                      // Falso positivo: session_date corrupto pero session_start es fresco.
+                      // Reparamos en silencio y NO disparamos logout.
+                      console.warn('[ME] session_date desync (', fechaGuardada, '→', hoy, ') · session_start hace', horasDesdeStart.toFixed(1), 'h · REPARANDO sin logout');
+                      try { localStorage.setItem('mosexpress_session_date', hoy); } catch(_) {}
+                      return;
+                  }
+                  console.log('[ME] Cambio de día real detectado en vivo · forzando logout');
                   let _cajaAyer = null;
                   if (config.value.esCajero) {
                       try {
@@ -6886,7 +6900,19 @@
           //  - Conteo correcto de jornadas en LIQUIDACIONES_DIA
           const _hoyJornada = new Date().toDateString();
           const _fechaSesionGuardada = localStorage.getItem('mosexpress_session_date');
-          if (config.value.completado && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada) {
+          // [v2.5.65] Mismo guard defensivo del polling — evitar falso "Sesión sin cerrar"
+          // al recargar cuando session_date está corrupto pero session_start es fresco.
+          // Si session_start fue hace <16h → reparar y NO disparar modal.
+          const _startIso = localStorage.getItem('mosexpress_session_start');
+          const _startMs  = _startIso ? Date.parse(_startIso) : 0;
+          const _hsStart  = _startMs ? (Date.now() - _startMs) / 3600000 : 9999;
+          const _esFalsoPositivo = config.value.completado && _fechaSesionGuardada
+              && _fechaSesionGuardada !== _hoyJornada && _hsStart < 16;
+          if (_esFalsoPositivo) {
+              console.warn('[ME init] session_date desync (', _fechaSesionGuardada, '→', _hoyJornada, ') · session_start hace', _hsStart.toFixed(1), 'h · REPARANDO sin logout');
+              try { localStorage.setItem('mosexpress_session_date', _hoyJornada); } catch(_) {}
+          }
+          if (config.value.completado && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada && !_esFalsoPositivo) {
               let _cajaAyer = null;
               if (config.value.esCajero) {
                   try {

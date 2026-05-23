@@ -1,1 +1,1 @@
-{ "version": "2.5.64", "build": "20260523-fix-cobrar-correcto-padding-nav-inferior-tablet" }
+{ "version": "2.5.65", "build": "20260523-fix-falso-sesion-sin-cerrar-guard-session-start" }
