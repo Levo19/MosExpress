@@ -579,3 +579,82 @@ function testApiSperuDoc(doc) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+// [v2.7.10] Verifica horario de la app ME consultando MOS.
+// Llamado al cargar config (después de elegir vendedor) y en heartbeat.
+// Si fuera de horario → frontend muestra pantalla bloqueante.
+function verificarHorarioME(params) {
+  params = params || {};
+  var vendedor = String(params.vendedor || '').trim();
+  var rol      = String(params.rol      || '').trim();
+  // Resolver idPersonal por nombre si el frontend solo manda nombre
+  var idPersonal = String(params.idPersonal || '').trim();
+  try {
+    if (!idPersonal && vendedor) {
+      var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID') || '';
+      if (mosSsId) {
+        var pSh = SpreadsheetApp.openById(mosSsId).getSheetByName('PERSONAL_MASTER');
+        if (pSh) {
+          var pd = pSh.getDataRange().getValues();
+          var ph = pd[0];
+          var iN = ph.indexOf('nombre');
+          var iA = ph.indexOf('apellido');
+          var iI = ph.indexOf('idPersonal');
+          var iAO = ph.indexOf('appOrigen');
+          var iR = ph.indexOf('rol');
+          var vendUp = vendedor.toUpperCase();
+          for (var i = 1; i < pd.length; i++) {
+            if (String(pd[i][iAO] || '') !== 'mosExpress') continue;
+            var nomCompleto = (String(pd[i][iN] || '') + ' ' + String(pd[i][iA] || '')).trim().toUpperCase();
+            if (nomCompleto === vendUp || String(pd[i][iN] || '').toUpperCase() === vendUp) {
+              idPersonal = String(pd[i][iI] || '');
+              if (!rol) rol = String(pd[i][iR] || '');
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch(e) { Logger.log('[verificarHorarioME] lookup fallo: ' + e.message); }
+
+  // Llamar MOS resolverHorarioPersonal
+  try {
+    var mosUrl = PropertiesService.getScriptProperties().getProperty('MOS_GAS_URL') || '';
+    if (!mosUrl) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true, data: { permitido: true, motivo: 'mos_no_configurado', fuente: 'fallback' }
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var cache = CacheService.getScriptCache();
+    var ckey = 'me_horario_' + idPersonal + '_' + rol;
+    var cached = cache.get(ckey);
+    if (cached) {
+      try {
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, data: JSON.parse(cached) })).setMimeType(ContentService.MimeType.JSON);
+      } catch(_){}
+    }
+    var payload = JSON.stringify({
+      action:     'resolverHorarioPersonal',
+      idPersonal: idPersonal,
+      rol:        rol,
+      app:        'mosExpress'
+    });
+    var res = UrlFetchApp.fetch(mosUrl, {
+      method: 'post', contentType: 'text/plain',
+      payload: payload, muteHttpExceptions: true
+    });
+    var jr = JSON.parse(res.getContentText());
+    if (jr && jr.ok && jr.data) {
+      cache.put(ckey, JSON.stringify(jr.data), 300);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, data: jr.data })).setMimeType(ContentService.MimeType.JSON);
+    }
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, data: { permitido: true, motivo: 'mos_no_respondio', fuente: 'fallback' }
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch(e) {
+    Logger.log('[verificarHorarioME] error: ' + e.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, data: { permitido: true, motivo: 'error_consulta', fuente: 'fallback' }
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}

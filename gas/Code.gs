@@ -31,6 +31,7 @@ function doGet(e) {
     if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
     if (accion === 'caja_activa_zona')      return ContentService.createTextOutput(JSON.stringify(getCajaActivaZona({ zona: e.parameter.zona }))).setMimeType(ContentService.MimeType.JSON);
     if (accion === 'consultarCaja')         return consultarCaja(e.parameter.idCaja);
+    if (accion === 'verificarHorarioME')    return verificarHorarioME(e.parameter);
     // [v2.5.58] Pre-reserva de correlativo (NV) — anti-LOCAL
     if (accion === 'reservarCorrelativo')   return reservarCorrelativo(e.parameter);
     if (accion === 'cancelarReservaCorrelativo') return cancelarReservaCorrelativo(e.parameter);
