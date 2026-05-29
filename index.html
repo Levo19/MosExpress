@@ -5586,24 +5586,145 @@
         //   • mosexpress_db (catálogo ~3MB · ahora en IndexedDB)
         //   • mosexpress_ventas_hoy (cache snapshot · regenerable)
         //   • mosexpress_last_session_loss (debug · regenerable)
+        // [v2.7.8] GC inteligente + conservador. NO toca pending_sales, fantasma,
+        // config, caja, deviceId ni carrito. Solo regenerables y viejos.
         const lsSet = (key, value) => {
-          const _doCleanup = () => {
-            const _keysAttack = [
-              'mosexpress_db',          // catálogo gigante (en IndexedDB)
-              'mosexpress_ventas_hoy',  // cache regenerable
-              'mosexpress_last_session_loss',
-              'mosexpress_last_error',
-              'mosexpress_carrito'      // último recurso (se perderían items pendientes)
-            ];
+          const _PROTEGIDAS = new Set([
+            'mosexpress_config', 'mosexpress_caja_activa',
+            'mosexpress_session_date', 'mosexpress_session_start',
+            'mosexpress_deviceId', 'pending_sales', 'mosexpress_pendingSales',
+            'mosexpress_ventas_fantasma', 'mosexpress_carrito',
+            'mosexpress_device_auth_date', 'mosexpress_device_auth_id'
+          ]);
+          // GC fase 1: compactar / podar lo seguro
+          const _gcSeguro = () => {
             let liberados = 0;
-            _keysAttack.forEach(k => {
+            const _del = (k) => {
               try {
                 const v = localStorage.getItem(k);
                 if (v) { liberados += v.length; localStorage.removeItem(k); }
               } catch(_) {}
-            });
+            };
+            // 1. Caches puros regenerables del backend
+            _del('mosexpress_db');                // catálogo (vive en IDB también)
+            _del('mosexpress_last_session_loss');
+            _del('mosexpress_last_error');
+            _del('mosexpress_pn_cache');
+            // 2. Compactar mosexpress_ventas_hoy: dejar solo synced de hoy + no-synced (fantasma/pending)
+            try {
+              const v = localStorage.getItem('mosexpress_ventas_hoy');
+              if (v) {
+                const arr = JSON.parse(v);
+                if (Array.isArray(arr)) {
+                  const hoyStr = new Date().toDateString();
+                  const filtrada = arr.filter(it => {
+                    // mantener no synced (fantasma/pending — auditoría/dinero)
+                    if (it.syncStatus !== 'synced') return true;
+                    // mantener si es de hoy
+                    const fd = it.fecha ? new Date(it.fecha).toDateString() : '';
+                    return fd === hoyStr;
+                  });
+                  if (filtrada.length < arr.length) {
+                    const ant = v.length;
+                    const nuevo = JSON.stringify(filtrada);
+                    localStorage.setItem('mosexpress_ventas_hoy', nuevo);
+                    liberados += (ant - nuevo.length);
+                  }
+                }
+              }
+            } catch(_) {}
+            // 3. Compactar mosexpress_stock_zonas: dejar solo Cantidad > 0
+            try {
+              const v = localStorage.getItem('mosexpress_stock_zonas');
+              if (v) {
+                const arr = JSON.parse(v);
+                if (Array.isArray(arr)) {
+                  const filtrada = arr.filter(r => (parseFloat(r.Cantidad) || 0) > 0);
+                  if (filtrada.length < arr.length) {
+                    const ant = v.length;
+                    const nuevo = JSON.stringify(filtrada);
+                    localStorage.setItem('mosexpress_stock_zonas', nuevo);
+                    liberados += (ant - nuevo.length);
+                  }
+                }
+              }
+            } catch(_) {}
+            // 4. mosexpress_guias_*: solo últimos 30 días
+            try {
+              const limite = Date.now() - 30 * 86400000;
+              for (let i = localStorage.length - 1; i >= 0; i--) {
+                const k = localStorage.key(i);
+                if (!k || !k.startsWith('mosexpress_guias_')) continue;
+                try {
+                  const arr = JSON.parse(localStorage.getItem(k) || '[]');
+                  if (!Array.isArray(arr)) continue;
+                  const filtrada = arr.filter(g => g.fecha && new Date(g.fecha).getTime() >= limite);
+                  if (filtrada.length < arr.length) {
+                    const antLen = JSON.stringify(arr).length;
+                    if (filtrada.length === 0) { localStorage.removeItem(k); liberados += antLen; }
+                    else {
+                      const nuevo = JSON.stringify(filtrada);
+                      localStorage.setItem(k, nuevo);
+                      liberados += (antLen - nuevo.length);
+                    }
+                  }
+                } catch(_) {}
+              }
+            } catch(_) {}
+            // 5. mos_jefa_aplicada_* huérfanas con > 30 días
+            try {
+              const limite = Date.now() - 30 * 86400000;
+              for (let i = localStorage.length - 1; i >= 0; i--) {
+                const k = localStorage.key(i);
+                if (!k || !k.startsWith('mos_jefa_aplicada_')) continue;
+                const v = localStorage.getItem(k) || '';
+                const ts = parseInt(v.split('|')[0] || '0', 10);
+                if (ts > 0 && ts < limite) {
+                  liberados += v.length;
+                  localStorage.removeItem(k);
+                }
+              }
+            } catch(_) {}
             return liberados;
           };
+          // Reportar 1x/día a MOS si el dispositivo está crónicamente al límite
+          const _reportarQuotaAMos = () => {
+            try {
+              const hoy = new Date().toDateString();
+              const ultimoReporte = localStorage.getItem('mosexpress_quota_reportada');
+              if (ultimoReporte === hoy) return; // dedup diario
+              const devId = localStorage.getItem('mosexpress_deviceId') || 'unknown';
+              const vendedor = (() => {
+                try { return JSON.parse(localStorage.getItem('mosexpress_config') || '{}').vendedor || ''; } catch(_) { return ''; }
+              })();
+              const pendCount = (() => {
+                try { return JSON.parse(localStorage.getItem('pending_sales') || '[]').length; } catch(_) { return 0; }
+              })();
+              fetch(window.MOS_GAS_URL || '', {
+                method: 'POST',
+                body: JSON.stringify({
+                  action: 'reportarQuotaDispositivo',
+                  deviceId: devId, vendedor: vendedor,
+                  ts: new Date().toISOString(),
+                  pendingSales: pendCount,
+                  totalKeys: localStorage.length
+                })
+              }).catch(() => {});
+              localStorage.setItem('mosexpress_quota_reportada', hoy);
+            } catch(_) {}
+          };
+          // Toast condicional al cajero — solo si hay pendientes (orienta acción)
+          const _toastSiPendientes = () => {
+            try {
+              const pendCount = JSON.parse(localStorage.getItem('pending_sales') || '[]').length;
+              if (pendCount > 0 && typeof agregarToast === 'function') {
+                agregarToast('💾 Almacenamiento al límite',
+                  pendCount + ' ventas pendientes · sincronízalas para liberar espacio',
+                  'warning');
+              }
+            } catch(_){}
+          };
+          const _doCleanup = _gcSeguro;  // alias compat
           // [v2.5.52] Keys de sesión que también se respaldan en IndexedDB
           // — IDB sobrevive a muchos cleanups que matan a localStorage.
           const _esKeySesion = (k) =>
@@ -5623,33 +5744,40 @@
               console.warn('localStorage error (no quota):', key, e);
               return false;
             }
-            // Quota exceeded → limpiar legacy + retry
-            const lib = _doCleanup();
-            console.warn(`[lsSet] Quota exceeded, liberados ${lib} bytes, reintentando: ${key}`);
+            // Quota exceeded → GC seguro + retry
+            const lib = _gcSeguro();
+            console.warn(`[lsSet] Quota — liberados ${lib} bytes, retry: ${key}`);
             try {
               localStorage.setItem(key, value);
               return true;
             } catch(e2) {
-              // Último recurso — limpiar TODO menos sesión activa
-              try {
-                const _preservar = {
-                  mosexpress_config: localStorage.getItem('mosexpress_config'),
-                  mosexpress_session_date: localStorage.getItem('mosexpress_session_date'),
-                  mosexpress_caja_activa: localStorage.getItem('mosexpress_caja_activa'),
-                  mosexpress_deviceId: localStorage.getItem('mosexpress_deviceId'),
-                  mosexpress_pendingSales: localStorage.getItem('mosexpress_pendingSales')
-                };
-                localStorage.clear();
-                Object.keys(_preservar).forEach(k => {
-                  if (_preservar[k]) try { localStorage.setItem(k, _preservar[k]); } catch(_){}
-                });
-                localStorage.setItem(key, value);
-                console.warn('[lsSet] Quota recuperado tras limpiar todo: ' + key);
-                return true;
-              } catch(e3) {
-                console.error('[lsSet] No se pudo guardar tras limpiar todo:', key, e3);
-                return false;
+              // Si SIGUE fallando tras GC: reportar a admin + toast condicional.
+              // NO hacemos localStorage.clear() — preferimos perder este setItem
+              // específico (regenerable) antes que destruir datos protegidos.
+              _reportarQuotaAMos();
+              _toastSiPendientes();
+              console.error('[lsSet] Quota persistente — protegidas intactas, descartado:', key);
+              // Si la key es protegida, último recurso: limpiar TODO lo no protegido
+              if (_PROTEGIDAS.has(key)) {
+                try {
+                  const _backup = {};
+                  _PROTEGIDAS.forEach(k => {
+                    const v = localStorage.getItem(k);
+                    if (v) _backup[k] = v;
+                  });
+                  localStorage.clear();
+                  Object.keys(_backup).forEach(k => {
+                    try { localStorage.setItem(k, _backup[k]); } catch(_){}
+                  });
+                  localStorage.setItem(key, value);
+                  console.warn('[lsSet] Last-resort reset (solo no-protegidas borradas): ' + key);
+                  return true;
+                } catch(e3) {
+                  console.error('[lsSet] FATAL — no se pudo persistir clave protegida:', key, e3);
+                  return false;
+                }
               }
+              return false;
             }
           }
         };
@@ -13442,7 +13570,7 @@
                 ventasHoy.value[idx].syncStatus = 'anulado';
                 ventasHoy.value[idx].expanded = false;
                 pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
-                localStorage.setItem('pending_sales', JSON.stringify(pendingSales.value));
+                lsSet('pending_sales', JSON.stringify(pendingSales.value));
                 lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
             }
             agregarToast('Comprobante Anulado', venta.correlativo);
@@ -13719,7 +13847,8 @@
                 const d = await r.json();
                 if (d.status === 'success') {
                     stockZonas.value = d.stock;
-                    localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(d.stock));
+                    // [v2.7.8] Persistir vía lsSet — autocompacta a Cantidad>0 si quota tight
+                    lsSet('mosexpress_stock_zonas', JSON.stringify(d.stock));
                 }
             } catch(e) { console.warn('Error cargando stock zonas', e); }
         };
@@ -14019,7 +14148,8 @@
                 if (si >= 0) stockZonas.value[si].Cantidad = (parseFloat(stockZonas.value[si].Cantidad) || 0) + signo * item.cantidad;
                 else if (!esSalida) stockZonas.value.push({ Cod_Barras: item.cod_barras, Zona_ID: zonaSnap, Cantidad: item.cantidad });
             });
-            localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
+            // [v2.7.8] lsSet con GC seguro — no destruye pending_sales/fantasma/carrito
+            lsSet('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
 
             // 2. Entrada optimista al historial local (visible al instante)
             const _guiaOpt = {
@@ -14033,7 +14163,7 @@
                 estado: 'CONFIRMADO'
             };
             guiaHistorial.value = [_guiaOpt, ...guiaHistorial.value];
-            localStorage.setItem('mosexpress_guias_' + zonaSnap, JSON.stringify(guiaHistorial.value));
+            lsSet('mosexpress_guias_' + zonaSnap, JSON.stringify(guiaHistorial.value));
             agregarToast('Guía enviada', 'Registrando en segundo plano...');
 
             // 3. Liberar el form inmediatamente — usuario puede agregar otra guía sin esperar
@@ -14301,7 +14431,7 @@
                     const si = stockZonas.value.findIndex(row => String(row.Cod_Barras) === item.cod_barras && row.Zona_ID === auditZona.value);
                     if (si >= 0) stockZonas.value[si].Cantidad = cantFinal;
                     else stockZonas.value.push({ Cod_Barras: item.cod_barras, Zona_ID: auditZona.value, Cantidad: cantFinal });
-                    localStorage.setItem('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
+                    lsSet('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
                 } else {
                     item.estado = 'error';
                 }
