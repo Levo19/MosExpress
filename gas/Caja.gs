@@ -362,6 +362,25 @@ function _cerrarCajaAtomicoCore(opts) {
         sheetVentas.getRange(v + 1, 9).setValue('ANULADO');        // col 9 = FormaPago
         // ID_Caja (col 11) se mantiene para audit trail
         idsAnulados.push(idV);
+        // [v2.7.5] Auditoría INDIVIDUAL por cada venta anulada en cierre.
+        // Antes solo se auditaba la caja entera — quedaban huérfanas las
+        // anulaciones y no había rastro de "este ticket fue anulado porque
+        // cliente no pagó al cierre del turno". Si después llega el cliente
+        // a pagar, esta fila permite saber qué pasó.
+        try {
+          if (typeof auditarLog === 'function') {
+            auditarLog('VENTAS_CABECERA', idV, {
+              usuario: String((opts.adminAuth && opts.adminAuth.nombre) || cajaVendedor),
+              rol:     String((opts.adminAuth && opts.adminAuth.rol)    || 'CAJERO'),
+              source:  'ME_ANULAR_EN_CIERRE',
+              accion:  'anular_por_cobrar_en_cierre',
+              cambios: [{ campo: 'FormaPago', antes: 'POR_COBRAR', despues: 'ANULADO' }],
+              ref:     { idCaja: idCaja, vendedor: cajaVendedor, zona: cajaZona, total: total },
+              motivo:  'Cierre de turno — POR_COBRAR no cobrado',
+              ts:      new Date().toISOString()
+            });
+          }
+        } catch(eAv) { Logger.log('[cierre] audit individual anulado falló: ' + eAv.message); }
         continue;
       }
 
@@ -425,6 +444,11 @@ function _cerrarCajaAtomicoCore(opts) {
           auditSource = 'ME_CIERRE_CAJA';
           auditAccion = 'cerrar_caja';
         }
+        // [v2.7.5] FIX CRÍTICO: variable idsDevueltosACredito NO existía —
+        // causaba ReferenceError silencioso en cada cierre → auditoría no
+        // se escribía. La variable real es idsAnulados (línea 344).
+        // El nombre legacy "devueltosACredito" se mantiene en el ref para
+        // no romper consumidores históricos de la auditoría.
         auditarLog('CAJAS', idCaja, {
           usuario: String((opts.adminAuth && opts.adminAuth.nombre) || cajaVendedor),
           rol: String((opts.adminAuth && opts.adminAuth.rol) || 'CAJERO'),
@@ -437,9 +461,8 @@ function _cerrarCajaAtomicoCore(opts) {
           ],
           ref: {
             idCaja: idCaja, vendedor: cajaVendedor, zona: cajaZona,
-            // [v2.5.52] Cambio nomenclatura — antes anulados, ahora devueltos a CRÉDITO
-            devueltosACredito: idsDevueltosACredito.length,
-            idsDevueltosACredito: idsDevueltosACredito,
+            ticketsAnulados:   idsAnulados.length,
+            idsTicketsAnulados: idsAnulados,
             montoFinal: montoFinal,
             montoFinalAuto: montoFinalAuto, descuadre: montoFinal - montoFinalAuto
           },
