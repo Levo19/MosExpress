@@ -567,6 +567,40 @@ function procesarCierreCaja(data) {
   });
 }
 
+// [v2.7.0] Consulta liviana del estado de una caja por idCaja.
+// Frontend ME la usa al recibir forzar_logout del cron 23h para verificar
+// si la caja realmente cerró antes de borrar localStorage. Si la caja sigue
+// ABIERTA (bridge del cron falló), el frontend ofrece RETOMAR en vez de
+// destruir local — evita dejar la caja huérfana.
+function consultarCaja(idCaja) {
+  if (!idCaja) return generarRespuestaError('idCaja requerido');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('CAJAS');
+  if (!sheet) return generarRespuestaError('CAJAS no encontrada');
+  var d = sheet.getDataRange().getValues();
+  for (var i = 1; i < d.length; i++) {
+    if (String(d[i][0]) === String(idCaja)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        ok: true,
+        data: {
+          idCaja:         String(d[i][0]),
+          Vendedor:       String(d[i][1] || ''),
+          Estacion:       String(d[i][2] || ''),
+          Estado:         String(d[i][5] || ''),
+          montoInicial:   parseFloat(d[i][4]) || 0,
+          montoFinal:     parseFloat(d[i][6]) || 0,
+          zona:           String(d[i][8] || ''),
+          PrintNode_ID:   String(d[i][9] || '')
+        }
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', ok: false, error: 'Caja no encontrada', data: null
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
 // Endpoint admin/master — cierre forzado desde MOS. Delega al helper atómico
 // pasando esForzado=true para que la auditoría/push lleven la marca de admin.
 function cerrarCajaForzado(data) {

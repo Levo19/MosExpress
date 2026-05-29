@@ -6826,50 +6826,20 @@
           // Reloj header — actualizar cada minuto
           setInterval(() => { horaActual.value = _fmtHora(); }, 60000);
 
-          // [v2.5.14] Check cambio de día (cruzó medianoche con la app abierta).
-          // [v2.5.65] GUARD DEFENSIVO: solo forzar logout si session_date Y session_start
-          // son ambos del día anterior. Si session_date está raro pero session_start es
-          // < 16h, asumir corrupción del localStorage (cuota llena, race con SW update,
-          // glitch NTP) y REPARAR session_date silenciosamente. Antes esto disparaba
-          // "Sesión sin cerrar" en tablets aunque la jornada fuera de hoy mismo.
-          setInterval(() => {
-              if (!config.value.completado) return;
-              const fechaGuardada = localStorage.getItem('mosexpress_session_date');
-              const hoy = new Date().toDateString();
-              if (fechaGuardada && fechaGuardada !== hoy) {
-                  // Sanity check con session_start (timestamp ISO real, no derivado)
-                  const startIso = localStorage.getItem('mosexpress_session_start');
-                  const startMs  = startIso ? Date.parse(startIso) : 0;
-                  const horasDesdeStart = startMs ? (Date.now() - startMs) / 3600000 : 9999;
-                  if (horasDesdeStart < 16) {
-                      // Falso positivo: session_date corrupto pero session_start es fresco.
-                      // Reparamos en silencio y NO disparamos logout.
-                      console.warn('[ME] session_date desync (', fechaGuardada, '→', hoy, ') · session_start hace', horasDesdeStart.toFixed(1), 'h · REPARANDO sin logout');
-                      try { localStorage.setItem('mosexpress_session_date', hoy); } catch(_) {}
-                      return;
-                  }
-                  console.log('[ME] Cambio de día real detectado en vivo · forzando logout');
-                  let _cajaAyer = null;
-                  if (config.value.esCajero) {
-                      try {
-                          const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
-                          if (_cajaSaved) _cajaAyer = JSON.parse(_cajaSaved);
-                      } catch(e) {}
-                  }
-                  sesionAnteriorInfo.value = {
-                      vendedor: config.value.vendedor,
-                      estacion: config.value.estacion,
-                      esCajero: config.value.esCajero,
-                      fecha: fechaGuardada,
-                      caja: _cajaAyer
-                  };
-                  mostrarModalSesionAnterior.value = true;
-                  config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
-                  localStorage.removeItem('mosexpress_config');
-                  localStorage.removeItem('mosexpress_session_date');
-                  localStorage.removeItem('mosexpress_caja_activa');
-              }
-          }, 60000);  // cada minuto basta
+          // [v2.7.0] GUARD POLLING ELIMINADO — antes corría cada 60s comparando
+          // session_date local contra hoy y, si no coincidían, mataba la sesión
+          // local sin coordinarse con el backend. Resultado: la caja del cajero
+          // quedaba huérfana (ABIERTA en CAJAS sheet pero sin owner local) y al
+          // re-loguearse el backend lo bloqueaba. Necesitaba cierre forzado
+          // manual desde MOS.
+          //
+          // Reemplazado por: el cron MOS cierreNocturnoTodos a las 23h
+          //   1) Cierra cajas vía bridge CIERRE_CAJA_FORZADO (emite guía + anula
+          //      POR_COBRAR + cierra atómico)
+          //   2) Marca Forzar_Logout=1 en DISPOSITIVOS para vendedores y cajeros
+          //   3) Frontend lo detecta en verificarDispositivoYAuth() → cierra
+          //      sesión local con coordinación backend
+          // El guard local era una capa redundante y peligrosa.
 
           // Reintento de registro de caja LOCAL — cada 60 segundos
           _intervalCajaRetry = setInterval(_intentarRegistrarCajaLocal, 60000);
@@ -7136,50 +7106,13 @@
             verificarCajaPorDeviceId();
           }
 
-          // [v2.5.14] Detectar nueva jornada → CERRAR SESIÓN de AMBOS (vendedor + cajero).
-          // Antes solo aplicaba a cajeros y los vendedores se "renovaban" silenciosamente.
-          // El user pidió unificar: a las 23h backend cierra cajas (cron MOS) y al abrir
-          // la app al día siguiente, AMBOS roles tienen que loguearse de nuevo.
-          // Esto garantiza:
-          //  - Higiene de sesión diaria (nadie usa la app con la sesión del operador previo)
-          //  - Sincronía con el cron nocturno 23h que cierra cajas backend
-          //  - Conteo correcto de jornadas en LIQUIDACIONES_DIA
-          const _hoyJornada = new Date().toDateString();
-          const _fechaSesionGuardada = localStorage.getItem('mosexpress_session_date');
-          // [v2.5.65] Mismo guard defensivo del polling — evitar falso "Sesión sin cerrar"
-          // al recargar cuando session_date está corrupto pero session_start es fresco.
-          // Si session_start fue hace <16h → reparar y NO disparar modal.
-          const _startIso = localStorage.getItem('mosexpress_session_start');
-          const _startMs  = _startIso ? Date.parse(_startIso) : 0;
-          const _hsStart  = _startMs ? (Date.now() - _startMs) / 3600000 : 9999;
-          const _esFalsoPositivo = config.value.completado && _fechaSesionGuardada
-              && _fechaSesionGuardada !== _hoyJornada && _hsStart < 16;
-          if (_esFalsoPositivo) {
-              console.warn('[ME init] session_date desync (', _fechaSesionGuardada, '→', _hoyJornada, ') · session_start hace', _hsStart.toFixed(1), 'h · REPARANDO sin logout');
-              try { localStorage.setItem('mosexpress_session_date', _hoyJornada); } catch(_) {}
-          }
-          if (config.value.completado && _fechaSesionGuardada && _fechaSesionGuardada !== _hoyJornada && !_esFalsoPositivo) {
-              let _cajaAyer = null;
-              if (config.value.esCajero) {
-                  try {
-                      const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
-                      if (_cajaSaved) _cajaAyer = JSON.parse(_cajaSaved);
-                  } catch(e) {}
-              }
-              sesionAnteriorInfo.value = {
-                  vendedor: config.value.vendedor,
-                  estacion: config.value.estacion,
-                  esCajero: config.value.esCajero,
-                  fecha: _fechaSesionGuardada,
-                  caja: _cajaAyer
-              };
-              mostrarModalSesionAnterior.value = true;
-              // Forzar nuevo login — limpiar TODO (vendedor o cajero)
-              config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
-              localStorage.removeItem('mosexpress_config');
-              localStorage.removeItem('mosexpress_session_date');
-              localStorage.removeItem('mosexpress_caja_activa');
-          }
+          // [v2.7.0] GUARD LOCAL ELIMINADO — el cron 23h de MOS (cierreNocturnoTodos)
+          // se encarga DEFINITIVO de cerrar cajas + marcar Forzar_Logout en
+          // DISPOSITIVOS para vendedores y cajeros. El frontend ya no decide
+          // a ciegas por session_date local: confía en la verificación de
+          // dispositivo (verificarDispositivoYAuth) que respeta el flag
+          // forzar_logout del backend. Esto evita el bug histórico de caja
+          // huérfana: guard mataba localStorage sin coordinarse con backend.
 
           // Restaurar carrito en curso (sobrevive refreshes accidentales)
           try {
@@ -7410,34 +7343,82 @@
                            lsSet('mosexpress_device_auth_date', String(Date.now()));
                            lsSet('mosexpress_device_auth_id', deviceId.value);
                            mosOK = true;
-                           // [v2.5.23] Si el cron 23h marcó Forzar_Logout, ejecutar
-                           // el mismo flujo que el "cambio de día" — cerrar sesión
-                           // (y caja si aplica) y volver al login. Limpiar el flag
-                           // en MOS para no quedar en bucle.
+                           // [v2.7.0] Forzar_Logout del cron 23h — flujo COORDINADO con backend.
+                           //   1) Formatear fecha UTC → hora Lima legible
+                           //   2) Si era cajero: verificar en backend si la caja realmente
+                           //      cerró. Si NO cerró → ofrecer RETOMAR (no perder datos).
+                           //      Si SÍ cerró → modal informativo + limpiar local.
+                           //   3) Si era vendedor (sin caja): solo limpiar local + modal.
+                           //   4) Ack a MOS para limpiar el flag (no quedar en bucle).
                            if (j.data.forzar_logout && config.value.completado) {
-                               console.log('[ME] Forzar_Logout recibido del cron 23h · cerrando sesión');
+                               console.log('[ME] Forzar_Logout recibido del cron 23h · verificando estado caja');
                                try {
+                                   // Convertir logout_auto_ts (UTC ISO) → "DD/MM/YYYY HH:mm hora Lima"
+                                   const _fmtFechaLima = (isoUtc) => {
+                                       if (!isoUtc) return 'cierre nocturno 23h';
+                                       try {
+                                           const d = new Date(isoUtc);
+                                           if (isNaN(d.getTime())) return String(isoUtc);
+                                           // Lima = UTC-5 hardcoded (Perú no usa DST)
+                                           const lima = new Date(d.getTime() - 5 * 60 * 60 * 1000);
+                                           const dd = String(lima.getUTCDate()).padStart(2,'0');
+                                           const mm = String(lima.getUTCMonth()+1).padStart(2,'0');
+                                           const yy = lima.getUTCFullYear();
+                                           const hh = String(lima.getUTCHours()).padStart(2,'0');
+                                           const mi = String(lima.getUTCMinutes()).padStart(2,'0');
+                                           return `${dd}/${mm}/${yy} ${hh}:${mi} (hora Lima)`;
+                                       } catch(_) { return String(isoUtc); }
+                                   };
+
                                    let _cajaAyer = null;
+                                   let _cajaSigueAbierta = false;
                                    if (config.value.esCajero) {
                                        const _cajaSaved = localStorage.getItem('mosexpress_caja_activa');
                                        if (_cajaSaved) try { _cajaAyer = JSON.parse(_cajaSaved); } catch(e) {}
+                                       // Verificar en backend si la caja sigue ABIERTA (cron falló para mí)
+                                       if (_cajaAyer && _cajaAyer.idCaja) {
+                                           try {
+                                               const _vR = await fetch(`${API_URL}?accion=consultarCaja&idCaja=${encodeURIComponent(_cajaAyer.idCaja)}`);
+                                               const _vJ = await _vR.json();
+                                               const _est = String(_vJ?.data?.Estado || _vJ?.data?.estado || '').toUpperCase();
+                                               _cajaSigueAbierta = (_est === 'ABIERTA');
+                                               if (_cajaSigueAbierta) {
+                                                   console.warn('[ME] Cron 23h marcó forzar_logout PERO mi caja sigue ABIERTA · ofrezco retomar en vez de matar local');
+                                               }
+                                           } catch(_) {}
+                                       }
                                    }
-                                   sesionAnteriorInfo.value = {
-                                       vendedor: config.value.vendedor,
-                                       estacion: config.value.estacion,
-                                       esCajero: config.value.esCajero,
-                                       fecha: j.data.logout_auto_ts || 'cierre auto 23h',
-                                       caja: _cajaAyer,
-                                       motivo: 'CIERRE_NOCTURNO_AUTO'
-                                   };
-                                   mostrarModalSesionAnterior.value = true;
-                                   config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
-                                   localStorage.removeItem('mosexpress_config');
-                                   localStorage.removeItem('mosexpress_session_date');
-                                   localStorage.removeItem('mosexpress_caja_activa');
-                                   // Limpiar flag en MOS — fire and forget
-                                   fetch(`${MOS_GAS_URL}?action=marcarLogoutHonrado&deviceId=${encodeURIComponent(deviceId.value)}`)
-                                       .catch(() => {});
+
+                                   if (_cajaSigueAbierta) {
+                                       // Caja NO cerró bien — no destruir local, ofrecer retomar.
+                                       // El usuario verá el modal de retoma (verificarCajaPorDeviceId)
+                                       // que ya maneja este caso. No marcamos ack para que el siguiente
+                                       // ciclo lo revise de nuevo (puede que admin cierre desde MOS).
+                                       agregarToast(
+                                           '⚠ Cierre nocturno incompleto',
+                                           'Tu caja sigue abierta · usa "Retomar caja" o cierra manual',
+                                           'warn',
+                                           8000
+                                       );
+                                   } else {
+                                       // Caja cerrada (o no era cajero) — flujo normal
+                                       sesionAnteriorInfo.value = {
+                                           vendedor: config.value.vendedor,
+                                           estacion: config.value.estacion,
+                                           esCajero: config.value.esCajero,
+                                           fecha: _fmtFechaLima(j.data.logout_auto_ts),
+                                           caja: _cajaAyer,
+                                           motivo: 'CIERRE_NOCTURNO_AUTO'
+                                       };
+                                       mostrarModalSesionAnterior.value = true;
+                                       config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+                                       localStorage.removeItem('mosexpress_config');
+                                       localStorage.removeItem('mosexpress_session_date');
+                                       localStorage.removeItem('mosexpress_caja_activa');
+                                       // Ack a MOS — sí honramos el logout
+                                       fetch(`${MOS_GAS_URL}?action=marcarLogoutHonrado&deviceId=${encodeURIComponent(deviceId.value)}`)
+                                           .catch(() => {});
+                                   }
                                } catch(eFL) { console.error('[ME] forzar_logout fallo:', eFL); }
                            }
                        }
