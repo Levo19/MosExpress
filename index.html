@@ -5238,6 +5238,12 @@
                     <div><p class="text-white font-black">Movimiento a otra zona</p><p class="text-gray-400 text-xs mt-0.5">Enviar mercadería a otra zona (genera entrada automática)</p></div>
                     <svg class="w-5 h-5 text-gray-500 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </button>
+                <!-- [v2.7.6] Devolver al almacén — two-party witness -->
+                <button @click="seleccionarSubtipoGuia('DEVOLUCION_WH')" class="w-full bg-gradient-to-r from-rose-900/40 to-amber-900/40 hover:from-rose-800/50 hover:to-amber-800/50 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-rose-500/40 shadow-lg shadow-rose-900/20">
+                    <div class="w-12 h-12 bg-gradient-to-br from-rose-500/30 to-amber-500/30 rounded-xl flex items-center justify-center shrink-0 ring-1 ring-rose-400/30"><span class="text-2xl">📦</span></div>
+                    <div><p class="text-white font-black">Devolver al almacén</p><p class="text-rose-200/80 text-xs mt-0.5">Sobrestock o deteriorado · cada producto con su estado</p></div>
+                    <svg class="w-5 h-5 text-rose-300 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
                 <!-- Salida por ventas (informativa) -->
                 <div class="w-full bg-gray-800/50 rounded-2xl p-4 flex items-center gap-4 border border-dashed border-gray-700 opacity-60">
                     <div class="w-12 h-12 bg-gray-700 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg></div>
@@ -5256,6 +5262,10 @@
                         <option v-for="z in zonasUnicas.filter(z => z !== guiaZona)" :key="z" :value="z">{{ z }}</option>
                     </select>
                 </div>
+                <!-- [v2.7.6] Banner devolución al almacén -->
+                <div v-if="guiaSubtipo === 'DEVOLUCION_WH'" class="bg-gradient-to-r from-rose-900/40 to-amber-900/40 border-2 border-rose-500/40 rounded-2xl p-3 text-xs text-rose-200 font-bold shadow-lg shadow-rose-900/20">
+                    📦 Marca el estado real de cada producto · obligatorio adjuntar foto si NO es buen estado
+                </div>
                 <!-- Escaneo/búsqueda -->
                 <div class="flex gap-2">
                     <input v-model="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-amber-500 text-lg tracking-widest">
@@ -5267,23 +5277,58 @@
                 <div v-show="camaraGuiaAbierta" class="rounded-xl overflow-hidden"><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
                 <!-- Lista items -->
                 <div class="flex-1 space-y-2 overflow-y-auto">
-                    <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
-                            <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p>
+                    <div v-for="(item, idx) in guiaItems" :key="idx"
+                         class="bg-gray-800 rounded-xl px-3 py-2.5 transition-all"
+                         :class="guiaSubtipo === 'DEVOLUCION_WH' && item.estadoDev && item.estadoDev !== 'BUEN_ESTADO' ? 'ring-2 ring-rose-500/40 bg-gradient-to-br from-gray-800 to-rose-950/30' : ''">
+                        <div class="flex items-center gap-3">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
+                                <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <button @click="item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                                <input :data-guia-input="item.cod_barras" :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat(String($event.target.value || 0.01).replace(',', '.')).toFixed(3)) || 0.01" type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01" class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-amber-500 py-1" inputmode="decimal">
+                                <button @click="item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                                <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-1.5">
-                            <button @click="item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
-                            <input :data-guia-input="item.cod_barras" :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat(String($event.target.value || 0.01).replace(',', '.')).toFixed(3)) || 0.01" type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01" class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-amber-500 py-1" inputmode="decimal">
-                            <button @click="item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
-                            <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
+                        <!-- [v2.7.6] Chips de estado SOLO para DEVOLUCION_WH -->
+                        <div v-if="guiaSubtipo === 'DEVOLUCION_WH'" class="mt-2.5 pt-2 border-t border-gray-700/60">
+                            <div class="grid grid-cols-3 gap-1.5 text-[10px] font-bold">
+                                <button v-for="opt in devEstadosZona" :key="opt.code"
+                                        @click="setDevEstado(item, opt.code)"
+                                        :class="item.estadoDev === opt.code ? opt.activeCls : 'bg-gray-700/60 text-gray-400 hover:bg-gray-700'"
+                                        class="rounded-lg py-2 px-1 transition-all active:scale-95 leading-tight">
+                                    <div>{{ opt.icon }}</div>
+                                    <div class="text-[9px]">{{ opt.label }}</div>
+                                </button>
+                            </div>
+                            <!-- Campo OTRO -->
+                            <input v-if="item.estadoDev === 'OTRO'" v-model="item.notaEstado"
+                                   placeholder="Describe el estado..."
+                                   class="w-full mt-2 bg-gray-900 text-amber-200 text-xs px-3 py-2 rounded-lg border border-amber-500/40 outline-none">
+                            <!-- Foto OBLIGATORIA si NO es BUEN_ESTADO -->
+                            <div v-if="item.estadoDev && item.estadoDev !== 'BUEN_ESTADO'" class="mt-2 flex items-center gap-2">
+                                <button v-if="!item.fotoDev" @click="capturarFotoDev(item)"
+                                        class="flex-1 bg-rose-900/50 hover:bg-rose-800/60 text-rose-200 text-[11px] font-bold py-2 px-3 rounded-lg active:scale-95 flex items-center justify-center gap-2">
+                                    📷 Foto obligatoria
+                                </button>
+                                <div v-else class="flex items-center gap-2 flex-1">
+                                    <img :src="item.fotoDev" class="w-10 h-10 rounded-lg object-cover ring-1 ring-emerald-400/50">
+                                    <span class="text-[10px] text-emerald-300 font-bold">✓ Foto OK</span>
+                                    <button @click="item.fotoDev = ''" class="ml-auto text-rose-400 text-xs">✕ quitar</button>
+                                </div>
+                            </div>
+                            <input v-model="item.notaItem" placeholder="Comentario (opcional)..."
+                                   class="w-full mt-2 bg-gray-900 text-gray-200 text-[11px] px-3 py-1.5 rounded-lg border border-gray-700 outline-none">
                         </div>
                     </div>
                     <p v-if="!guiaItems.length" class="text-gray-600 text-center py-6 text-sm">Sin productos aún. Escanea o escribe un código.</p>
                 </div>
-                <button @click="confirmarGuia" :disabled="!guiaItems.length || (guiaSubtipo==='SALIDA_MOVIMIENTO' && !guiaZonaDestino)"
-                        class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-red-500 disabled:bg-red-900/40 text-white active:scale-95 shrink-0">
-                    ↓ Confirmar Salida ({{ guiaItems.length }} items)
+                <button @click="confirmarGuia" :disabled="!guiaItems.length || (guiaSubtipo==='SALIDA_MOVIMIENTO' && !guiaZonaDestino) || !puedeConfirmarDevolucion"
+                        class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 shrink-0 transition-all"
+                        :class="guiaSubtipo === 'DEVOLUCION_WH' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/50 disabled:from-rose-900/40 disabled:to-amber-900/40' : 'bg-red-500 disabled:bg-red-900/40 text-white'">
+                    {{ guiaSubtipo === 'DEVOLUCION_WH' ? '📦 Enviar al almacén' : '↓ Confirmar Salida' }} ({{ guiaItems.length }} items)
                 </button>
             </div>
         </div>
@@ -13708,10 +13753,80 @@
             guiaSubtipo.value = subtipo;
             // Pre-llenar observación para tipos con observación fija
             if (subtipo === 'SALIDA_JEFA') guiaObs.value = 'Pedido de jefa';
+            else if (subtipo === 'DEVOLUCION_WH') guiaObs.value = 'Devolución a almacén';
             else guiaObs.value = '';
             guiaItems.value = [];
             guiaFlujo.value = 'form';
+            try { playBeepSuave?.(); } catch(_){}
         };
+
+        // [v2.7.6] Chips de estado para devolución al almacén
+        const devEstadosZona = [
+            { code: 'BUEN_ESTADO',     icon: '✅', label: 'Buen estado',  activeCls: 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/40' },
+            { code: 'ROTO_MALOGRADO',  icon: '💥', label: 'Roto',         activeCls: 'bg-rose-600 text-white shadow-lg shadow-rose-500/40' },
+            { code: 'VENCIDO',         icon: '⏳', label: 'Vencido',      activeCls: 'bg-orange-600 text-white shadow-lg shadow-orange-500/40' },
+            { code: 'DEFECTO_FABRICA', icon: '🏭', label: 'Defecto',      activeCls: 'bg-purple-600 text-white shadow-lg shadow-purple-500/40' },
+            { code: 'GORGOJOS_BICHOS', icon: '🐛', label: 'Bichos',       activeCls: 'bg-amber-600 text-white shadow-lg shadow-amber-500/40' },
+            { code: 'OTRO',            icon: '✏️', label: 'Otro',         activeCls: 'bg-sky-600 text-white shadow-lg shadow-sky-500/40' }
+        ];
+
+        const setDevEstado = (item, code) => {
+            item.estadoDev = code;
+            if (!item.notaItem) item.notaItem = '';
+            if (!item.fotoDev) item.fotoDev = '';
+            if (!item.notaEstado) item.notaEstado = '';
+            try {
+                if (code === 'BUEN_ESTADO') playBeepSuave?.();
+                else if (navigator.vibrate) navigator.vibrate(40);
+            } catch(_){}
+        };
+
+        const capturarFotoDev = async (item) => {
+            // Reusa flujo existente de cámara para fotos de guía si lo hay,
+            // sino abre input file con capture environment
+            try {
+                const inp = document.createElement('input');
+                inp.type = 'file';
+                inp.accept = 'image/*';
+                inp.capture = 'environment';
+                inp.onchange = (ev) => {
+                    const f = ev.target.files && ev.target.files[0];
+                    if (!f) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        // Compress a max 1024px usando canvas
+                        const img = new Image();
+                        img.onload = () => {
+                            const max = 1024;
+                            let w = img.width, h = img.height;
+                            if (w > h && w > max) { h = h * (max/w); w = max; }
+                            else if (h > max)     { w = w * (max/h); h = max; }
+                            const cv = document.createElement('canvas');
+                            cv.width = w; cv.height = h;
+                            cv.getContext('2d').drawImage(img, 0, 0, w, h);
+                            item.fotoDev = cv.toDataURL('image/jpeg', 0.7);
+                            try { playBeepSuave?.(); } catch(_){}
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(f);
+                };
+                inp.click();
+            } catch(e) { agregarToast('Error al capturar foto', e.message, 'warning'); }
+        };
+
+        // Computed: ¿está completo el flujo de devolución?
+        // Todos los items con estado seleccionado + foto si no es BUEN_ESTADO + nota si es OTRO.
+        const puedeConfirmarDevolucion = computed(() => {
+            if (guiaSubtipo.value !== 'DEVOLUCION_WH') return true;
+            if (!guiaItems.value.length) return false;
+            return guiaItems.value.every(it => {
+                if (!it.estadoDev) return false;
+                if (it.estadoDev !== 'BUEN_ESTADO' && !it.fotoDev) return false;
+                if (it.estadoDev === 'OTRO' && !String(it.notaEstado || '').trim()) return false;
+                return true;
+            });
+        });
 
         const toggleCamaraGuia = () => {
             camaraGuiaAbierta.value = !camaraGuiaAbierta.value;
@@ -13878,6 +13993,16 @@
             const subtipoSnap   = guiaSubtipo.value;
             const destinoSnap   = guiaZonaDestino.value;
             const itemsSnap     = guiaItems.value.map(i => ({ cod_barras: i.cod_barras, cantidad: i.cantidad, nombre: i.nombre }));
+            // [v2.7.6] Para DEVOLUCION_WH también capturamos estado/foto/nota de cada item
+            const itemsDevolucion = guiaItems.value.map(i => ({
+                cod_barras: i.cod_barras,
+                nombre:     i.nombre,
+                cantidad:   i.cantidad,
+                estado:     i.estadoDev || 'BUEN_ESTADO',
+                motivo:     i.notaEstado || '',
+                foto:       i.fotoDev || '',
+                notaItem:   i.notaItem || ''
+            }));
             const payload = {
                 tipoEvento:   'REGISTRAR_GUIA',
                 vendedor:     config.value.vendedor,
@@ -13916,6 +14041,40 @@
 
             // 4. POST a GAS fire-and-forget (corre en background, no bloquea el form)
             _postGuiaBackground(payload, destinoSnap);
+
+            // [v2.7.6] Si es DEVOLUCION_WH, también notifica al backend WH vía MOS bridge
+            // para crear la fila en DEVOLUCIONES_ZONA (tabla intermedia con el JSON de zona).
+            if (subtipoSnap === 'DEVOLUCION_WH') {
+                try {
+                    const bodyDev = {
+                        action: 'wh_crearDevolucionZona',
+                        zonaOrigen:          zonaSnap,
+                        vendedor:            config.value.vendedor,
+                        idDispositivoOrigen: localStorage.getItem('mosexpress_deviceId') || '',
+                        items:               itemsDevolucion,
+                        notaGeneral:         payload.observacion || ''
+                    };
+                    // No-await: queremos UX optimista. Si falla, queda log en consola
+                    // y el cajero puede reintentar manualmente desde historial.
+                    fetch(MOS_GAS_URL, {
+                        method: 'POST',
+                        body:   JSON.stringify(bodyDev)
+                    }).then(r => r.json()).then(d => {
+                        if (d && d.ok) {
+                            try { playVentaOK?.(); } catch(_){}
+                            agregarToast('📦 Devolución enviada', 'Almacén fue notificado · ' + (d.data?.idDevolucion || ''), 'success', 4000);
+                        } else {
+                            agregarToast('⚠ Aviso almacén falló',
+                                'La guía está registrada pero almacén puede no haber recibido el aviso. ' + (d?.error || ''),
+                                'warning', 6000);
+                        }
+                    }).catch(e => {
+                        console.warn('[devolucion WH bridge] fail:', e.message);
+                        agregarToast('⚠ Sin red para avisar almacén',
+                            'La guía está registrada. Reintentaremos automáticamente.', 'warning', 5000);
+                    });
+                } catch(eDev) { console.warn('[devolucion WH] fatal:', eDev.message); }
+            }
         };
 
         const listarGuiasHistorial = async () => {
@@ -14273,6 +14432,8 @@
           guiaHistorial, guiaHistorialCargando, guiaDetallando, guiaDetalle, camaraGuiaAbierta,
           abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
           guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
+          // [v2.7.6] Devolución al almacén (two-party witness)
+          devEstadosZona, setDevEstado, capturarFotoDev, puedeConfirmarDevolucion,
           auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente, auditCargando, auditConfirmados,
           camaraAuditAbierta, toggleCamaraAudit, auditEscanear, _guardarAuditHoy,
           auditInputRefs, autoGuardarItem, auditCardClass, auditInputClass,
