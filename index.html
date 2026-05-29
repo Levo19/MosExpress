@@ -2510,6 +2510,34 @@
     </div>
 
     <!-- AVISO NUEVA JORNADA · sesión anterior cerrada -->
+    <!-- [v2.7.11] Bloqueo full-screen por horario fuera de rango -->
+    <div v-if="horarioBloqueado" class="fixed inset-0 z-[200] flex flex-col items-center justify-center p-6"
+         style="background:linear-gradient(160deg,#7c2d12 0%,#0f172a 60%,#7c2d12 100%);backdrop-filter:blur(10px)">
+      <div class="text-center max-w-md w-full">
+        <div class="text-7xl mb-4" style="animation:meHorPulse 1.8s ease-in-out infinite">🔒</div>
+        <div class="text-rose-200 font-black text-3xl tracking-wide mb-2">POS cerrado</div>
+        <div class="text-rose-300 text-sm mb-6">
+          {{ horarioInfo?.motivo === 'antes_apertura' ? 'Aún no es hora de apertura' :
+             horarioInfo?.motivo === 'despues_cierre' ? 'Ya pasó la hora de cierre' :
+             horarioInfo?.motivo === 'dia_cerrado' ? 'Hoy el local está cerrado' : 'Fuera de horario asignado' }}
+        </div>
+        <div class="bg-slate-900/80 border border-rose-500/40 rounded-2xl p-4 mb-4 backdrop-blur-sm">
+          <div class="text-[10px] text-rose-400 uppercase tracking-wider font-bold mb-2">Tu horario asignado</div>
+          <div class="text-white font-black text-xl">
+            {{ horarioInfo?.apertura || '--' }} <span class="text-slate-500">→</span> {{ horarioInfo?.cierre || '--' }}
+          </div>
+          <div class="text-[10px] text-slate-400 mt-2">
+            Día: <b class="text-amber-300">{{ horarioInfo?.dia || '?' }}</b>
+            <span v-if="horarioInfo?.fuente === 'custom'" class="ml-2 text-violet-300">🕐 horario personalizado</span>
+          </div>
+        </div>
+        <div class="text-[11px] text-slate-400 italic">Vuelve dentro del rango asignado</div>
+      </div>
+    </div>
+    <style>
+      @keyframes meHorPulse { 0%,100%{transform:scale(1);opacity:.85} 50%{transform:scale(1.1);opacity:1} }
+    </style>
+
     <div v-if="mostrarModalSesionAnterior && !config.completado" class="absolute inset-0 z-[55] bg-gray-950 flex flex-col items-center justify-center p-6">
       <div class="w-full max-w-md bg-gray-800 p-8 rounded-3xl shadow-2xl"
            :class="sesionAnteriorInfo?.esCajero ? 'border-2 border-amber-500' : 'border-2 border-emerald-500'">
@@ -6717,6 +6745,31 @@
         let _wizardPollingTimer = null;
         const sesionAnteriorInfo = ref(null);
         const mostrarModalSesionAnterior = ref(false);
+        // [v2.7.11] Bloqueo de horario — full-screen overlay si fuera de horario
+        const horarioBloqueado = ref(false);
+        const horarioInfo = ref(null);
+        let _horarioInterval = null;
+        async function verificarHorarioVendedor() {
+          if (!config.value.completado || !config.value.vendedor) return;
+          try {
+            const url = `${API_URL}?accion=verificarHorarioME&vendedor=${encodeURIComponent(config.value.vendedor)}`;
+            const r = await fetch(url);
+            const j = await r.json();
+            const d = (j && j.data) || j || {};
+            if (d.permitido === false) {
+              horarioInfo.value = d;
+              horarioBloqueado.value = true;
+            } else {
+              horarioBloqueado.value = false;
+              horarioInfo.value = null;
+            }
+          } catch(_) { /* offline — no bloquear */ }
+        }
+        function arrancarHorarioCheckInterval() {
+          if (_horarioInterval) clearInterval(_horarioInterval);
+          _horarioInterval = setInterval(verificarHorarioVendedor, 5 * 60 * 1000);
+          verificarHorarioVendedor();
+        }
         // [v2.5.51] Caja detectada en backend para retomar (cuando localStorage se perdió)
         const cajaDetectadaBackend = ref(null);
         const retomandoCaja        = ref(false);
@@ -7149,6 +7202,8 @@
           // Bloqueo remoto del usuario — polling cada 30s + check inicial al cargar
           setTimeout(_checkBloqueoUsuario, 4000);
           _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 30 * 1000);
+          // [v2.7.11] Arrancar check de horario cada 5min
+          arrancarHorarioCheckInterval();
 
           // ── Audio remoto + GPS tracking — handlers de comandos del SW ──
           if ('serviceWorker' in navigator) {
@@ -14557,6 +14612,8 @@
           actInSituShow, actInSituNombre, actInSituClave, actInSituErr, actInSituBusy,
           abrirActivarInSitu, confirmarActivarInSitu,
           sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
+          // [v2.7.11] Bloqueo por horario
+          horarioBloqueado, horarioInfo,
           // [v2.5.51-52] Retomar caja por deviceId con PIN admin obligatorio
           cajaDetectadaBackend, retomandoCaja,
           pinRetomaAbierto, pinRetomaValor, pinRetomaError,
