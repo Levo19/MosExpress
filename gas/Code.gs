@@ -290,6 +290,22 @@ function doPost(e) {
         campos_faltantes: response.campos_faltantes
       })).setMimeType(ContentService.MimeType.JSON);
     }
+    // [v2.7.4] Propagar CUALQUIER error que devuelva procesarVenta — antes
+    // solo PAYLOAD_INVALIDO. Esto causaba el bug de "ventas fantasma":
+    // procesarVenta rechazaba con NO_CAJA_ACTIVA_EN_ZONA (idVenta=null) pero
+    // doPost devolvía status=success → frontend marcaba como sincronizada
+    // → ticket impreso pero sin fila en VENTAS_CABECERA.
+    if (response && response.error && !response.idVenta) {
+      // Registrar como VENTA_FANTASMA para revisión del admin
+      try { _registrarVentaFantasma(data, response); } catch(eF) { Logger.log('[fantasma] error: ' + eF.message); }
+      return ContentService.createTextOutput(JSON.stringify({
+        status:  'error',
+        error:   response.error,
+        mensaje: response.mensaje || ('Venta rechazada: ' + response.error),
+        idVenta: null,
+        zona:    response.zona || ''
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
     return ContentService.createTextOutput(JSON.stringify({
       status:         "success",
       idVenta:        response.idVenta,

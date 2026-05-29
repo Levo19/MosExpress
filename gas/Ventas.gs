@@ -3,6 +3,59 @@
 // Registro de ventas, correlativo O(1), consultas de ventas.
 // ============================================================
 
+/**
+ * [v2.7.4] Registra una venta RECHAZADA por el backend en la hoja
+ * VENTAS_FANTASMA para que el admin pueda darle seguimiento (revisar
+ * el ticket físico que sí se imprimió y decidir reprocesarla o
+ * archivarla). Auto-crea la hoja si falta.
+ *
+ * Sin esto, una venta rechazada por NO_CAJA_ACTIVA_EN_ZONA imprimía
+ * el ticket pero no quedaba rastro en backend → dinero recibido sin
+ * registro contable.
+ */
+function _registrarVentaFantasma(data, response) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('VENTAS_FANTASMA');
+  if (!sh) {
+    sh = ss.insertSheet('VENTAS_FANTASMA');
+    sh.appendRow([
+      'ts', 'vendedor', 'zona', 'estacion', 'deviceId',
+      'monto', 'metodo', 'tipoDoc', 'docCliente', 'nombreCliente',
+      'correlativoLocal', 'cajaIdEnviada', 'motivo',
+      'mensaje', 'estado_revision', 'revisadoPor', 'fechaRevision',
+      'accionTomada', 'payload_json'
+    ]);
+    sh.getRange(1, 1, 1, 19).setFontWeight('bold')
+      .setBackground('#7c2d12').setFontColor('#fff');
+    sh.setFrozenRows(1);
+  }
+  var auth   = (data && data.auth)   || {};
+  var pos    = (data && data.pos_config) || {};
+  var header = (data && data.header) || {};
+  var cli    = header.cliente || {};
+  sh.appendRow([
+    new Date(),
+    String(auth.vendedor || ''),
+    String(auth.zona || pos.zona || ''),
+    String(auth.estacion || ''),
+    String(auth.deviceId || ''),
+    parseFloat(header.total) || 0,
+    String(header.metodo || ''),
+    String(header.tipoDoc || ''),
+    String(cli.doc || ''),
+    String(cli.nombre || ''),
+    String(data.refLocal || pos.correlativoLocal || ''),
+    String(pos.cajaId || ''),
+    String(response.error || 'UNKNOWN'),
+    String(response.mensaje || ''),
+    'PENDIENTE',
+    '',
+    '',
+    '',
+    JSON.stringify(data).substring(0, 5000)  // truncar para no romper celda
+  ]);
+}
+
 function procesarVenta(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCabecera = ss.getSheetByName("VENTAS_CABECERA");

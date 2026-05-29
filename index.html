@@ -3569,6 +3569,60 @@
         </div>
     </div>
 
+    <!-- [v2.7.4] BANNER VENTAS FANTASMA — rechazadas por backend, requieren revisión -->
+    <div v-if="config.completado && dispositivoAutorizado === true && ventasFantasma.length > 0"
+         class="fixed bottom-28 left-0 right-0 z-30 px-3 pb-2 pointer-events-none">
+        <div class="bg-rose-700 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3 pointer-events-auto border-2 border-rose-900 animate-[slideUp_0.3s]">
+            <div class="shrink-0 relative">
+                <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                <span class="absolute -top-1 -right-1 bg-yellow-400 text-rose-900 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-rose-700">{{ ventasFantasma.length }}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-black text-sm leading-tight">
+                    {{ ventasFantasma.length }} venta{{ ventasFantasma.length > 1 ? 's' : '' }} rechazada{{ ventasFantasma.length > 1 ? 's' : '' }}
+                </div>
+                <div class="text-[10px] opacity-90 leading-tight mt-0.5">Tap para revisar tickets impresos sin registro</div>
+            </div>
+            <button @click="mostrarPanelFantasmas = true"
+                    class="shrink-0 bg-white text-rose-700 px-3 py-2 rounded-xl font-black text-xs active:scale-95 shadow">
+                Revisar
+            </button>
+        </div>
+    </div>
+
+    <!-- [v2.7.4] PANEL DE REVISIÓN DE VENTAS FANTASMA -->
+    <div v-if="mostrarPanelFantasmas" class="fixed inset-0 z-[60] bg-gray-950/90 backdrop-blur p-4 overflow-y-auto"
+         @click.self="mostrarPanelFantasmas = false">
+        <div class="bg-gray-900 border-2 border-rose-500/50 rounded-2xl max-w-2xl mx-auto p-5 shadow-2xl">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <div class="text-rose-300 font-black text-lg">⛔ Ventas fantasma · {{ ventasFantasma.length }}</div>
+                    <div class="text-[11px] text-slate-400">Tickets impresos sin registro en VENTAS_CABECERA</div>
+                </div>
+                <button @click="mostrarPanelFantasmas = false" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-600/40 text-slate-300 font-black">✕</button>
+            </div>
+            <div class="space-y-2 max-h-[60vh] overflow-y-auto">
+                <div v-for="(f, i) in ventasFantasma" :key="i"
+                     class="bg-slate-800/70 border border-rose-500/30 rounded-xl p-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="font-bold text-slate-100 text-sm">S/ {{ Number(f.total||0).toFixed(2) }}</div>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-900/60 text-rose-200 font-bold">{{ f.motivo }}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mt-1">
+                        {{ new Date(f.ts).toLocaleString('es-PE') }} · {{ f.vendedor }} · {{ f.zona }} · {{ f.metodo }}
+                    </div>
+                    <div v-if="f.impreso" class="text-[10px] text-amber-300 mt-1 font-bold">🖨 Ticket físico impreso — verifica con el cliente</div>
+                </div>
+            </div>
+            <div class="mt-4 flex gap-2">
+                <button @click="limpiarVentasFantasma()"
+                        class="flex-1 bg-rose-700 hover:bg-rose-600 text-white font-black py-3 rounded-xl active:scale-95">
+                    Archivar todas (revisado)
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- BOTTOM NAVIGATION -->
     <nav v-if="config.completado && dispositivoAutorizado === true" class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0">
         <!-- Tab POS (Destaque Central o Izquierdo) -->
@@ -5743,6 +5797,19 @@
         const dbCargada = ref(false);
         const pendingSales = ref([]);
         const isSyncing = ref(false);
+        // [v2.7.4] Ventas FANTASMA (rechazadas por backend, ticket pudo imprimirse)
+        const ventasFantasma = ref([]);
+        const mostrarPanelFantasmas = ref(false);
+        try { ventasFantasma.value = JSON.parse(localStorage.getItem('mosexpress_ventas_fantasma') || '[]'); } catch(_){}
+        const limpiarVentasFantasma = () => {
+            ventasFantasma.value = [];
+            try { localStorage.setItem('mosexpress_ventas_fantasma', '[]'); } catch(_){}
+            mostrarPanelFantasmas.value = false;
+        };
+        // Sincronizar el ref cuando el .catch escribe en localStorage
+        const _refrescarVentasFantasma = () => {
+            try { ventasFantasma.value = JSON.parse(localStorage.getItem('mosexpress_ventas_fantasma') || '[]'); } catch(_){}
+        };
         // Sonidos y voz: SIEMPRE activos por política — el cajero no puede desactivarlos.
         // (Antes eran toggles editables; ahora forzados a true para garantizar feedback
         // sonoro y voz "X soles, gracias por su compra" en todas las terminales.)
@@ -12765,10 +12832,34 @@
         const procesarPago = async () => {
            if (!carrito.value.length) return agregarToast('Carrito vacío', 'Agrega productos antes de cobrar.');
            if (vuelto.value < 0) return;
-           // Vendedores no pueden vender sin cajero activo en la zona
-           if (!config.value.esCajero && cajeroActivoEnZona.value === false) {
-               agregarToast('Sin cajero activo', 'No hay cajero abierto en ' + config.value.zona + '. Comunícate con el cajero de tu zona.');
-               return;
+           // [v2.7.4] PRE-VALIDACIÓN AGRESIVA (zero-latency):
+           //   • Cache <30s → asume OK, cero llamada a GAS (no añade latencia)
+           //   • Cache stale (>30s) → revalidación rápida 1.5s timeout
+           //   • Sin cajero confirmado → BLOQUEA con modal claro (no imprimir)
+           // Antes solo bloqueaba si cajeroActivoEnZona === false (estricto).
+           // Si era null o stale, dejaba pasar → venta fantasma.
+           if (!config.value.esCajero) {
+               const _cajaCache = cajeroActivoEnZona.value;
+               const _cachedAt  = parseInt(lsGet('mosexpress_caja_zona_cache_at') || '0', 10);
+               const _ageS      = (Date.now() - _cachedAt) / 1000;
+               // Si cache es fresca Y tiene cajero → seguir sin esperar
+               if (_cajaCache && _ageS < 30) {
+                   /* OK fresco */
+               } else {
+                   // Stale o sin info → revalidar ligero antes de imprimir
+                   try {
+                       const _vP = verificarCajeroActivo();
+                       const _vTimeout = new Promise(resolve => setTimeout(() => resolve('timeout'), 1500));
+                       await Promise.race([_vP, _vTimeout]);
+                   } catch(_){}
+                   if (!cajeroActivoEnZona.value) {
+                       agregarToast('⛔ Sin cajero activo',
+                           'No hay cajero abierto en ' + config.value.zona + ' · pide al cajero que abra caja antes de vender',
+                           'warning', 8000);
+                       try { playError && playError(); } catch(_){}
+                       return; // NO imprime · NO toca el carrito
+                   }
+               }
            }
 
            // [v2.7.0] PIEZA B — GUARD: si NV online y aún no llegó el correlativo
@@ -13059,13 +13150,22 @@
                            body: JSON.stringify(payload)
                        }, 20000);
                        const res = await r.json();
-                       if (res.status === 'success') return res;
-                       // [v2.5.46] Si el guard backend rechaza el payload → no reintentar.
-                       // El error sube al .catch del flujo principal, que lo loguea y descarta.
-                       if (res.error === 'PAYLOAD_INVALIDO') {
-                           const errPayload = new Error('PAYLOAD_INVALIDO: ' + (res.mensaje || ''));
-                           errPayload.code = 'PAYLOAD_INVALIDO';
-                           throw errPayload;
+                       // [v2.7.4] Validación CRÍTICA: success solo es válido si trae idVenta.
+                       // Antes el backend devolvía status=success con idVenta=null cuando
+                       // rechazaba (NO_CAJA_ACTIVA_EN_ZONA) → frontend marcaba como sincronizada
+                       // → ticket impreso sin fila en VENTAS_CABECERA = venta fantasma.
+                       if (res.status === 'success' && res.idVenta) return res;
+                       // [v2.5.46/2.7.4] Errores del backend que NO se reintentan:
+                       //   PAYLOAD_INVALIDO       → guard anti-huérfanas
+                       //   NO_CAJA_ACTIVA_EN_ZONA → cajero cerró/no abrió caja
+                       //   VENTA_RECHAZADA        → genérico
+                       if (res.error === 'PAYLOAD_INVALIDO' || res.error === 'NO_CAJA_ACTIVA_EN_ZONA'
+                           || (res.status === 'success' && !res.idVenta)) {
+                           const errFatal = new Error((res.error || 'VENTA_RECHAZADA') + ': ' + (res.mensaje || 'sin detalle'));
+                           errFatal.code     = res.error || 'VENTA_RECHAZADA';
+                           errFatal.fantasma = true;        // marca para que el .catch la trate como fantasma
+                           errFatal.respuesta = res;
+                           throw errFatal;
                        }
                        // Error lógico: distinguir RESERVA_OCUPADA (reintentable) de otros (fatales)
                        const msg = String(res.mensaje || '');
@@ -13183,16 +13283,64 @@
                    if (e.code === 'PAYLOAD_INVALIDO') {
                        console.error('[ME venta] PAYLOAD_INVALIDO — descartada:', e.message);
                        if (!_fastTimeoutHit) {
-                           // No imprimimos todavía y GAS rechazó: NO imprimir.
                            agregarToast('⚠ Venta no procesada',
                                'Sesión incompleta — reinicia sesión', 'warning');
                        } else {
-                           // Ya imprimimos LOCAL pero GAS rechaza → quitar de cola
                            pendingSales.value = pendingSales.value.filter(v => v.id !== localId);
                            lsSet('pending_sales', JSON.stringify(pendingSales.value));
                            agregarToast('⚠ Sesión incompleta',
                                'Venta impresa pero no persistida — reinicia sesión', 'warning');
                        }
+                       return;
+                   }
+                   // [v2.7.4] Venta FANTASMA — backend rechazó (NO_CAJA_ACTIVA, etc).
+                   // Lo crítico: ticket YA puede estar impreso (caso _fastTimeoutHit).
+                   // NO reintentar (es un rechazo lógico, no de red).
+                   // SÍ marcar visualmente la venta como FANTASMA y dejar log persistente.
+                   if (e.fantasma === true) {
+                       const motivo = e.code || 'VENTA_RECHAZADA';
+                       const msgUser = motivo === 'NO_CAJA_ACTIVA_EN_ZONA'
+                           ? '⛔ No hay caja activa en tu zona — pide al cajero que abra caja'
+                           : ('⛔ Venta rechazada por backend: ' + motivo);
+                       console.error('[ME venta] FANTASMA detectada:', motivo, e.message);
+                       // Marca la venta en ventasHoy como FANTASMA (no synced)
+                       const idx = ventasHoy.value.findIndex(v => v.id === localId);
+                       if (idx !== -1) {
+                           ventasHoy.value[idx].syncStatus = 'fantasma';
+                           ventasHoy.value[idx].motivoFantasma = motivo;
+                           ventasHoy.value[idx].raw_data.status = 'fantasma';
+                           lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                       }
+                       // Si no imprimimos todavía, NO imprimimos (evitamos ticket fantasma)
+                       // Si ya se imprimió (timeout), informamos al cajero/admin con sonido
+                       if (!_fastTimeoutHit) {
+                           agregarToast('⛔ Venta rechazada', msgUser, 'warning', 10000);
+                           try { playError && playError(); } catch(_){}
+                       } else {
+                           agregarToast('⛔ Ticket impreso pero venta NO registrada',
+                               msgUser + ' · revisa el ticket físico', 'warning', 12000);
+                           try { playError && playError(); } catch(_){}
+                       }
+                       // SACAR de pendingSales — no reintentar (es rechazo lógico)
+                       pendingSales.value = pendingSales.value.filter(v => v.id !== localId);
+                       lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                       // Persistir lista de fantasmas para revisión local
+                       try {
+                           const fantasmas = JSON.parse(lsGet('mosexpress_ventas_fantasma') || '[]');
+                           fantasmas.unshift({
+                               id: localId, ts: Date.now(),
+                               vendedor: config.value.vendedor,
+                               zona:     config.value.zona,
+                               total:    parseFloat(ventaBase?.header?.total) || 0,
+                               metodo:   ventaBase?.header?.metodo || '',
+                               motivo:   motivo,
+                               mensaje:  e.message,
+                               impreso:  _fastTimeoutHit
+                           });
+                           // mantener últimas 50
+                           lsSet('mosexpress_ventas_fantasma', JSON.stringify(fantasmas.slice(0, 50)));
+                           ventasFantasma.value = fantasmas.slice(0, 50);  // sync ref → banner aparece
+                       } catch(_){}
                        return;
                    }
                    // Falla red/timeout post-cola — si NO imprimimos todavía,
@@ -13203,7 +13351,6 @@
                        pendingSales.value.push({ id: localId, raw_data: ventaBase });
                        lsSet('pending_sales', JSON.stringify(pendingSales.value));
                    } else {
-                       // Ya está en cola por timeout — sync polling reintenta
                        console.info('[ME venta] sync inicial post-timeout falló, cola sigue:', e.message);
                    }
                });
@@ -13461,14 +13608,19 @@
                             desde:    d.data.abiertaTs,
                             estacion: d.data.estacion
                         };
-                        // Cachear para próximo boot optimista
-                        try { localStorage.setItem(CAJA_ZONA_CACHE_KEY, JSON.stringify({
-                            zona:   config.value.zona,
-                            idCaja: d.data.idCaja,
-                            cajero: d.data.cajero,
-                            desde:  d.data.abiertaTs,
-                            ts:     Date.now()
-                        })); } catch(_) {}
+                        // Cachear para próximo boot optimista + timestamp suelto para
+                        // que el guard de procesarPago pueda saber la edad sin parsear JSON
+                        try {
+                            const _nowTs = Date.now();
+                            localStorage.setItem(CAJA_ZONA_CACHE_KEY, JSON.stringify({
+                                zona:   config.value.zona,
+                                idCaja: d.data.idCaja,
+                                cajero: d.data.cajero,
+                                desde:  d.data.abiertaTs,
+                                ts:     _nowTs
+                            }));
+                            localStorage.setItem('mosexpress_caja_zona_cache_at', String(_nowTs));
+                        } catch(_) {}
                     } else {
                         cajeroActivoEnZona.value = false;
                         // Transición OK → bloqueado: sonido + vibración + toast
@@ -14085,6 +14237,8 @@
           abrirModalPinRetomaCaja, confirmarRetomaConPin,
           flashNuevosTickets,
           sincronizarDatos, isSyncing, pendingSales,
+          // [v2.7.4] Ventas fantasma — banner + panel de revisión
+          ventasFantasma, mostrarPanelFantasmas, limpiarVentasFantasma,
           procesandoCatalogo, sincronizarCatalogoBase,
           syncQuote, syncQuoteFading,
           modalPresentaciones, prodSeleccionado, elegirPresentacion, cerrarModalPres,
