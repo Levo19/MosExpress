@@ -5286,9 +5286,19 @@
                                 <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p>
                             </div>
                             <div class="flex items-center gap-1.5">
-                                <button @click="item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
-                                <input :data-guia-input="item.cod_barras" :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat(String($event.target.value || 0.01).replace(',', '.')).toFixed(3)) || 0.01" type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01" class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-amber-500 py-1" inputmode="decimal">
-                                <button @click="item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                                <button @click="item._cantidadStr = null; item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                                <!-- [v2.7.9] Buffer _cantidadStr para preservar lo tipeado durante re-renders Vue.
+                                     Antes: :value + @change · cualquier polling re-renderizaba y reseteaba el input al item.cantidad (1) antes del blur. El cajero tecleaba 5.5 → re-render → input vuelve a 1.
+                                     Ahora: @input guarda string crudo en _cantidadStr, @blur parsea a Number y limpia. Vue re-render lee _cantidadStr (string en progreso) → no pierde -->
+                                <input :data-guia-input="item.cod_barras"
+                                       :value="item._cantidadStr != null ? item._cantidadStr : item.cantidad"
+                                       @focus="$event.target.select(); item._cantidadStr = String(item.cantidad)"
+                                       @input="item._cantidadStr = $event.target.value"
+                                       @blur="item.cantidad = parseFloat(parseFloat(String(item._cantidadStr || 0.01).replace(',', '.')).toFixed(3)) || 0.01; item._cantidadStr = null"
+                                       type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01"
+                                       class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-amber-500 py-1"
+                                       inputmode="decimal">
+                                <button @click="item._cantidadStr = null; item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
                                 <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
                             </div>
                         </div>
@@ -5391,9 +5401,17 @@
                             <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p>
                         </div>
                         <div class="flex items-center gap-1.5">
-                            <button @click="item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
-                            <input :data-guia-input="item.cod_barras" :value="item.cantidad" @focus="$event.target.select()" @change="item.cantidad = parseFloat(parseFloat(String($event.target.value || 0.01).replace(',', '.')).toFixed(3)) || 0.01" type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01" class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-emerald-500 py-1" inputmode="decimal">
-                            <button @click="item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                            <button @click="item._cantidadStr = null; item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                            <!-- [v2.7.9] Buffer _cantidadStr — preserva tipeo durante re-renders Vue -->
+                            <input :data-guia-input="item.cod_barras"
+                                   :value="item._cantidadStr != null ? item._cantidadStr : item.cantidad"
+                                   @focus="$event.target.select(); item._cantidadStr = String(item.cantidad)"
+                                   @input="item._cantidadStr = $event.target.value"
+                                   @blur="item.cantidad = parseFloat(parseFloat(String(item._cantidadStr || 0.01).replace(',', '.')).toFixed(3)) || 0.01; item._cantidadStr = null"
+                                   type="number" :step="item.unidadMedida === 'KGM' ? '0.001' : '1'" min="0.01"
+                                   class="text-white font-black text-sm w-16 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-emerald-500 py-1"
+                                   inputmode="decimal">
+                            <button @click="item._cantidadStr = null; item.cantidad = parseFloat((item.cantidad + (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
                             <button @click="quitarItemGuia(idx)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
                         </div>
                     </div>
@@ -14172,8 +14190,9 @@
             // 4. POST a GAS fire-and-forget (corre en background, no bloquea el form)
             _postGuiaBackground(payload, destinoSnap);
 
-            // [v2.7.6] Si es DEVOLUCION_WH, también notifica al backend WH vía MOS bridge
-            // para crear la fila en DEVOLUCIONES_ZONA (tabla intermedia con el JSON de zona).
+            // [v2.7.6/9] DEVOLUCION_WH: notifica al backend WH vía MOS bridge
+            // Loguea ampliamente para que el usuario pueda ver dónde está el fallo
+            // si la tabla DEVOLUCIONES_ZONA no aparece en WH.
             if (subtipoSnap === 'SALIDA_DEVOLUCION_WH') {
                 try {
                     const bodyDev = {
@@ -14184,26 +14203,44 @@
                         items:               itemsDevolucion,
                         notaGeneral:         payload.observacion || ''
                     };
-                    // No-await: queremos UX optimista. Si falla, queda log en consola
-                    // y el cajero puede reintentar manualmente desde historial.
+                    console.log('[devolucion WH] enviando a MOS bridge', { url: MOS_GAS_URL, body: bodyDev });
                     fetch(MOS_GAS_URL, {
                         method: 'POST',
                         body:   JSON.stringify(bodyDev)
-                    }).then(r => r.json()).then(d => {
+                    }).then(r => {
+                        console.log('[devolucion WH] HTTP status:', r.status);
+                        return r.text();  // text primero para ver respuesta cruda
+                    }).then(rawText => {
+                        console.log('[devolucion WH] respuesta cruda:', rawText.substring(0, 500));
+                        let d;
+                        try { d = JSON.parse(rawText); } catch(_) {
+                            agregarToast('⚠ MOS devolvió HTML',
+                                'El bridge MOS no respondió JSON · revisa consola', 'warning', 8000);
+                            return;
+                        }
+                        console.log('[devolucion WH] respuesta parseada:', d);
                         if (d && d.ok) {
                             try { playVentaOK?.(); } catch(_){}
-                            agregarToast('📦 Devolución enviada', 'Almacén fue notificado · ' + (d.data?.idDevolucion || ''), 'success', 4000);
+                            agregarToast('📦 Devolución enviada a almacén',
+                                'ID devolución: ' + (d.data?.idDevolucion || '?') +
+                                ' · Hoja DEVOLUCIONES_ZONA en WH',
+                                'success', 5000);
                         } else {
-                            agregarToast('⚠ Aviso almacén falló',
-                                'La guía está registrada pero almacén puede no haber recibido el aviso. ' + (d?.error || ''),
-                                'warning', 6000);
+                            agregarToast('⚠ Bridge WH rechazó',
+                                'Guía registrada en ME pero WH dice: ' + (d?.error || JSON.stringify(d).substring(0, 100)),
+                                'warning', 10000);
                         }
                     }).catch(e => {
-                        console.warn('[devolucion WH bridge] fail:', e.message);
+                        console.error('[devolucion WH bridge] fail:', e.message, e);
                         agregarToast('⚠ Sin red para avisar almacén',
-                            'La guía está registrada. Reintentaremos automáticamente.', 'warning', 5000);
+                            'Guía ME OK · WH no notificado · revisa consola: ' + e.message,
+                            'warning', 8000);
                     });
-                } catch(eDev) { console.warn('[devolucion WH] fatal:', eDev.message); }
+                } catch(eDev) {
+                    console.error('[devolucion WH] fatal:', eDev);
+                    agregarToast('⚠ Error fatal devolución',
+                        eDev.message + ' · revisa consola', 'error', 8000);
+                }
             }
         };
 
