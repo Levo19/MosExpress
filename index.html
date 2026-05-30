@@ -10885,37 +10885,70 @@
                     let mime = 'video/webm;codecs=vp8,opus';
                     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
                     if (!MediaRecorder.isTypeSupported(mime)) return;
-                    const rec = new MediaRecorder(stream, {
-                        mimeType: mime, videoBitsPerSecond: 250000, audioBitsPerSecond: 64000
-                    });
-                    const chunks = [];
-                    rec.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
-                    rec.onstop = async () => {
-                        if (!chunks.length || !_espiaCli) return;
-                        const blob = new Blob(chunks, { type: mime });
-                        const b64 = await _blobToB64(blob);
-                        await _espiaCliPostMOS('espiaSubirChunk', {
-                            deviceId: deviceId.value || 'unknown',
-                            tipo: tipoUpload,
-                            ts: Date.now(),
-                            contenido: b64
+                    // [v2.43.59] Factory para CREAR un MediaRecorder nuevo cada chunk.
+                    // Bug fix: MediaRecorder.start() después de stop() lanza InvalidStateError
+                    // — hay que crear instancia nueva. Antes el buffer se rompía después del primer chunk.
+                    const crearRecorder = () => {
+                        const r = new MediaRecorder(stream, {
+                            mimeType: mime, videoBitsPerSecond: 250000, audioBitsPerSecond: 64000
                         });
-                        chunks.length = 0;
+                        const chunks = [];
+                        r.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
+                        r.onstop = async () => {
+                            if (!chunks.length) return;
+                            try {
+                                const blob = new Blob(chunks, { type: mime });
+                                // [v2.43.59] Usar _audioBlobToBase64 que SÍ existe
+                                const b64 = await _audioBlobToBase64(blob);
+                                if (b64.length > 0) {
+                                    await _espiaCliPostMOS('espiaSubirChunk', {
+                                        deviceId: deviceId.value || 'unknown',
+                                        tipo: tipoUpload,
+                                        ts: Date.now(),
+                                        contenido: b64,
+                                        sesionId: _espiaCli?.sesionId || ''
+                                    });
+                                }
+                            } catch(eUp) { console.warn('[espia upload]', eUp); }
+                            chunks.length = 0;
+                        };
+                        return r;
                     };
-                    rec.start();
-                    _espiaCli.bufferRecorders[key] = rec;
-                    // Stop+restart cada 5 min para chunk discreto
+                    let recActual = crearRecorder();
+                    recActual.start();
+                    _espiaCli.bufferRecorders[key] = recActual;
+                    // Cada 5 min: stop el actual, recrear y arrancar nuevo
                     _espiaCli.bufferTimers[key] = setInterval(() => {
                         try {
-                            if (rec.state === 'recording') {
-                                rec.stop();
-                                setTimeout(() => { try { rec.start(); } catch(_){} }, 100);
-                            }
+                            const ant = _espiaCli?.bufferRecorders?.[key];
+                            if (!ant || ant.state !== 'recording') return;
+                            ant.stop();  // dispara onstop → upload async
+                            // Crear y arrancar el siguiente recorder INMEDIATO (sin esperar 100ms)
+                            try {
+                                recActual = crearRecorder();
+                                if (_espiaCli) _espiaCli.bufferRecorders[key] = recActual;
+                                recActual.start();
+                            } catch(eR) { console.warn('[espia recorder]', eR); }
                         } catch(_){}
                     }, CHUNK_MS);
                 } catch(e) { console.warn('[espia buffer]', key, e.message); }
             });
         }
+
+        // [v2.43.59] Si el user cierra la pestaña, avisar al backend con sendBeacon
+        // (más confiable que fetch al unload — el browser lo entrega aunque la página muera)
+        window.addEventListener('beforeunload', () => {
+            if (_espiaCli?.sesionId) {
+                try {
+                    navigator.sendBeacon(MOS_GAS_URL, JSON.stringify({
+                        action: 'espiaCerrarSesion',
+                        sesionId: _espiaCli.sesionId,
+                        motivo: 'page_unload',
+                        lado: 'device'
+                    }));
+                } catch(_){}
+            }
+        });
 
         async function _espiaCliCerrar(motivo) {
             if (!_espiaCli) return;
