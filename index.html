@@ -7722,31 +7722,25 @@
                                            'warn',
                                            8000
                                        );
-                                   } else if (config.value.esCajero && _cajaAyer) {
-                                       // [v2.7.14] Solo bloquear con modal si era CAJERO con caja
-                                       // legítimamente cerrada del día anterior. El user pidió
-                                       // anular el guard que bloquea innecesariamente al vendedor
-                                       // (no-cajero) o cuando no había caja activa.
-                                       sesionAnteriorInfo.value = {
-                                           vendedor: config.value.vendedor,
-                                           estacion: config.value.estacion,
-                                           esCajero: config.value.esCajero,
-                                           fecha: _fmtFechaLima(j.data.logout_auto_ts),
-                                           caja: _cajaAyer,
-                                           motivo: 'CIERRE_NOCTURNO_AUTO'
-                                       };
-                                       mostrarModalSesionAnterior.value = true;
-                                       config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
-                                       localStorage.removeItem('mosexpress_config');
-                                       localStorage.removeItem('mosexpress_session_date');
-                                       localStorage.removeItem('mosexpress_caja_activa');
-                                       fetch(`${MOS_GAS_URL}?action=marcarLogoutHonrado&deviceId=${encodeURIComponent(deviceId.value)}`)
-                                           .catch(() => {});
                                    } else {
-                                       // [v2.7.14] No-cajero (vendedor) o cajero sin caja activa:
-                                       // ACK silencioso al backend para limpiar el flag forzar_logout
-                                       // y NO destruir config. El operador sigue trabajando.
-                                       console.log('[ME] forzar_logout pero no aplica bloqueo · ACK silencioso');
+                                       // [v2.7.15] GUARD COMPLETAMENTE ELIMINADO.
+                                       // El user pidió: solo el cron nocturno cierra sesiones,
+                                       // sin modal bloqueante en el frontend. ACK silencioso al
+                                       // backend para limpiar el flag forzar_logout y el operador
+                                       // sigue trabajando sin interrupciones.
+                                       //
+                                       // Si era cajero con caja del día anterior, mostrar SOLO un
+                                       // toast informativo (no bloqueante). El cierre real ya lo
+                                       // hizo el cron en el backend.
+                                       if (config.value.esCajero && _cajaAyer) {
+                                           agregarToast(
+                                               '🌙 Sesión anterior cerrada',
+                                               'Tu jornada del ' + _fmtFechaLima(j.data.logout_auto_ts) + ' se cerró auto · ya podés iniciar nueva',
+                                               'info',
+                                               6000
+                                           );
+                                       }
+                                       console.log('[ME] forzar_logout → ACK silencioso · sin guard bloqueante');
                                        fetch(`${MOS_GAS_URL}?action=marcarLogoutHonrado&deviceId=${encodeURIComponent(deviceId.value)}`)
                                            .catch(() => {});
                                    }
