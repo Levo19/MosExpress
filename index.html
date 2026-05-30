@@ -7666,21 +7666,30 @@
                            if (j.data.forzar_logout && config.value.completado) {
                                console.log('[ME] Forzar_Logout recibido del cron 23h · verificando estado caja');
                                try {
-                                   // Convertir logout_auto_ts (UTC ISO) → "DD/MM/YYYY HH:mm hora Lima"
-                                   const _fmtFechaLima = (isoUtc) => {
-                                       if (!isoUtc) return 'cierre nocturno 23h';
+                                   // [v2.7.14] FIX timezone: usar toLocaleString con TZ Lima.
+                                   // Antes: si el server enviaba sin 'Z' final, JS lo parseaba como
+                                   // hora LOCAL del browser (Lima) y luego el código restaba 5h
+                                   // adicionales → mostraba la fecha del día ANTERIOR.
+                                   // Ahora: detectamos si tiene 'Z' o no, y usamos toLocaleString
+                                   // con timezone explícita que JS resuelve correctamente.
+                                   const _fmtFechaLima = (iso) => {
+                                       if (!iso) return 'cierre nocturno 23h';
                                        try {
-                                           const d = new Date(isoUtc);
-                                           if (isNaN(d.getTime())) return String(isoUtc);
-                                           // Lima = UTC-5 hardcoded (Perú no usa DST)
-                                           const lima = new Date(d.getTime() - 5 * 60 * 60 * 1000);
-                                           const dd = String(lima.getUTCDate()).padStart(2,'0');
-                                           const mm = String(lima.getUTCMonth()+1).padStart(2,'0');
-                                           const yy = lima.getUTCFullYear();
-                                           const hh = String(lima.getUTCHours()).padStart(2,'0');
-                                           const mi = String(lima.getUTCMinutes()).padStart(2,'0');
-                                           return `${dd}/${mm}/${yy} ${hh}:${mi} (hora Lima)`;
-                                       } catch(_) { return String(isoUtc); }
+                                           let s = String(iso).trim();
+                                           // Si no tiene 'Z' ni offset, asumir UTC y agregar Z
+                                           // (el backend devuelve UTC, pero a veces sin sufijo).
+                                           if (s && !/[zZ]$/.test(s) && !/[+-]\d{2}:?\d{2}$/.test(s)) {
+                                               s += 'Z';
+                                           }
+                                           const d = new Date(s);
+                                           if (isNaN(d.getTime())) return String(iso);
+                                           const fmt = d.toLocaleString('es-PE', {
+                                               timeZone: 'America/Lima',
+                                               day: '2-digit', month: '2-digit', year: 'numeric',
+                                               hour: '2-digit', minute: '2-digit', hour12: false
+                                           });
+                                           return `${fmt} (hora Lima)`;
+                                       } catch(_) { return String(iso); }
                                    };
 
                                    let _cajaAyer = null;
@@ -7713,8 +7722,11 @@
                                            'warn',
                                            8000
                                        );
-                                   } else {
-                                       // Caja cerrada (o no era cajero) — flujo normal
+                                   } else if (config.value.esCajero && _cajaAyer) {
+                                       // [v2.7.14] Solo bloquear con modal si era CAJERO con caja
+                                       // legítimamente cerrada del día anterior. El user pidió
+                                       // anular el guard que bloquea innecesariamente al vendedor
+                                       // (no-cajero) o cuando no había caja activa.
                                        sesionAnteriorInfo.value = {
                                            vendedor: config.value.vendedor,
                                            estacion: config.value.estacion,
@@ -7728,7 +7740,13 @@
                                        localStorage.removeItem('mosexpress_config');
                                        localStorage.removeItem('mosexpress_session_date');
                                        localStorage.removeItem('mosexpress_caja_activa');
-                                       // Ack a MOS — sí honramos el logout
+                                       fetch(`${MOS_GAS_URL}?action=marcarLogoutHonrado&deviceId=${encodeURIComponent(deviceId.value)}`)
+                                           .catch(() => {});
+                                   } else {
+                                       // [v2.7.14] No-cajero (vendedor) o cajero sin caja activa:
+                                       // ACK silencioso al backend para limpiar el flag forzar_logout
+                                       // y NO destruir config. El operador sigue trabajando.
+                                       console.log('[ME] forzar_logout pero no aplica bloqueo · ACK silencioso');
                                        fetch(`${MOS_GAS_URL}?action=marcarLogoutHonrado&deviceId=${encodeURIComponent(deviceId.value)}`)
                                            .catch(() => {});
                                    }
