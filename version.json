@@ -1,1 +1,1 @@
-{ "version": "2.7.21", "build": "20260531-espia-pantalla-async-no-bloquea-camara-mic-gps-transceiver-replaceTrack" }
+{ "version": "2.7.22", "build": "20260531-cleanup-modales-espia-streams-en-controllerchange-beforeunload" }

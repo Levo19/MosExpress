@@ -1156,7 +1156,21 @@
         });
       });
 
+      // [v2.7.22] Cleanup de modales/sesión espía antes del reload
+      window._cleanupMEAntesReload = function() {
+        try { document.querySelectorAll('.modal-backdrop, .me-perms-overlay').forEach(b => b.remove()); } catch(_){}
+        try {
+          if (window._espiaCli) {
+            const streams = window._espiaCli.streams || {};
+            Object.values(streams).forEach(s => { try { s?.getTracks?.().forEach(t => t.stop()); } catch(_){} });
+            try { window._espiaCli.pc?.close(); } catch(_){}
+            window._espiaCli = null;
+          }
+        } catch(_){}
+      };
+      window.addEventListener('beforeunload', () => window._cleanupMEAntesReload());
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window._cleanupMEAntesReload();
         window.location.reload();
       });
 
