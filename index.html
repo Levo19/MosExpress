@@ -2165,8 +2165,19 @@
       try {
         const id = localStorage.getItem('mosexpress_deviceId') || '';
         if (!id) return;
-        const map = { notifications:'notif', camera:'cam', microphone:'mic', geolocation:'geo' };
         const perms = {};
+        // [v2.7.19 FIX] notif: usar Notification.permission DIRECTO.
+        // Permissions API tenía race condition tras requestPermission → quedaba
+        // 'prompt' aunque el user ya aceptó → wizard "no se guardaba".
+        try {
+          if ('Notification' in window) {
+            const np = Notification.permission;
+            perms.notif = (np === 'default') ? 'prompt' : np;
+          } else {
+            perms.notif = 'unsupported';
+          }
+        } catch(_) { perms.notif = 'unsupported'; }
+        const map = { camera:'cam', microphone:'mic', geolocation:'geo' };
         for (const [name, key] of Object.entries(map)) {
           try {
             const ps = await navigator.permissions.query({ name });
@@ -2174,7 +2185,11 @@
             if (!_mePermsHooked) ps.onchange = () => _reportarPermisosME();
           } catch(_) { perms[key] = 'unsupported'; }
         }
-        perms.audio   = (localStorage.getItem('me_audio_ok') === '1') ? 'granted' : 'prompt';
+        // [v2.7.19 FIX] audio: derivar de mic. Antes leía me_audio_ok que nadie
+        // seteaba → siempre 'prompt'. Código zombie eliminado.
+        if (perms.mic === 'granted') perms.audio = 'granted';
+        else if (perms.mic === 'denied') perms.audio = 'denied';
+        else perms.audio = 'prompt';
         perms.install = (matchMedia('(display-mode: standalone)').matches) ? 'granted'
                       : (window._ME_INSTALL_PROMPT ? 'prompt' : 'unsupported');
         perms.storage = await _pedirPersistentStorageME();
