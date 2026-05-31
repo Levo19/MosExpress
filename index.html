@@ -7746,6 +7746,45 @@
                                    }
                                } catch(eFL) { console.error('[ME] forzar_logout fallo:', eFL); }
                            }
+                           // [v2.7.18] Admin marcó Forzar_Push → re-registrar FCM token.
+                           // Útil cuando el device sin token en PUSH_TOKENS (espía no
+                           // conecta, comandos no llegan). Limpiamos flag después de
+                           // 5s para dar tiempo a getToken+registrar.
+                           if (j.data.forzar_push) {
+                               console.log('[ME] Forzar_Push recibido del admin · re-registrando FCM token');
+                               agregarToast('🔄 Notificaciones', 'Re-registrando por orden admin', 'info', 4000);
+                               setTimeout(() => {
+                                   try {
+                                       if (typeof window._pushInitME === 'function') window._pushInitME();
+                                   } catch(eFP) { console.error('[ME] forzar_push init fallo:', eFP); }
+                                   setTimeout(() => {
+                                       fetch(MOS_GAS_URL, {
+                                           method: 'POST',
+                                           body: JSON.stringify({
+                                               action: 'limpiarFlagDevice',
+                                               deviceId: deviceId.value,
+                                               flag: 'Forzar_Push'
+                                           })
+                                       }).catch(() => {});
+                                   }, 5000);
+                               }, 1500);
+                           }
+                           // [v2.7.18] Admin marcó Forzar_Wizard → resetear flag local
+                           if (j.data.forzar_wizard) {
+                               console.log('[ME] Forzar_Wizard recibido del admin');
+                               try {
+                                   if (config.value) { config.value.completado = false; }
+                                   localStorage.removeItem('mosexpress_wizard_done');
+                               } catch(_){}
+                               fetch(MOS_GAS_URL, {
+                                   method: 'POST',
+                                   body: JSON.stringify({
+                                       action: 'limpiarFlagDevice',
+                                       deviceId: deviceId.value,
+                                       flag: 'Forzar_Wizard'
+                                   })
+                               }).catch(() => {});
+                           }
                        }
                    }
                }
@@ -11254,29 +11293,76 @@
                 const permission = Notification.permission === 'default'
                     ? await Notification.requestPermission()
                     : Notification.permission;
-                if (permission !== 'granted') return;
+                if (permission !== 'granted') {
+                    console.warn('[Push ME] permiso denegado:', permission);
+                    return;
+                }
 
                 const swReg = await navigator.serviceWorker.ready;
                 const token = await messaging.getToken({ vapidKey: _PUSH_VAPID, serviceWorkerRegistration: swReg });
-                if (!token) return;
+                if (!token) {
+                    console.warn('[Push ME] getToken devolvió vacío');
+                    return;
+                }
 
-                // Registrar en MOS GAS con usuario + deviceId (clave para targeted exacto)
-                await fetch(MOS_GAS_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'registrarPushToken',
-                        token,
-                        usuario:    config.value.vendedor,
-                        appOrigen:  'mosExpress',
-                        deviceId:   deviceId.value || '',
-                        dispositivo: (config.value.estacion?.Estacion_Nombre || 'MosExpress') + ' · ' + navigator.userAgent.substring(0, 80)
-                    })
-                }).catch(() => {});
+                // [v2.7.18] Si deviceId vacío, no registrar (token sin device es inútil para targeted)
+                const devIdReg = deviceId.value || '';
+                if (!devIdReg) {
+                    console.warn('[Push ME] deviceId vacío — no registro hasta tenerlo');
+                    return;
+                }
+
+                // Registrar en MOS GAS con usuario + deviceId
+                try {
+                    await fetch(MOS_GAS_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action: 'registrarPushToken',
+                            token,
+                            usuario:    config.value.vendedor,
+                            appOrigen:  'mosExpress',
+                            deviceId:   devIdReg,
+                            dispositivo: (config.value.estacion?.Estacion_Nombre || 'MosExpress') + ' · ' + navigator.userAgent.substring(0, 80)
+                        })
+                    });
+                    console.log('[Push ME] token registrado en GAS ✅');
+                } catch(eReg) {
+                    console.warn('[Push ME] registro POST falló:', eReg?.message);
+                }
                 _pushTokenRegistrado = true;
+
+                // [v2.7.18] Auto-verify 8s después + retry si no quedó registrado
+                setTimeout(async () => {
+                    try {
+                        const verifUrl = MOS_GAS_URL + '?action=verificarMiTokenRegistrado&deviceId=' + encodeURIComponent(devIdReg);
+                        const vr = await fetch(verifUrl);
+                        const vj = await vr.json();
+                        const registrado = vj?.data?.registrado || vj?.registrado;
+                        if (!registrado) {
+                            console.warn('[Push ME] token NO está en backend tras 8s · retry');
+                            agregarToast('⚠ Notificaciones', 'Re-registrando…', 'warn', 4000);
+                            fetch(MOS_GAS_URL, {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    action: 'registrarPushToken',
+                                    token,
+                                    usuario:    config.value.vendedor,
+                                    appOrigen:  'mosExpress',
+                                    deviceId:   devIdReg,
+                                    dispositivo: 'mosExpress retry · ' + navigator.userAgent.substring(0, 60)
+                                })
+                            }).catch(() => {});
+                        } else {
+                            console.log('[Push ME] token verificado ✅ (' + (vj?.data?.tokens || 1) + ' activo/s)');
+                        }
+                    } catch(eV) { console.warn('[Push ME] verify token falló:', eV?.message); }
+                }, 8000);
             } catch(e) {
                 console.warn('[Push] init error:', e?.message);
             }
         };
+        // [v2.7.18] Exponer para que forzar_push pueda invocarlo
+        window._pushInitME = _pushInit;
 
         // ── ADMIN PIN UNIFICADO — clave 8 dígitos = global(4) + admin(4) ──
         // Caché offline: { globalPin, adminPins:[{pin,nombre,idPersonal}] }
