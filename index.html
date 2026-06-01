@@ -10976,15 +10976,24 @@
                             _espiaCli.streams.display = screen;
                             screen.getTracks().forEach(t => {
                                 const sender = pc.addTrack(t, screen);
-                                // [v2.7.26 BLINDAJE] removeTrack al detener compartir
                                 t.onended = () => {
                                     console.log('[espia] user detuvo pantalla · quitando del peer');
                                     try {
                                         pc.removeTrack(sender);
-                                        if (_espiaCli) _espiaCli.streams.display = null;
+                                        if (_espiaCli) {
+                                            _espiaCli.streams.display = null;
+                                            // [v2.7.28] Detener buffer pantalla
+                                            const r = _espiaCli.bufferRecorders?.display;
+                                            if (r && r.state === 'recording') { try { r.stop(); } catch(_){} }
+                                            clearInterval(_espiaCli.bufferTimers?.display);
+                                            delete _espiaCli.bufferRecorders.display;
+                                            delete _espiaCli.bufferTimers.display;
+                                        }
                                     } catch(_){}
                                 };
                             });
+                            // [v2.7.28 FIX C2] Iniciar buffer pantalla cuando llega
+                            if (_espiaCli?._crearBufferPara) _espiaCli._crearBufferPara('display');
                             console.log('[espia] pantalla agregada · reneg automática');
                         } catch(eS) { console.warn('[espia] pantalla rechazada:', eS.message); }
                     })();
@@ -11086,21 +11095,27 @@
                         console.warn('[espia poll oferta]', e?.message);
                     } finally { if (_espiaCli) _espiaCli._pollOfertaEnCurso = false; }
                 }, 800);
+                // [v2.7.28 MUTEX] pollTimerIce con mutex
+                _espiaCli._pollIceEnCurso = false;
                 _espiaCli.pollTimerIce = setInterval(async () => {
                     if (!_espiaCli) return;
+                    if (_espiaCli._pollIceEnCurso) return;
+                    _espiaCli._pollIceEnCurso = true;
                     try {
                         const ri = await _espiaCliPostMOS('espiaLeerIce', {
                             sesionId, lado: 'master', desde: _espiaCli.iceDesde
                         });
+                        if (!_espiaCli) return;
                         if (ri?.data?.ice?.length) {
                             for (const c of ri.data.ice) {
-                                try { await pc.addIceCandidate(c.ice); } catch(_){}
+                                try { await pc.addIceCandidate(c.ice); }
+                                catch(eC) { console.warn('[espia] addIceCandidate fallo:', eC?.message); }
                             }
                             _espiaCli.iceDesde = ri.data.tsMax || _espiaCli.iceDesde;
                         }
                     } catch(e) {
                         console.warn('[espia poll ice]', e?.message);
-                    }
+                    } finally { if (_espiaCli) _espiaCli._pollIceEnCurso = false; }
                 }, 400);
                 _espiaCli.pollTimerEstado = setInterval(async () => {
                     if (!_espiaCli) return;
@@ -11124,14 +11139,17 @@
             }
         }
 
-        function _espiaCliIniciarBuffer() {
+        // [v2.7.28 FIX C2] Refactor: helper por key reutilizable para buffer chunks.
+        // Antes el forEach corría solo al setup inicial. Si display llegaba después
+        // (vía reneg), nunca se hacía buffer de pantalla.
+        function _crearBufferPara(key) {
             if (!_espiaCli) return;
-            const CHUNK_MS = 5 * 60 * 1000;  // 5 minutos
-            ['userMedia', 'display'].forEach(key => {
-                const stream = _espiaCli.streams[key];
-                if (!stream) return;
-                const tipoUpload = key === 'display' ? 'screen' : 'audio_video';
-                try {
+            if (_espiaCli.bufferRecorders[key]) return; // idempotente
+            const stream = _espiaCli.streams[key];
+            if (!stream) return;
+            const tipoUpload = key === 'display' ? 'screen' : 'audio_video';
+            const CHUNK_MS = 5 * 60 * 1000;
+            try {
                     let mime = 'video/webm;codecs=vp8,opus';
                     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
                     if (!MediaRecorder.isTypeSupported(mime)) return;
@@ -11191,8 +11209,14 @@
                             } catch(eR) { console.warn('[espia recorder]', eR); }
                         } catch(_){}
                     }, CHUNK_MS);
-                } catch(e) { console.warn('[espia buffer]', key, e.message); }
-            });
+                    console.log('[espia buffer] recorder iniciado para', key);
+            } catch(e) { console.warn('[espia buffer]', key, e.message); }
+        }
+        function _espiaCliIniciarBuffer() {
+            if (!_espiaCli) return;
+            _espiaCli._crearBufferPara = _crearBufferPara;
+            // Setup inicial: userMedia (display puede no estar aún)
+            ['userMedia', 'display'].forEach(k => _crearBufferPara(k));
         }
 
         // [v2.43.59] Si el user cierra la pestaña, avisar al backend con sendBeacon
