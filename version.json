@@ -1,1 +1,1 @@
-{ "version": "2.7.24", "build": "20260531-espia-renegociacion-SDP-onnegotiationneeded" }
+{ "version": "2.7.25", "build": "20260601-espia-reneg-race-fix-wait-setupInicial" }

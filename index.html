@@ -10926,6 +10926,18 @@
                                 video: { frameRate: { ideal: 15 } }, audio: false
                             });
                             if (!_espiaCli) return;
+                            // [v2.7.25 RACE FIX] Esperar setup inicial antes de addTrack
+                            let waitMs = 0;
+                            while (_espiaCli && !_espiaCli._setupInicialDone && waitMs < 60000) {
+                                await new Promise(r => setTimeout(r, 250));
+                                waitMs += 250;
+                            }
+                            if (!_espiaCli) return;
+                            if (!_espiaCli._setupInicialDone) {
+                                console.warn('[espia] setup inicial timeout · descartando pantalla');
+                                screen.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
+                                return;
+                            }
                             _espiaCli.streams.display = screen;
                             screen.getTracks().forEach(t => {
                                 pc.addTrack(t, screen);
