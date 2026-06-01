@@ -10948,11 +10948,21 @@
                     try {
                         const devs = await navigator.mediaDevices.enumerateDevices();
                         const cams = devs.filter(d => d.kind === 'videoinput');
-                        if (cams.length < 2) { console.log('[espia] dual-cam: 1 sola cámara · skip'); return; }
+                        if (_espiaCli?._capsState) _espiaCli._capsState.camsHardware = cams.length;
+                        if (cams.length < 2) {
+                            console.log('[espia] dual-cam: 1 sola cámara hardware · skip');
+                            if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
+                            _espiaCli?._enviarCapabilities?.();
+                            return;
+                        }
                         const tUsado = _espiaCli?.streams?.userMedia?.getVideoTracks?.()[0];
                         const idUsado = tUsado?.getSettings?.()?.deviceId;
                         const otra = cams.find(c => c.deviceId && c.deviceId !== idUsado);
-                        if (!otra) return;
+                        if (!otra) {
+                            if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
+                            _espiaCli?._enviarCapabilities?.();
+                            return;
+                        }
                         const stream2 = await navigator.mediaDevices.getUserMedia({
                             video: { deviceId: { exact: otra.deviceId }, width:{ideal:640}, height:{ideal:480} }
                         });
@@ -10968,10 +10978,13 @@
                             pc.addTrack(t, stream2);
                         });
                         console.log('[espia] 2da cámara agregada · reneg disparará');
+                        if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
                         _espiaCli?._enviarTrackMap?.();
                         _espiaCli?._enviarCapabilities?.();
                     } catch(e) {
                         console.warn('[espia] 2da cámara fallo:', e.message);
+                        if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
+                        _espiaCli?._enviarCapabilities?.();
                     }
                 })();
                 // [v2.7.30 REFACTOR] Handler de reneg: solo SUBE la oferta.
@@ -11074,23 +11087,37 @@
                         }));
                     } catch(_){}
                 };
-                // [v2.7.36] Capabilities para que el master adapte UI según device
-                _espiaCli._enviarCapabilities = () => {
+                // [v2.7.37] Capabilities con detección honesta (igual que WH v2.13.86)
+                _espiaCli._capsState = { camsHardware: 0, dualIntentado: false };
+                _espiaCli._enviarCapabilities = async () => {
                     if (!_espiaCli || !_espiaCli.gpsCh || _espiaCli.gpsCh.readyState !== 'open') return;
                     try {
                         const ua = navigator.userAgent || '';
                         let plataforma = 'desktop';
-                        if (/iPad|Tablet/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))) plataforma = 'tablet';
+                        if (/iPad/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))) plataforma = 'tablet';
+                        else if (/Android/i.test(ua) && !/Mobile/i.test(ua)) plataforma = 'tablet';
+                        else if (/Tablet/i.test(ua)) plataforma = 'tablet';
                         else if (/Android|iPhone|iPod|Mobile/i.test(ua)) plataforma = 'mobile';
                         let modelo = '';
-                        const mMobile = ua.match(/(iPhone|iPad|Pixel \d+\w*|SM-[A-Z0-9]+|Redmi[^;)]*|POCO[^;)]*|moto[^;)]*|HUAWEI[^;)]*)/i);
-                        if (mMobile) modelo = mMobile[1].trim();
+                        const mM = ua.match(/(iPhone|iPad|Pixel \d+\w*(?: Pro)?|SM-[A-Z0-9]+|Redmi[^;)]*|POCO[^;)]*|moto[^;)]*|HUAWEI[^;)]*|OnePlus[^;)]*)/i);
+                        if (mM) modelo = mM[1].trim();
+                        let camsHardware = _espiaCli._capsState.camsHardware;
+                        if (!camsHardware) {
+                            try {
+                                const devs = await navigator.mediaDevices.enumerateDevices();
+                                camsHardware = devs.filter(d => d.kind === 'videoinput').length;
+                                _espiaCli._capsState.camsHardware = camsHardware;
+                            } catch(_){}
+                        }
+                        const camsAbiertas = _espiaCli.streams.userMedia2 ? 2 : (_espiaCli.streams.userMedia ? 1 : 0);
                         const caps = {
                             esMobile:      plataforma !== 'desktop',
                             plataforma,
                             modelo:        modelo || (plataforma === 'desktop' ? 'PC' : 'Smartphone'),
                             tienePantalla: typeof navigator.mediaDevices?.getDisplayMedia === 'function',
-                            camsTotales:   _espiaCli.streams.userMedia2 ? 2 : (_espiaCli.streams.userMedia ? 1 : 0),
+                            camsHardware,
+                            camsAbiertas,
+                            dualIntentado: _espiaCli._capsState.dualIntentado,
                             touchPoints:   navigator.maxTouchPoints || 0
                         };
                         _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'capabilities', caps }));
