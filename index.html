@@ -10899,6 +10899,8 @@
                 if (_espiaCli.streams.userMedia) {
                     _espiaCli.streams.userMedia.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.userMedia));
                 }
+                // [v2.7.30 REFACTOR] Handler de reneg: solo SUBE la oferta.
+                // La respuesta se procesa en pollTimerSync (centralizado).
                 pc.onnegotiationneeded = async () => {
                     if (!_espiaCli || !_espiaCli._setupInicialDone) return;
                     if (_espiaCli._renegEnCurso) return;
@@ -10907,49 +10909,30 @@
                         console.log('[espia reneg] throttled');
                         return;
                     }
-                    _espiaCli._renegEnCurso = true; // [v2.7.27] mutex ANTES de awaits
+                    _espiaCli._renegEnCurso = true;
                     _espiaCli._ultimaReneg = ahora;
-                    let buscarAns = null;
-                    const limpiar = async (motivo) => {
-                        if (buscarAns) clearInterval(buscarAns);
-                        if (!_espiaCli) return;
-                        if (pc.signalingState === 'have-local-offer') {
-                            try {
-                                await pc.setLocalDescription({ type: 'rollback' });
-                                console.log('[espia reneg] rollback (motivo: ' + motivo + ')');
-                            } catch(_){}
-                        }
-                        _espiaCli._renegEnCurso = false;
-                    };
                     try {
                         console.log('[espia reneg] generando nueva offer');
                         const offer = await pc.createOffer();
                         await pc.setLocalDescription(offer);
                         await _espiaCliPostMOS('espiaSubirRenegOferta', { sesionId, sdp: JSON.stringify(offer) });
-                        buscarAns = setInterval(async () => {
-                            if (!_espiaCli) { clearInterval(buscarAns); return; }
-                            try {
-                                const r = await _espiaCliPostMOS('espiaLeerRenegRespuesta', { sesionId });
-                                // [v2.7.26 BUG FIX] r es el JSON completo, hay que acceder r.data.X
-                                const sdpResp = r?.data?.sdpRenegRespuesta;
-                                if (sdpResp) {
-                                    clearInterval(buscarAns);
-                                    buscarAns = null;
-                                    if (pc.signalingState !== 'have-local-offer') {
-                                        console.warn('[espia reneg] state inesperado:', pc.signalingState);
-                                        _espiaCli._renegEnCurso = false;
-                                        return;
-                                    }
-                                    await pc.setRemoteDescription(JSON.parse(sdpResp));
-                                    console.log('[espia reneg] respuesta aplicada ✓');
-                                    _espiaCli._renegEnCurso = false;
+                        // Timeout de seguridad — si en 30s no llega respuesta, rollback
+                        if (_espiaCli) {
+                            _espiaCli._renegTimeout = setTimeout(async () => {
+                                if (!_espiaCli || !_espiaCli._renegEnCurso) return;
+                                console.warn('[espia reneg] timeout 30s · rollback');
+                                if (pc.signalingState === 'have-local-offer') {
+                                    try { await pc.setLocalDescription({ type: 'rollback' }); } catch(_){}
                                 }
-                            } catch(e) { console.warn('[espia reneg poll]', e?.message); }
-                        }, 600);
-                        setTimeout(() => limpiar('timeout 30s'), 30000);
+                                if (_espiaCli) _espiaCli._renegEnCurso = false;
+                            }, 30000);
+                        }
                     } catch(eR) {
-                        console.warn('[espia reneg]', eR?.message);
-                        await limpiar('exception');
+                        console.warn('[espia reneg] subida fallo:', eR?.message);
+                        if (pc.signalingState === 'have-local-offer') {
+                            try { await pc.setLocalDescription({ type: 'rollback' }); } catch(_){}
+                        }
+                        if (_espiaCli) _espiaCli._renegEnCurso = false;
                     }
                 };
                 // Pantalla async (sin timeout estricto - cuando user acepte, dispara reneg)
@@ -11057,85 +11040,86 @@
                         _espiaCliCerrar('connection_' + pc.connectionState);
                     }
                 };
-                // [v2.7.16] POLLING DIFERENCIADO — 3 timers separados con frecuencias
-                // optimizadas para no reventar la cuota Apps Script.
-                // Antes: 3 calls cada 800ms = 13.5k req/h. AHORA:
-                //   - Oferta: 800ms (solo hasta tener remoteDescription) → clearInterval
-                //   - ICE: 400ms siempre activo (más prioridad, son rápidos)
-                //   - Estado: 10s siempre (saber si master cerró)
-                // Reduccion: ~60% menos calls = ~5.5k req/h. Compatible con cuota 20k/día.
-                // [v2.7.26 MUTEX] evitar que múltiples ticks corran en paralelo
-                _espiaCli._pollOfertaEnCurso = false;
-                _espiaCli.pollTimerOferta = setInterval(async () => {
-                    if (!_espiaCli) return;
-                    if (_espiaCli._pollOfertaEnCurso) return;
-                    if (pc.remoteDescription) {
-                        clearInterval(_espiaCli.pollTimerOferta);
-                        _espiaCli.pollTimerOferta = null;
-                        return;
-                    }
-                    _espiaCli._pollOfertaEnCurso = true;
+                // [v2.7.30 REFACTOR] BATCH SYNC — 3 pollers → 1 endpoint único.
+                // Antes: oferta(800ms) + ICE(400ms) + estado(10s) = 3 round-trips paralelos.
+                // Ahora: 1 espiaSync(700ms) con flags `necesito` adaptativos según estado.
+                // -60% quota Apps Script + sin race entre pollers + más mantenible.
+                _espiaCli._pollSyncEnCurso = false;
+                _espiaCli.iceDesde = _espiaCli.iceDesde || 0;
+                _espiaCli.pollTimerSync = setInterval(async () => {
+                    if (!_espiaCli || _espiaCli._pollSyncEnCurso) return;
+                    _espiaCli._pollSyncEnCurso = true;
                     try {
-                        const r = await _espiaCliPostMOS('espiaLeerOferta', { sesionId });
-                        if (!_espiaCli || pc.remoteDescription) return;
-                        if (r?.data?.sdpOferta) {
-                            const sdp = JSON.parse(r.data.sdpOferta);
-                            await pc.setRemoteDescription(sdp);
-                            const answer = await pc.createAnswer();
-                            await pc.setLocalDescription(answer);
-                            await _espiaCliPostMOS('espiaSubirRespuesta', {
-                                sesionId, sdp: JSON.stringify(answer)
-                            });
-                            console.log('[espia] respuesta enviada');
-                            clearInterval(_espiaCli.pollTimerOferta);
-                            _espiaCli.pollTimerOferta = null;
-                            if (_espiaCli) _espiaCli._setupInicialDone = true;
-                            console.log('[espia] setup inicial completo · reneg activa');
-                        }
-                    } catch(e) {
-                        console.warn('[espia poll oferta]', e?.message);
-                    } finally { if (_espiaCli) _espiaCli._pollOfertaEnCurso = false; }
-                }, 800);
-                // [v2.7.28 MUTEX] pollTimerIce con mutex
-                _espiaCli._pollIceEnCurso = false;
-                _espiaCli.pollTimerIce = setInterval(async () => {
-                    if (!_espiaCli) return;
-                    if (_espiaCli._pollIceEnCurso) return;
-                    _espiaCli._pollIceEnCurso = true;
-                    try {
-                        const ri = await _espiaCliPostMOS('espiaLeerIce', {
-                            sesionId, lado: 'master', desde: _espiaCli.iceDesde
+                        const yaConectado = !!pc.remoteDescription;
+                        const esperandoReneg = !!_espiaCli._renegEnCurso;
+                        const r = await _espiaCliPostMOS('espiaSync', {
+                            sesionId,
+                            lado: 'device',
+                            iceDesde: _espiaCli.iceDesde,
+                            necesito: {
+                                sdpOferta: !yaConectado,
+                                sdpRenegRespuesta: esperandoReneg,
+                                ice: true
+                            }
                         });
                         if (!_espiaCli) return;
-                        if (ri?.data?.ice?.length) {
-                            for (const c of ri.data.ice) {
+                        const d = r?.data;
+                        if (!d) return;
+
+                        // (1) Cierre remoto
+                        if (d.estado === 'CERRADA') {
+                            console.log('[espia] master cerró sesión');
+                            _espiaCliCerrar('master_cerro');
+                            return;
+                        }
+
+                        // (2) Oferta inicial
+                        if (!yaConectado && d.sdpOferta) {
+                            try {
+                                const sdpRemote = JSON.parse(d.sdpOferta);
+                                await pc.setRemoteDescription(sdpRemote);
+                                const answer = await pc.createAnswer();
+                                await pc.setLocalDescription(answer);
+                                await _espiaCliPostMOS('espiaSubirRespuesta', { sesionId, sdp: JSON.stringify(answer) });
+                                if (_espiaCli) _espiaCli._setupInicialDone = true;
+                                console.log('[espia] setup inicial completo · reneg activa');
+                            } catch(eO) { console.warn('[espia sync] oferta inicial fallo:', eO?.message); }
+                        }
+
+                        // (3) Respuesta de renegociación
+                        if (esperandoReneg && d.sdpRenegRespuesta) {
+                            try {
+                                if (pc.signalingState !== 'have-local-offer') {
+                                    console.warn('[espia reneg] state inesperado:', pc.signalingState, '· descarto');
+                                } else {
+                                    await pc.setRemoteDescription(JSON.parse(d.sdpRenegRespuesta));
+                                    console.log('[espia reneg] respuesta aplicada ✓');
+                                }
+                                if (_espiaCli) {
+                                    _espiaCli._renegEnCurso = false;
+                                    if (_espiaCli._renegTimeout) {
+                                        clearTimeout(_espiaCli._renegTimeout);
+                                        _espiaCli._renegTimeout = null;
+                                    }
+                                }
+                            } catch(eR) {
+                                console.warn('[espia reneg] aplicar respuesta fallo:', eR?.message);
+                                if (_espiaCli) _espiaCli._renegEnCurso = false;
+                            }
+                        }
+
+                        // (4) ICE candidates batched
+                        if (d.ice?.length) {
+                            for (const c of d.ice) {
                                 try { await pc.addIceCandidate(c.ice); }
                                 catch(eC) { console.warn('[espia] addIceCandidate fallo:', eC?.message); }
                             }
-                            _espiaCli.iceDesde = ri.data.tsMax || _espiaCli.iceDesde;
+                            if (_espiaCli && d.tsMax) _espiaCli.iceDesde = d.tsMax;
                         }
                     } catch(e) {
-                        console.warn('[espia poll ice]', e?.message);
-                    } finally { if (_espiaCli) _espiaCli._pollIceEnCurso = false; }
-                }, 400);
-                // [v2.7.29 MUTEX] pollTimerEstado con mutex - dos ticks lentos
-                // pueden disparar doble cierre con master_cerro.
-                _espiaCli._pollEstadoEnCurso = false;
-                _espiaCli.pollTimerEstado = setInterval(async () => {
-                    if (!_espiaCli) return;
-                    if (_espiaCli._pollEstadoEnCurso) return;
-                    _espiaCli._pollEstadoEnCurso = true;
-                    try {
-                        const re = await _espiaCliPostMOS('espiaEstadoSesion', { sesionId });
-                        if (!_espiaCli) return;
-                        if (re?.data?.estado === 'CERRADA') {
-                            console.log('[espia] master cerró sesión');
-                            _espiaCliCerrar('master_cerro');
-                        }
-                    } catch(e) {
-                        console.warn('[espia poll estado]', e?.message);
-                    } finally { if (_espiaCli) _espiaCli._pollEstadoEnCurso = false; }
-                }, 10000);
+                        if (e?.message) console.warn('[espia sync]', e.message);
+                    } finally { if (_espiaCli) _espiaCli._pollSyncEnCurso = false; }
+                }, 700);
                 // 10) Buffer histórico — graba chunks de 5min y los sube
                 _espiaCliIniciarBuffer();
                 // 11) Indicador discreto al user
@@ -11246,11 +11230,13 @@
             console.log('[espia] cerrando:', motivo);
             const ref = _espiaCli;
             _espiaCli = null;
-            // [v2.7.16] Limpiar los 3 timers diferenciados
+            // [v2.7.30] Limpiar el poller consolidado + timers heredados (defensivo)
+            try { clearInterval(ref.pollTimerSync); } catch(_){}
             try { clearInterval(ref.pollTimerOferta); } catch(_){}
             try { clearInterval(ref.pollTimerIce); } catch(_){}
             try { clearInterval(ref.pollTimerEstado); } catch(_){}
             try { clearInterval(ref.pollTimer); } catch(_){}  // compat legacy
+            try { clearTimeout(ref._renegTimeout); } catch(_){}
             // Cerrar recorders del buffer (esto dispara onstop → upload final)
             Object.entries(ref.bufferRecorders || {}).forEach(([k, rec]) => {
                 try { if (rec.state === 'recording') rec.stop(); } catch(_){}
