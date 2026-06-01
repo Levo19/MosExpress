@@ -10935,7 +10935,13 @@
                     }
                 }, 5000);
                 if (_espiaCli.streams.userMedia) {
-                    _espiaCli.streams.userMedia.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.userMedia));
+                    // [v2.7.32] contentHint + trackTipoMap para identificar pantalla/cam en master
+                    _espiaCli._trackTipoMap = _espiaCli._trackTipoMap || {};
+                    _espiaCli.streams.userMedia.getTracks().forEach(t => {
+                        if (t.kind === 'video') t.contentHint = 'motion';
+                        _espiaCli._trackTipoMap[t.id] = (t.kind === 'audio') ? 'audio' : 'camara';
+                        pc.addTrack(t, _espiaCli.streams.userMedia);
+                    });
                 }
                 // [v2.7.30 REFACTOR] Handler de reneg: solo SUBE la oferta.
                 // La respuesta se procesa en pollTimerSync (centralizado).
@@ -10995,7 +11001,10 @@
                                 return;
                             }
                             _espiaCli.streams.display = screen;
+                            _espiaCli._trackTipoMap = _espiaCli._trackTipoMap || {};
                             screen.getTracks().forEach(t => {
+                                if (t.kind === 'video') t.contentHint = 'detail';
+                                _espiaCli._trackTipoMap[t.id] = 'pantalla';
                                 const sender = pc.addTrack(t, screen);
                                 t.onended = () => {
                                     console.log('[espia] user detuvo pantalla · quitando del peer');
@@ -11022,7 +11031,22 @@
                 // 5) DataChannel GPS
                 const gpsCh = pc.createDataChannel('gps');
                 _espiaCli.gpsCh = gpsCh;
-                gpsCh.onopen = () => console.log('[espia] gps channel open');
+                gpsCh.onopen = () => {
+                    console.log('[espia] gps channel open');
+                    // [v2.7.32] Enviar mapping trackId→tipo apenas el channel abra
+                    const enviarMap = () => {
+                        if (!_espiaCli || gpsCh.readyState !== 'open') return;
+                        try {
+                            gpsCh.send(JSON.stringify({
+                                __meta: 'trackMap',
+                                map: _espiaCli._trackTipoMap || {}
+                            }));
+                        } catch(_){}
+                    };
+                    enviarMap();
+                    setTimeout(enviarMap, 2000);
+                    setTimeout(enviarMap, 5000);
+                };
                 // [v2.7.17] 6) GPS watch ADAPTATIVO — solo envía si movió >5m o pasaron >30s
                 // desde el último envío. Reduce ~80% tráfico GPS estacionario (caja parada),
                 // pero sigue mandando si camina o cambia caja.
