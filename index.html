@@ -10969,6 +10969,7 @@
                         });
                         console.log('[espia] 2da cámara agregada · reneg disparará');
                         _espiaCli?._enviarTrackMap?.();
+                        _espiaCli?._enviarCapabilities?.();
                     } catch(e) {
                         console.warn('[espia] 2da cámara fallo:', e.message);
                     }
@@ -11073,10 +11074,37 @@
                         }));
                     } catch(_){}
                 };
+                // [v2.7.36] Capabilities para que el master adapte UI según device
+                _espiaCli._enviarCapabilities = () => {
+                    if (!_espiaCli || !_espiaCli.gpsCh || _espiaCli.gpsCh.readyState !== 'open') return;
+                    try {
+                        const ua = navigator.userAgent || '';
+                        let plataforma = 'desktop';
+                        if (/iPad|Tablet/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))) plataforma = 'tablet';
+                        else if (/Android|iPhone|iPod|Mobile/i.test(ua)) plataforma = 'mobile';
+                        let modelo = '';
+                        const mMobile = ua.match(/(iPhone|iPad|Pixel \d+\w*|SM-[A-Z0-9]+|Redmi[^;)]*|POCO[^;)]*|moto[^;)]*|HUAWEI[^;)]*)/i);
+                        if (mMobile) modelo = mMobile[1].trim();
+                        const caps = {
+                            esMobile:      plataforma !== 'desktop',
+                            plataforma,
+                            modelo:        modelo || (plataforma === 'desktop' ? 'PC' : 'Smartphone'),
+                            tienePantalla: typeof navigator.mediaDevices?.getDisplayMedia === 'function',
+                            camsTotales:   _espiaCli.streams.userMedia2 ? 2 : (_espiaCli.streams.userMedia ? 1 : 0),
+                            touchPoints:   navigator.maxTouchPoints || 0
+                        };
+                        _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'capabilities', caps }));
+                        console.log('[espia] capabilities reportadas:', caps);
+                    } catch(_){}
+                };
                 gpsCh.onopen = () => {
                     console.log('[espia] gps channel open');
                     _espiaCli?._enviarTrackMap();
-                    setTimeout(() => _espiaCli?._enviarTrackMap(), 1500);
+                    _espiaCli?._enviarCapabilities();
+                    setTimeout(() => {
+                        _espiaCli?._enviarTrackMap();
+                        _espiaCli?._enviarCapabilities();
+                    }, 1500);
                 };
                 // [v2.7.17] 6) GPS watch ADAPTATIVO — solo envía si movió >5m o pasaron >30s
                 // desde el último envío. Reduce ~80% tráfico GPS estacionario (caja parada),
