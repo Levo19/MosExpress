@@ -10940,31 +10940,37 @@
                         _espiaCliCerrar('ice_failed_persistente');
                     }
                 }, 5000);
-                // [v2.7.39] Visibility change handler — pantalla bloqueada/desbloqueada
+                // [v2.7.40] Visibility handler — usa ref.pc + guards contra PC cerrado
                 _espiaCli._handlerVisibility = () => {
                     if (!_espiaCli) return;
+                    const pcAhora = _espiaCli.pc;
+                    if (!pcAhora) return;
                     const ahoraVisible = document.visibilityState === 'visible';
+                    try {
+                        if (_espiaCli.gpsCh?.readyState === 'open') {
+                            _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'visibility', visible: ahoraVisible }));
+                        }
+                    } catch(_){}
                     if (ahoraVisible) {
-                        console.log('[espia visibility] visible · re-animar conexión');
+                        console.log('[espia visibility] visible · reanimar');
                         _espiaCli._ultimaVisible = Date.now();
-                        try {
-                            if (_espiaCli.gpsCh?.readyState === 'open') {
-                                _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'visibility', visible: true }));
+                        if (pcAhora.connectionState !== 'closed') {
+                            let estICE = '';
+                            try { estICE = pcAhora.iceConnectionState; } catch(_){ return; }
+                            if (estICE === 'failed' || estICE === 'disconnected') {
+                                try { pcAhora.restartIce(); } catch(_){}
                             }
-                        } catch(_){}
-                        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-                            try { pc.restartIce(); } catch(_){}
                         }
                     } else {
-                        console.log('[espia visibility] hidden · pantalla bloqueada / tab oculto');
-                        try {
-                            if (_espiaCli.gpsCh?.readyState === 'open') {
-                                _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'visibility', visible: false }));
-                            }
-                        } catch(_){}
+                        console.log('[espia visibility] hidden · pantalla bloqueada');
                     }
                 };
+                // Limpiar listener previo (defensiva)
+                if (window.__espiaCliVisibilityHandlerPrev) {
+                    try { document.removeEventListener('visibilitychange', window.__espiaCliVisibilityHandlerPrev); } catch(_){}
+                }
                 document.addEventListener('visibilitychange', _espiaCli._handlerVisibility);
+                window.__espiaCliVisibilityHandlerPrev = _espiaCli._handlerVisibility;
                 _espiaCli._ultimaVisible = Date.now();
                 if (_espiaCli.streams.userMedia) {
                     // [v2.7.32] contentHint + trackTipoMap para identificar pantalla/cam en master
