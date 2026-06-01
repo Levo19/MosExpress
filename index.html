@@ -10902,14 +10902,13 @@
                 pc.onnegotiationneeded = async () => {
                     if (!_espiaCli || !_espiaCli._setupInicialDone) return;
                     if (_espiaCli._renegEnCurso) return;
-                    // [v2.7.26 BLINDAJE] Anti-spam 2s
                     const ahora = Date.now();
                     if ((ahora - _espiaCli._ultimaReneg) < 2000) {
                         console.log('[espia reneg] throttled');
                         return;
                     }
+                    _espiaCli._renegEnCurso = true; // [v2.7.27] mutex ANTES de awaits
                     _espiaCli._ultimaReneg = ahora;
-                    _espiaCli._renegEnCurso = true;
                     let buscarAns = null;
                     const limpiar = async (motivo) => {
                         if (buscarAns) clearInterval(buscarAns);

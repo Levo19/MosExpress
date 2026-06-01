@@ -1,1 +1,1 @@
-{ "version": "2.7.26", "build": "20260601-espia-mutex-poll-oferta-fix-rdata-en-poll-reneg-blindaje" }
+{ "version": "2.7.27", "build": "20260601-espia-cliente-mutex-reneg-antes-de-await" }
