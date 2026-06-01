@@ -10931,11 +10931,41 @@
                 };
                 _espiaCli._iceWatchdogTimer = setInterval(() => {
                     if (!_espiaCli || !_espiaCli._iceFailedDesde) return;
-                    if (Date.now() - _espiaCli._iceFailedDesde > 30000) {
-                        console.warn('[espia] ICE failed >30s · cerrando');
+                    // [v2.7.39] Tolerante a pantalla bloqueada
+                    if (document.visibilityState === 'hidden') return;
+                    const desdeReanudacion = _espiaCli._ultimaVisible ? (Date.now() - _espiaCli._ultimaVisible) : Infinity;
+                    const failedHace = Date.now() - _espiaCli._iceFailedDesde;
+                    if (failedHace > 30000 && desdeReanudacion > 15000) {
+                        console.warn('[espia] ICE failed >30s post-resume · cerrando');
                         _espiaCliCerrar('ice_failed_persistente');
                     }
                 }, 5000);
+                // [v2.7.39] Visibility change handler — pantalla bloqueada/desbloqueada
+                _espiaCli._handlerVisibility = () => {
+                    if (!_espiaCli) return;
+                    const ahoraVisible = document.visibilityState === 'visible';
+                    if (ahoraVisible) {
+                        console.log('[espia visibility] visible · re-animar conexión');
+                        _espiaCli._ultimaVisible = Date.now();
+                        try {
+                            if (_espiaCli.gpsCh?.readyState === 'open') {
+                                _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'visibility', visible: true }));
+                            }
+                        } catch(_){}
+                        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+                            try { pc.restartIce(); } catch(_){}
+                        }
+                    } else {
+                        console.log('[espia visibility] hidden · pantalla bloqueada / tab oculto');
+                        try {
+                            if (_espiaCli.gpsCh?.readyState === 'open') {
+                                _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'visibility', visible: false }));
+                            }
+                        } catch(_){}
+                    }
+                };
+                document.addEventListener('visibilitychange', _espiaCli._handlerVisibility);
+                _espiaCli._ultimaVisible = Date.now();
                 if (_espiaCli.streams.userMedia) {
                     // [v2.7.32] contentHint + trackTipoMap para identificar pantalla/cam en master
                     _espiaCli._trackTipoMap = _espiaCli._trackTipoMap || {};
@@ -11405,6 +11435,10 @@
             try { clearInterval(ref.pollTimerSync); } catch(_){}
             try { clearInterval(ref._iceFlushTimer); } catch(_){}
             try { clearInterval(ref._iceWatchdogTimer); } catch(_){}
+            // [v2.7.39] Quitar listener visibility
+            if (ref._handlerVisibility) {
+                try { document.removeEventListener('visibilitychange', ref._handlerVisibility); } catch(_){}
+            }
             try { clearInterval(ref.pollTimerOferta); } catch(_){}
             try { clearInterval(ref.pollTimerIce); } catch(_){}
             try { clearInterval(ref.pollTimerEstado); } catch(_){}
