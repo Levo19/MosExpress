@@ -11042,12 +11042,13 @@
                 }
                 // 7) ICE candidates locales → backend
                 pc.onicecandidate = (ev) => {
-                    if (ev.candidate) {
-                        _espiaCliPostMOS('espiaAgregarIce', {
-                            sesionId, lado: 'device',
-                            ice: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate
-                        });
-                    }
+                    // [v2.7.29] Guard contra cierre: si _espiaCli quedó null entre
+                    // ICE gathering y este callback, no spammear backend.
+                    if (!_espiaCli || !ev.candidate) return;
+                    _espiaCliPostMOS('espiaAgregarIce', {
+                        sesionId, lado: 'device',
+                        ice: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate
+                    });
                 };
                 // 8) Cierre por desconexión
                 pc.onconnectionstatechange = () => {
@@ -11117,17 +11118,23 @@
                         console.warn('[espia poll ice]', e?.message);
                     } finally { if (_espiaCli) _espiaCli._pollIceEnCurso = false; }
                 }, 400);
+                // [v2.7.29 MUTEX] pollTimerEstado con mutex - dos ticks lentos
+                // pueden disparar doble cierre con master_cerro.
+                _espiaCli._pollEstadoEnCurso = false;
                 _espiaCli.pollTimerEstado = setInterval(async () => {
                     if (!_espiaCli) return;
+                    if (_espiaCli._pollEstadoEnCurso) return;
+                    _espiaCli._pollEstadoEnCurso = true;
                     try {
                         const re = await _espiaCliPostMOS('espiaEstadoSesion', { sesionId });
+                        if (!_espiaCli) return;
                         if (re?.data?.estado === 'CERRADA') {
                             console.log('[espia] master cerró sesión');
                             _espiaCliCerrar('master_cerro');
                         }
                     } catch(e) {
                         console.warn('[espia poll estado]', e?.message);
-                    }
+                    } finally { if (_espiaCli) _espiaCli._pollEstadoEnCurso = false; }
                 }, 10000);
                 // 10) Buffer histórico — graba chunks de 5min y los sube
                 _espiaCliIniciarBuffer();
