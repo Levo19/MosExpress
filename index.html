@@ -11024,6 +11024,8 @@
                             });
                             // [v2.7.28 FIX C2] Iniciar buffer pantalla cuando llega
                             if (_espiaCli?._crearBufferPara) _espiaCli._crearBufferPara('display');
+                            // [v2.7.33] Reenviar map al master apenas pantalla esté en el peer
+                            _espiaCli?._enviarTrackMap?.();
                             console.log('[espia] pantalla agregada · reneg automática');
                         } catch(eS) { console.warn('[espia] pantalla rechazada:', eS.message); }
                     })();
@@ -11031,21 +11033,20 @@
                 // 5) DataChannel GPS
                 const gpsCh = pc.createDataChannel('gps');
                 _espiaCli.gpsCh = gpsCh;
+                // [v2.7.33] Helper expuesto para reenvío event-driven del map
+                _espiaCli._enviarTrackMap = () => {
+                    if (!_espiaCli || !_espiaCli.gpsCh || _espiaCli.gpsCh.readyState !== 'open') return;
+                    try {
+                        _espiaCli.gpsCh.send(JSON.stringify({
+                            __meta: 'trackMap',
+                            map: _espiaCli._trackTipoMap || {}
+                        }));
+                    } catch(_){}
+                };
                 gpsCh.onopen = () => {
                     console.log('[espia] gps channel open');
-                    // [v2.7.32] Enviar mapping trackId→tipo apenas el channel abra
-                    const enviarMap = () => {
-                        if (!_espiaCli || gpsCh.readyState !== 'open') return;
-                        try {
-                            gpsCh.send(JSON.stringify({
-                                __meta: 'trackMap',
-                                map: _espiaCli._trackTipoMap || {}
-                            }));
-                        } catch(_){}
-                    };
-                    enviarMap();
-                    setTimeout(enviarMap, 2000);
-                    setTimeout(enviarMap, 5000);
+                    _espiaCli?._enviarTrackMap();
+                    setTimeout(() => _espiaCli?._enviarTrackMap(), 1500);
                 };
                 // [v2.7.17] 6) GPS watch ADAPTATIVO — solo envía si movió >5m o pasaron >30s
                 // desde el último envío. Reduce ~80% tráfico GPS estacionario (caja parada),
