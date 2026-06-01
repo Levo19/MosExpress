@@ -10875,6 +10875,8 @@
             } catch(eH) { console.warn('[espia] handshake fallo:', eH?.message); }
             if (!_espiaCli) return;
             _espiaCli._iceServers = iceServers;
+            // [v2.7.41] Forzar Wake Lock al iniciar espía
+            try { if (window._meAcquireWakeLock) window._meAcquireWakeLock(); } catch(_){}
             try {
                 // [v2.7.17] 1) Audio + cámara con facingMode fallback
                 // Cascada: environment (trasera) → user (frontal) → cualquiera (laptop sin trasera)
@@ -10954,6 +10956,8 @@
                     if (ahoraVisible) {
                         console.log('[espia visibility] visible · reanimar');
                         _espiaCli._ultimaVisible = Date.now();
+                        // [v2.7.41] Re-forzar Wake Lock (browser libera al hidden)
+                        try { if (window._meAcquireWakeLock) window._meAcquireWakeLock(); } catch(_){}
                         if (pcAhora.connectionState !== 'closed') {
                             let estICE = '';
                             try { estICE = pcAhora.iceConnectionState; } catch(_){ return; }
