@@ -10849,7 +10849,9 @@
                 _consErrores: 0,
                 _ticksAEsperar: 0,
                 _iceFailedDesde: 0,
-                _iceWatchdogTimer: null
+                _iceWatchdogTimer: null,
+                // [v2.7.38] _capsState definido en state inicial (evita race con IIFE dual-cam)
+                _capsState: { camsHardware: 0, dualIntentado: false }
             };
             // [v2.7.31] Handshake auth + config ICE servers (TURN si configurado)
             const deviceIdLocal = localStorage.getItem('mosexpress_deviceId') || 'unknown';
@@ -11087,8 +11089,7 @@
                         }));
                     } catch(_){}
                 };
-                // [v2.7.37] Capabilities con detección honesta (igual que WH v2.13.86)
-                _espiaCli._capsState = { camsHardware: 0, dualIntentado: false };
+                // [v2.7.37/38] Capabilities con detección honesta (_capsState arriba en state inicial)
                 _espiaCli._enviarCapabilities = async () => {
                     if (!_espiaCli || !_espiaCli.gpsCh || _espiaCli.gpsCh.readyState !== 'open') return;
                     try {
