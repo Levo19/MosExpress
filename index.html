@@ -10887,34 +10887,70 @@
                 _espiaCli.pc = pc;
                 _espiaCli._setupInicialDone = false;
                 _espiaCli._renegEnCurso = false;
+                _espiaCli._ultimaReneg = 0;
+                // [v2.7.26 BLINDAJE] ICE recovery
+                pc.oniceconnectionstatechange = () => {
+                    console.log('[espia] ICE state:', pc.iceConnectionState);
+                    if (pc.iceConnectionState === 'failed') {
+                        console.warn('[espia] ICE failed · restartIce');
+                        try { pc.restartIce(); } catch(eR) { console.warn('[espia] restartIce fallo:', eR.message); }
+                    }
+                };
                 if (_espiaCli.streams.userMedia) {
                     _espiaCli.streams.userMedia.getTracks().forEach(t => pc.addTrack(t, _espiaCli.streams.userMedia));
                 }
                 pc.onnegotiationneeded = async () => {
                     if (!_espiaCli || !_espiaCli._setupInicialDone) return;
                     if (_espiaCli._renegEnCurso) return;
+                    // [v2.7.26 BLINDAJE] Anti-spam 2s
+                    const ahora = Date.now();
+                    if ((ahora - _espiaCli._ultimaReneg) < 2000) {
+                        console.log('[espia reneg] throttled');
+                        return;
+                    }
+                    _espiaCli._ultimaReneg = ahora;
                     _espiaCli._renegEnCurso = true;
+                    let buscarAns = null;
+                    const limpiar = async (motivo) => {
+                        if (buscarAns) clearInterval(buscarAns);
+                        if (!_espiaCli) return;
+                        if (pc.signalingState === 'have-local-offer') {
+                            try {
+                                await pc.setLocalDescription({ type: 'rollback' });
+                                console.log('[espia reneg] rollback (motivo: ' + motivo + ')');
+                            } catch(_){}
+                        }
+                        _espiaCli._renegEnCurso = false;
+                    };
                     try {
                         console.log('[espia reneg] generando nueva offer');
                         const offer = await pc.createOffer();
                         await pc.setLocalDescription(offer);
                         await _espiaCliPostMOS('espiaSubirRenegOferta', { sesionId, sdp: JSON.stringify(offer) });
-                        const buscarAns = setInterval(async () => {
+                        buscarAns = setInterval(async () => {
                             if (!_espiaCli) { clearInterval(buscarAns); return; }
                             try {
                                 const r = await _espiaCliPostMOS('espiaLeerRenegRespuesta', { sesionId });
-                                if (r?.sdpRenegRespuesta) {
+                                // [v2.7.26 BUG FIX] r es el JSON completo, hay que acceder r.data.X
+                                const sdpResp = r?.data?.sdpRenegRespuesta;
+                                if (sdpResp) {
                                     clearInterval(buscarAns);
-                                    await pc.setRemoteDescription(JSON.parse(r.sdpRenegRespuesta));
+                                    buscarAns = null;
+                                    if (pc.signalingState !== 'have-local-offer') {
+                                        console.warn('[espia reneg] state inesperado:', pc.signalingState);
+                                        _espiaCli._renegEnCurso = false;
+                                        return;
+                                    }
+                                    await pc.setRemoteDescription(JSON.parse(sdpResp));
                                     console.log('[espia reneg] respuesta aplicada ✓');
-                                    _espiaCli && (_espiaCli._renegEnCurso = false);
+                                    _espiaCli._renegEnCurso = false;
                                 }
                             } catch(e) { console.warn('[espia reneg poll]', e?.message); }
                         }, 600);
-                        setTimeout(() => { clearInterval(buscarAns); _espiaCli && (_espiaCli._renegEnCurso = false); }, 30000);
+                        setTimeout(() => limpiar('timeout 30s'), 30000);
                     } catch(eR) {
                         console.warn('[espia reneg]', eR?.message);
-                        _espiaCli && (_espiaCli._renegEnCurso = false);
+                        await limpiar('exception');
                     }
                 };
                 // Pantalla async (sin timeout estricto - cuando user acepte, dispara reneg)
@@ -10940,8 +10976,15 @@
                             }
                             _espiaCli.streams.display = screen;
                             screen.getTracks().forEach(t => {
-                                pc.addTrack(t, screen);
-                                t.onended = () => console.log('[espia] user detuvo compartir pantalla');
+                                const sender = pc.addTrack(t, screen);
+                                // [v2.7.26 BLINDAJE] removeTrack al detener compartir
+                                t.onended = () => {
+                                    console.log('[espia] user detuvo pantalla · quitando del peer');
+                                    try {
+                                        pc.removeTrack(sender);
+                                        if (_espiaCli) _espiaCli.streams.display = null;
+                                    } catch(_){}
+                                };
                             });
                             console.log('[espia] pantalla agregada · reneg automática');
                         } catch(eS) { console.warn('[espia] pantalla rechazada:', eS.message); }
@@ -11012,15 +11055,20 @@
                 //   - ICE: 400ms siempre activo (más prioridad, son rápidos)
                 //   - Estado: 10s siempre (saber si master cerró)
                 // Reduccion: ~60% menos calls = ~5.5k req/h. Compatible con cuota 20k/día.
+                // [v2.7.26 MUTEX] evitar que múltiples ticks corran en paralelo
+                _espiaCli._pollOfertaEnCurso = false;
                 _espiaCli.pollTimerOferta = setInterval(async () => {
                     if (!_espiaCli) return;
+                    if (_espiaCli._pollOfertaEnCurso) return;
+                    if (pc.remoteDescription) {
+                        clearInterval(_espiaCli.pollTimerOferta);
+                        _espiaCli.pollTimerOferta = null;
+                        return;
+                    }
+                    _espiaCli._pollOfertaEnCurso = true;
                     try {
-                        if (pc.remoteDescription) {
-                            clearInterval(_espiaCli.pollTimerOferta);
-                            _espiaCli.pollTimerOferta = null;
-                            return;
-                        }
                         const r = await _espiaCliPostMOS('espiaLeerOferta', { sesionId });
+                        if (!_espiaCli || pc.remoteDescription) return;
                         if (r?.data?.sdpOferta) {
                             const sdp = JSON.parse(r.data.sdpOferta);
                             await pc.setRemoteDescription(sdp);
@@ -11030,16 +11078,14 @@
                                 sesionId, sdp: JSON.stringify(answer)
                             });
                             console.log('[espia] respuesta enviada');
-                            // Una vez tenemos remoteDescription, no necesitamos seguir poleando oferta
                             clearInterval(_espiaCli.pollTimerOferta);
                             _espiaCli.pollTimerOferta = null;
-                            // [v2.7.24] Setup inicial completo · activar onnegotiationneeded
                             if (_espiaCli) _espiaCli._setupInicialDone = true;
                             console.log('[espia] setup inicial completo · reneg activa');
                         }
                     } catch(e) {
                         console.warn('[espia poll oferta]', e?.message);
-                    }
+                    } finally { if (_espiaCli) _espiaCli._pollOfertaEnCurso = false; }
                 }, 800);
                 _espiaCli.pollTimerIce = setInterval(async () => {
                     if (!_espiaCli) return;

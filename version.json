@@ -1,1 +1,1 @@
-{ "version": "2.7.25", "build": "20260601-espia-reneg-race-fix-wait-setupInicial" }
+{ "version": "2.7.26", "build": "20260601-espia-mutex-poll-oferta-fix-rdata-en-poll-reneg-blindaje" }
