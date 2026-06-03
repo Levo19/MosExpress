@@ -18,7 +18,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.13.119"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.13.120"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -3543,6 +3543,29 @@
                  <button @click="imprimirMembrete" :disabled="!bHerramientas || procesandoMembrete" class="w-full bg-gray-800 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-transform flex justify-center uppercase items-center tracking-widest disabled:bg-gray-400">
                     <svg v-if="procesandoMembrete" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     Generar 1 Copia RAW
+                 </button>
+
+                 <!-- [v2.7+] Sistema centralizado de membretes (MOS + WH) -->
+                 <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 1rem;">
+                 <div class="text-center mb-2">
+                    <h3 class="text-sm font-black text-gray-700">🏷 SISTEMA CENTRALIZADO</h3>
+                    <p class="text-xs text-gray-500">Membretes ME (góndola) impresos en almacén</p>
+                 </div>
+                 <div class="grid grid-cols-2 gap-2">
+                    <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio && MembreteSystem.abrirAlertasPrecio()"
+                            class="bg-red-50 text-red-700 font-bold py-3 rounded-xl border-2 border-red-200 text-sm">
+                       🚨 Alertas precio
+                    </button>
+                    <button onclick="window.MembreteSystem && MembreteSystem.abrirCola && MembreteSystem.abrirCola('MEMBRETE_ME')"
+                            class="bg-amber-50 text-amber-700 font-bold py-3 rounded-xl border-2 border-amber-200 text-sm">
+                       🏪 Cola ME
+                    </button>
+                 </div>
+                 <button onclick="
+                   var u = prompt('URL del GAS de MOS (para conectar membretes):', localStorage.getItem('mosexpress_mos_url') || '');
+                   if (u !== null) { localStorage.setItem('mosexpress_mos_url', u); alert('Guardado. Recargá ME.'); }
+                 " class="w-full mt-2 text-xs text-gray-500 underline">
+                    ⚙ Configurar URL GAS de MOS (1 vez)
                  </button>
 
                  <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
@@ -7185,6 +7208,10 @@
                 unwrapData:     true,
                 endpointPrefix: 'wh_'
               });
+              // [v2.7+] Badge flotante de alertas precio (auto-refresh cada 60s)
+              if (window.MembreteSystem.arrancarBadgeAlertas) {
+                setTimeout(function() { window.MembreteSystem.arrancarBadgeAlertas(); }, 3000);
+              }
             } else {
               console.log('[Membretes] Sistema de membretes no inicializado en ME — falta config mosexpress_mos_url');
             }
