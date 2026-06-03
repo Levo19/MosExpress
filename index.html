@@ -16,6 +16,8 @@
   <!-- Firebase compat para Push Notifications -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+  <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS) -->
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -7161,6 +7163,31 @@
           window.addEventListener('online', updateOnlineStatus);
           window.addEventListener('offline', updateOnlineStatus);
           handleResize();
+
+          // [v2.7+] Inicializar sistema centralizado de membretes/adhesivos.
+          // ME llama endpoints WH a través de bridges en MOS (wh_*).
+          // Requiere localStorage 'mosexpress_mos_url' apuntando al GAS de MOS.
+          // Si no está configurado, el sistema queda DESHABILITADO en ME (no rompe).
+          try {
+            const MOS_URL = localStorage.getItem('mosexpress_mos_url') || '';
+            if (MOS_URL && window.MembreteSystem && window.MembreteSystem.iniciar) {
+              window.MembreteSystem.iniciar({
+                apiPost: function(action, params) {
+                  return fetch(MOS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify(Object.assign({ action: action }, params || {}))
+                  }).then(r => r.json());
+                },
+                usuario:        function() { return (config.value && config.value.vendedor) || ''; },
+                origen:         'ME',
+                unwrapData:     true,
+                endpointPrefix: 'wh_'
+              });
+            } else {
+              console.log('[Membretes] Sistema de membretes no inicializado en ME — falta config mosexpress_mos_url');
+            }
+          } catch(e) { console.warn('[Membretes] init fail:', e); }
 
           // [v2.5.30] Al ABRIR/ACTUALIZAR la app, ir a POS + foco scanner
           // automático después de que Vue monte todo el árbol (1s buffer
