@@ -6824,6 +6824,16 @@
             if (d.permitido === false) {
               horarioInfo.value = d;
               horarioBloqueado.value = true;
+              // [v2.7.45] Mostrar modal moderno fuera-horario (solicitar extensión + notifícame)
+              try {
+                if (window.SeguridadSystem && window.SeguridadSystem.abrirModalFueraHorario) {
+                  window.SeguridadSystem.abrirModalFueraHorario(
+                    d.motivo || 'fuera',
+                    d.apertura || '06:00',
+                    d.cierre   || '23:00'
+                  );
+                }
+              } catch(_) {}
             } else {
               horarioBloqueado.value = false;
               horarioInfo.value = null;
