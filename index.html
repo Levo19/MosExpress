@@ -3547,7 +3547,7 @@
                     Generar 1 Copia RAW
                  </button>
 
-                 <!-- [v2.7+] Sistema centralizado de membretes (MOS + WH) -->
+                 <!-- [v2.7.51] Sistema centralizado de membretes — 2 botones únicos -->
                  <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 1rem;">
                  <div class="text-center mb-2">
                     <h3 class="text-sm font-black text-gray-700">🏷 SISTEMA CENTRALIZADO</h3>
@@ -3555,12 +3555,12 @@
                  </div>
                  <div class="grid grid-cols-2 gap-2">
                     <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio && MembreteSystem.abrirAlertasPrecio()"
-                            class="bg-red-50 text-red-700 font-bold py-3 rounded-xl border-2 border-red-200 text-sm">
+                            class="bg-red-50 text-red-700 font-bold py-3 rounded-xl border-2 border-red-200 text-sm active:scale-95 transition-transform">
                        🚨 Alertas precio
                     </button>
-                    <button onclick="window.MembreteSystem && MembreteSystem.abrirCola && MembreteSystem.abrirCola('MEMBRETE_ME')"
-                            class="bg-amber-50 text-amber-700 font-bold py-3 rounded-xl border-2 border-amber-200 text-sm">
-                       🏪 Cola ME
+                    <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes && MembreteSystem.abrirHistorialLotes('MEMBRETE_ME')"
+                            class="bg-amber-50 text-amber-700 font-bold py-3 rounded-xl border-2 border-amber-200 text-sm active:scale-95 transition-transform">
+                       📋 Lotes ME
                     </button>
                  </div>
                  <button onclick="
@@ -7230,7 +7230,38 @@
                 usuario:        function() { return (config.value && config.value.vendedor) || ''; },
                 origen:         'ME',
                 unwrapData:     true,
-                endpointPrefix: 'wh_'
+                endpointPrefix: 'wh_',
+                // [v2.7.51] Provider del catálogo: en ME los productos viven en
+                // db.value.PRODUCTO_BASE (Vue ref, no en window). Pasamos un
+                // callback para que el módulo lo pueda leer.
+                catalogoProvider: function() {
+                  try {
+                    var base = (db.value && db.value.PRODUCTO_BASE) || [];
+                    var pres = (db.value && db.value.PRESENTACIONES) || [];
+                    var equiv = (db.value && db.value.EQUIVALENCIAS) || [];
+                    // Construir productos canónicos a partir de PRODUCTO_BASE + PRESENTACIONES
+                    var productos = base.map(function(p) {
+                      // Buscar presentación principal con código de barras (1ra presentación)
+                      var presP = pres.find(function(x) { return x.SKU_Base === p.SKU_Base; });
+                      var codigoPrincipal = (presP && (presP.Codigo_Barras || presP.codigoBarra)) || p.SKU_Base;
+                      return {
+                        idProducto:  p.SKU_Base,
+                        skuBase:     p.SKU_Base,
+                        descripcion: p.Producto || p.Descripcion || '',
+                        codigoBarra: codigoPrincipal,
+                        precio:      parseFloat((presP && presP.Precio) || 0) || 0
+                      };
+                    });
+                    var equivalencias = equiv.map(function(e) {
+                      return {
+                        skuBase: e.SKU_Base,
+                        codigoBarra: e.Codigo_Equivalente,
+                        activo: e.Activo === true || String(e.Activo).toUpperCase() === 'TRUE' || e.Activo === 1
+                      };
+                    });
+                    return { productos: productos, equivalencias: equivalencias, origen: 'ME' };
+                  } catch(_) { return null; }
+                }
               });
               // [v2.7+] Badge flotante de alertas precio (auto-refresh cada 60s)
               if (window.MembreteSystem.arrancarBadgeAlertas) {
