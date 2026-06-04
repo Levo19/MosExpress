@@ -19,6 +19,8 @@
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
   <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.128"></script>
+  <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
+  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.13.121"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -7216,6 +7218,29 @@
               console.log('[Membretes] Sistema de membretes no inicializado en ME — falta config mosexpress_mos_url');
             }
           } catch(e) { console.warn('[Membretes] init fail:', e); }
+
+          // [v2.7.50] Sistema centralizado de seguridad — horarios + alertas.
+          // ME comparte el mismo GAS URL de membretes (mosexpress_mos_url).
+          try {
+            const MOS_URL_S = localStorage.getItem('mosexpress_mos_url') || '';
+            if (MOS_URL_S && window.SeguridadSystem && window.SeguridadSystem.iniciar) {
+              window.SeguridadSystem.iniciar({
+                apiPost: function(action, params) {
+                  return fetch(MOS_URL_S, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify(Object.assign({ action: action }, params || {}))
+                  }).then(r => r.json()).then(r => r && r.data !== undefined ? r.data : r);
+                },
+                usuario:        function() { return (config.value && config.value.vendedor) || ''; },
+                rol:            function() { return (config.value && config.value.rol) || 'VENDEDOR'; },
+                idPersonal:     function() { return (config.value && config.value.idPersonal) || ''; },
+                app:            'mosExpress',
+                unwrapData:     true,
+                endpointPrefix: ''
+              });
+            }
+          } catch(e) { console.warn('[Seguridad] init fail:', e); }
 
           // [v2.5.30] Al ABRIR/ACTUALIZAR la app, ir a POS + foco scanner
           // automático después de que Vue monte todo el árbol (1s buffer
