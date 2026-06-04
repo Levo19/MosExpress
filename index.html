@@ -3574,12 +3574,11 @@
                        📋 Lotes ME
                     </button>
                  </div>
-                 <button onclick="
-                   var u = prompt('URL del GAS de MOS (para conectar membretes):', localStorage.getItem('mosexpress_mos_url') || '');
-                   if (u !== null) { localStorage.setItem('mosexpress_mos_url', u); alert('Guardado. Recargá ME.'); }
-                 " class="w-full mt-2 text-xs text-gray-500 underline">
-                    ⚙ Configurar URL GAS de MOS (1 vez)
-                 </button>
+                 <!-- [v2.7.54] Botón eliminado — URL del GAS MOS hardcoded como
+                      fallback en el setup inicial. Si en algún momento se necesita
+                      override (test/dev), se puede setear vía consola:
+                      localStorage.setItem('mosexpress_mos_url', '...') -->
+                 <p class="text-xs text-gray-400 text-center mt-2">Conectado al panel MOS automáticamente</p>
 
                  <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
 
@@ -7223,10 +7222,19 @@
 
           // [v2.7+] Inicializar sistema centralizado de membretes/adhesivos.
           // ME llama endpoints WH a través de bridges en MOS (wh_*).
-          // Requiere localStorage 'mosexpress_mos_url' apuntando al GAS de MOS.
-          // Si no está configurado, el sistema queda DESHABILITADO en ME (no rompe).
+          // [v2.7.54] FALLBACK hardcoded: deployment estable de MOS GAS.
+          // Antes cada tablet/PC tenía que configurar localStorage manualmente
+          // (1 paso extra al instalar la app) — absurdo. Si el usuario quiere
+          // sobrescribir (ej: ambiente de test) puede setear localStorage; sino
+          // usa este default que es el mismo para todos los dispositivos prod.
           try {
-            const MOS_URL = localStorage.getItem('mosexpress_mos_url') || '';
+            const MOS_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+            const MOS_URL = localStorage.getItem('mosexpress_mos_url') || MOS_URL_DEFAULT;
+            // Persistir el default así otras partes del código que lo lean del
+            // localStorage también lo encuentran.
+            if (!localStorage.getItem('mosexpress_mos_url')) {
+              try { localStorage.setItem('mosexpress_mos_url', MOS_URL_DEFAULT); } catch(_) {}
+            }
             if (MOS_URL && window.MembreteSystem && window.MembreteSystem.iniciar) {
               window.MembreteSystem.iniciar({
                 apiPost: function(action, params) {
