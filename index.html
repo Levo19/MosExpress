@@ -7219,11 +7219,13 @@
             if (MOS_URL && window.MembreteSystem && window.MembreteSystem.iniciar) {
               window.MembreteSystem.iniciar({
                 apiPost: function(action, params) {
+                  // [v2.7.49 FIX] Hacer unwrap en apiPost para consistencia con
+                  // SeguridadSystem y para que módulo membrete reciba d.data desempaquetado.
                   return fetch(MOS_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify(Object.assign({ action: action }, params || {}))
-                  }).then(r => r.json());
+                  }).then(r => r.json()).then(r => r && r.data !== undefined ? r.data : r);
                 },
                 usuario:        function() { return (config.value && config.value.vendedor) || ''; },
                 origen:         'ME',
