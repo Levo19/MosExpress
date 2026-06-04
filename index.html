@@ -2442,11 +2442,17 @@
         </div>
         <h2 class="text-2xl font-black mb-2 uppercase tracking-wide">Esperando aprobación</h2>
         <p class="text-amber-200 font-bold mb-2">📨 Solicitud enviada al administrador</p>
-        <p class="text-gray-400 text-sm mb-6">Recibirás acceso automáticamente cuando el admin apruebe este dispositivo desde el panel MOS. La pantalla se actualizará sola.</p>
+        <p class="text-gray-400 text-sm mb-6">Recibirás acceso cuando el admin apruebe desde MOS. La pantalla se actualizará sola.</p>
         <div class="bg-gray-900 p-4 rounded-xl border border-amber-700">
            <p class="text-xs text-amber-400 font-bold uppercase tracking-wider mb-1">📱 ID de este dispositivo</p>
            <p class="font-mono text-amber-300 text-xs break-all select-all">{{ deviceId }}</p>
         </div>
+        <!-- [v2.7.53] Opción in-situ: el admin presente aprueba con su clave 8 dig -->
+        <button @click="abrirInSituAdmin"
+                class="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+          🔓 Autorizar in-situ con clave admin
+        </button>
+        <p class="text-xs text-gray-500 mt-2">Si hay un admin presente, puede aprobar ahora con su clave 8 dígitos sin esperar.</p>
         <div class="mt-4 flex items-center justify-center gap-2 text-xs text-amber-400 font-bold">
           <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
           Verificando cada 15s...
@@ -2468,6 +2474,11 @@
         <button @click="verificarDispositivoActivo" :disabled="verificandoDispositivo" class="mt-6 w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 disabled:bg-gray-600 transition-colors flex justify-center">
             <svg v-if="verificandoDispositivo" class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
             REINTENTAR CONEXIÓN
+        </button>
+        <!-- [v2.7.53] Opción in-situ para dispositivos no autorizados / inactivos -->
+        <button @click="abrirInSituAdmin"
+                class="mt-3 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2">
+          🔓 Autorizar in-situ con clave admin
         </button>
         <div v-if="dispositivoEstadoMos !== 'INACTIVO'" class="mt-3">
           <div class="text-xs text-gray-500 my-3 tracking-wider">─ o si está un admin contigo ─</div>
@@ -8037,6 +8048,21 @@
                    }
                } catch(_) {}
            }, 15 * 1000);
+        };
+
+        // [v2.7.53] In-situ admin: abre el modal del módulo centralizado para
+        // que el admin presente apruebe con su clave 8 dígitos sin esperar al panel.
+        const abrirInSituAdmin = () => {
+          try {
+            if (window.SeguridadSystem && window.SeguridadSystem.abrirModalSolicitarAcceso) {
+              window.SeguridadSystem.abrirModalSolicitarAcceso();
+            } else {
+              agregarToast('⚠ Módulo no cargado', 'Recarga la app o configura mosexpress_mos_url');
+            }
+          } catch(e) {
+            console.warn('[abrirInSituAdmin]', e);
+            agregarToast('⚠ Error', e.message || 'No se pudo abrir el modal');
+          }
         };
 
         const verificarDispositivoActivo = async () => {
@@ -15659,7 +15685,7 @@
           etiqMarcarTodasPegadas, etiqReimprimir, etiqAutoPrintAlAperturaCaja,
           camaraHerramientasAbierta, toggleCamaraHerramientas,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, toggleVentaCreditoDirecto,
-          deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo,
+          deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo, abrirInSituAdmin,
           actInSituShow, actInSituNombre, actInSituClave, actInSituErr, actInSituBusy,
           abrirActivarInSitu, confirmarActivarInSitu,
           sesionAnteriorInfo, mostrarModalSesionAnterior, imprimirAvisoCierrePendiente,
