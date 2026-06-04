@@ -20,7 +20,7 @@
        ?v= bump fuerza refresh cuando cambia el módulo. -->
   <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.128"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
-  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.47"></script>
+  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.48"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -6835,6 +6835,11 @@
                     d.cierre   || '23:00'
                   );
                   window._meHorarioModalMostrado = true;
+                } else if (!window.SeguridadSystem && !window._meHorarioModalMostrado) {
+                  // [v2.7.48 FIX] Fallback: SeguridadSystem no cargó (CDN offline) →
+                  // mostrar toast feedback para evitar UI bloqueada sin explicación
+                  agregarToast && agregarToast('🌙 Fuera de horario', 'Tu jornada es ' + (d.apertura || '06:00') + ' a ' + (d.cierre || '23:00'));
+                  window._meHorarioModalMostrado = true;
                 }
               } catch(_) {}
             } else {
@@ -9686,7 +9691,10 @@
                     zona: cw.zona,
                     estacionNombre: cw.estacion.Estacion_Nombre,
                     monto: Number(cw.monto) || 0,
-                    fecha: new Date().toISOString()
+                    fecha: new Date().toISOString(),
+                    // [v2.7.48 FIX] Persistir rol + idPersonal para fast-track
+                    rol: cw.rol || 'VENDEDOR',
+                    idPersonal: cw.idPersonal || ''
                 };
                 const dedup = (lista || []).filter(u => u.nombre.toLowerCase() !== nuevo.nombre.toLowerCase());
                 dedup.unshift(nuevo);
