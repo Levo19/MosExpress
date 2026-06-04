@@ -20,7 +20,7 @@
        ?v= bump fuerza refresh cuando cambia el módulo. -->
   <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.128"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
-  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.45"></script>
+  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.47"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -6824,19 +6824,24 @@
             if (d.permitido === false) {
               horarioInfo.value = d;
               horarioBloqueado.value = true;
-              // [v2.7.45] Mostrar modal moderno fuera-horario (solicitar extensión + notifícame)
+              // [v2.7.47 FIX] Guard contra reapertura cada 5min cuando el usuario
+              // ya cerró el modal. Solo lo reabre si NO estaba ya bloqueado.
               try {
-                if (window.SeguridadSystem && window.SeguridadSystem.abrirModalFueraHorario) {
+                if (window.SeguridadSystem && window.SeguridadSystem.abrirModalFueraHorario
+                    && !window._meHorarioModalMostrado) {
                   window.SeguridadSystem.abrirModalFueraHorario(
                     d.motivo || 'fuera',
                     d.apertura || '06:00',
                     d.cierre   || '23:00'
                   );
+                  window._meHorarioModalMostrado = true;
                 }
               } catch(_) {}
             } else {
               horarioBloqueado.value = false;
               horarioInfo.value = null;
+              // Volvió a estar permitido → resetear flag por si vuelve a bloquearse
+              try { window._meHorarioModalMostrado = false; } catch(_) {}
             }
           } catch(_) { /* offline — no bloquear */ }
         }
@@ -9585,6 +9590,9 @@
         const wizSelectUser = (u) => {
             wizBeep('tap');
             configWizard.value.vendedor = u.nombre;
+            // [v2.7.47 FIX] Propagar rol + idPersonal para SeguridadSystem
+            configWizard.value.rol        = String(u.rol || 'VENDEDOR').toUpperCase();
+            configWizard.value.idPersonal = u.idPersonal || u.ID_Personal || '';
             // si solo hay 1 zona, autoavanzar
             if (zonasUnicas.value.length === 1) {
                 seleccionarZonaWizard(zonasUnicas.value[0]);
@@ -9630,7 +9638,10 @@
             const u = wizUltimoTurno.value;
             if (!u) return;
             wizBeep('success');
-            configWizard.value.vendedor = u.nombre;
+            configWizard.value.vendedor   = u.nombre;
+            // [v2.7.47 FIX] Propagar rol + idPersonal
+            configWizard.value.rol        = String(u.rol || 'VENDEDOR').toUpperCase();
+            configWizard.value.idPersonal = u.idPersonal || '';
             const est = (db.value.ZONAS_CONFIG || []).find(x => x.Estacion_Nombre === u.estacionNombre && x.Zona_ID === u.zona);
             if (est) {
                 configWizard.value.zona = u.zona;
@@ -10249,7 +10260,10 @@
                 vendedor:  configWizard.value.vendedor,
                 zona:      configWizard.value.zona,
                 estacion:  configWizard.value.estacion,
-                esCajero
+                esCajero,
+                // [v2.7.47 FIX] Propagar rol e idPersonal para SeguridadSystem
+                rol:        String(configWizard.value.rol || 'VENDEDOR').toUpperCase(),
+                idPersonal: configWizard.value.idPersonal || ''
             };
             // [v2.5.32] lsSet con auto-recovery de quota (evita pantalla blanca)
             lsSet('mosexpress_config', JSON.stringify(config.value));
