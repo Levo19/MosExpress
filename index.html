@@ -1283,7 +1283,7 @@
        Si el CDN MOS está caído, el script externo no carga → check defensivo
        en el inline siguiente muestra error fatal "Módulo de seguridad no cargado".
   ═══════════════════════════════════════════════════════════════ -->
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.2"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.3"></script>
   <script>
   // [v2.7.58] DEPRECATED: el cuerpo histórico de _meVerifDispositivoPreVue se
   // reemplaza por DeviceAuth.init(). Lo dejamos como wrapper compat para que
@@ -1319,12 +1319,14 @@
         window._ME_VERIF_PREVUE_OK = true;
         // Compat con cache viejo basado en TS (usado por verificarDispositivoActivo)
         try { localStorage.setItem('mosexpress_device_auth_date', String(Date.now())); } catch(_){}
+        // [v2.7.61] Disparar también el ref Vue si ya está cargado
+        if (window._meSetDispositivoAutorizado) window._meSetDispositivoAutorizado(true);
       },
       onAprobado: function() {
-        // El operador fue aprobado vía panel/in-situ → forzar reload para que
-        // Vue arranque limpio con catálogo + sesión. Sin reload el banner de
-        // PENDIENTE seguiría en DOM y el Vue podría estar en estado raro.
-        setTimeout(function() { location.reload(); }, 1200);
+        // [v2.7.61] El operador fue aprobado vía panel/in-situ → reload con
+        // delay corto para que el sonido/toast terminen de reproducirse.
+        // Sin reload el badge PENDIENTE sigue en DOM y Vue queda en estado mixto.
+        setTimeout(function() { location.reload(); }, 800);
       },
       onPending: function() { window._ME_VERIF_PREVUE_OK = false; },
       onInactive: function() { window._ME_VERIF_PREVUE_OK = false; },
@@ -6235,6 +6237,22 @@
         const dispositivoAutorizado = ref(null); // null = cargando, true/false
         const verificandoDispositivo = ref(false);
         const dispositivoEstadoMos = ref(null); // null | 'ACTIVO' | 'INACTIVO' | 'PENDIENTE_APROBACION'
+
+        // [v2.7.61 FIX] Setter global expuesto para que DeviceAuth pueda
+        // marcar el ref Vue desde fuera de setup() cuando el operador es
+        // aprobado vía panel/in-situ. Sin esto, Vue queda mostrando
+        // "verificando dispositivo" (estado null) hasta que ocurra el reload.
+        window._meSetDispositivoAutorizado = (val) => {
+          dispositivoAutorizado.value = val;
+          if (val === true) dispositivoEstadoMos.value = 'ACTIVO';
+          verificandoDispositivo.value = false;
+        };
+        // Escuchar evento custom del módulo DeviceAuth (alternativa al setter)
+        window.addEventListener('deviceauth:authorized', () => {
+          dispositivoAutorizado.value = true;
+          dispositivoEstadoMos.value = 'ACTIVO';
+          verificandoDispositivo.value = false;
+        });
 
         // Modal de activación in-situ por admin presente
         const actInSituShow   = ref(false);
