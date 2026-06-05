@@ -1307,7 +1307,7 @@
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.5"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.6"></script>
   <script>
   // [v2.7.58] DEPRECATED: el cuerpo histórico de _meVerifDispositivoPreVue se
   // reemplaza por DeviceAuth.init(). Lo dejamos como wrapper compat para que
@@ -6277,6 +6277,21 @@
           dispositivoEstadoMos.value = 'ACTIVO';
           verificandoDispositivo.value = false;
         });
+        // [v2.7.64 BUG FIX] Race condition: DeviceAuth.onAuth puede haber
+        // disparado ANTES de que este setup() corra. Verificar SI el módulo
+        // ya autorizó al momento de montar Vue, y si es así, marcar el ref
+        // inmediatamente. Sin esto, Vue mostraba "verificando dispositivo"
+        // eternamente porque dispositivoAutorizado quedaba en null forever.
+        if (window.DeviceAuth && typeof DeviceAuth.estado === 'function') {
+          try {
+            var _initialEstado = DeviceAuth.estado();
+            if (_initialEstado && _initialEstado.estado === 'ACTIVO') {
+              dispositivoAutorizado.value = true;
+              dispositivoEstadoMos.value = 'ACTIVO';
+              verificandoDispositivo.value = false;
+            }
+          } catch(_){}
+        }
 
         // Modal de activación in-situ por admin presente
         const actInSituShow   = ref(false);
