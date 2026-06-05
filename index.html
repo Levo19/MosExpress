@@ -7718,14 +7718,25 @@
         const cargarDatos = async () => {
           // Generar o recuperar UUID — usa localStorage + cookie como doble respaldo
           if (localStorage.getItem('mosexpress_darkmode') === '1') { darkMode.value = true; document.body.classList.add('dark-mode'); }
-          let storedId = localStorage.getItem('mosexpress_deviceId') || _getDeviceCookie();
+          // [v2.7.68 ESTANDARIZACIÓN] Single source of truth: DeviceAuth.deviceId().
+          // Aunque ME y el módulo usan la MISMA clave 'mosexpress_deviceId' por
+          // coincidencia, delegamos al módulo para garantizar consistencia y
+          // evitar race conditions (si setup() corriera antes de DeviceAuth.init).
+          let storedId = null;
+          if (window.DeviceAuth && typeof window.DeviceAuth.deviceId === 'function') {
+            storedId = window.DeviceAuth.deviceId();
+          }
           if (!storedId) {
-             try {
-                if (window.crypto && window.crypto.randomUUID) storedId = crypto.randomUUID();
-                else storedId = 'UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-             } catch(e) {
-                storedId = 'UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-             }
+            // Fallback: lógica histórica con cookie + localStorage
+            storedId = localStorage.getItem('mosexpress_deviceId') || _getDeviceCookie();
+            if (!storedId) {
+               try {
+                  if (window.crypto && window.crypto.randomUUID) storedId = crypto.randomUUID();
+                  else storedId = 'UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+               } catch(e) {
+                  storedId = 'UID-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+               }
+            }
           }
           // Sincronizar ambos almacenamientos para máxima persistencia
           localStorage.setItem('mosexpress_deviceId', storedId);
