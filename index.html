@@ -5903,6 +5903,17 @@
           }
         };
 
+        // [v2.7.56 FIX] lsGet — helper de lectura faltante.
+        // Bug reportado: ReferenceError: lsGet is not defined en procesarPago
+        // (línea 14174). Existía lsSet (con GC inteligente) pero NO lsGet,
+        // a pesar de que el código asumía que existía. Esto bloqueaba ventas
+        // completas — el operador no podía imprimir tickets ni cerrar la venta.
+        // Helper simple: localStorage.getItem con try/catch defensivo.
+        const lsGet = (key) => {
+          try { return localStorage.getItem(key); }
+          catch(_) { return null; }
+        };
+
         // [v2.5.32] Limpieza preventiva al boot — borra mosexpress_db viejo del
         // localStorage. Ya está en IndexedDB. Este item solo y ocupa ~3MB.
         try {
