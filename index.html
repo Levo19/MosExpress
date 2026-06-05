@@ -18,7 +18,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.7.77"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.7.79"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
   <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.71"></script>
   <style>
@@ -234,6 +234,29 @@
       50%      { box-shadow: 0 10px 32px -4px rgba(245,158,11,1),   0 0 0 2px rgba(255,255,255,.25), 0 0 0 14px rgba(245,158,11,0); }
     }
     .animate-pulse-glow { animation: etiqsPulseGlow 1.8s ease-in-out infinite; }
+    /* [v2.7.80] Alerta ROJA palpitante para el botón "Alertas precio" en Tools.
+       Combina escala + glow rojo + shadow expansiva — diseñada para que el
+       cajero NO la ignore. Usada también en el ícono TOOLS del nav. */
+    @keyframes alertasPalpitar {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 6px 18px -4px rgba(220,38,38,.7), 0 0 0 0 rgba(220,38,38,.55), inset 0 0 0 0 rgba(255,255,255,0);
+        filter: brightness(1);
+      }
+      50% {
+        transform: scale(1.035);
+        box-shadow: 0 10px 28px -2px rgba(220,38,38,1), 0 0 0 12px rgba(220,38,38,0), inset 0 0 0 1px rgba(255,255,255,.25);
+        filter: brightness(1.15) saturate(1.2);
+      }
+    }
+    .animate-alertas-palpitar { animation: alertasPalpitar 1.1s ease-in-out infinite; }
+    @keyframes toolsAlerta {
+      0%, 100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 0 rgba(220,38,38,0)); }
+      25%      { transform: scale(1.15) rotate(-6deg); filter: drop-shadow(0 0 4px rgba(220,38,38,.8)); }
+      50%      { transform: scale(1.1) rotate(0deg);  filter: drop-shadow(0 0 6px rgba(220,38,38,1)); }
+      75%      { transform: scale(1.15) rotate(6deg);  filter: drop-shadow(0 0 4px rgba(220,38,38,.8)); }
+    }
+    .animate-tools-alerta { animation: toolsAlerta 1.3s ease-in-out infinite; }
     /* [v2.5.42] Ticket nuevo: slide-in elegante + pulse glow verde
        Antes solo pulsaba el borde. Ahora también desliza hacia abajo desde -8px
        con fade-in suave + glow ámbar→verde. Mucho más perceptible. */
@@ -2361,33 +2384,12 @@
 
   <div id="app" class="h-full flex flex-col relative" v-cloak>
     
-    <!-- [v2.5.36] FAB etiquetas — inteligente: grande cuando carrito vacío
-         (estado inicial, llama la atención), compacto cuando agregas al
-         carrito (no estorba el total). Solo visible en módulo POS. -->
-    <button v-if="etiqsPendientes.length > 0 && currentModule === 'POS'"
-            @click="abrirEtiqsModal"
-            :class="['fixed z-50 active:scale-95 transition-all',
-                     carrito.length === 0
-                       ? 'bottom-20 right-4 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl hover:scale-105'
-                       : 'bottom-24 right-2 w-10 h-10 rounded-full shadow-lg flex items-center justify-center',
-                     etiqsPendientes.some(e => !e._vistoPorMi)
-                       ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white animate-pulse-glow'
-                       : 'bg-gradient-to-br from-emerald-500 to-emerald-700 text-white']"
-            style="box-shadow: 0 10px 28px -6px rgba(245,158,11,.85), 0 0 0 2px rgba(255,255,255,.15);">
-      <!-- Modo compacto: solo icono pequeño + badge con número -->
-      <span v-if="carrito.length > 0" class="text-lg leading-none relative">
-        🏷
-        <span class="absolute -top-2 -right-3 bg-rose-500 text-white text-[10px] font-black rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center ring-2 ring-white">{{ etiqsPendientes.length }}</span>
-      </span>
-      <!-- Modo grande: icono + label + contador -->
-      <span v-else class="text-3xl leading-none">🏷</span>
-      <div v-if="carrito.length === 0" class="flex flex-col items-start leading-tight">
-        <span class="text-[10px] uppercase tracking-widest font-black opacity-90">Etiquetas</span>
-        <span class="text-xl font-black">{{ etiqsPendientes.length }}</span>
-      </div>
-      <span v-if="carrito.length === 0 && etiqsPendientes.some(e => !e._vistoPorMi)"
-            class="absolute -top-2 -right-2 bg-rose-500 text-white text-xs font-black rounded-full w-6 h-6 flex items-center justify-center animate-bounce shadow-lg ring-2 ring-white">!</span>
-    </button>
+    <!-- [v2.7.80 CLEANUP] FAB flotante 🏷 Etiquetas ELIMINADO.
+         Las alertas de cambio de precio ahora viven SOLO en
+         Tools → "Alertas precio" (palpitante en rojo cuando hay pendientes)
+         + el ícono TOOLS del nav también alerta con dot palpitante.
+         El operador sabe dónde está la alerta — sin botones flotantes
+         estorbando POS. -->
 
     <!-- Modal etiquetas (no fullscreen, sólo central tipo card) -->
     <div v-if="etiqsModalAbierto" @click.self="etiqsModalAbierto = false"
@@ -3688,9 +3690,19 @@
                     📋 LISTA PARA IMPRIMIR EN LOTE
                  </button>
                  <div class="grid grid-cols-2 gap-2">
-                    <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio && MembreteSystem.abrirAlertasPrecio()"
-                            class="bg-red-50 text-red-700 font-bold py-3 rounded-xl border-2 border-red-200 text-sm active:scale-95 transition-transform">
+                    <!-- [v2.7.80] Botón "Alertas precio" — palpita ROJO ALARMANTE cuando
+                         hay etiqsPendientes. Es el SUSTITUTO del FAB flotante: ahora
+                         las alertas viven SOLO acá + el dot del ícono TOOLS del nav. -->
+                    <button @click="etiqsModalAbierto = true"
+                            :class="[
+                              'relative font-black py-3 rounded-xl border-2 text-sm active:scale-95 transition-all',
+                              etiqsPendientes.length > 0
+                                ? 'bg-gradient-to-br from-red-500 to-red-700 text-white border-red-800 shadow-lg animate-alertas-palpitar'
+                                : 'bg-red-50 text-red-700 border-red-200 font-bold'
+                            ]">
+                       <span v-if="etiqsPendientes.length > 0" class="absolute -top-2 -right-2 bg-amber-400 text-red-900 text-[10px] font-black rounded-full min-w-[22px] h-[22px] px-1 flex items-center justify-center ring-2 ring-white shadow-md animate-bounce">{{ etiqsPendientes.length }}</span>
                        🚨 Alertas precio
+                       <span v-if="etiqsPendientes.length > 0" class="block text-[10px] font-extrabold tracking-widest mt-0.5 opacity-95">PENDIENTES</span>
                     </button>
                     <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes && MembreteSystem.abrirHistorialLotes('MEMBRETE_ME')"
                             class="bg-amber-50 text-amber-700 font-bold py-3 rounded-xl border-2 border-amber-200 text-sm active:scale-95 transition-transform">
@@ -3873,8 +3885,18 @@
         <button @click="cambiarModulo('TOOLS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'TOOLS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'">
             <div class="relative">
                 <!-- Wrench / tools icon -->
-                <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='TOOLS'}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l5.654-4.654m5.657-5.657l-1.418 1.42a2.5 2.5 0 01-3.536 0L8.707 7.293a2.5 2.5 0 010-3.536l1.42-1.418M15.17 11.42a4.5 4.5 0 00-6.364-6.364L11.42 7.67a2.5 2.5 0 013.535 0l.215.215z"></path></svg>
-                <span v-if="auditPendiente && config.completado" class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+                <!-- [v2.7.80] Ícono palpitante cuando hay etiqsPendientes — para que el
+                     operador sepa que la alerta vive en TOOLS aunque esté en POS o CAJA. -->
+                <svg class="w-6 h-6 mb-1 transition-transform"
+                     :class="[{'scale-110': currentModule==='TOOLS'},
+                              etiqsPendientes.length > 0 && currentModule !== 'TOOLS' ? 'text-red-600 animate-tools-alerta' : '']"
+                     fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l5.654-4.654m5.657-5.657l-1.418 1.42a2.5 2.5 0 01-3.536 0L8.707 7.293a2.5 2.5 0 010-3.536l1.42-1.418M15.17 11.42a4.5 4.5 0 00-6.364-6.364L11.42 7.67a2.5 2.5 0 013.535 0l.215.215z"></path></svg>
+                <!-- Dot rojo combinado: audit pendiente O etiquetas pendientes -->
+                <span v-if="(auditPendiente && config.completado) || etiqsPendientes.length > 0"
+                      class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+                <!-- Contador específico de etiquetas (solo si hay >0) -->
+                <span v-if="etiqsPendientes.length > 0 && currentModule !== 'TOOLS'"
+                      class="absolute -top-2 -right-3 bg-red-600 text-white text-[9px] font-black rounded-full min-w-[16px] h-[16px] px-1 flex items-center justify-center ring-2 ring-white shadow">{{ etiqsPendientes.length > 99 ? '99+' : etiqsPendientes.length }}</span>
             </div>
             TOOLS
             <div v-if="currentModule === 'TOOLS'" class="absolute -top-[1px] w-12 h-[3px] bg-posPrimary rounded-b-full"></div>
