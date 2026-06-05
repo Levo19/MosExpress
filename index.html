@@ -7056,14 +7056,27 @@
         const clienteNombreManual = ref('');
 
         // --- COMPUTADOS ---
+        // [v2.7.74 BUG CRÍTICO FIX] ZONA_MOCK_FALLBACK eliminado.
+        //
+        // Caso reportado por el usuario 2026-06-05: una caja se abrió con
+        //   Estacion = "Caja Default", Zona_ID = "ZONA_MOCK_FALLBACK", PrintNode_ID = 123
+        // y todas las impresiones fallaban con "PrintNode 400" porque 123 no
+        // existe en su cuenta PrintNode (era un placeholder de testing).
+        //
+        // El fallback servía para que el wizard no crasheara cuando ZONAS_CONFIG
+        // no había cargado del backend, pero PERMITÍA al operador completar el
+        // wizard y abrir caja real con datos dummy. Mucho peor que mostrar mensaje
+        // "esperando configuración".
+        //
+        // Ahora: si ZONAS_CONFIG no está cargado, las listas quedan vacías
+        // y la UI del wizard debe mostrar "Esperando catálogo del servidor".
         const zonasUnicas = computed(() => {
             if (db.value.ZONAS_CONFIG && db.value.ZONAS_CONFIG.length > 0) return [...new Set(db.value.ZONAS_CONFIG.map(z => z.Zona_ID))];
-            return ['ZONA_MOCK_FALLBACK']; // Fallback robusto
+            return [];  // SIN fallback dummy
         });
         const estacionesFiltradas = computed(() => {
             if (db.value.ZONAS_CONFIG && db.value.ZONAS_CONFIG.length > 0 && configWizard.value.zona) return db.value.ZONAS_CONFIG.filter(z => z.Zona_ID === configWizard.value.zona);
-            if (configWizard.value.zona === 'ZONA_MOCK_FALLBACK') return [{ Estacion_Nombre: 'Caja Default', PrintNode_ID: '123', Serie_Nota: 'NV01', Serie_Boleta: 'B001', Serie_Factura: 'F001' }];
-            return [];
+            return [];  // SIN fallback dummy
         });
         const granTotal = computed(() => carrito.value.reduce((acc, item) => acc + item.subtotal, 0));
         const combosBanner = ref([]);  // Combos detectados en el carrito (se llena en aplicarPromosCarrito)
@@ -7781,12 +7794,28 @@
               const configLocal = localStorage.getItem('mosexpress_config');
               if (configLocal) {
                   const _parsed = JSON.parse(configLocal);
-                  // [v2.5.30] Fijar módulo POS al arrancar SIEMPRE (no solo vendedor).
-                  // El cajero también arranca en POS si tiene caja abierta — su flujo
-                  // diario es vender, no administrar. Si no tiene caja, queda en CAJA.
-                  // El foco al scanner se setea más abajo en _aplicarSesion via setTimeout.
-                  if (_parsed.completado) currentModule.value = 'POS';
-                  config.value = _parsed;
+                  // [v2.7.74 BUG CRÍTICO FIX] Detectar config corrupta del
+                  // MOCK_FALLBACK eliminado. Si el operador completó el wizard
+                  // antes de v2.7.74 cuando ZONAS_CONFIG no había cargado, su
+                  // config quedó con zona='ZONA_MOCK_FALLBACK' y printerId='123'.
+                  // Resultado: PrintNode 400 al imprimir. Limpieza forzada para
+                  // que el wizard se vuelva a presentar con datos reales.
+                  const zonaMock = _parsed.zona === 'ZONA_MOCK_FALLBACK';
+                  const printerMock = String(_parsed.estacion && _parsed.estacion.PrintNode_ID || '') === '123'
+                                   && (_parsed.estacion && _parsed.estacion.Estacion_Nombre) === 'Caja Default';
+                  if (zonaMock || printerMock) {
+                      console.warn('[ME] config con datos MOCK_FALLBACK detectada — limpiando');
+                      localStorage.removeItem('mosexpress_config');
+                      try { agregarToast && agregarToast('⚠ Configuración inválida', 'Re-configura zona y caja con datos del servidor', 'warning'); } catch(_) {}
+                      // No setear config.value — wizard se abrirá
+                  } else {
+                      // [v2.5.30] Fijar módulo POS al arrancar SIEMPRE (no solo vendedor).
+                      // El cajero también arranca en POS si tiene caja abierta — su flujo
+                      // diario es vender, no administrar. Si no tiene caja, queda en CAJA.
+                      // El foco al scanner se setea más abajo en _aplicarSesion via setTimeout.
+                      if (_parsed.completado) currentModule.value = 'POS';
+                      config.value = _parsed;
+                  }
               }
           } catch(e) {
               // Diagnóstico: si la sesión se perdió por config corrupto, dejar registro
@@ -10492,9 +10521,19 @@
                 }));
                 localStorage.setItem('mosexpress_session_date', new Date().toDateString());
                 localStorage.setItem('mosexpress_session_start', new Date().toISOString());
-                if (d.estacion?.PrintNode_ID) {
-                    localStorage.setItem('mosexpress_deviceId', String(d.estacion.PrintNode_ID));
-                }
+                // [v2.7.74 BUG CRÍTICO FIX] BLOQUE ELIMINADO:
+                //   if (d.estacion?.PrintNode_ID) {
+                //     localStorage.setItem('mosexpress_deviceId', String(d.estacion.PrintNode_ID));
+                //   }
+                // Sobreescribía el UUID del dispositivo (mosexpress_deviceId) con el
+                // PrintNode_ID de la estación (un número como 5678). Resultado:
+                //   - DeviceAuth lee deviceId='5678', server no encuentra → PENDIENTE
+                //   - El UUID real (743fd7ef-...) queda huérfano en DISPOSITIVOS
+                //   - Imprimir: printerId también lee de config.estacion.PrintNode_ID
+                //     que sigue correcto, pero si la estación viene del MOCK_FALLBACK
+                //     con PrintNode_ID='123', PrintNode 400 'printer not found'.
+                // El PrintNode_ID ya vive en mosexpress_config.estacion (línea anterior),
+                // no necesita duplicarse — y NUNCA en la clave del deviceId.
                 // [v2.5.52] Mirror inmediato a IndexedDB para que la próxima vez
                 // que se borre localStorage, no perdamos esta sesión recién restaurada.
                 try { await _persistSesionEnIDB(); } catch(_){}
