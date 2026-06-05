@@ -1307,7 +1307,7 @@
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.7"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.8"></script>
   <script>
   // [v2.7.58] DEPRECATED: el cuerpo histórico de _meVerifDispositivoPreVue se
   // reemplaza por DeviceAuth.init(). Lo dejamos como wrapper compat para que
@@ -6299,8 +6299,11 @@
               }
               clearInterval(_meAuthSyncTimer);
             } else if (est.estado === 'INACTIVO' || est.estado === 'SUSPENDIDO' ||
-                       est.estado === 'NO_REGISTRADO' || est.estado === 'PENDIENTE_APROBACION') {
-              // DeviceAuth ya tiene veredicto negativo — dejar a su overlay manejar
+                       est.estado === 'NO_REGISTRADO' || est.estado === 'PENDIENTE_APROBACION' ||
+                       est.estado === 'SIN_VERIFICAR') {
+              // [v2.7.66 BUG F FIX] Agregado SIN_VERIFICAR — antes el polling
+              // seguía corriendo 60s en este caso desperdiciando CPU.
+              // DeviceAuth ya tiene veredicto definitivo — dejar a su overlay manejar
               if (dispositivoAutorizado.value !== false) {
                 dispositivoAutorizado.value = false;
                 dispositivoEstadoMos.value = est.estado;
