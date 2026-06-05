@@ -1497,8 +1497,19 @@
        Estilos inline (no Tailwind) porque Tailwind aún no se cargó cuando
        este nodo se pinta. Controlado por el script inline en <head>:
        _meVerifDispositivoPreVue(). Aprobación admin-only desde MOS. -->
+  <!-- [v2.7.69 BUG CRÍTICO FIX] display:none !important agregado.
+       Este elemento legacy se mostraba con display:flex por defecto y
+       cubría TODA la pantalla con gradient verde (#064e3b) z-index 9998
+       cuando DeviceAuth autorizaba y quitaba su propio overlay.
+       Resultado: usuario veía "pantalla verde verificando dispositivo"
+       eternamente aunque Vue montara correctamente debajo. La función
+       legacy _ocultarCandado() que debía esconderlo vive dentro de
+       _meVerifDispositivoPreVueHistorical (línea 1367, bajo if(false))
+       y NUNCA se ejecuta. DeviceAuth no sabe que este elemento existe.
+       Solución igual que WH v2.13.155: ocultar por defecto, el módulo
+       muestra su propio overlay #deviceAuthOverlay cuando necesario. -->
   <div id="verifDispScreen"
-       style="position:fixed;inset:0;z-index:9998;background:linear-gradient(135deg,#064e3b 0%,#065f46 50%,#064e3b 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;">
+       style="display:none !important;position:fixed;inset:0;z-index:9998;background:linear-gradient(135deg,#064e3b 0%,#065f46 50%,#064e3b 100%);flex-direction:column;align-items:center;justify-content:center;padding:24px;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;">
     <div style="text-align:center;max-width:420px;">
       <div id="verifDispIcono" style="font-size:64px;margin-bottom:16px;">🔄</div>
       <h2 id="verifDispTitulo" style="font-size:22px;font-weight:900;margin:0 0 8px;color:#fff;">Verificando dispositivo</h2>
