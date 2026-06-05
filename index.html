@@ -3664,34 +3664,20 @@
         <div v-show="currentModule === 'TOOLS'" class="w-full h-full overflow-y-auto pb-nav">
             <div class="max-w-md w-full mx-auto p-4 pt-6 space-y-6">
 
+                 <!-- [v2.7.78 CLEANUP] Sistema viejo "MEMBRETES DE PRECIO" eliminado.
+                      Era el flow ESC/POS legacy que imprimía 1 membrete por scan en la
+                      impresora local. Reemplazado por el sistema centralizado de abajo
+                      que manda al backend WH (TSPL2 → TSC TTP-244CE) con cola de lote
+                      y drift incremental. Eliminado:
+                        - HTML: input bHerramientas, btn cámara toggleCamaraHerramientas,
+                          btn "Generar 1 Copia RAW".
+                        - JS: refs bHerramientas/procesandoMembrete/camaraHerramientasAbierta,
+                          let html5QrHerramientas, funciones toggleCamaraHerramientas e
+                          imprimirMembrete (~140 LOC totales). -->
                  <div class="text-center">
                     <svg class="w-16 h-16 text-emerald-500 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
-                    <h2 class="text-2xl font-black text-gray-800">MEMBRETES DE PRECIO</h2>
-                    <p class="text-sm text-gray-500 font-bold mt-1">Escanear el producto para imprimir un membrete comercial (80mm x 300mm)</p>
-                 </div>
-                 
-                 <div class="relative w-full">
-                    <input type="text" v-model="bHerramientas" @keyup.enter="imprimirMembrete" placeholder="Escanear o escribir código..." class="w-full p-5 pl-12 pr-16 rounded-2xl border-2 border-emerald-500 focus:ring-4 ring-emerald-100 outline-none text-xl font-mono shadow-lg text-center tracking-widest bg-gray-50">
-                    <svg class="w-7 h-7 text-emerald-400 absolute left-4 top-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
-                    <button @click="toggleCamaraHerramientas" class="absolute right-3 top-3 p-2 rounded-xl transition-colors" :class="camaraHerramientasAbierta ? 'bg-red-100 text-red-500' : 'bg-emerald-100 text-posPrimary hover:bg-emerald-200'">
-                       <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    </button>
-                 </div>
-                 <div v-show="camaraHerramientasAbierta" class="w-full rounded-2xl overflow-hidden shadow-lg">
-                    <div id="reader-herramientas" class="bg-black w-full"></div>
-                    <button @click="toggleCamaraHerramientas" class="w-full bg-red-500 text-white p-3 font-bold text-sm">✕ Cerrar Escáner</button>
-                 </div>
-
-                 <button @click="imprimirMembrete" :disabled="!bHerramientas || procesandoMembrete" class="w-full bg-gray-800 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-transform flex justify-center uppercase items-center tracking-widest disabled:bg-gray-400">
-                    <svg v-if="procesandoMembrete" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Generar 1 Copia RAW
-                 </button>
-
-                 <!-- [v2.7.51] Sistema centralizado de membretes — 2 botones únicos -->
-                 <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 1rem;">
-                 <div class="text-center mb-2">
-                    <h3 class="text-sm font-black text-gray-700">🏷 SISTEMA CENTRALIZADO</h3>
-                    <p class="text-xs text-gray-500">Membretes ME (góndola) impresos en almacén</p>
+                    <h2 class="text-2xl font-black text-gray-800">🏷 MEMBRETES</h2>
+                    <p class="text-sm text-gray-500 font-bold mt-1">Membretes ME (góndola) impresos en almacén</p>
                  </div>
                  <!-- [v2.7.76] Botón "Lista para imprimir" — cola manual de productos.
                       Flujo ME-específico: operador agrega N productos a una lista y
@@ -6943,8 +6929,9 @@
         }
 
         // --- MÓDULO C: TOOLS ---
-        const bHerramientas = ref('');
-        const procesandoMembrete = ref(false);
+        // [v2.7.78 CLEANUP] bHerramientas + procesandoMembrete eliminados.
+        // Pertenecían al sistema viejo "MEMBRETES DE PRECIO" (ESC/POS local) que
+        // fue reemplazado por MembreteSystem.abrirCola (sistema centralizado).
         // Stock / Guías / Auditoría
         const modoGuias = ref(false);
         const modoAuditoria = ref(false);
@@ -6995,8 +6982,8 @@
         const camaraAbierta = ref(false);
         let html5QrcodeScanner = null;
         let _lastPosCamScan = 0;
-        const camaraHerramientasAbierta = ref(false);
-        let html5QrHerramientas = null;
+        // [v2.7.78 CLEANUP] camaraHerramientasAbierta + html5QrHerramientas
+        // eliminados (cámara del bloque viejo de MEMBRETES DE PRECIO).
         const camaraAuditAbierta = ref(false);
         let html5QrAudit = null;
         const camaraGuiaAbierta = ref(false);
@@ -7480,27 +7467,41 @@
                 // db.value.PRODUCTO_BASE (Vue ref, no en window). Pasamos un
                 // callback para que el módulo lo pueda leer.
                 catalogoProvider: function() {
+                  // [v2.7.78 BUG CRÍTICO FIX] Los campos REALES de PRODUCTO_BASE/
+                  // PRESENTACIONES/EQUIVALENCIAS en ME son:
+                  //   PRODUCTO_BASE:  SKU_Base, Nombre  (no Producto/Descripcion)
+                  //   PRESENTACIONES: SKU_Base, Cod_Barras, Precio_Venta, Factor
+                  //                   (no Codigo_Barras, no Precio)
+                  //   EQUIVALENCIAS:  SKU_Base, Cod_Barras_Real, Cod_Alias, Activo
+                  //                   (no Codigo_Equivalente)
+                  // Antes este provider devolvía descripcion='', codigoBarra=SKU_Base,
+                  // precio=0 → la búsqueda por nombre NO encontraba productos
+                  // ("pongo buscar nombre el producto no aparece nada").
                   try {
                     var base = (db.value && db.value.PRODUCTO_BASE) || [];
                     var pres = (db.value && db.value.PRESENTACIONES) || [];
                     var equiv = (db.value && db.value.EQUIVALENCIAS) || [];
-                    // Construir productos canónicos a partir de PRODUCTO_BASE + PRESENTACIONES
                     var productos = base.map(function(p) {
-                      // Buscar presentación principal con código de barras (1ra presentación)
-                      var presP = pres.find(function(x) { return x.SKU_Base === p.SKU_Base; });
-                      var codigoPrincipal = (presP && (presP.Codigo_Barras || presP.codigoBarra)) || p.SKU_Base;
+                      // Presentación principal: factor=1 si existe, sino 1ra
+                      var presP = pres.find(function(x) {
+                        return String(x.SKU_Base) === String(p.SKU_Base) && (parseFloat(x.Factor) || 1) === 1;
+                      }) || pres.find(function(x) { return String(x.SKU_Base) === String(p.SKU_Base); });
+                      var codigoPrincipal = (presP && presP.Cod_Barras) || p.SKU_Base;
                       return {
                         idProducto:  p.SKU_Base,
                         skuBase:     p.SKU_Base,
-                        descripcion: p.Producto || p.Descripcion || '',
+                        descripcion: p.Nombre || '',
                         codigoBarra: codigoPrincipal,
-                        precio:      parseFloat((presP && presP.Precio) || 0) || 0
+                        precio:      parseFloat((presP && presP.Precio_Venta) || 0) || 0
                       };
                     });
+                    // Equivalencias: Cod_Barras_Real es el código alternativo que el
+                    // operador puede escanear (puede ser un Cod_Barras de otra presentación
+                    // del mismo SKU_Base, o el propio SKU_Base como alias).
                     var equivalencias = equiv.map(function(e) {
                       return {
                         skuBase: e.SKU_Base,
-                        codigoBarra: e.Codigo_Equivalente,
+                        codigoBarra: e.Cod_Barras_Real || e.Cod_Alias || '',
                         activo: e.Activo === true || String(e.Activo).toUpperCase() === 'TRUE' || e.Activo === 1
                       };
                     });
@@ -7508,10 +7509,10 @@
                   } catch(_) { return null; }
                 }
               });
-              // [v2.7+] Badge flotante de alertas precio (auto-refresh cada 60s)
-              if (window.MembreteSystem.arrancarBadgeAlertas) {
-                setTimeout(function() { window.MembreteSystem.arrancarBadgeAlertas(); }, 3000);
-              }
+              // [v2.7.78 CLEANUP] Badge flotante de alertas precio DESACTIVADO
+              // (request del usuario: "botón flotante de membretes eso no me sirve").
+              // El botón estático "🚨 Alertas precio" en Tools queda disponible
+              // para consulta manual.
             } else {
               console.log('[Membretes] Sistema de membretes no inicializado en ME — falta config mosexpress_mos_url');
             }
@@ -13493,37 +13494,8 @@
             }
         };
 
-        const toggleCamaraHerramientas = () => {
-            camaraHerramientasAbierta.value = !camaraHerramientasAbierta.value;
-            if (camaraHerramientasAbierta.value) {
-                setTimeout(() => {
-                    html5QrHerramientas = new Html5Qrcode("reader-herramientas");
-                    html5QrHerramientas.start(
-                        { facingMode: "environment" },
-                        { fps: 10, qrbox: { width: 250, height: 150 } },
-                        (txt) => {
-                            bHerramientas.value = txt;
-                            toggleCamaraHerramientas();
-                            imprimirMembrete();
-                        },
-                        () => {}
-                    ).catch(() => {
-                        agregarToast('Cámara', 'Permiso denegado o no disponible');
-                        camaraHerramientasAbierta.value = false;
-                        if (html5QrHerramientas) {
-                            try { html5QrHerramientas.clear(); } catch(e) {}
-                            html5QrHerramientas = null;
-                        }
-                    });
-                }, 200);
-            } else {
-                if (html5QrHerramientas) {
-                    html5QrHerramientas.stop()
-                        .then(() => { try { html5QrHerramientas.clear(); } catch(e) {} html5QrHerramientas = null; })
-                        .catch(() => { html5QrHerramientas = null; });
-                }
-            }
-        };
+        // [v2.7.78 CLEANUP] toggleCamaraHerramientas eliminado (~30 LOC).
+        // Era el handler de la cámara del bloque viejo MEMBRETES DE PRECIO.
 
         const toggleTeclado = () => {
             mostrarTeclado.value = !mostrarTeclado.value;
@@ -15145,102 +15117,11 @@
                 .catch(e => agregarToast('Error Impresión', e.message));
         };
 
-        // --- MÓDULO C: LOGICA TOOLS (MEMBRETES RAW) ---
-        const imprimirMembrete = async () => {
-           const cd = bHerramientas.value.trim().toUpperCase();
-           if (!cd) return;
-           procesandoMembrete.value = true;
-           try {
-               const _nf = v => parseFloat(String(v ?? '').replace(',', '.')) || 1;
-
-               // 1. Resolver equivalencia (Cod_Alias → Cod_Barras_Real)
-               const eq = (db.value.EQUIVALENCIAS || []).find(e => String(e.Cod_Alias).toUpperCase() === cd);
-               const codResuelto = eq ? String(eq.Cod_Barras_Real).toUpperCase() : cd;
-
-               // 2. Buscar en PRESENTACIONES por Cod_Barras exacto
-               //    Fallback: Cod_Barras_Real puede ser SKU_Base (no un barcode)
-               let pres = (db.value.PRESENTACIONES || []).find(
-                   p => String(p.Cod_Barras).trim().toUpperCase() === codResuelto
-               );
-               if (!pres) {
-                   pres = (db.value.PRESENTACIONES || []).find(
-                       p => String(p.SKU_Base).trim().toUpperCase() === codResuelto
-                   );
-               }
-               if (!pres) {
-                   playBeepError(); agregarToast('No Encontrado', 'Verifica el código');
-                   procesandoMembrete.value = false;
-                   return;
-               }
-
-               const skuBase = String(pres.SKU_Base);
-
-               // 3. Contar barcodes con factor=1 para este SKU_Base
-               const presF1 = (db.value.PRESENTACIONES || []).filter(
-                   p => String(p.SKU_Base) === skuBase && _nf(p.Factor) === 1
-               );
-
-               // 4. Verificar si alguna equivalencia apunta a este SKU_Base
-               //    Cod_Barras_Real puede ser un Cod_Barras del grupo O el propio SKU_Base
-               const barcodesDelSku = (db.value.PRESENTACIONES || [])
-                   .filter(p => String(p.SKU_Base) === skuBase)
-                   .map(p => String(p.Cod_Barras).toUpperCase());
-               const tieneEq = (db.value.EQUIVALENCIAS || []).some(e => {
-                   const real = String(e.Cod_Barras_Real).toUpperCase();
-                   return barcodesDelSku.includes(real) || real === skuBase.toUpperCase();
-               });
-
-               // 5. Si hay múltiples barcodes con factor=1 o tiene equivalencias → imprimir SKU_Base
-               //    caso único y sin alias → imprimir el barcode escaneado (ya resuelto)
-               const codigoLabel = (presF1.length > 1 || tieneEq) ? skuBase : codResuelto;
-
-               // 6. Obtener nombre y precio desde el catálogo
-               const obj = productosCatalogo.value.find(p => p.sku === skuBase);
-               if (!obj) {
-                   playBeepError(); agregarToast('No Encontrado', 'Producto no está en catálogo activo');
-                   procesandoMembrete.value = false;
-                   return;
-               }
-
-               // 7. Generar ESC/POS — Membrete 80mm x 30mm
-               const MAX_N = 24;
-               const n1 = obj.nombreCorto.substring(0, MAX_N);
-               const n2 = obj.nombreCorto.length > MAX_N ? obj.nombreCorto.substring(MAX_N, MAX_N * 2) : '';
-               const bLen = String.fromCharCode(codigoLabel.length);
-               const raw = btoa(
-                   "\x1b\x40" +
-                   "\x1b\x33\x10" +
-                   "\x1b\x61\x01" +
-                   "\x1b\x45\x01" +
-                   "\x1b\x21\x10" +
-                   n1 + "\n" +
-                   (n2 ? n2 + "\n" : "") +
-                   "\x1b\x21\x00" +
-                   "\x1b\x45\x00" +
-                   "\x1d\x68\x30" +
-                   "\x1d\x77\x02" +
-                   "\x1d\x48\x02" +
-                   "\x1d\x66\x00" +
-                   "\x1d\x6b\x49" +
-                   bLen + codigoLabel +
-                   "\n" +
-                   "\x1b\x21\x30" +
-                   "\x1b\x45\x01" +
-                   "S/ " + obj.precio.toFixed(2) + "\n" +
-                   "\x1b\x21\x00" +
-                   "\x1b\x45\x00" +
-                   "\x07" +
-                   "\x1d\x56\x42\x00"
-               );
-
-               await mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, "Membrete", raw);
-               playBeepOK(); agregarToast('Éxito', 'Membrete enviado');
-               bHerramientas.value = '';
-           } catch (e) {
-               agregarToast('Error de Impresión', e.message);
-           }
-           procesandoMembrete.value = false;
-        };
+        // [v2.7.78 CLEANUP] Función imprimirMembrete (~95 LOC) eliminada.
+        // Era el flow ESC/POS legacy (membrete 80mm × 30mm en impresora local).
+        // Reemplazado por MembreteSystem.abrirCola('MEMBRETE_ME') que arma una
+        // cola de productos y los manda al backend WH (TSPL2 → TSC TTP-244CE
+        // 50×25mm) con drift incremental y batching en 1 PrintNode job.
 
         // ------ CAJERO ÚNICO POR ZONA ------ //
 
@@ -16024,12 +15905,13 @@
           iniciarRegistroManualDNI, cancelarRegistroManualDNI, confirmarClienteManualDNI,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
-          bHerramientas, imprimirMembrete, procesandoMembrete,
+          // [v2.7.78 CLEANUP] bHerramientas, imprimirMembrete, procesandoMembrete,
+          // camaraHerramientasAbierta, toggleCamaraHerramientas — TODOS eliminados
+          // del template tras quitar el bloque viejo "MEMBRETES DE PRECIO".
           // ── Etiquetas (membretes de cambio de precio) ──
           etiqsPendientes, etiqsModalAbierto, etiqsProcesando,
           cargarEtiqsPendientes, abrirEtiqsModal, etiqMarcarPegada,
           etiqMarcarTodasPegadas, etiqReimprimir, etiqAutoPrintAlAperturaCaja,
-          camaraHerramientasAbierta, toggleCamaraHerramientas,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, toggleVentaCreditoDirecto,
           deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo, abrirInSituAdmin,
           actInSituShow, actInSituNombre, actInSituClave, actInSituErr, actInSituBusy,
