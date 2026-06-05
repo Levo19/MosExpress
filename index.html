@@ -8029,16 +8029,37 @@
                      agregarToast("Acceso bloqueado", "Este dispositivo fue desactivado por el administrador", "error");
                  }
              } else {
-                 if (!dispositivoAutorizado.value) dispositivoAutorizado.value = true;
-                 lsSet('mosexpress_device_auth_date', String(Date.now()));
-                 lsSet('mosexpress_device_auth_id', deviceId.value);
+                 // [v2.7.57 FIX SEGURIDAD] FAIL-CLOSED: si la respuesta no incluye 'autorizado',
+                 // NO autorizar por default. Antes esto autorizaba al dispositivo nuevo si el
+                 // backend respondía sin el campo → bypass de seguridad reportado por el usuario.
+                 console.warn('[verifDevice] respuesta ME sin campo autorizado:', jsonResp);
+                 throw new Error('Respuesta ambigua del backend');
              }
              return dispositivoAutorizado.value;
            } catch(e) {
              console.error("Error validando dispositivo:", e);
-             if (!silencioso && !offlineMode.value) agregarToast("Aviso", "Verificación sin conexión — modo local");
-             if (!dispositivoAutorizado.value) dispositivoAutorizado.value = true;
-             return true;
+             // [v2.7.57 FIX SEGURIDAD] FAIL-CLOSED con respeto al cache.
+             // Antes: cualquier error de red → autorizar=true. Bypass total.
+             // Reportado: dispositivo nuevo entró sin pedir UUID porque MOS falló
+             // por ERR_NETWORK_IO_SUSPENDED + ME falló también → autorizó por default.
+             //
+             // Política nueva: si hay cache de autorización vigente (<12h) Y mismo
+             // deviceId, mantener autorizado (operación offline OK). Si NO hay cache
+             // o el deviceId no coincide, BLOQUEAR — el operador debe esperar conexión.
+             const _authTs = parseInt(localStorage.getItem('mosexpress_device_auth_date') || '0', 10);
+             const _authId = localStorage.getItem('mosexpress_device_auth_id');
+             const _CACHE_VALIDO_MS = 12 * 60 * 60 * 1000;  // 12h igual que pre-Vue
+             const _cacheOK = _authTs && _authId === deviceId.value && (Date.now() - _authTs) < _CACHE_VALIDO_MS;
+             if (_cacheOK) {
+                 if (!silencioso && !offlineMode.value) agregarToast('📡 Sin conexión', 'Operando con cache local (verificado hace <12h)', 'info');
+                 if (!dispositivoAutorizado.value) dispositivoAutorizado.value = true;
+                 return true;
+             }
+             // Sin cache válido → bloquear
+             dispositivoAutorizado.value = false;
+             dispositivoEstadoMos.value  = 'SIN_VERIFICAR';
+             if (!silencioso) agregarToast('🔒 Sin verificar', 'No se pudo confirmar autorización con el servidor. Revisá tu conexión y reintentá.', 'error', 8000);
+             return false;
            } finally {
              if (!silencioso) verificandoDispositivo.value = false;
            }

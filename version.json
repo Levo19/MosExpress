@@ -1,1 +1,1 @@
-{ "version": "2.7.56", "build": "20260604-fix-critico-lsGet-no-definido-bloqueaba-ventas" }
+{ "version": "2.7.57", "build": "20260604-fix-fail-open-verificacion-dispositivo-cache-respetado" }
