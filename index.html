@@ -20,7 +20,7 @@
        ?v= bump fuerza refresh cuando cambia el módulo. -->
   <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.163"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
-  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.48"></script>
+  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.71"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -1307,7 +1307,8 @@
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.10"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.11"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/extensor-horario.js?v=1.0.0"></script>
   <script>
   // [v2.7.58] DEPRECATED: el cuerpo histórico de _meVerifDispositivoPreVue se
   // reemplaza por DeviceAuth.init(). Lo dejamos como wrapper compat para que
@@ -1315,6 +1316,9 @@
   // window._ME_VERIF_PREVUE_OK siguen funcionando para el post-Vue legado.
   (function _meVerifDispositivoPreVueLegacy() {
     var MOS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+    // [v2.7.71] Exponer globalmente para que módulos compartidos (ExtensorHorario,
+    // SeguridadSystem) puedan usarlo sin tener que pasarlo en config.
+    window.MOS_GAS_URL = MOS_URL;
     // GUARD: si el módulo no cargó (CDN caído, bloqueo de red), fail-CLOSED
     // mostrando error fatal. NO permitir entrar sin verificación.
     if (!window.DeviceAuth) {
@@ -6985,6 +6989,17 @@
         let _horarioInterval = null;
         async function verificarHorarioVendedor() {
           if (!config.value.completado || !config.value.vendedor) return;
+          // [v2.7.71] Respetar extensión de horario in-situ vigente para este UUID.
+          // ExtensorHorario.vigente() retorna ms restantes (0 si no vigente o expiró).
+          // Si hay extensión activa, NO bloquear aunque el backend diga que está fuera.
+          try {
+            if (window.ExtensorHorario && ExtensorHorario.vigente() > 0) {
+              horarioBloqueado.value = false;
+              horarioInfo.value = null;
+              try { window._meHorarioModalMostrado = false; } catch(_){}
+              return;
+            }
+          } catch(_) {}
           try {
             const url = `${API_URL}?accion=verificarHorarioME&vendedor=${encodeURIComponent(config.value.vendedor)}`;
             const r = await fetch(url);
