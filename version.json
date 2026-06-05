@@ -1,1 +1,1 @@
-{ "version": "2.7.57", "build": "20260604-fix-fail-open-verificacion-dispositivo-cache-respetado" }
+{ "version": "2.7.58", "build": "20260604-migracion-deviceauth-modulo-compartido" }

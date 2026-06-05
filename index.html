@@ -1269,19 +1269,76 @@
   </script>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       [v2.5.34] Verificación de dispositivo PRE-VUE (in-situ)
-       Cumple [[feedback-verif-dispositivo-bloqueante]]: el await ocurre
-       desde el HTML, no async silencioso dentro de Vue. Si MOS responde
-       ACTIVO → ocultamos el candado y Vue arranca normal (saltea su propia
-       verificación via window._ME_VERIF_PREVUE_OK). Si responde
-       PENDIENTE/INACTIVO/ERROR → mantenemos el candado y Vue queda detrás
-       del z-index 9998.
+       [v2.7.58] Módulo COMPARTIDO DeviceAuth — única fuente de verdad
+       para verificación de dispositivos. Reemplaza el pre-Vue inline y
+       el _verificarDispositivoRed post-Vue (que tenían fail-opens).
 
-       Aprobación de dispositivos nuevos: admin-only desde MOS (este script
-       NO auto-aprueba, solo crea el row PENDIENTE via registrarSesionDispositivo).
+       Reglas (R1-R5):
+         R1: Sin autorización previa → NO ingresa
+         R2: Sin internet → NO ingresa (fail-CLOSED en todos los paths)
+         R3a: Admin O master in-situ (ME)
+         R4: Cache por fecha calendario Lima (no TTL fijo)
+         R5: verifyVersion bump invalida cache global
+
+       Si el CDN MOS está caído, el script externo no carga → check defensivo
+       en el inline siguiente muestra error fatal "Módulo de seguridad no cargado".
   ═══════════════════════════════════════════════════════════════ -->
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.0"></script>
   <script>
-  (function _meVerifDispositivoPreVue() {
+  // [v2.7.58] DEPRECATED: el cuerpo histórico de _meVerifDispositivoPreVue se
+  // reemplaza por DeviceAuth.init(). Lo dejamos como wrapper compat para que
+  // cualquier referencia residual en el código no rompa. Las marcas
+  // window._ME_VERIF_PREVUE_OK siguen funcionando para el post-Vue legado.
+  (function _meVerifDispositivoPreVueLegacy() {
+    var MOS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+    // GUARD: si el módulo no cargó (CDN caído, bloqueo de red), fail-CLOSED
+    // mostrando error fatal. NO permitir entrar sin verificación.
+    if (!window.DeviceAuth) {
+      var fatal = document.createElement('div');
+      fatal.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
+      fatal.innerHTML = '<div style="font-size:64px;margin-bottom:18px">🔒</div>'
+        + '<h2 style="font-size:20px;margin:0 0 8px;color:#f1f5f9">Módulo de seguridad no cargado</h2>'
+        + '<p style="font-size:14px;color:#94a3b8;max-width:420px;line-height:1.5;margin:0 0 24px">No se pudo cargar el módulo de verificación de dispositivos. Revisa tu conexión y reintentá.</p>'
+        + '<button onclick="location.reload()" style="padding:12px 22px;border-radius:10px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;font-size:14px;border:0;cursor:pointer">🔄 Reintentar</button>';
+      document.documentElement.appendChild(fatal);
+      return;
+    }
+    // Init del módulo. onAuth setea la marca legada para que Vue salte el
+    // doble-check post-Vue (_verificarDispositivoRed → ya neutralizado).
+    DeviceAuth.init({
+      mosGasUrl: MOS_URL,
+      app: 'mosExpress',
+      isMaster: false,  // ME acepta admin o master in-situ
+      storageKeys: {
+        deviceId:               'mosexpress_deviceId',
+        lastVerifyDate:         'mosexpress_device_auth_date_lima',
+        verifyVersion:          'mosexpress_device_verify_version',
+        lastVerifyDeviceId:     'mosexpress_device_auth_id'
+      },
+      onAuth: function() {
+        window._ME_VERIF_PREVUE_OK = true;
+        // Compat con cache viejo basado en TS (usado por verificarDispositivoActivo)
+        try { localStorage.setItem('mosexpress_device_auth_date', String(Date.now())); } catch(_){}
+      },
+      onAprobado: function() {
+        // El operador fue aprobado vía panel/in-situ → forzar reload para que
+        // Vue arranque limpio con catálogo + sesión. Sin reload el banner de
+        // PENDIENTE seguiría en DOM y el Vue podría estar en estado raro.
+        setTimeout(function() { location.reload(); }, 1200);
+      },
+      onPending: function() { window._ME_VERIF_PREVUE_OK = false; },
+      onInactive: function() { window._ME_VERIF_PREVUE_OK = false; },
+      onSuspended: function() { window._ME_VERIF_PREVUE_OK = false; },
+      onError: function(e) { window._ME_VERIF_PREVUE_OK = false; }
+    });
+    return;  // [v2.7.58] el código legacy de abajo NO se ejecuta nunca.
+  })();
+
+  // ↓↓↓ Código legacy de _meVerifDispositivoPreVue — NO se invoca (función nombrada
+  // pero NUNCA llamada). Queda como referencia histórica + compat de globals si
+  // surgen llamadas residuales. Será eliminado completamente cuando se valide que
+  // la migración no causa regresiones en producción.
+  if (false) (function _meVerifDispositivoPreVueHistorical() {
     var MOS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
     var CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12h — stale-while-revalidate: la app abre instant si verificó hace <12h, y refresca en background. El interval de re-check sigue corriendo cada 1h en silencio (línea ~7270), así que si master suspende el dispositivo, en max 1h queda bloqueado.
 
@@ -7830,6 +7887,32 @@
         };
 
         const _verificarDispositivoRed = async (silencioso = false) => {
+           // [v2.7.58] DEPRECATED: DeviceAuth module ahora maneja TODA la verificación.
+           // Esta función queda como no-op para compat con llamadas residuales.
+           // Si DeviceAuth dice ACTIVO, autorizamos. Si no, dejar el módulo decidir
+           // mostrando su propio overlay — no duplicamos UI.
+           if (window.DeviceAuth) {
+             const est = DeviceAuth.estado();
+             if (est && est.estado === 'ACTIVO') {
+               dispositivoAutorizado.value = true;
+               dispositivoEstadoMos.value = 'ACTIVO';
+               if (!silencioso) verificandoDispositivo.value = false;
+               return true;
+             }
+             // No autorizado → el módulo ya muestra overlay propio. NO mostrar uno encima.
+             dispositivoAutorizado.value = false;
+             if (!silencioso) verificandoDispositivo.value = false;
+             return false;
+           }
+           // Fallback fail-CLOSED si el módulo no cargó (CDN caído)
+           dispositivoAutorizado.value = false;
+           if (!silencioso) verificandoDispositivo.value = false;
+           return false;
+        };
+
+        // [v2.7.58] _verificarDispositivoRed_LEGACY — código histórico desactivado.
+        // No se llama desde ningún lado. Mantenido por seguridad para futuro debugging.
+        const _verificarDispositivoRed_LEGACY = async (silencioso = false) => {
            if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                dispositivoAutorizado.value = true;
                return true;
