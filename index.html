@@ -18,7 +18,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.163"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.169"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
   <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.71"></script>
   <style>
@@ -1309,6 +1309,7 @@
   </script>
   <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.12"></script>
   <script src="https://levo19.github.io/MOS/assets/auth/extensor-horario.js?v=1.0.1"></script>
+  <script src="https://levo19.github.io/MOS/assets/adhesivo/preview.js?v=1.0.2"></script>
   <script>
   // [v2.7.58] DEPRECATED: el cuerpo histórico de _meVerifDispositivoPreVue se
   // reemplaza por DeviceAuth.init(). Lo dejamos como wrapper compat para que
@@ -3692,6 +3693,14 @@
                     <h3 class="text-sm font-black text-gray-700">🏷 SISTEMA CENTRALIZADO</h3>
                     <p class="text-xs text-gray-500">Membretes ME (góndola) impresos en almacén</p>
                  </div>
+                 <!-- [v2.7.76] Botón "Lista para imprimir" — cola manual de productos.
+                      Flujo ME-específico: operador agrega N productos a una lista y
+                      después los manda TODOS en un solo lote. Es DIFERENTE del flujo
+                      de WH/MOS que imprime al instante al hacer click en el producto. -->
+                 <button onclick="window.MembreteSystem && MembreteSystem.abrirCola && MembreteSystem.abrirCola('MEMBRETE_ME')"
+                         class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2 mb-2">
+                    📋 LISTA PARA IMPRIMIR EN LOTE
+                 </button>
                  <div class="grid grid-cols-2 gap-2">
                     <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio && MembreteSystem.abrirAlertasPrecio()"
                             class="bg-red-50 text-red-700 font-bold py-3 rounded-xl border-2 border-red-200 text-sm active:scale-95 transition-transform">
@@ -3699,7 +3708,7 @@
                     </button>
                     <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes && MembreteSystem.abrirHistorialLotes('MEMBRETE_ME')"
                             class="bg-amber-50 text-amber-700 font-bold py-3 rounded-xl border-2 border-amber-200 text-sm active:scale-95 transition-transform">
-                       📋 Lotes ME
+                       📋 Historial lotes
                     </button>
                  </div>
                  <!-- [v2.7.54] Botón eliminado — URL del GAS MOS hardcoded como
