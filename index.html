@@ -1307,7 +1307,7 @@
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.6"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.7"></script>
   <script>
   // [v2.7.58] DEPRECATED: el cuerpo histórico de _meVerifDispositivoPreVue se
   // reemplaza por DeviceAuth.init(). Lo dejamos como wrapper compat para que
@@ -6277,21 +6277,41 @@
           dispositivoEstadoMos.value = 'ACTIVO';
           verificandoDispositivo.value = false;
         });
-        // [v2.7.64 BUG FIX] Race condition: DeviceAuth.onAuth puede haber
-        // disparado ANTES de que este setup() corra. Verificar SI el módulo
-        // ya autorizó al momento de montar Vue, y si es así, marcar el ref
-        // inmediatamente. Sin esto, Vue mostraba "verificando dispositivo"
-        // eternamente porque dispositivoAutorizado quedaba en null forever.
-        if (window.DeviceAuth && typeof DeviceAuth.estado === 'function') {
+        // [v2.7.65 BUG C FIX] Sync robusta con DeviceAuth.
+        // Antes solo chequeaba al montar (DeviceAuth.estado() en setup), pero
+        // si en ese momento DeviceAuth estaba en VERIFICANDO (fetch pendiente),
+        // Vue quedaba en pantalla verde forever. El listener
+        // 'deviceauth:authorized' solo cubría el caso aprobación, no el caso
+        // "cache válido autorizó después de mount".
+        //
+        // Solución: polling cada 200ms hasta que DeviceAuth esté ACTIVO o
+        // hasta timeout 60s (safety). Detecta cualquier transición y sincroniza.
+        var _meAuthSyncTimer = setInterval(function() {
           try {
-            var _initialEstado = DeviceAuth.estado();
-            if (_initialEstado && _initialEstado.estado === 'ACTIVO') {
-              dispositivoAutorizado.value = true;
-              dispositivoEstadoMos.value = 'ACTIVO';
-              verificandoDispositivo.value = false;
+            if (!window.DeviceAuth) return;
+            var est = DeviceAuth.estado();
+            if (!est) return;
+            if (est.estado === 'ACTIVO') {
+              if (dispositivoAutorizado.value !== true) {
+                dispositivoAutorizado.value = true;
+                dispositivoEstadoMos.value = 'ACTIVO';
+                verificandoDispositivo.value = false;
+              }
+              clearInterval(_meAuthSyncTimer);
+            } else if (est.estado === 'INACTIVO' || est.estado === 'SUSPENDIDO' ||
+                       est.estado === 'NO_REGISTRADO' || est.estado === 'PENDIENTE_APROBACION') {
+              // DeviceAuth ya tiene veredicto negativo — dejar a su overlay manejar
+              if (dispositivoAutorizado.value !== false) {
+                dispositivoAutorizado.value = false;
+                dispositivoEstadoMos.value = est.estado;
+              }
+              clearInterval(_meAuthSyncTimer);
             }
-          } catch(_){}
-        }
+            // Si VERIFICANDO o INIT, seguir esperando
+          } catch(_) {}
+        }, 200);
+        // Safety: parar el polling tras 60s (~300 ciclos) si DeviceAuth nunca resuelve
+        setTimeout(function(){ clearInterval(_meAuthSyncTimer); }, 60000);
 
         // Modal de activación in-situ por admin presente
         const actInSituShow   = ref(false);
