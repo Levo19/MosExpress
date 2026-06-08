@@ -121,7 +121,7 @@ var _ME_SPECS = {
     ['estado_revision','estado_revision','text'],['revisado_por','revisadoPor','text'],['fecha_revision','fechaRevision','date'],
     ['accion_tomada','accionTomada','text'],['payload_json','payload_json','json']
   ]},
-  auditorias: { sheet:'AUDITORIAS', onConflict:'id_auditoria', keyHeader:'ID_Auditoria', spec:[
+  auditorias: { sheet:'AUDITORIAS', onConflict:'id_auditoria,cod_barras', keyHeader:'ID_Auditoria', spec:[
     ['id_auditoria','ID_Auditoria','text'],['fecha','Fecha','date'],['vendedor','Vendedor','text'],['zona_id','Zona_ID','text'],
     ['cod_barras','Cod_Barras','text'],['cant_sistema','Cant_Sistema','num'],['cant_real','Cant_Real','num'],['diferencia','Diferencia','num']
   ]},
@@ -361,6 +361,7 @@ function dryRunME(){ return migrarME({dryRun:true}); }
 function backfillME(){ return migrarME(); }
 function backfillStockZonas(){ return migrarME({soloTabla:'stock_zonas'}); }   // re-hace solo esta (soloTabla ignora DONE)
 function backfillRadio(){ return migrarME({soloTabla:'radio_config'}); }
+function backfillAuditorias(){ return migrarME({soloTabla:'auditorias'}); }    // tras el ALTER de PK compuesta
 function resetCheckpointsME(){
   var props=PropertiesService.getScriptProperties();
   var n=0; Object.keys(_ME_SPECS).forEach(function(t){
