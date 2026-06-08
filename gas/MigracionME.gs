@@ -164,6 +164,10 @@ function migrarME(opts){
     var tabla=tablas[ti], cfg=_ME_SPECS[tabla];
     if(!cfg){ resumen[tabla]={error:'spec desconocida'}; continue; }
     try{
+      // saltar tablas ya completadas (reanudación multi-tabla eficiente; evita re-leer)
+      if(!opts.dryRun && !opts.soloTabla && props.getProperty('MEBF_DONE_'+tabla)==='1'){
+        resumen[tabla]={saltado:'ya completada (resetCheckpointsME para rehacer)'}; continue;
+      }
       var rows=_meBuildRows(tabla);
 
       if(opts.dryRun){ resumen[tabla]={dryRun:true, filasValidas:rows.length, muestra:rows[0]||null}; continue; }
@@ -177,7 +181,7 @@ function migrarME(opts){
 
       var ckKey='MEBF_'+tabla;
       var start=parseInt(props.getProperty(ckKey)||'0',10);
-      var errores=[], upserted=0;
+      var errores=[], upserted=0, corto=false;
       for(var i=start; i<rows.length; i+=_ME_BATCH){
         if(Date.now()-t0 > _ME_TIME_BUDGET){
           props.setProperty(ckKey,String(i));
@@ -186,13 +190,13 @@ function migrarME(opts){
           return resumen;
         }
         var lote=rows.slice(i,i+_ME_BATCH);
-        if(JSON.stringify(lote).length>10000000){ errores.push('lote '+i+': payload muy grande'); continue; }
+        if(JSON.stringify(lote).length>10000000){ errores.push('lote '+i+': payload muy grande, omitido'); props.setProperty(ckKey,String(i+_ME_BATCH)); continue; }
         var r=cfg.insertOnly ? _sbInsert('me.'+tabla,lote) : _sbUpsert('me.'+tabla,lote,cfg.onConflict);
-        if(r.ok) upserted+=lote.length; else errores.push('lote '+i+': HTTP '+r.code+' '+(r.error||''));
-        props.setProperty(ckKey,String(i+_ME_BATCH));
+        if(r.ok){ upserted+=lote.length; props.setProperty(ckKey,String(i+_ME_BATCH)); }   // checkpoint SOLO en éxito
+        else { errores.push('lote '+i+': HTTP '+r.code+' '+(r.error||'')); corto=true; break; }  // no avanza → reintenta este lote al re-correr
       }
-      props.deleteProperty(ckKey);
-      resumen[tabla]={filas:rows.length, upserted:upserted, errores:errores, ok:errores.length===0};
+      if(errores.length===0){ props.deleteProperty(ckKey); props.setProperty('MEBF_DONE_'+tabla,'1'); }
+      resumen[tabla]={filas:rows.length, upserted:upserted, errores:errores, ok:errores.length===0, incompleto:corto};
     }catch(e){ resumen[tabla]={error:String(e&&e.message||e)}; }
   }
   Logger.log(JSON.stringify(resumen,null,2));
@@ -233,6 +237,8 @@ function dryRunME(){ return migrarME({dryRun:true}); }
 function backfillME(){ return migrarME(); }
 function resetCheckpointsME(){
   var props=PropertiesService.getScriptProperties();
-  var n=0; Object.keys(_ME_SPECS).forEach(function(t){ if(props.getProperty('MEBF_'+t)!=null){ props.deleteProperty('MEBF_'+t); n++; } });
-  Logger.log('Checkpoints borrados: '+n); return {ok:true, borrados:n};
+  var n=0; Object.keys(_ME_SPECS).forEach(function(t){
+    ['MEBF_'+t,'MEBF_DONE_'+t].forEach(function(k){ if(props.getProperty(k)!=null){ props.deleteProperty(k); n++; } });
+  });
+  Logger.log('Checkpoints/flags borrados: '+n); return {ok:true, borrados:n};
 }
