@@ -54,7 +54,22 @@ var _ME_SPECS = {
     ['estado_envio','Estado_Envio','text'],['ref_local','Ref_Local','text'],['obs','Obs','text'],
     ['tipo_doc_cliente','Tipo_Doc_Cliente','int'],['nf_estado','NF_Estado','text'],['nf_hash','NF_Hash','text'],
     ['nf_enlace','NF_Enlace','text'],['historial_cambios','historialCambios','json']
-  ]},
+  ], post:function(r,o){
+    // LAYOUT VIEJO: el pago iba embebido en Tipo_Doc "NOTA_DE_VENTA (EFECTIVO)" y NO existía
+    // la columna FormaPago → todo lo posterior está corrido 1. Se detecta por el "(" en Tipo_Doc.
+    var td=String(o['Tipo_Doc']||'');
+    if(td.indexOf('(')>=0){
+      r.tipo_doc       = td.split('(')[0].trim() || null;
+      var m=td.match(/\(([^)]+)\)/); r.forma_pago = m ? m[1].trim() : null;
+      r.correlativo    = _meText(o['FormaPago']);      // en viejo: correlativo
+      r.id_caja        = _meText(o['Correlativo']);    // en viejo: id_caja
+      r.dispositivo_id = _meText(o['ID_Caja']);        // en viejo: device
+      r.estado_envio   = _meText(o['ID_Dispositivo']); // en viejo: estado
+      r.ref_local=null; r.obs=null; r.tipo_doc_cliente=null;
+      r.nf_estado=null; r.nf_hash=null; r.nf_enlace=null; r.historial_cambios=null;
+    }
+    return r;
+  }},
   ventas_detalle: { sheet:'VENTAS_DETALLE', onConflict:'id_venta,linea', keyHeader:'ID_Venta', big:true, lineaBy:'id_venta', spec:[
     ['id_venta','ID_Venta','text'],['sku','SKU','text'],['nombre','Nombre','text'],['cantidad','Cantidad','num'],
     ['precio','Precio','num'],['subtotal','Subtotal','num'],['cod_barras','Cod_Barras','text'],
@@ -63,7 +78,7 @@ var _ME_SPECS = {
   cajas: { sheet:'CAJAS', onConflict:'id_caja', keyHeader:'ID_Caja', spec:[
     ['id_caja','ID_Caja','text'],['vendedor','Vendedor','text'],['estacion','Estacion','text'],
     ['fecha_apertura','Fecha_Apertura','date'],['monto_inicial','Monto_Inicial','num'],['estado','Estado','text'],
-    ['monto_final','Monto_Final','num'],['fecha_cierre','Fecha_Cierre','date'],['zona_id','Zona_ID','text'],
+    ['monto_final','Monto_Final','num'],['fecha_cierre','Fecha_cierre','date'],['zona_id','Zona_ID','text'],
     ['printnode_id','PrintNode_ID','text']
   ]},
   movimientos_extra: { sheet:'MOVIMIENTOS_EXTRA', onConflict:'id_extra', keyHeader:'ID_Extra', spec:[
@@ -72,9 +87,9 @@ var _ME_SPECS = {
     ['historial_cambios','historialCambios','json']
   ]},
   clientes_frecuentes: { sheet:'CLIENTES_FRECUENTES', onConflict:'documento', keyHeader:'Documento', spec:[
-    ['documento','Documento','text'],['nombre','Nombre','text'],['tipo_doc','Tipo_Doc','int'],
-    ['fecha_registro','Fecha_Registro','date'],['direccion','Direccion','text'],['historial_cambios','historialCambios','json']
-  ], post:function(r,o){ if(r.nombre==null) r.nombre=_meText(o['Nombre_RazonSocial']); return r; } },
+    ['documento','Documento','text'],['nombre','Nombre_RazonSocial','text'],['tipo_doc','Tipo','text'],
+    ['fecha_registro','Fecha','date'],['direccion','Direccion','text'],['historial_cambios','historialCambios','json']
+  ] },
   guias_cabecera: { sheet:'GUIAS_CABECERA', onConflict:'id_guia', keyHeader:'ID_Guia', spec:[
     ['id_guia','ID_Guia','text'],['fecha','Fecha','date'],['vendedor','Vendedor','text'],['zona_id','Zona_ID','text'],
     ['tipo','Tipo','text'],['observacion','Observacion','text'],['zona_destino','Zona_Destino','text'],['estado','Estado','text']
@@ -230,6 +245,57 @@ function _sbPingME(){
   if(r.ok){ out.ok=true; out.pasos.push('✓ GET me.correlativos OK ('+out.latencia_ms+' ms, HTTP '+r.code+') — vacío [] es normal antes del backfill'); }
   else{ out.pasos.push('✗ GET me.correlativos falló: HTTP '+r.code+' — '+(r.error||'')); out.pasos.push('  Revisa: esquema me expuesto · 02_schema_me.sql corrido · service_role key'); }
   Logger.log(JSON.stringify(out,null,2)); return out;
+}
+
+/** Vuelca la FILA 1 (headers reales) de cada hoja de ME. Diagnóstico para alinear el backfill. */
+function dumpHeadersME(){
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  var nombres=['VENTAS_CABECERA','VENTAS_DETALLE','CAJAS','MOVIMIENTOS_EXTRA','CLIENTES_FRECUENTES',
+    'GUIAS_CABECERA','GUIAS_DETALLE','CORRELATIVOS','RESERVAS_CORRELATIVOS','CREDITOS_COBRO_ASIGNADO',
+    'VENTAS_FANTASMA','AUDITORIAS','CAJA_ALERTAS_EFECTIVO','PICKUPS_PENDIENTES_ENVIO','STOCK_ZONAS','RadioConfig'];
+  var out={};
+  nombres.forEach(function(n){
+    var sh=ss.getSheetByName(n);
+    if(!sh){ out[n]='(NO EXISTE)'; return; }
+    var lc=sh.getLastColumn();
+    if(lc<1){ out[n]='(vacía)'; return; }
+    out[n]=sh.getRange(1,1,1,lc).getValues()[0];
+  });
+  Logger.log(JSON.stringify(out,null,2));
+  return out;
+}
+
+/** Inspecciona una hoja: encabezados + primeras y últimas filas CRUDAS (para ver evolución de layout). */
+function inspeccionarME(nombre, n){
+  n=n||3;
+  var sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(nombre);
+  if(!sh){ var e={error:'NO EXISTE: '+nombre}; Logger.log(JSON.stringify(e)); return e; }
+  var lc=sh.getLastColumn(), lr=sh.getLastRow();
+  var out={ hoja:nombre, columnas:lc, filas:(lr-1),
+    headers: sh.getRange(1,1,1,lc).getValues()[0],
+    primeras: lr>1 ? sh.getRange(2,1,Math.min(n,lr-1),lc).getValues() : [],
+    ultimas:  lr>1 ? sh.getRange(Math.max(2,lr-n+1),1,Math.min(n,lr-1),lc).getValues() : []
+  };
+  Logger.log(JSON.stringify(out,null,2));
+  return out;
+}
+
+/** Un solo clic: encabezados + 2 filas viejas y 2 nuevas de las tablas clave. */
+function inspeccionarTodoME(){
+  var tablas=['VENTAS_CABECERA','CAJAS','CREDITOS_COBRO_ASIGNADO','CLIENTES_FRECUENTES','MOVIMIENTOS_EXTRA','RESERVAS_CORRELATIVOS','STOCK_ZONAS','RadioConfig'];
+  var out={};
+  tablas.forEach(function(n){
+    var sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(n);
+    if(!sh){ out[n]='(NO EXISTE)'; return; }
+    var lc=sh.getLastColumn(), lr=sh.getLastRow();
+    out[n]={ columnas:lc, filas:(lr-1),
+      headers: lc>0 ? sh.getRange(1,1,1,lc).getValues()[0] : [],
+      primeras: lr>1 ? sh.getRange(2,1,Math.min(2,lr-1),lc).getValues() : [],
+      ultimas:  lr>2 ? sh.getRange(lr-1,1,2,lc).getValues() : []
+    };
+  });
+  Logger.log(JSON.stringify(out,null,2));
+  return out;
 }
 
 // ---------- wrappers para el editor ----------
