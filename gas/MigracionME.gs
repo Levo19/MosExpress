@@ -179,6 +179,8 @@ function migrarME(opts){
     var tabla=tablas[ti], cfg=_ME_SPECS[tabla];
     if(!cfg){ resumen[tabla]={error:'spec desconocida'}; continue; }
     try{
+      // hoja inexistente (ej. VENTAS_FANTASMA antes del 1er rechazo) → saltar limpio
+      if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(cfg.sheet)){ resumen[tabla]={saltado:'hoja no existe: '+cfg.sheet}; continue; }
       // saltar tablas ya completadas (reanudación multi-tabla eficiente; evita re-leer)
       if(!opts.dryRun && !opts.soloTabla && props.getProperty('MEBF_DONE_'+tabla)==='1'){
         resumen[tabla]={saltado:'ya completada (resetCheckpointsME para rehacer)'}; continue;
