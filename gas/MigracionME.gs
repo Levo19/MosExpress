@@ -300,6 +300,62 @@ function inspeccionarTodoME(){
   return out;
 }
 
+// ============================================================
+// FASE 1.C — Doble escritura vía SYNC INCREMENTAL en segundo plano.
+// No toca los endpoints de venta (cero latencia/riesgo al cajero).
+// Re-upsertea (idempotente) las filas RECIENTES de cada tabla; las nuevas
+// ventas/cajas se agregan al final → quedan dentro de la "cola" sincronizada.
+// ============================================================
+var _ME_SYNC_TAILS = {   // cuántas filas recientes re-sincronizar (tablas chicas = todas)
+  ventas:500, ventas_detalle:1500, cajas:80, movimientos_extra:300,
+  clientes_frecuentes:99999, guias_cabecera:300, guias_detalle:1200,
+  correlativos:99999, reservas_correlativos:500, creditos_cobro_asignado:99999,
+  auditorias:500, caja_alertas_efectivo:99999, pickups_pendientes_envio:99999,
+  stock_zonas:99999, radio_config:99999
+};
+
+function _syncMEImpl(full){
+  var resumen={};
+  Object.keys(_ME_SPECS).forEach(function(tabla){
+    var cfg=_ME_SPECS[tabla];
+    if(cfg.insertOnly) return;  // ventas_fantasma: insert-only, no entra al sync (se duplicaría)
+    try{
+      if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(cfg.sheet)){ return; }
+      var rows=_meBuildRows(tabla);
+      var tail=_ME_SYNC_TAILS[tabla]||300;
+      var slice = (full || rows.length<=tail) ? rows : rows.slice(rows.length-tail);
+      var err=[], up=0;
+      for(var i=0;i<slice.length;i+=100){
+        var lote=slice.slice(i,i+100);
+        var r=_sbUpsert('me.'+tabla,lote,cfg.onConflict);
+        if(r.ok) up+=lote.length; else err.push('lote '+i+': HTTP '+r.code+' '+(r.error||''));
+      }
+      resumen[tabla]={sync:up, de:slice.length, errores:err};
+    }catch(e){ resumen[tabla]={error:String(e&&e.message||e)}; }
+  });
+  Logger.log(JSON.stringify(resumen,null,2));
+  return resumen;
+}
+function syncMEReciente(){ return _syncMEImpl(false); }  // 15 min: solo cola reciente (barato)
+function syncMECompleto(){ return _syncMEImpl(true); }    // nocturno: TODO (captura ediciones/anulaciones viejas)
+
+/** Instala (idempotente) AMBOS triggers: incremental 15 min + completo nocturno (3am). Ejecutar 1 vez. */
+function instalarTriggersSyncME(){
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    var h=t.getHandlerFunction(); if(h==='syncMEReciente'||h==='syncMECompleto') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('syncMEReciente').timeBased().everyMinutes(15).create();
+  ScriptApp.newTrigger('syncMECompleto').timeBased().everyDays(1).atHour(3).create();
+  Logger.log('Triggers instalados: syncMEReciente (15min) + syncMECompleto (3am)');
+  return {ok:true};
+}
+function desinstalarTriggersSyncME(){
+  var n=0; ScriptApp.getProjectTriggers().forEach(function(t){
+    var h=t.getHandlerFunction(); if(h==='syncMEReciente'||h==='syncMECompleto'){ ScriptApp.deleteTrigger(t); n++; }
+  });
+  return {ok:true, eliminados:n};
+}
+
 // ---------- wrappers para el editor ----------
 function dryRunME(){ return migrarME({dryRun:true}); }
 function backfillME(){ return migrarME(); }
