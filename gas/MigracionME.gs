@@ -154,10 +154,10 @@ function _meBuildRows(tabla){
     var cnt={};
     rows.forEach(function(r){ var k=String(r[cfg.lineaBy]); cnt[k]=(cnt[k]||0)+1; r.linea=cnt[k]; });
     rows=rows.filter(function(r){ return r[cfg.lineaBy]!=null && r[cfg.lineaBy]!==''; });
-  } else if(!cfg.insertOnly){ // pk simple: filtra sin pk + dedupe (gana el último)
-    var pk=cfg.onConflict;
-    rows=rows.filter(function(r){ return r[pk]!=null && r[pk]!==''; });
-    var seen={}; rows.forEach(function(r){ seen[String(r[pk])]=r; });
+  } else if(!cfg.insertOnly){ // pk simple O COMPUESTO: filtra sin pk + dedupe (gana el último)
+    var pkCols=String(cfg.onConflict).split(',').map(function(c){ return c.trim(); });
+    rows=rows.filter(function(r){ return pkCols.every(function(c){ return r[c]!=null && r[c]!==''; }); });
+    var seen={}; rows.forEach(function(r){ var k=pkCols.map(function(c){ return String(r[c]); }).join('||'); seen[k]=r; });
     rows=Object.keys(seen).map(function(k){ return seen[k]; });
   }
   return rows;
@@ -303,6 +303,8 @@ function inspeccionarTodoME(){
 // ---------- wrappers para el editor ----------
 function dryRunME(){ return migrarME({dryRun:true}); }
 function backfillME(){ return migrarME(); }
+function backfillStockZonas(){ return migrarME({soloTabla:'stock_zonas'}); }   // re-hace solo esta (soloTabla ignora DONE)
+function backfillRadio(){ return migrarME({soloTabla:'radio_config'}); }
 function resetCheckpointsME(){
   var props=PropertiesService.getScriptProperties();
   var n=0; Object.keys(_ME_SPECS).forEach(function(t){
