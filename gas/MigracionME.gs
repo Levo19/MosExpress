@@ -267,6 +267,19 @@ function _dualWriteCobroME(o){
   return r;
 }
 
+// [creditos-directo / patch] Actualiza el estado de un cobro YA existente en me.creditos_cobro_asignado en
+// tiempo real (transiciones cobrado/rechazado/expirado/cancelado/reasignado). PATCH parcial por id_cobro
+// (NO upsert; si no está en la sombra, no-op + batch lo sube). Formatea fecha_* a ISO Lima como el batch.
+// 1 intento, best-effort. Con esto cobros_en_vuelo/creditos_pendientes quedan real-time (flipeables).
+function _dualWriteCobroPatchME(idCobro, patch){
+  var idc=String(idCobro||'').trim();
+  if(!idc || !patch) return {ok:false, error:'sin id_cobro/patch'};
+  var p={}; Object.keys(patch).forEach(function(k){ p[k]=(k.indexOf('fecha')===0 && patch[k]) ? _meDate(patch[k]) : patch[k]; });
+  var r=_sb('PATCH','me.creditos_cobro_asignado',{ data:p, filters:{ id_cobro:'eq.'+idc }, maxRetry:1 });
+  if(!r.ok) Logger.log('[dualWrite cobro patch] '+idc+' falló: HTTP '+(r.code)+' '+(r.error||''));
+  return r;
+}
+
 // [Fase B] Resuelve Ref_Local DUPLICADOS en VENTAS_CABECERA (ventas dobles pre-C9). Conserva el Ref_Local
 // de la PRIMERA fila de cada grupo y BLANQUEA el de las siguientes → preserva la fila/venta y su correlativo,
 // solo libera la clave para poder crear el índice único parcial en me.ventas.ref_local. dryRun por defecto;

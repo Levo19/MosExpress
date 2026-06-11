@@ -275,6 +275,8 @@ function confirmarCobroAsignado(data) {
   hoja.getRange(cRow, 9).setValue(new Date());                            // Fecha_Res
   hoja.getRange(cRow, 5).setValue(String(data.metodoFinal).toUpperCase());// Metodo final
   SpreadsheetApp.flush();
+  // [creditos-directo] espejo de la transición a Supabase en tiempo real (best-effort)
+  try { _dualWriteCobroPatchME(data.idCobro, { estado:'COBRADO', fecha_res:new Date(), metodo_sug:String(data.metodoFinal).toUpperCase() }); } catch(_dw){}
 
   // Push de vuelta a admin (cierre del ciclo)
   try {
@@ -351,6 +353,8 @@ function rechazarCobroAsignado(data) {
   hoja.getRange(cRow, 9).setValue(new Date());
   hoja.getRange(cRow, 10).setValue(String(data.razon).substring(0, 250));
   SpreadsheetApp.flush();
+  // [creditos-directo] espejo de la transición a Supabase en tiempo real (best-effort)
+  try { _dualWriteCobroPatchME(data.idCobro, { estado:'RECHAZADO', fecha_res:new Date(), razon:String(data.razon).substring(0, 250) }); } catch(_dw){}
 
   // Push al admin que asignó (para reaccionar)
   try {
@@ -707,6 +711,7 @@ function escalarCobrosVencidos() {
       hoja.getRange(i + 1, iEstado + 1).setValue('COBRADO');
       hoja.getRange(i + 1, iRes + 1).setValue(new Date());
       hoja.getRange(i + 1, iRazon + 1).setValue('Cobrado fuera del flujo · auto-reconciliado');
+      try { _dualWriteCobroPatchME(String(fa[i][0]), { estado:'COBRADO', fecha_res:new Date(), razon:'Cobrado fuera del flujo · auto-reconciliado' }); } catch(_dw){}  // [creditos-directo]
       Logger.log('[escalarCobros] cobro ' + fa[i][0] + ' YA cobrado (' + fpVentaActual +
                  ') · marcado COBRADO en vez de EXPIRADO');
       continue; // no contar como vencido, no mandar push
@@ -716,6 +721,7 @@ function escalarCobrosVencidos() {
     hoja.getRange(i + 1, iEstado + 1).setValue('EXPIRADO');
     hoja.getRange(i + 1, iRes + 1).setValue(new Date());
     hoja.getRange(i + 1, iRazon + 1).setValue('Vencido sin cobrarse · cliente no llegó');
+    try { _dualWriteCobroPatchME(String(fa[i][0]), { estado:'EXPIRADO', fecha_res:new Date(), razon:'Vencido sin cobrarse · cliente no llegó' }); } catch(_dw){}  // [creditos-directo]
 
     // [v2.5.27] Restaurar VENTAS_CABECERA → vuelve a estado CREDITO
     // Cols esperadas en VENTAS_CABECERA: 0=ID, 7=cobrado?, 8=formaPago
@@ -933,6 +939,7 @@ function cancelarCobroAsignado(data) {
     hoja.getRange(i + 1, iEstado + 1).setValue('CANCELADO_ADMIN');
     hoja.getRange(i + 1, iRes + 1).setValue(new Date());
     hoja.getRange(i + 1, iRazon + 1).setValue('Cancelado por admin: ' + (data.razon || 'sin razón'));
+    try { _dualWriteCobroPatchME(data.idCobro, { estado:'CANCELADO_ADMIN', fecha_res:new Date(), razon:'Cancelado por admin: ' + (data.razon || 'sin razón') }); } catch(_dw){}  // [creditos-directo]
     // Restaurar VENTAS_CABECERA → CREDITO
     try {
       var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1018,6 +1025,7 @@ function reasignarCobroAsignado(data) {
     var iRazon = hdrs.indexOf('Razon');
     if (iRes >= 0)  hoja.getRange(i + 1, iRes + 1).setValue(new Date());
     if (iRazon >= 0) hoja.getRange(i + 1, iRazon + 1).setValue('Reasignado a ' + data.cajaDestino);
+    try { _dualWriteCobroPatchME(data.idCobro, { estado:'REASIGNADO', fecha_res:new Date(), razon:'Reasignado a ' + data.cajaDestino }); } catch(_dw){}  // [creditos-directo]
     found = true;
     break;
   }
