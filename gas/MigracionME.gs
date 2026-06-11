@@ -224,6 +224,20 @@ function _dualWriteCajaME(o){
   return r;
 }
 
+// [movimientos-directo / dual-write] Espeja UN movimiento de caja a me.movimientos_extra en tiempo real
+// (ingreso/egreso). Reusa el mapeo del batch (_meRow + _ME_SPECS.movimientos_extra). Upsert por id_extra
+// = idempotente. 1 intento, best-effort (Sheets=verdad, el batch reconcilia). `o` keyed por cabeceras
+// (ID_Extra, ID_Caja, Timestamp, Tipo, Monto, Concepto, Obs, Registrado_Por).
+function _dualWriteMovExtraME(o){
+  var cfg=_ME_SPECS.movimientos_extra;
+  var row=_meRow(o, cfg.spec);
+  if(cfg.post) row=cfg.post(row, o);
+  if(row.id_extra==null || row.id_extra===''){ Logger.log('[dualWrite movExtra] sin id_extra — omitido'); return {ok:false, error:'sin id_extra'}; }
+  var r=_sb('POST','me.movimientos_extra',{ data:[row], upsert:true, onConflict:cfg.onConflict, maxRetry:1 });
+  if(!r.ok) Logger.log('[dualWrite movExtra] '+row.id_extra+' upsert falló: HTTP '+(r.code)+' '+(r.error||''));
+  return r;
+}
+
 // [Fase B] Resuelve Ref_Local DUPLICADOS en VENTAS_CABECERA (ventas dobles pre-C9). Conserva el Ref_Local
 // de la PRIMERA fila de cada grupo y BLANQUEA el de las siguientes → preserva la fila/venta y su correlativo,
 // solo libera la clave para poder crear el índice único parcial en me.ventas.ref_local. dryRun por defecto;

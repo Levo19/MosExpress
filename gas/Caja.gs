@@ -1120,17 +1120,28 @@ function registrarExtraCaja(data) {
     sheet = ss.insertSheet("MOVIMIENTOS_EXTRA");
     sheet.appendRow(["ID_Extra","ID_Caja","Timestamp","Tipo","Monto","Concepto","Obs","Registrado_Por"]);
   }
-  var id = "EX-" + new Date().getTime();
+  var _now = new Date();
+  var id = "EX-" + _now.getTime();
   sheet.appendRow([
     id,
     String(data.cajaId      || ''),
-    new Date(),
+    _now,
     String(data.tipo        || 'EGRESO'),
     parseFloat(data.monto)  || 0,
     String(data.concepto    || ''),
     String(data.obs         || ''),
     String(data.registradoPor || '')
   ]);
+
+  // [movimientos-directo] Espejo a Supabase en tiempo real (best-effort, no rompe el registro).
+  try {
+    _dualWriteMovExtraME({
+      ID_Extra: id, ID_Caja: String(data.cajaId || ''), Timestamp: _now,
+      Tipo: String(data.tipo || 'EGRESO'), Monto: parseFloat(data.monto) || 0,
+      Concepto: String(data.concepto || ''), Obs: String(data.obs || ''),
+      Registrado_Por: String(data.registradoPor || '')
+    });
+  } catch (eDW) { Logger.log('[dualWrite movExtra] ' + (eDW && eDW.message)); }
 
   // Alerta de recojo de efectivo: tras INGRESO sube monto → posible cruce de
   // threshold (alerta). Tras EGRESO baja monto → bandera se reajusta sola
