@@ -1,1 +1,1 @@
-{ "version": "2.7.84", "build": "20260611-correlativo-fix-TOCTOU-recheck-flag-en-lock" }
+{ "version": "2.7.85", "build": "20260611-prefetch-correlativo-siguiente-NV-sin-overlay" }

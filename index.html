@@ -15042,6 +15042,11 @@
           pago.value.metodo = 'EFECTIVO';
           // [v2.5.58] Limpiar reserva consumida (la próxima venta pedirá nueva)
           _correlativoEnMano.value = null;
+          // [perf] Pre-reservar YA la SIGUIENTE NV en background (durante el idle entre ventas)
+          // → la próxima venta encuentra el número en mano y NO espera el round-trip a Postgres
+          // (evita el overlay "Asegurando numeración"). Si no se vende más, la reserva expira
+          // (gap NV aceptable). Online-only: offline no tiene sentido reservar.
+          try { if (!offlineMode.value) setTimeout(() => { try { _prereservaIniciar('NOTA_DE_VENTA'); } catch(_){} }, 0); } catch(_) {}
           // Reset autorización crédito directo para próxima venta
           pago.value.ventaCreditoDirecto = false;
           pago.value.adminAuth = null;
