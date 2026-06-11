@@ -538,6 +538,8 @@ function _cerrarCajaAtomicoCore(opts) {
           if (String(fc[c][iCajaDest]) === idCaja && String(fc[c][iEstadoCC]) === 'ASIGNADO') {
             hojaCobros.getRange(c + 1, iEstadoCC + 1).setValue('CANCELADO_CIERRE_CAJA');
             hojaCobros.getRange(c + 1, iFRes + 1).setValue(new Date());
+            // [creditos-directo] 7mo estado: espejo a Supabase en tiempo real (best-effort)
+            try { _dualWriteCobroPatchME(String(fc[c][iIdCobro]), { estado:'CANCELADO_CIERRE_CAJA', fecha_res:new Date() }); } catch(_dw){}
             cobrosLiberados++;
           }
         }
