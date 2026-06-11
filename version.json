@@ -1,1 +1,1 @@
-{ "version": "2.7.83", "build": "20260610-fix-C8-localId-uuid-dedup-fullscan" }
+{ "version": "2.7.84", "build": "20260611-correlativo-fix-TOCTOU-recheck-flag-en-lock" }

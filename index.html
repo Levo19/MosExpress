@@ -14827,6 +14827,7 @@
                        //   NO_CAJA_ACTIVA_EN_ZONA → cajero cerró/no abrió caja
                        //   VENTA_RECHAZADA        → genérico
                        if (res.error === 'PAYLOAD_INVALIDO' || res.error === 'NO_CAJA_ACTIVA_EN_ZONA'
+                           || res.error === 'CPE_SIN_IDEMKEY'
                            || (res.status === 'success' && !res.idVenta)) {
                            const errFatal = new Error((res.error || 'VENTA_RECHAZADA') + ': ' + (res.mensaje || 'sin detalle'));
                            errFatal.code     = res.error || 'VENTA_RECHAZADA';

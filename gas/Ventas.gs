@@ -225,7 +225,7 @@ function procesarVenta(data) {
     // como objeto → así lo propaga como error y registra VENTAS_FANTASMA, sin venta fantasma silenciosa.
     if (_fuenteCorrelativo() === 'supabase' && (_tdU === 'BOLETA' || _tdU === 'FACTURA') && !refLocal) {
       return { idVenta: null, correlativo: null, printDispatched: false, dedupVenta: false,
-               error: 'CPE_SIN_IDEMKEY', mensaje: 'CPE sin clave de idempotencia (localId) — reintentá' };
+               error: 'CPE_SIN_IDEMKEY', mensaje: 'CPE sin clave de idempotencia (localId) — reintenta' };
     }
     correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual, refLocal);  // [fix #1] CPE idempotente (refLocal=localId)
   }
@@ -801,7 +801,7 @@ function activarCorrelativoSupabase(){
   // el contador de la hoja entre seed y flip (sino el 1er mint Supabase reemitiría = duplicado SUNAT).
   var lock=LockService.getScriptLock();
   try{ lock.waitLock(30000); }
-  catch(e){ return {ok:false, error:'no se pudo tomar el lock para el flip (ventas en curso) — reintentá'}; }
+  catch(e){ return {ok:false, error:'no se pudo tomar el lock para el flip (ventas en curso) — reintenta'}; }
   try{
     var ss=SpreadsheetApp.getActiveSpreadsheet();
     var targets=_correlativoTargets(ss);
@@ -883,6 +883,10 @@ function obtenerSiguienteCorrelativoRapido(ss, serie, idemKey) {
   }
 
   try {
+    // [fix TOCTOU] re-chequear el flag DENTRO del lock. Si flipeó a 'supabase' mientras esperábamos
+    // el lock, delegar a Postgres — sino mintearíamos de Sheets un número que el seed ya asignó a
+    // Supabase = duplicado SUNAT en el instante del flip.
+    if (_fuenteCorrelativo() === 'supabase') { lockOK = false; lock.releaseLock(); return _correlativoSupabase(ss, serie, idemKey); }
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][0]) === serie) {
