@@ -441,23 +441,32 @@ function procesarVenta(data) {
 // Idempotente: si ya existe una jornada con el mismo nombre y fecha no inserta duplicados.
 function _registrarJornadaEnMOS(nombreVendedor) {
   if (!nombreVendedor) return;
-  var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID');
-  if (!mosSsId) return;
-
   var tz    = Session.getScriptTimeZone();
   var fecha = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  // [perf] cache: tras registrar/confirmar la jornada de este vendedor HOY, saltar el
+  // SpreadsheetApp.openById(MOS) — que es caro — en TODAS las ventas siguientes. TTL 6h; al
+  // expirar re-chequea (idempotente, 1 openById extra). Cache compartido entre ejecuciones →
+  // vale para todos los dispositivos del mismo vendedor.
+  var ckKey = 'JORMOS_' + fecha + '_' + String(nombreVendedor).toLowerCase().trim();
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); if (cache && cache.get(ckKey)) return; } catch(_) {}
+
+  var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID');
+  if (!mosSsId) return;
   var ss    = SpreadsheetApp.openById(mosSsId);
   var sheet = ss.getSheetByName('JORNADAS');
   if (!sheet) return;
 
   // Idempotencia: verificar si ya existe la jornada hoy
-  var tz2  = Session.getScriptTimeZone();
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     var fechaFila = data[i][1] instanceof Date
-      ? Utilities.formatDate(data[i][1], tz2, 'yyyy-MM-dd')
+      ? Utilities.formatDate(data[i][1], tz, 'yyyy-MM-dd')
       : String(data[i][1] || '').substring(0, 10);
-    if (String(data[i][3]).toLowerCase() === nombreVendedor.toLowerCase() && fechaFila === fecha) return;
+    if (String(data[i][3]).toLowerCase() === nombreVendedor.toLowerCase() && fechaFila === fecha) {
+      try { if (cache) cache.put(ckKey, '1', 21600); } catch(_) {}   // ya existe → cachear y salir
+      return;
+    }
   }
 
   // Buscar montoBase en PERSONAL_MASTER de MOS
@@ -482,6 +491,7 @@ function _registrarJornadaEnMOS(nombreVendedor) {
     'JOR' + new Date().getTime(), fecha, '', nombreVendedor,
     'VENDEDOR', 'mosExpress', '', monto, '', 'AUTO', 'AUTO_VENTA'
   ]);
+  try { if (cache) cache.put(ckKey, '1', 21600); } catch(_) {}   // recién registrada → cachear
 }
 
 // Devuelve todas las ventas de hoy de la zona del cajero (filtradas por prefijos de serie)
