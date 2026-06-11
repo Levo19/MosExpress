@@ -1078,9 +1078,12 @@ function anulacionMasiva(data) {
   var idsAnulados = [];
   for (var i = 1; i < filas.length; i++) {
     if (data.ids.indexOf(String(filas[i][0])) !== -1) {
+      var _antesFP = filas[i][8];
       sheet.getRange(i + 1, 9).setValue('ANULADO');
       anulados++;
       idsAnulados.push(String(filas[i][0]));
+      // [fix C2-gap] auditar (pasa por el chokepoint → marca dirty → re-sync ≤15min, no 3am) + historial
+      try { auditarLog('VENTAS_CABECERA', String(filas[i][0]), { source:'ME_ANULACION_MASIVA', accion:'anular_masivo', cambios:[{campo:'FormaPago', antes:_antesFP, despues:'ANULADO'}] }); } catch(_e){}
     }
   }
   // Notificar WH para descontar de pickups origen (no bloquea)

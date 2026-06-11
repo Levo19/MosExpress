@@ -717,6 +717,7 @@ function escalarCobrosVencidos() {
           if (String(vdAll[k][iVId]) === idV) {
             if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
             if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
+            try { _meMarcarDirtySync('VENTAS_CABECERA', idV); } catch(_e){}   // [fix C2-gap] re-sync el revert a CREDITO (≤15min)
             break;
           }
         }
@@ -931,6 +932,7 @@ function cancelarCobroAsignado(data) {
           if (String(vdAll[k][iVId]) === idVenta) {
             if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
             if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
+            try { _meMarcarDirtySync('VENTAS_CABECERA', idVenta); } catch(_e){}   // [fix C2-gap] re-sync el revert a CREDITO (≤15min)
             break;
           }
         }
