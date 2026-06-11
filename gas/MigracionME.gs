@@ -228,7 +228,16 @@ function resolverDupsRefLocalME(aplicar){
     if(visto[rl]) cambios.push({fila:r+1, id_venta:String(d[r][iID]||''), correlativo:(iCorr>=0?String(d[r][iCorr]||''):''), ref_local:rl});
     else visto[rl]=true;
   }
-  if(aplicar){ cambios.forEach(function(c){ sh.getRange(c.fila, iRL+1).setValue(''); }); SpreadsheetApp.flush(); }
+  if(aplicar){
+    cambios.forEach(function(c){
+      // defensivo: reconfirmar que la fila sigue siendo esa venta (que no se corrió por un append/edición
+      // concurrente) ANTES de blanquear — evita blanquear el Ref_Local de la venta equivocada.
+      var idEnFila = (iID>=0) ? String(sh.getRange(c.fila, iID+1).getValue()||'') : c.id_venta;
+      if(idEnFila === c.id_venta){ sh.getRange(c.fila, iRL+1).setValue(''); c.aplicado=true; }
+      else { c.aplicado=false; c.nota='fila corrida (id no calza: '+idEnFila+') — OMITIDO'; Logger.log('[resolverDups] fila '+c.fila+' OMITIDA: id no calza ('+idEnFila+' != '+c.id_venta+')'); }
+    });
+    SpreadsheetApp.flush();
+  }
   Logger.log((aplicar?'✅ APLICADO':'🔎 DRY-RUN (corré resolverDupsRefLocalME(true) para aplicar)')+' — dups Ref_Local en hoja: '+cambios.length+'\n'+JSON.stringify(cambios,null,2));
   return {ok:true, aplicado:!!aplicar, dups:cambios.length, cambios:cambios};
 }
