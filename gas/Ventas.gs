@@ -818,7 +818,36 @@ function activarCorrelativoSupabase(){
     return {ok:true, fuente:'supabase', series:targets};
   } finally { lock.releaseLock(); }
 }
-function desactivarCorrelativoSupabase(){ PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','sheets'); Logger.log('↩️ CORRELATIVO_SOURCE = sheets (rollback)'); return {ok:true, fuente:'sheets'}; }
+// [fix rollback simétrico] ANTES de volver a Sheets, reconcilia CORRELATIVOS.Siguiente con lo que
+// Postgres ya emitió (me.correlativos): el espejo Sheets es best-effort y pudo quedar atrás si algún
+// write-back falló → el minter Sheets reemitiría un número ya usado = duplicado SUNAT al revertir.
+// Bajo el MISMO lock que el mint, sube cada serie a max(hoja, me.correlativos.siguiente) y RECIÉN flipea.
+function desactivarCorrelativoSupabase(){
+  var lock=LockService.getScriptLock();
+  try{ lock.waitLock(30000); }
+  catch(e){ return {ok:false, error:'no se pudo tomar el lock para el rollback (ventas en curso) — reintenta'}; }
+  try{
+    var ss=SpreadsheetApp.getActiveSpreadsheet();
+    var sheet=ss.getSheetByName('CORRELATIVOS');
+    var r=_sbSelect('me.correlativos', {}), sbMap={};
+    if(r && r.ok && Array.isArray(r.data)) r.data.forEach(function(row){ sbMap[String(row.serie)]=parseInt(row.siguiente,10)||0; });
+    // NO flipear si no pudimos leer Supabase (no podemos garantizar que la hoja esté al día).
+    if(!(r && r.ok)) return {ok:false, error:'no se pudo leer me.correlativos para reconciliar — rollback abortado (sigue en supabase)', abortado:true};
+    var reconciliadas=[];
+    if(!sheet){ sheet=ss.insertSheet('CORRELATIVOS'); sheet.appendRow(['Serie','Siguiente']); }
+    var d=sheet.getDataRange().getValues(), vistas={};
+    for(var i=1;i<d.length;i++){ var s=String(d[i][0]||'').trim(); if(!s) continue; vistas[s]=true;
+      var hojaSig=parseInt(d[i][1],10)||0, sbSig=sbMap[s];
+      if(sbSig!=null && sbSig>hojaSig){ sheet.getRange(i+1,2).setValue(sbSig); reconciliadas.push({serie:s, de:hojaSig, a:sbSig}); }
+    }
+    // series emitidas solo en Postgres cuyo write-back nunca llegó a la hoja
+    Object.keys(sbMap).forEach(function(s){ if(!vistas[s] && sbMap[s]>0){ sheet.appendRow([s, sbMap[s]]); reconciliadas.push({serie:s, de:null, a:sbMap[s]}); } });
+    SpreadsheetApp.flush();
+    PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','sheets');
+    Logger.log('↩️ CORRELATIVO_SOURCE = sheets (rollback) · reconciliadas='+JSON.stringify(reconciliadas));
+    return {ok:true, fuente:'sheets', reconciliadas:reconciliadas};
+  } finally { lock.releaseLock(); }
+}
 function estadoCorrelativo(){ var s=_fuenteCorrelativo(); Logger.log('CORRELATIVO_SOURCE='+s); return {fuente:s}; }
 // target por serie = max(CORRELATIVOS.Siguiente, max(numero en VENTAS_CABECERA)+1). Cubre series sin fila en CORRELATIVOS (#3). Ignora -LOCAL y 'undefined-'.
 function _correlativoTargets(ss){
