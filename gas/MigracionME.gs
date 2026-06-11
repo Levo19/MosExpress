@@ -253,6 +253,20 @@ function _dualWriteVentaPatchME(idVenta, patch){
   return r;
 }
 
+// [creditos-directo / dual-write] Espeja UN cobro asignado a me.creditos_cobro_asignado en tiempo real
+// (al CREAR la asignación). Reusa el mapeo del batch (_meRow + _ME_SPECS.creditos_cobro_asignado). Upsert
+// por id_cobro. 1 intento, best-effort. Las transiciones de estado (cobrado/rechazado/etc.) siguen por
+// batch+dirty-sync (tabla chica, sync completo ≤15min). `o` keyed por cabeceras (ID_Cobro, ID_Venta, ...).
+function _dualWriteCobroME(o){
+  var cfg=_ME_SPECS.creditos_cobro_asignado;
+  var row=_meRow(o, cfg.spec);
+  if(cfg.post) row=cfg.post(row, o);
+  if(row.id_cobro==null || row.id_cobro===''){ Logger.log('[dualWrite cobro] sin id_cobro — omitido'); return {ok:false, error:'sin id_cobro'}; }
+  var r=_sb('POST','me.creditos_cobro_asignado',{ data:[row], upsert:true, onConflict:cfg.onConflict, maxRetry:1 });
+  if(!r.ok) Logger.log('[dualWrite cobro] '+row.id_cobro+' upsert falló: HTTP '+(r.code)+' '+(r.error||''));
+  return r;
+}
+
 // [Fase B] Resuelve Ref_Local DUPLICADOS en VENTAS_CABECERA (ventas dobles pre-C9). Conserva el Ref_Local
 // de la PRIMERA fila de cada grupo y BLANQUEA el de las siguientes → preserva la fila/venta y su correlativo,
 // solo libera la clave para poder crear el índice único parcial en me.ventas.ref_local. dryRun por defecto;

@@ -143,6 +143,21 @@ function asignarCobroACajero(data) {
   ]);
   SpreadsheetApp.flush();
 
+  // [creditos-directo] espejo del cobro recién asignado a Supabase en tiempo real (best-effort).
+  // Las transiciones de estado (cobrado/rechazado/expirado/cancelado/reasignado) siguen por batch+dirty-sync.
+  try {
+    _dualWriteCobroME({
+      ID_Cobro: idCobro, ID_Venta: data.idVenta, Caja_Destino: data.cajaDestino,
+      Vendedor_Dest: cajaInfo.vendedor, Metodo_Sug: metodoSugStr, Estado: 'ASIGNADO',
+      Admin_Asignador: String(data.adminAuth.nombre || '').replace(/^admin:/i, ''),
+      Fecha_Asig: ahora, Fecha_Res: '', Razon: '',
+      ID_Caja_Origen: ventaData.cajaOriginal, Monto: ventaData.total,
+      Cliente_Nombre: ventaData.cliente, Correlativo: ventaData.correlativo,
+      Fecha_Vencimiento: fechaVencimiento, Horas_TTL: horasTTL,
+      Mensaje_Admin: mensajeAdmin, Reasignaciones: 0
+    });
+  } catch (eDW) { Logger.log('[dualWrite cobro] ' + (eDW && eDW.message)); }
+
   // 5. Push al cajero destino via MOS
   try {
     var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
