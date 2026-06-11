@@ -986,6 +986,18 @@ function flipSoloVentasZona(){
   return { ok:true, supabase:['ventas_hoy_zona'], sheets: off.split(',') };
 }
 
+// [reads-reflip] UN clic: SUMA estado_cajas a Supabase (sus fuentes ventas+movimientos+cajas ya son
+// real-time por dual-write). Mantiene cobros/creditos en Sheets. Es display (el cierre recomputa de Sheets).
+// Requiere haber corrido flipSoloVentasZona antes (o que FUENTE_DATOS ya sea supabase). Rollback granular:
+// desactivarUnoME('estado_cajas'); total: desactivarSupabaseME().
+function flipSumarEstadoCajas(){
+  if(_fuenteDatos('ventas_hoy_zona')!=='supabase'){ activarSupabaseME(); desactivarUnoME('cobros_en_vuelo'); desactivarUnoME('creditos_pendientes'); }
+  reactivarUnoME('estado_cajas');
+  var off = PropertiesService.getScriptProperties().getProperty('FUENTE_DATOS_OFF') || '';
+  Logger.log('✅ Supabase: ventas_hoy_zona + estado_cajas (real-time). En Sheets: ['+off+']. Rollback: desactivarUnoME(\'estado_cajas\') o desactivarSupabaseME()');
+  return { ok:true, supabase:['ventas_hoy_zona','estado_cajas'], sheets: off.split(',').filter(Boolean) };
+}
+
 // ---------- Canary #3: getCreditosPendientes (Sheets vs me.creditos_pendientes()) ----------
 function compararCreditosPendientesME(){ return _compararCreditos(30); }
 function _compararCreditos(dias){
