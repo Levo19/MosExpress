@@ -75,7 +75,11 @@ function auditarLog(tabla, pk, entrada) {
     if (!sheet) { Logger.log('auditarLog: hoja no encontrada: ' + meta.sheetName); return false; }
     var rowNum = _audBuscarRowPorPK(sheet, meta.pkCol, pk);
     if (rowNum < 2) { Logger.log('auditarLog: PK ' + pk + ' no encontrado en ' + tabla); return false; }
-    return _audAppend(sheet, rowNum, entrada);
+    var _ok = _audAppend(sheet, rowNum, entrada);
+    // [fix C2] toda edición auditada (cobrar/anular/editar) pasa por aquí → marcar la fila para
+    // re-sync inmediato a Supabase (sino una edición a fila vieja no sincroniza hasta las 3am).
+    if (_ok) { try { _meMarcarDirtySync(tabla, pk); } catch (e) {} }
+    return _ok;
   } catch(e) {
     Logger.log('auditarLog excepcion: ' + e.message);
     return false;

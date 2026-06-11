@@ -317,6 +317,29 @@ var _ME_SYNC_TAILS = {   // cuántas filas recientes re-sincronizar (tablas chic
   stock_zonas:99999, radio_config:99999
 };
 
+// [fix C2] Cola de filas EDITADAS (cobrar/anular/editar venta vieja cambia FormaPago in-place).
+// auditarLog (chokepoint de toda edición auditada) marca la pk; _syncMEImpl re-sincroniza las que
+// caen fuera del tail → getFinanzasRango (flip) ya no sub-cuenta el ingreso cobrado hasta las 3am.
+var _ME_AUD_TO_SPEC = { 'VENTAS_CABECERA':'ventas', 'MOVIMIENTOS_EXTRA':'movimientos_extra', 'CLIENTES_FRECUENTES':'clientes_frecuentes' };
+function _meDirtyGet(spec){ try{ var a=JSON.parse(PropertiesService.getScriptProperties().getProperty('ME_DIRTY_'+spec)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function _meMarcarDirtySync(auditTabla, pk){
+  try{
+    var spec=_ME_AUD_TO_SPEC[auditTabla]; if(!spec || pk==null || String(pk)==='') return;
+    var arr=_meDirtyGet(spec), s=String(pk);
+    if(arr.indexOf(s)<0) arr.push(s);
+    if(arr.length>500) arr=arr.slice(arr.length-500);
+    PropertiesService.getScriptProperties().setProperty('ME_DIRTY_'+spec, JSON.stringify(arr));
+  }catch(e){}
+}
+function _meDirtyRemove(spec, quitar){
+  try{
+    if(!quitar||!quitar.length) return;
+    var rm={}; quitar.forEach(function(k){ rm[String(k)]=1; });
+    var nuevo=_meDirtyGet(spec).filter(function(k){ return !rm[String(k)]; });
+    PropertiesService.getScriptProperties().setProperty('ME_DIRTY_'+spec, JSON.stringify(nuevo));
+  }catch(e){}
+}
+
 function _syncMEImpl(full){
   var resumen={};
   Object.keys(_ME_SPECS).forEach(function(tabla){
@@ -349,12 +372,20 @@ function _syncMEImpl(full){
       var rows=_meBuildRows(tabla);
       var tail=_ME_SYNC_TAILS[tabla]||300;
       var slice = (full || rows.length<=tail) ? rows : rows.slice(rows.length-tail);
+      // [fix C2] sumar filas EDITADAS que quedaron fuera del tail (marcadas por auditarLog).
+      var dirtyProc=_meDirtyGet(tabla);
+      if(dirtyProc.length && !full && rows.length>tail){
+        var inSlice={}; slice.forEach(function(r){ inSlice[String(r[cfg.onConflict])]=1; });
+        var extra=rows.filter(function(r){ var k=String(r[cfg.onConflict]); return dirtyProc.indexOf(k)>=0 && !inSlice[k]; });
+        if(extra.length) slice=slice.concat(extra);
+      }
       var err=[], up=0;
       for(var i=0;i<slice.length;i+=100){
         var lote=slice.slice(i,i+100);
         var r=_sbUpsert('me.'+tabla,lote,cfg.onConflict);
         if(r.ok) up+=lote.length; else err.push('lote '+i+': HTTP '+r.code+' '+(r.error||''));
       }
+      if(!err.length && dirtyProc.length) _meDirtyRemove(tabla, dirtyProc);  // ya sincronizadas (tail o extra); preserva nuevas
       resumen[tabla]={sync:up, de:slice.length, errores:err};
     }catch(e){ resumen[tabla]={error:String(e&&e.message||e)}; }
   });
