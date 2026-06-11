@@ -220,9 +220,12 @@ function procesarVenta(data) {
     }
   } else {
     var _tdU = String(header.tipoDoc || '').toUpperCase();
-    // [fix #5] no mintear CPE (boleta/factura) sin clave de idempotencia cuando el minter es Supabase
+    // [fix #5] no mintear CPE (boleta/factura) sin clave de idempotencia cuando el minter es Supabase.
+    // Devolver OBJETO PLANO (no generarRespuestaError/TextOutput): el router lee response.error/.idVenta
+    // como objeto → así lo propaga como error y registra VENTAS_FANTASMA, sin venta fantasma silenciosa.
     if (_fuenteCorrelativo() === 'supabase' && (_tdU === 'BOLETA' || _tdU === 'FACTURA') && !refLocal) {
-      return generarRespuestaError('CPE sin clave de idempotencia (localId) — reintentá');
+      return { idVenta: null, correlativo: null, printDispatched: false, dedupVenta: false,
+               error: 'CPE_SIN_IDEMKEY', mensaje: 'CPE sin clave de idempotencia (localId) — reintentá' };
     }
     correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual, refLocal);  // [fix #1] CPE idempotente (refLocal=localId)
   }
@@ -794,19 +797,26 @@ function _fuenteCorrelativo(){
 // valida me.correlativos >= target por serie, y SOLO ahí flipea. Aborta si alguna está atrás
 // (evita reemitir un número ya usado = duplicado SUNAT). seed+validate+flip en una sola corrida.
 function activarCorrelativoSupabase(){
-  var ss=SpreadsheetApp.getActiveSpreadsheet();
-  var targets=_correlativoTargets(ss);
-  if(!Object.keys(targets).length) return {ok:false, error:'no se hallaron series para sembrar', abortado:true};
-  var seed=sembrarCorrelativosSupabase();
-  if(!seed.ok) return {ok:false, error:'seed falló: '+(seed.error||''), abortado:true};
-  var r=_sbSelect('me.correlativos', {}); var sbMap={};
-  if(r.ok && Array.isArray(r.data)) r.data.forEach(function(row){ sbMap[String(row.serie)]=parseInt(row.siguiente,10); });
-  var faltan=[];
-  Object.keys(targets).forEach(function(s){ if(!(sbMap[s]>=targets[s])) faltan.push({serie:s, target:targets[s], supabase:(sbMap[s]==null?null:sbMap[s])}); });
-  if(faltan.length){ Logger.log('❌ FLIP ABORTADO — series atrás: '+JSON.stringify(faltan)); return {ok:false, error:'FLIP ABORTADO: me.correlativos atrás de la hoja/ventas', faltan:faltan}; }
-  PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','supabase');
-  Logger.log('✅ CORRELATIVO_SOURCE = supabase ('+Object.keys(targets).length+' series sembradas+validadas)');
-  return {ok:true, fuente:'supabase', series:targets};
+  // [fix race] tomar el MISMO LockService que usa el mint de Sheets → ninguna venta puede avanzar
+  // el contador de la hoja entre seed y flip (sino el 1er mint Supabase reemitiría = duplicado SUNAT).
+  var lock=LockService.getScriptLock();
+  try{ lock.waitLock(30000); }
+  catch(e){ return {ok:false, error:'no se pudo tomar el lock para el flip (ventas en curso) — reintentá'}; }
+  try{
+    var ss=SpreadsheetApp.getActiveSpreadsheet();
+    var targets=_correlativoTargets(ss);
+    if(!Object.keys(targets).length) return {ok:false, error:'no se hallaron series para sembrar', abortado:true};
+    var seed=sembrarCorrelativosSupabase();
+    if(!seed.ok) return {ok:false, error:'seed falló: '+(seed.error||''), abortado:true};
+    var r=_sbSelect('me.correlativos', {}); var sbMap={};
+    if(r.ok && Array.isArray(r.data)) r.data.forEach(function(row){ sbMap[String(row.serie)]=parseInt(row.siguiente,10); });
+    var faltan=[];
+    Object.keys(targets).forEach(function(s){ if(!(sbMap[s]>=targets[s])) faltan.push({serie:s, target:targets[s], supabase:(sbMap[s]==null?null:sbMap[s])}); });
+    if(faltan.length){ Logger.log('❌ FLIP ABORTADO — series atrás: '+JSON.stringify(faltan)); return {ok:false, error:'FLIP ABORTADO: me.correlativos atrás de la hoja/ventas', faltan:faltan}; }
+    PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','supabase');
+    Logger.log('✅ CORRELATIVO_SOURCE = supabase ('+Object.keys(targets).length+' series sembradas+validadas)');
+    return {ok:true, fuente:'supabase', series:targets};
+  } finally { lock.releaseLock(); }
 }
 function desactivarCorrelativoSupabase(){ PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','sheets'); Logger.log('↩️ CORRELATIVO_SOURCE = sheets (rollback)'); return {ok:true, fuente:'sheets'}; }
 function estadoCorrelativo(){ var s=_fuenteCorrelativo(); Logger.log('CORRELATIVO_SOURCE='+s); return {fuente:s}; }
