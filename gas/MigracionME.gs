@@ -238,9 +238,11 @@ function resolverDupsRefLocalME(aplicar){
     });
     SpreadsheetApp.flush();
   }
-  Logger.log((aplicar?'✅ APLICADO':'🔎 DRY-RUN (corré resolverDupsRefLocalME(true) para aplicar)')+' — dups Ref_Local en hoja: '+cambios.length+'\n'+JSON.stringify(cambios,null,2));
+  Logger.log((aplicar?'✅ APLICADO':'🔎 DRY-RUN (corré aplicarResolverDupsRefLocalME para aplicar)')+' — dups Ref_Local en hoja: '+cambios.length+'\n'+JSON.stringify(cambios,null,2));
   return {ok:true, aplicado:!!aplicar, dups:cambios.length, cambios:cambios};
 }
+// Wrapper para correr desde el desplegable del editor (que solo invoca funciones sin argumentos).
+function aplicarResolverDupsRefLocalME(){ return resolverDupsRefLocalME(true); }
 
 /** Backfill principal. opts: {dryRun, soloTabla} */
 function migrarME(opts){
