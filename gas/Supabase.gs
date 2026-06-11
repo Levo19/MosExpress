@@ -125,7 +125,9 @@ function _sbOnce_(method, schemaTable, opts) {
 /** Wrapper con reintento/backoff para 5xx y 429. */
 function _sb(method, schemaTable, opts) {
   var last = null;
-  for (var i = 0; i < _SB_MAX_RETRY; i++) {
+  // opts.maxRetry permite forzar 1 solo intento (hot path: dual-write de venta — no colgar al cajero).
+  var maxR = (opts && opts.maxRetry > 0) ? opts.maxRetry : _SB_MAX_RETRY;
+  for (var i = 0; i < maxR; i++) {
     try {
       var r = _sbOnce_(method, schemaTable, opts);
       if (r.ok || !r.retryable) return r;
@@ -133,7 +135,7 @@ function _sb(method, schemaTable, opts) {
     } catch (e) {
       last = { ok: false, code: 0, retryable: true, error: String(e && e.message || e) };
     }
-    if (i < _SB_MAX_RETRY - 1) {
+    if (i < maxR - 1) {
       var wait = (last && last.retryAfter ? last.retryAfter * 1000 : 0) || _SB_BACKOFF_MS[i];
       Utilities.sleep(Math.min(wait, 30000));
     }

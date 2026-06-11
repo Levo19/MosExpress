@@ -177,7 +177,9 @@ function _dualWriteVentaME(o){
   var row=_meRow(o, cfg.spec);
   if(cfg.post) row=cfg.post(row, o);
   if(row.id_venta==null || row.id_venta===''){ Logger.log('[dualWrite venta] sin id_venta — omitido'); return {ok:false, error:'sin id_venta'}; }
-  var r=_sbUpsert('me.ventas', [row], cfg.onConflict);  // onConflict = 'id_venta'
+  // 1 SOLO intento (maxRetry:1, sin backoff): es el hot path de la venta → no colgar al cajero
+  // si Supabase está degradado. Si falla, el sync batch (≤15min) reconcilia. Idempotente por id_venta.
+  var r=_sb('POST', 'me.ventas', { data:[row], upsert:true, onConflict:cfg.onConflict, maxRetry:1 });
   if(!r.ok) Logger.log('[dualWrite venta] '+row.id_venta+' upsert falló: HTTP '+(r.code)+' '+(r.error||''));
   return r;
 }

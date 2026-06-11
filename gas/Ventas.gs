@@ -286,11 +286,12 @@ function procesarVenta(data) {
   // (Sheets es la fuente de verdad); el batch reconcilia luego. Mapeo IDÉNTICO al batch.
   try {
     _dualWriteVentaME({
-      ID_Venta: idVenta, Fecha: fechaActual, Vendedor: auth.vendedor, Estacion: auth.estacion,
-      Cliente_Doc: (header.cliente && header.cliente.doc) || '',
+      // .trim() en los IDs/doc para igualar al batch (obtenerDatosHojaComoJSON recorta COLUMNAS_TEXTO)
+      ID_Venta: String(idVenta || '').trim(), Fecha: fechaActual, Vendedor: auth.vendedor, Estacion: auth.estacion,
+      Cliente_Doc: String((header.cliente && header.cliente.doc) || '').trim(),
       Cliente_Nombre: (header.cliente && header.cliente.nombre) || '',
       Total: header.total, Tipo_Doc: header.tipoDoc, FormaPago: header.metodo || 'EFECTIVO',
-      Correlativo: correlativoFinal, ID_Caja: pos.cajaId, ID_Dispositivo: auth.deviceId,
+      Correlativo: correlativoFinal, ID_Caja: String(pos.cajaId || '').trim(), ID_Dispositivo: String(auth.deviceId || '').trim(),
       Estado_Envio: 'COMPLETADO', Ref_Local: refLocal, Obs: String(header.obs || ''),
       Tipo_Doc_Cliente: tipoDocCliente, NF_Estado: '', NF_Hash: '', NF_Enlace: ''
     });
