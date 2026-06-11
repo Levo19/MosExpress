@@ -447,7 +447,8 @@ function _registrarJornadaEnMOS(nombreVendedor) {
   // SpreadsheetApp.openById(MOS) — que es caro — en TODAS las ventas siguientes. TTL 6h; al
   // expirar re-chequea (idempotente, 1 openById extra). Cache compartido entre ejecuciones →
   // vale para todos los dispositivos del mismo vendedor.
-  var ckKey = 'JORMOS_' + fecha + '_' + String(nombreVendedor).toLowerCase().trim();
+  var _nv   = String(nombreVendedor).toLowerCase().trim();   // normalizado: se reusa en key Y scan (consistente con MOS)
+  var ckKey = 'JORMOS_' + fecha + '_' + _nv;
   var cache = null;
   try { cache = CacheService.getScriptCache(); if (cache && cache.get(ckKey)) return; } catch(_) {}
 
@@ -463,7 +464,7 @@ function _registrarJornadaEnMOS(nombreVendedor) {
     var fechaFila = data[i][1] instanceof Date
       ? Utilities.formatDate(data[i][1], tz, 'yyyy-MM-dd')
       : String(data[i][1] || '').substring(0, 10);
-    if (String(data[i][3]).toLowerCase() === nombreVendedor.toLowerCase() && fechaFila === fecha) {
+    if (String(data[i][3]).toLowerCase().trim() === _nv && fechaFila === fecha) {
       try { if (cache) cache.put(ckKey, '1', 21600); } catch(_) {}   // ya existe → cachear y salir
       return;
     }
