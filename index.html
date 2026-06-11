@@ -14575,7 +14575,11 @@
            if(pago.value.tipoDoc === 'BOLETA') serieElegida = _est.Serie_Boleta || 'B001';
            if(pago.value.tipoDoc === 'FACTURA') serieElegida = _est.Serie_Factura || 'F001';
 
-           const localId = Date.now();
+           // [fix C8] localId UUID (no Date.now): dos ventas en el mismo ms (doble-tap) ya no colisionan
+           // en la misma clave de dedup → el backend ya no descarta la 2da venta como "duplicado" (faltante de caja).
+           // Se genera UNA vez por venta y viaja en raw_data → los reintentos reusan la misma (idempotencia intacta).
+           const localId = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
+           const localTs = Date.now();   // timestamp numérico para display (localId ya no es fecha)
            let correlativoLocal = serieElegida + "-LOCAL";
 
            // Capturar todo antes de limpiar el carrito
@@ -14709,7 +14713,7 @@
            }
 
            // 1. Guardar en historial local inmediatamente (para mostrar en UI)
-           const ht = { id: localId, tipo: tipoDocVenta, correlativo: correlativoLocal, total: totalVenta, timestamp: localId, cliente_doc: docClienteVenta || '-', cliente_nombre: nombreClienteVenta || 'Genérico', items_count: itemsParaImprimir.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
+           const ht = { id: localId, tipo: tipoDocVenta, correlativo: correlativoLocal, total: totalVenta, timestamp: localTs, cliente_doc: docClienteVenta || '-', cliente_nombre: nombreClienteVenta || 'Genérico', items_count: itemsParaImprimir.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
            ventasHoy.value.unshift(ht);
            lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
 

@@ -179,17 +179,25 @@ function procesarVenta(data) {
   // mandaba un 2do print job a PrintNode → 2 tickets físicos.
   var refLocal = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
   if (refLocal) {
-    var totalFilas  = sheetCabecera.getLastRow();
-    var buscarDesde = Math.max(2, totalFilas - 199);
-    var filasBuscar = sheetCabecera.getRange(buscarDesde, 1, totalFilas - buscarDesde + 1, 16).getValues();
-    for (var fi = filasBuscar.length - 1; fi >= 0; fi--) {
-      if (String(filasBuscar[fi][13]) === refLocal) {
-        return {
-          idVenta:         String(filasBuscar[fi][0]),
-          correlativo:     String(filasBuscar[fi][9]),
-          printDispatched: false,
-          dedupVenta:      true   // ← frontend ve este flag y NO reimprime
-        };
+    // [fix C9] Buscar en TODAS las filas por Ref_Local (col 14), no solo en las últimas 200.
+    // Antes: ventana de 200 → tras un vaciado masivo de cola offline (>200 ventas), un reintento
+    // de una venta ya persistida NO la encontraba → se reprocesaba = venta DUPLICADA + correlativo SUNAT nuevo.
+    // Optimización: leer SOLO la columna Ref_Local (1 col × N filas = liviano, 1 sola lectura);
+    // la fila completa se lee únicamente si hay match.
+    var totalFilas = sheetCabecera.getLastRow();
+    if (totalFilas >= 2) {
+      var refCol = sheetCabecera.getRange(2, 14, totalFilas - 1, 1).getValues();
+      for (var fi = refCol.length - 1; fi >= 0; fi--) {
+        if (String(refCol[fi][0]) === refLocal) {
+          var rowNum  = fi + 2;
+          var rowData = sheetCabecera.getRange(rowNum, 1, 1, 16).getValues()[0];
+          return {
+            idVenta:         String(rowData[0]),
+            correlativo:     String(rowData[9]),
+            printDispatched: false,
+            dedupVenta:      true   // ← frontend ve este flag y NO reimprime
+          };
+        }
       }
     }
   }

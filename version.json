@@ -1,1 +1,1 @@
-{ "version": "2.7.82", "build": "20260605-bump-AdhesivoPreview-v1.1.0-membretes" }
+{ "version": "2.7.83", "build": "20260610-fix-C8-localId-uuid-dedup-fullscan" }
