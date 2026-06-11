@@ -184,6 +184,55 @@ function _dualWriteVentaME(o){
   return r;
 }
 
+// [ventas-directo / dual-write detalle] Espeja las líneas de UNA venta a me.ventas_detalle en tiempo real.
+// Reusa _meRow + _ME_SPECS.ventas_detalle; linea = orden de items (idéntico a como el sheet las escribe →
+// el batch asigna la misma linea por orden de hoja). Upsert por (id_venta,linea) = idempotente. 1 intento,
+// best-effort (el caller envuelve en try/catch; nunca rompe la venta). Replica el cálculo de valor_unitario
+// del sheet (Ventas.gs). Solo cabecera+detalle en tiempo real; el resto sigue por sync batch.
+function _dualWriteDetalleME(idVenta, items){
+  if(!items || !items.length) return {ok:true, vacio:true};
+  var cfg=_ME_SPECS.ventas_detalle;
+  var idv=String(idVenta||'').trim();
+  if(!idv) return {ok:false, error:'sin id_venta'};
+  var rows=items.map(function(item, idx){
+    var vu = parseFloat(item.valor_unitario) || Math.round(parseFloat(item.precio||0)/1.18*100)/100;
+    var o = {
+      ID_Venta: idv, SKU: String(item.sku||'').trim(), Nombre: item.nombre,
+      Cantidad: item.cantidad, Precio: item.precio, Subtotal: item.subtotal,
+      Cod_Barras: String(item.codBarras||'').trim(),
+      Valor_Unitario: Math.round(vu*100)/100, Tipo_IGV: parseInt(item.tipo_igv||1,10),
+      Unidad_Medida: String(item.unidad_de_medida||'NIU')
+    };
+    var r=_meRow(o, cfg.spec); r.linea = idx+1; return r;
+  });
+  var res=_sb('POST','me.ventas_detalle',{ data:rows, upsert:true, onConflict:cfg.onConflict, maxRetry:1 });
+  if(!res.ok) Logger.log('[dualWrite detalle] '+idv+' x'+rows.length+' falló: HTTP '+(res.code)+' '+(res.error||''));
+  return res;
+}
+
+// [Fase B] Resuelve Ref_Local DUPLICADOS en VENTAS_CABECERA (ventas dobles pre-C9). Conserva el Ref_Local
+// de la PRIMERA fila de cada grupo y BLANQUEA el de las siguientes → preserva la fila/venta y su correlativo,
+// solo libera la clave para poder crear el índice único parcial en me.ventas.ref_local. dryRun por defecto;
+// `resolverDupsRefLocalME(true)` aplica. Devuelve los cambios (id_venta+ref_local) para trazabilidad.
+function resolverDupsRefLocalME(aplicar){
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  var sh=ss.getSheetByName('VENTAS_CABECERA');
+  if(!sh) return {ok:false, error:'sin hoja VENTAS_CABECERA'};
+  var d=sh.getDataRange().getValues(), head=d[0];
+  var iRL=head.indexOf('Ref_Local'), iID=head.indexOf('ID_Venta'), iCorr=head.indexOf('Correlativo');
+  if(iRL<0) return {ok:false, error:'sin columna Ref_Local'};
+  var visto={}, cambios=[];
+  for(var r=1;r<d.length;r++){
+    var rl=String(d[r][iRL]||'').trim();
+    if(!rl) continue;
+    if(visto[rl]) cambios.push({fila:r+1, id_venta:String(d[r][iID]||''), correlativo:(iCorr>=0?String(d[r][iCorr]||''):''), ref_local:rl});
+    else visto[rl]=true;
+  }
+  if(aplicar){ cambios.forEach(function(c){ sh.getRange(c.fila, iRL+1).setValue(''); }); SpreadsheetApp.flush(); }
+  Logger.log((aplicar?'✅ APLICADO':'🔎 DRY-RUN (corré resolverDupsRefLocalME(true) para aplicar)')+' — dups Ref_Local en hoja: '+cambios.length+'\n'+JSON.stringify(cambios,null,2));
+  return {ok:true, aplicado:!!aplicar, dups:cambios.length, cambios:cambios};
+}
+
 /** Backfill principal. opts: {dryRun, soloTabla} */
 function migrarME(opts){
   opts=opts||{};

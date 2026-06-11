@@ -279,24 +279,6 @@ function procesarVenta(data) {
     rangeDetalle.setValues(detalleRows);
   }
 
-  // ── [ventas-directo] Dual-write a Supabase en tiempo real (best-effort) ──────
-  // Espeja la cabecera a me.ventas EN EL ACTO → no espera el sync batch (15min, que puede
-  // morir si Google suelta el trigger). Solo corre para ventas NUEVAS (el dedup C9 corta los
-  // reintentos antes de llegar acá). Idempotente por id_venta. Si falla/lenta NO rompe la venta
-  // (Sheets es la fuente de verdad); el batch reconcilia luego. Mapeo IDÉNTICO al batch.
-  try {
-    _dualWriteVentaME({
-      // .trim() en los IDs/doc para igualar al batch (obtenerDatosHojaComoJSON recorta COLUMNAS_TEXTO)
-      ID_Venta: String(idVenta || '').trim(), Fecha: fechaActual, Vendedor: auth.vendedor, Estacion: auth.estacion,
-      Cliente_Doc: String((header.cliente && header.cliente.doc) || '').trim(),
-      Cliente_Nombre: (header.cliente && header.cliente.nombre) || '',
-      Total: header.total, Tipo_Doc: header.tipoDoc, FormaPago: header.metodo || 'EFECTIVO',
-      Correlativo: correlativoFinal, ID_Caja: String(pos.cajaId || '').trim(), ID_Dispositivo: String(auth.deviceId || '').trim(),
-      Estado_Envio: 'COMPLETADO', Ref_Local: refLocal, Obs: String(header.obs || ''),
-      Tipo_Doc_Cliente: tipoDocCliente, NF_Estado: '', NF_Hash: '', NF_Enlace: ''
-    });
-  } catch (e) { Logger.log('[dualWrite venta] ' + (e && e.message)); }
-
   // ── Registrar cliente frecuente ──────────────────────────────────────────
   // [v40] Guardar SIEMPRE que haya doc válido y no sea VARIOS (66666). Antes
   // sólo guardaba en BOLETA/FACTURA → las NV con DNI/RUC real perdían el
@@ -372,6 +354,27 @@ function procesarVenta(data) {
   if (pos.print_request === true && pos.printerId) {
     printDispatched = imprimirTicketInternamente(data, correlativoFinal, pos.printerId, nfResult);
   }
+
+  // ── [ventas-directo] Dual-write a Supabase — DESPUÉS de despachar el print ───
+  // Va acá A PROPÓSITO: el ticket sale PRIMERO (no espera a Supabase); el espejo a me.ventas
+  // corre después (best-effort, 1 intento). Cabecera + detalle en tiempo real, sin demorar el
+  // ticket ni romper la venta (Sheets=verdad; el batch reconcilia si falla). Solo ventas nuevas
+  // (dedup C9 corta reintentos antes). NF reales para CPE (la hoja ya los tiene en cols 17-19) /
+  // vacíos para NV (igual que la hoja) → el batch no los revierte. Mapeo idéntico al batch.
+  try {
+    var _isCPE = (header.tipoDoc === 'BOLETA' || header.tipoDoc === 'FACTURA');
+    _dualWriteVentaME({
+      ID_Venta: String(idVenta || '').trim(), Fecha: fechaActual, Vendedor: auth.vendedor, Estacion: auth.estacion,
+      Cliente_Doc: String((header.cliente && header.cliente.doc) || '').trim(),
+      Cliente_Nombre: (header.cliente && header.cliente.nombre) || '',
+      Total: header.total, Tipo_Doc: header.tipoDoc, FormaPago: header.metodo || 'EFECTIVO',
+      Correlativo: correlativoFinal, ID_Caja: String(pos.cajaId || '').trim(), ID_Dispositivo: String(auth.deviceId || '').trim(),
+      Estado_Envio: 'COMPLETADO', Ref_Local: refLocal, Obs: String(header.obs || ''),
+      Tipo_Doc_Cliente: tipoDocCliente,
+      NF_Estado: _isCPE ? nfEstado : '', NF_Hash: _isCPE ? nfHash : '', NF_Enlace: _isCPE ? nfEnlace : ''
+    });
+    _dualWriteDetalleME(idVenta, items);
+  } catch (e) { Logger.log('[dualWrite] ' + (e && e.message)); }
 
   // ── Log de auditoría: creación de venta ────────────────────────────────────
   try {
