@@ -219,7 +219,12 @@ function procesarVenta(data) {
       correlativoNumero = consumido.numero;
     }
   } else {
-    correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
+    var _tdU = String(header.tipoDoc || '').toUpperCase();
+    // [fix #5] no mintear CPE (boleta/factura) sin clave de idempotencia cuando el minter es Supabase
+    if (_fuenteCorrelativo() === 'supabase' && (_tdU === 'BOLETA' || _tdU === 'FACTURA') && !refLocal) {
+      return generarRespuestaError('CPE sin clave de idempotencia (localId) — reintentá');
+    }
+    correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual, refLocal);  // [fix #1] CPE idempotente (refLocal=localId)
   }
   correlativoFinal = pos.serieActual + "-" + ("000000" + correlativoNumero).slice(-6);
 
@@ -785,15 +790,48 @@ function _fuenteCorrelativo(){
   try{ return String(PropertiesService.getScriptProperties().getProperty('CORRELATIVO_SOURCE')||'sheets').toLowerCase()==='supabase' ? 'supabase' : 'sheets'; }
   catch(e){ return 'sheets'; }
 }
-function activarCorrelativoSupabase(){ PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','supabase'); Logger.log('✅ CORRELATIVO_SOURCE = supabase'); return {ok:true, fuente:'supabase'}; }
+// [fix #2/#3/#4] FLIP GUARDADO: re-siembra (incl. series vivas en VENTAS sin fila en CORRELATIVOS),
+// valida me.correlativos >= target por serie, y SOLO ahí flipea. Aborta si alguna está atrás
+// (evita reemitir un número ya usado = duplicado SUNAT). seed+validate+flip en una sola corrida.
+function activarCorrelativoSupabase(){
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  var targets=_correlativoTargets(ss);
+  if(!Object.keys(targets).length) return {ok:false, error:'no se hallaron series para sembrar', abortado:true};
+  var seed=sembrarCorrelativosSupabase();
+  if(!seed.ok) return {ok:false, error:'seed falló: '+(seed.error||''), abortado:true};
+  var r=_sbSelect('me.correlativos', {}); var sbMap={};
+  if(r.ok && Array.isArray(r.data)) r.data.forEach(function(row){ sbMap[String(row.serie)]=parseInt(row.siguiente,10); });
+  var faltan=[];
+  Object.keys(targets).forEach(function(s){ if(!(sbMap[s]>=targets[s])) faltan.push({serie:s, target:targets[s], supabase:(sbMap[s]==null?null:sbMap[s])}); });
+  if(faltan.length){ Logger.log('❌ FLIP ABORTADO — series atrás: '+JSON.stringify(faltan)); return {ok:false, error:'FLIP ABORTADO: me.correlativos atrás de la hoja/ventas', faltan:faltan}; }
+  PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','supabase');
+  Logger.log('✅ CORRELATIVO_SOURCE = supabase ('+Object.keys(targets).length+' series sembradas+validadas)');
+  return {ok:true, fuente:'supabase', series:targets};
+}
 function desactivarCorrelativoSupabase(){ PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','sheets'); Logger.log('↩️ CORRELATIVO_SOURCE = sheets (rollback)'); return {ok:true, fuente:'sheets'}; }
 function estadoCorrelativo(){ var s=_fuenteCorrelativo(); Logger.log('CORRELATIVO_SOURCE='+s); return {fuente:s}; }
-// Siembra me.correlativos = valor EXACTO de la hoja CORRELATIVOS. Correr JUSTO antes del cutover.
+// target por serie = max(CORRELATIVOS.Siguiente, max(numero en VENTAS_CABECERA)+1). Cubre series sin fila en CORRELATIVOS (#3). Ignora -LOCAL y 'undefined-'.
+function _correlativoTargets(ss){
+  var targets={};
+  var sheet=ss.getSheetByName('CORRELATIVOS');
+  if(sheet){ var d=sheet.getDataRange().getValues();
+    for(var i=1;i<d.length;i++){ var s=String(d[i][0]||'').trim(), n=parseInt(d[i][1],10); if(s && n>0) targets[s]=Math.max(targets[s]||0, n); } }
+  var vc=ss.getSheetByName('VENTAS_CABECERA');
+  if(vc){ var tot=vc.getLastRow();
+    if(tot>=2){ var corr=vc.getRange(2,10,tot-1,1).getValues();  // col 10 = Correlativo (SERIE-NNNNNN)
+      for(var j=0;j<corr.length;j++){ var m=String(corr[j][0]||'').match(/^(.+)-(\d+)$/);
+        if(m){ var ser=String(m[1]).trim(); if(ser && ser.toLowerCase()!=='undefined'){ var num=parseInt(m[2],10)+1; if(num>0) targets[ser]=Math.max(targets[ser]||0, num); } } } } }
+  return targets;
+}
+// Siembra me.correlativos = max(target, valor actual en Supabase) por serie → NUNCA retrocede (anti-duplicado en re-cutover). Correr en el flip.
 function sembrarCorrelativosSupabase(){
-  var ss=SpreadsheetApp.getActiveSpreadsheet(), sheet=ss.getSheetByName('CORRELATIVOS');
-  if(!sheet) return {ok:false, error:'CORRELATIVOS no existe'};
-  var data=sheet.getDataRange().getValues(), filas=[];
-  for(var i=1;i<data.length;i++){ var s=String(data[i][0]||'').trim(), n=parseInt(data[i][1],10); if(s && n>0) filas.push({serie:s, siguiente:n}); }
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  var targets=_correlativoTargets(ss);
+  if(!Object.keys(targets).length) return {ok:false, error:'sin series'};
+  var cur=_sbSelect('me.correlativos', {}), curMap={};
+  if(cur.ok && Array.isArray(cur.data)) cur.data.forEach(function(row){ curMap[String(row.serie)]=parseInt(row.siguiente,10)||0; });
+  var filas=[];
+  Object.keys(targets).forEach(function(s){ filas.push({serie:s, siguiente:Math.max(targets[s], curMap[s]||0)}); });
   var r=_sbUpsert('me.correlativos', filas, 'serie');
   Logger.log('[sembrar correlativos] '+JSON.stringify({filas:filas, ok:r.ok, error:r.error}));
   return {ok:r.ok, sembradas:filas, error:r.error};
