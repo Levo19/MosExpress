@@ -344,6 +344,9 @@ function _syncMEImpl(full){
   var resumen={};
   Object.keys(_ME_SPECS).forEach(function(tabla){
     var cfg=_ME_SPECS[tabla];
+    // [correlativo Supabase] si Postgres es el minter, NO re-sincronizar el contador desde Sheets
+    // (lo revertiría a un valor viejo → duplicado/hueco SUNAT). El espejo Sheets lo mantiene el write-back.
+    if(tabla==='correlativos' && _fuenteCorrelativo()==='supabase'){ resumen[tabla]={skipped:'minter=supabase'}; return; }
     if(cfg.insertOnly){
       // append-only (auditoría de rechazos): la hoja SOLO crece → sincronizar la cola nueva.
       // sb_n = filas ya en Supabase actúa de checkpoint natural; insertar rows.slice(sb_n) es

@@ -214,7 +214,7 @@ function procesarVenta(data) {
     if (!consumido.ok) {
       // Reserva inválida — fallback al método atómico
       Logger.log('[Venta] Reserva inválida (' + consumido.error + ') — cayendo a método atómico');
-      correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual);
+      correlativoNumero = obtenerSiguienteCorrelativoRapido(ss, pos.serieActual, refLocal);  // refLocal=localId → idempotente
     } else {
       correlativoNumero = consumido.numero;
     }
@@ -776,7 +776,46 @@ function tributarioReintentarCPE(idVenta) {
   return generarRespuestaError('Venta ' + idVenta + ' no encontrada');
 }
 
-function obtenerSiguienteCorrelativoRapido(ss, serie) {
+// ── [Correlativo Supabase] minter atómico + idempotente, flag-gated (cutover deliberado) ──
+// CORRELATIVO_SOURCE (Script Property, default 'sheets'). Cuando ='supabase', mintea con
+// me.siguiente_correlativo (UPDATE..RETURNING, lock de fila → multi-cajero safe; idem_key=localId
+// → idempotente ante reintentos, sin huecos). SIN fallback a Sheets (evita divergencia/duplicado SUNAT):
+// si Supabase falla, lanza excepción → el frontend reintenta/encola (igual que offline).
+function _fuenteCorrelativo(){
+  try{ return String(PropertiesService.getScriptProperties().getProperty('CORRELATIVO_SOURCE')||'sheets').toLowerCase()==='supabase' ? 'supabase' : 'sheets'; }
+  catch(e){ return 'sheets'; }
+}
+function activarCorrelativoSupabase(){ PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','supabase'); Logger.log('✅ CORRELATIVO_SOURCE = supabase'); return {ok:true, fuente:'supabase'}; }
+function desactivarCorrelativoSupabase(){ PropertiesService.getScriptProperties().setProperty('CORRELATIVO_SOURCE','sheets'); Logger.log('↩️ CORRELATIVO_SOURCE = sheets (rollback)'); return {ok:true, fuente:'sheets'}; }
+function estadoCorrelativo(){ var s=_fuenteCorrelativo(); Logger.log('CORRELATIVO_SOURCE='+s); return {fuente:s}; }
+// Siembra me.correlativos = valor EXACTO de la hoja CORRELATIVOS. Correr JUSTO antes del cutover.
+function sembrarCorrelativosSupabase(){
+  var ss=SpreadsheetApp.getActiveSpreadsheet(), sheet=ss.getSheetByName('CORRELATIVOS');
+  if(!sheet) return {ok:false, error:'CORRELATIVOS no existe'};
+  var data=sheet.getDataRange().getValues(), filas=[];
+  for(var i=1;i<data.length;i++){ var s=String(data[i][0]||'').trim(), n=parseInt(data[i][1],10); if(s && n>0) filas.push({serie:s, siguiente:n}); }
+  var r=_sbUpsert('me.correlativos', filas, 'serie');
+  Logger.log('[sembrar correlativos] '+JSON.stringify({filas:filas, ok:r.ok, error:r.error}));
+  return {ok:r.ok, sembradas:filas, error:r.error};
+}
+// Mint atómico desde Postgres + write-back best-effort al espejo Sheets (fuera de lock, sin scan).
+function _correlativoSupabase(ss, serie, idemKey){
+  var r=_sbRpc('me','siguiente_correlativo',{ p_serie:String(serie), p_idem_key:(idemKey?String(idemKey):null) });
+  var numero = (r && r.ok && r.data!=null) ? parseInt(r.data,10) : NaN;
+  if(!(numero>0)) throw new Error('CORRELATIVO_SB_FALLO: HTTP '+(r&&r.code)+' '+((r&&r.error)||''));
+  try{  // espejo Sheets: NUNCA retrocede; preserva info + path de rollback
+    var sheet=ss.getSheetByName('CORRELATIVOS');
+    if(sheet){
+      var d=sheet.getDataRange().getValues(), found=false;
+      for(var i=1;i<d.length;i++){ if(String(d[i][0])===String(serie)){ if((parseInt(d[i][1],10)||0) < numero+1) sheet.getRange(i+1,2).setValue(numero+1); found=true; break; } }
+      if(!found) sheet.appendRow([String(serie), numero+1]);
+    }
+  }catch(eW){ Logger.log('[correlativo] write-back Sheets falló: '+eW); }
+  return numero;
+}
+
+function obtenerSiguienteCorrelativoRapido(ss, serie, idemKey) {
+  if (_fuenteCorrelativo() === 'supabase') return _correlativoSupabase(ss, serie, idemKey);
   var sheet = ss.getSheetByName('CORRELATIVOS');
   if (!sheet) {
     var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
