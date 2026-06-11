@@ -182,6 +182,16 @@ function procesarAperturaCaja(data) {
   ]);
   SpreadsheetApp.flush(); // garantiza que appendRow llegue a Sheets antes de retornar el ID al frontend
 
+  // [cajas-directo] Espejo a Supabase en tiempo real (best-effort, no rompe la apertura). Upsert por
+  // id_caja → inserta la caja recién abierta; el cierre luego actualiza la misma fila. Mapeo = batch.
+  try {
+    _dualWriteCajaME({
+      ID_Caja: idCaja, Vendedor: data.vendedor, Estacion: data.estacion, Fecha_Apertura: _ahora,
+      Monto_Inicial: data.montoInicial || 0, Estado: 'ABIERTA', Monto_Final: '', Fecha_cierre: '',
+      Zona_ID: data.zona || '', PrintNode_ID: data.printNodeId || ''
+    });
+  } catch (eDW) { Logger.log('[dualWrite caja apertura] ' + (eDW && eDW.message)); }
+
   // Notificar a admins/master en MOS — solo a ellos, no al cajero mismo
   try {
     var horaStr = Utilities.formatDate(new Date(), _tz, 'HH:mm');
@@ -427,6 +437,16 @@ function _cerrarCajaAtomicoCore(opts) {
     sheetCajas.getRange(filaCaja + 1, 7).setValue(montoFinal);
     sheetCajas.getRange(filaCaja + 1, 8).setValue(fechaCierre);
     SpreadsheetApp.flush();
+
+    // [cajas-directo] Espejo a Supabase en tiempo real (best-effort): upsert por id_caja ACTUALIZA la
+    // fila de la apertura con estado/monto_final/fecha_cierre. Fila completa (mapeo = batch).
+    try {
+      _dualWriteCajaME({
+        ID_Caja: idCaja, Vendedor: cajaVendedor, Estacion: cajaEstacion, Fecha_Apertura: cajaRow[3],
+        Monto_Inicial: montoInicial, Estado: estadoFinal, Monto_Final: montoFinal, Fecha_cierre: fechaCierre,
+        Zona_ID: cajaZona, PrintNode_ID: printNodeId
+      });
+    } catch (eDW) { Logger.log('[dualWrite caja cierre] ' + (eDW && eDW.message)); }
 
     // ── 6. Auditoría ──
     try {

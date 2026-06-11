@@ -210,6 +210,20 @@ function _dualWriteDetalleME(idVenta, items){
   return res;
 }
 
+// [cajas-directo / dual-write] Espeja UNA caja a me.cajas en tiempo real (apertura Y cierre), reusando el
+// mapeo del batch (_meRow + _ME_SPECS.cajas). Upsert por id_caja → la apertura inserta, el cierre actualiza
+// la MISMA fila. 1 intento, best-effort (el caller envuelve en try/catch; Sheets=verdad, el batch reconcilia).
+// `o` = objeto keyed por cabeceras de hoja (ID_Caja, Vendedor, ..., Fecha_cierre, Zona_ID, PrintNode_ID).
+function _dualWriteCajaME(o){
+  var cfg=_ME_SPECS.cajas;
+  var row=_meRow(o, cfg.spec);
+  if(cfg.post) row=cfg.post(row, o);
+  if(row.id_caja==null || row.id_caja===''){ Logger.log('[dualWrite caja] sin id_caja — omitido'); return {ok:false, error:'sin id_caja'}; }
+  var r=_sb('POST','me.cajas',{ data:[row], upsert:true, onConflict:cfg.onConflict, maxRetry:1 });
+  if(!r.ok) Logger.log('[dualWrite caja] '+row.id_caja+' upsert falló: HTTP '+(r.code)+' '+(r.error||''));
+  return r;
+}
+
 // [Fase B] Resuelve Ref_Local DUPLICADOS en VENTAS_CABECERA (ventas dobles pre-C9). Conserva el Ref_Local
 // de la PRIMERA fila de cada grupo y BLANQUEA el de las siguientes → preserva la fila/venta y su correlativo,
 // solo libera la clave para poder crear el índice único parcial en me.ventas.ref_local. dryRun por defecto;
