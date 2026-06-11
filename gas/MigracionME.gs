@@ -238,6 +238,21 @@ function _dualWriteMovExtraME(o){
   return r;
 }
 
+// [ventas-directo / patch] Actualiza campos puntuales de ventas YA existentes en me.ventas en tiempo real
+// (ej. forma_pago='ANULADO' al anular). PATCH parcial (NO upsert → no choca con NOT NULL ni inserta filas
+// incompletas; si la venta aún no está en la sombra es no-op y el batch la sube luego con el valor nuevo).
+// idVenta: string (filtro eq.) o array (in.(...) → 1 sola llamada para anulación masiva). 1 intento, best-effort.
+function _dualWriteVentaPatchME(idVenta, patch){
+  var ids = Array.isArray(idVenta)
+    ? idVenta.map(function(x){ return String(x||'').trim(); }).filter(Boolean)
+    : [String(idVenta||'').trim()].filter(Boolean);
+  if(!ids.length || !patch) return {ok:false, error:'sin id_venta/patch'};
+  var filtro = (ids.length===1) ? ('eq.'+ids[0]) : ('in.('+ids.join(',')+')');
+  var r=_sb('PATCH','me.ventas',{ data:patch, filters:{ id_venta:filtro }, maxRetry:1 });
+  if(!r.ok) Logger.log('[dualWrite venta patch] '+ids.length+' id(s) falló: HTTP '+(r.code)+' '+(r.error||''));
+  return r;
+}
+
 // [Fase B] Resuelve Ref_Local DUPLICADOS en VENTAS_CABECERA (ventas dobles pre-C9). Conserva el Ref_Local
 // de la PRIMERA fila de cada grupo y BLANQUEA el de las siguientes → preserva la fila/venta y su correlativo,
 // solo libera la clave para poder crear el índice único parcial en me.ventas.ref_local. dryRun por defecto;

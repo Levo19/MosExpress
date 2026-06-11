@@ -448,6 +448,10 @@ function _cerrarCajaAtomicoCore(opts) {
       });
     } catch (eDW) { Logger.log('[dualWrite caja cierre] ' + (eDW && eDW.message)); }
 
+    // [anulacion-directo] espejo de las ventas anuladas en el cierre (POR_COBRAR→ANULADO), UNA sola
+    // llamada PATCH in.(...) → finanzas no las cuenta en tiempo real, sin esperar el batch.
+    try { if (idsAnulados.length) _dualWriteVentaPatchME(idsAnulados, { forma_pago: 'ANULADO' }); } catch(eDW2) { Logger.log('[dualWrite anulados cierre] ' + (eDW2 && eDW2.message)); }
+
     // ── 6. Auditoría ──
     try {
       if (typeof auditarLog === 'function') {
@@ -1061,6 +1065,8 @@ function anularVentaIndividual(data) {
     if (String(filas[i][0]) === String(data.ventaId)) {
       var formaAnt = String(filas[i][8] || '');
       sheet.getRange(i + 1, 9).setValue('ANULADO');
+      // [anulacion-directo] espejo a Supabase en tiempo real (PATCH parcial, best-effort)
+      try { _dualWriteVentaPatchME(data.ventaId, { forma_pago: 'ANULADO' }); } catch(_dw){}
 
       try {
         var actor = _audExtraerActor(data);
@@ -1106,6 +1112,8 @@ function anulacionMasiva(data) {
       try { auditarLog('VENTAS_CABECERA', String(filas[i][0]), { source:'ME_ANULACION_MASIVA', accion:'anular_masivo', cambios:[{campo:'FormaPago', antes:_antesFP, despues:'ANULADO'}] }); } catch(_e){}
     }
   }
+  // [anulacion-directo] espejo a Supabase en tiempo real, UNA sola llamada para todas (PATCH in.(...))
+  try { if (idsAnulados.length) _dualWriteVentaPatchME(idsAnulados, { forma_pago: 'ANULADO' }); } catch(_dw){}
   // Notificar WH para descontar de pickups origen (no bloquea)
   try { idsAnulados.forEach(function(id){ notificarAnulacionPickupAWH(id); }); } catch(_){}
   return ContentService.createTextOutput(JSON.stringify({
