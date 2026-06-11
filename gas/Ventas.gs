@@ -279,6 +279,23 @@ function procesarVenta(data) {
     rangeDetalle.setValues(detalleRows);
   }
 
+  // ── [ventas-directo] Dual-write a Supabase en tiempo real (best-effort) ──────
+  // Espeja la cabecera a me.ventas EN EL ACTO → no espera el sync batch (15min, que puede
+  // morir si Google suelta el trigger). Solo corre para ventas NUEVAS (el dedup C9 corta los
+  // reintentos antes de llegar acá). Idempotente por id_venta. Si falla/lenta NO rompe la venta
+  // (Sheets es la fuente de verdad); el batch reconcilia luego. Mapeo IDÉNTICO al batch.
+  try {
+    _dualWriteVentaME({
+      ID_Venta: idVenta, Fecha: fechaActual, Vendedor: auth.vendedor, Estacion: auth.estacion,
+      Cliente_Doc: (header.cliente && header.cliente.doc) || '',
+      Cliente_Nombre: (header.cliente && header.cliente.nombre) || '',
+      Total: header.total, Tipo_Doc: header.tipoDoc, FormaPago: header.metodo || 'EFECTIVO',
+      Correlativo: correlativoFinal, ID_Caja: pos.cajaId, ID_Dispositivo: auth.deviceId,
+      Estado_Envio: 'COMPLETADO', Ref_Local: refLocal, Obs: String(header.obs || ''),
+      Tipo_Doc_Cliente: tipoDocCliente, NF_Estado: '', NF_Hash: '', NF_Enlace: ''
+    });
+  } catch (e) { Logger.log('[dualWrite venta] ' + (e && e.message)); }
+
   // ── Registrar cliente frecuente ──────────────────────────────────────────
   // [v40] Guardar SIEMPRE que haya doc válido y no sea VARIOS (66666). Antes
   // sólo guardaba en BOLETA/FACTURA → las NV con DNI/RUC real perdían el

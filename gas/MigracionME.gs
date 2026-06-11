@@ -166,6 +166,22 @@ function _meBuildRows(tabla){
   return rows;
 }
 
+// [ventas-directo / dual-write] Espeja UNA cabecera de venta a me.ventas EN TIEMPO REAL,
+// reusando el MISMO mapeo del batch (_meRow + _ME_SPECS.ventas) → fila byte-idéntica a la que
+// produciría el sync. Upsert por id_venta (PK) = idempotente (si el batch ya la subió, actualiza).
+// `o` = objeto keyed por cabeceras de hoja (ID_Venta, Fecha, Vendedor, ...). Best-effort: el caller
+// lo envuelve en try/catch; NUNCA debe romper la venta (Sheets sigue siendo la fuente de verdad).
+// Solo cabecera (Fase A): el detalle sigue por sync batch (≤15min, tolerado para COGS).
+function _dualWriteVentaME(o){
+  var cfg=_ME_SPECS.ventas;
+  var row=_meRow(o, cfg.spec);
+  if(cfg.post) row=cfg.post(row, o);
+  if(row.id_venta==null || row.id_venta===''){ Logger.log('[dualWrite venta] sin id_venta — omitido'); return {ok:false, error:'sin id_venta'}; }
+  var r=_sbUpsert('me.ventas', [row], cfg.onConflict);  // onConflict = 'id_venta'
+  if(!r.ok) Logger.log('[dualWrite venta] '+row.id_venta+' upsert falló: HTTP '+(r.code)+' '+(r.error||''));
+  return r;
+}
+
 /** Backfill principal. opts: {dryRun, soloTabla} */
 function migrarME(opts){
   opts=opts||{};
