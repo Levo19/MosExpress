@@ -24,7 +24,7 @@ function doGet(e) {
   try {
     if (accion === 'descargar')             return descargarCatalogo();
     if (accion === 'verificar_dispositivo') return verificarDispositivo(e.parameter.id);
-    if (accion === 'ventas_hoy_zona')       return ventasHoyZona(e.parameter.prefijos, e.parameter.desde);
+    if (accion === 'ventas_hoy_zona')       return ventasHoyZonaFlip(e.parameter.prefijos, e.parameter.desde);  // [Fase 1.D] flag FUENTE_DATOS (default sheets)
     if (accion === 'detalle_venta')         return detalleVenta(e.parameter.id_venta);
     if (accion === 'stock_zonas')           return getStockZonas();
     if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
@@ -58,11 +58,11 @@ function doGet(e) {
     if (accion === 'test_apisperu_doc')     return testApiSperuDoc(e.parameter.doc);
     if (accion === 'extras_caja')           return getExtrasCaja(e.parameter.cajaId);
     // [v40.3] Sistema de cobro asignado de créditos (MOS ↔ ME)
-    if (accion === 'creditos_pendientes')      return getCreditosPendientes(e.parameter.diasAtras);
+    if (accion === 'creditos_pendientes')      return getCreditosPendientesFlip(e.parameter.diasAtras);  // [Fase 1.D] flag FUENTE_DATOS (default sheets)
     if (accion === 'cobros_asignados_cajero')  return getCobrosAsignadosCajero(e.parameter.cajaId);
     // [v2.5.28] Panel "Cobros en vuelo" para MOS Admin
-    if (accion === 'cobros_en_vuelo_admin')    return getCobrosEnVueloAdmin();
-    if (accion === 'estado_cajas')          return estadoCajas();
+    if (accion === 'cobros_en_vuelo_admin')    return getCobrosEnVueloAdminFlip();  // [Fase 1.D] flag FUENTE_DATOS (default sheets)
+    if (accion === 'estado_cajas')          return estadoCajasFlip();              // [Fase 1.D] flag FUENTE_DATOS (default sheets)
     if (accion === 'historial_venta')       return getHistorialEndpoint('VENTAS_CABECERA', e.parameter.idVenta);
     if (accion === 'historial_extra')       return getHistorialEndpoint('MOVIMIENTOS_EXTRA', e.parameter.idExtra);
     if (accion === 'historial_cliente')     return getHistorialEndpoint('CLIENTES_FRECUENTES', e.parameter.doc);

@@ -42,7 +42,7 @@ function _sbQuery_(opts) {
   opts = opts || {};
   var parts = [];
   if (opts.select) parts.push('select=' + encodeURIComponent(opts.select));
-  if (opts.order)  parts.push('order=' + encodeURIComponent(opts.order));
+  if (opts.order)  parts.push('order=' + String(opts.order).split(',').map(function(c){ return encodeURIComponent(c.trim()); }).join(','));  // coma literal entre columnas (PostgREST no decodifica %2C en order)
   if (opts.limit != null)  parts.push('limit=' + encodeURIComponent(opts.limit));
   if (opts.offset != null) parts.push('offset=' + encodeURIComponent(opts.offset));
   if (opts.onConflict) parts.push('on_conflict=' + String(opts.onConflict).split(',').map(function(c){ return encodeURIComponent(c.trim()); }).join(','));  // coma literal entre columnas

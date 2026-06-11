@@ -109,6 +109,22 @@ function procesarVenta(data) {
     var zonaV = String(auth.zona || pos.zona || '').trim();
     var cajaIdEnviada = String(pos.cajaId || '').trim();
     var cajaValida = false;
+    // [FIX v2.7.5 vendedor-sin-zona] Si el front NO mandó zona pero SÍ una caja que
+    // está ABIERTA, derivar la zona de esa caja. El vendedor está usando una caja
+    // abierta real; sin esto, zonaV vacío saltaba TODA la validación de abajo y
+    // rechazaba la venta como fantasma (ticket impreso, sin fila en VENTAS_CABECERA).
+    // NO debilita la protección: sigue exigiendo una caja ABIERTA real.
+    if (!zonaV && cajaIdEnviada) {
+      try {
+        var fcvZ = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CAJAS').getDataRange().getValues();
+        for (var z = 1; z < fcvZ.length; z++) {
+          if (String(fcvZ[z][0]) === cajaIdEnviada && String(fcvZ[z][5] || '').toUpperCase() === 'ABIERTA') {
+            zonaV = String(fcvZ[z][8] || '').trim();
+            break;
+          }
+        }
+      } catch (eDeriv) { Logger.log('[procesarVenta] derivar zona de caja falló: ' + eDeriv.message); }
+    }
     if (zonaV) {
       try {
         var ssV = SpreadsheetApp.getActiveSpreadsheet();
