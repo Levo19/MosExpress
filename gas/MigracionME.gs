@@ -1011,6 +1011,16 @@ function flipSumarEstadoCajas(){
   return { ok:true, supabase:['ventas_hoy_zona','estado_cajas'], sheets: off.split(',').filter(Boolean) };
 }
 
+// [reads-reflip] UN clic: TODAS las 4 lecturas operativas leen de Supabase real-time. Posible ahora que el
+// write-side está completo (ventas/cajas/movimientos/anulaciones/créditos+7 transiciones todos dual-write).
+// Limpia FUENTE_DATOS_OFF (ninguna forzada a Sheets) + master supabase. Rollback total: desactivarSupabaseME().
+function flipTodasLasLecturas(){
+  PropertiesService.getScriptProperties().deleteProperty('FUENTE_DATOS_OFF');
+  var r = activarSupabaseME();
+  Logger.log('✅ TODAS las lecturas en Supabase real-time: ventas_hoy_zona, estado_cajas, cobros_en_vuelo, creditos_pendientes. Rollback: desactivarSupabaseME()');
+  return { ok:true, supabase:['ventas_hoy_zona','estado_cajas','cobros_en_vuelo','creditos_pendientes'], sheets:[] };
+}
+
 // ---------- Canary #3: getCreditosPendientes (Sheets vs me.creditos_pendientes()) ----------
 function compararCreditosPendientesME(){ return _compararCreditos(30); }
 function _compararCreditos(dias){
