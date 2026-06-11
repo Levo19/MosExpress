@@ -973,6 +973,19 @@ function estadoFuenteDatosME(){ var p=PropertiesService.getScriptProperties(); v
 function desactivarUnoME(endpoint){ var p=PropertiesService.getScriptProperties(); var off=(p.getProperty('FUENTE_DATOS_OFF')||'').split(',').map(function(s){return s.trim();}).filter(Boolean); if(off.indexOf(endpoint)<0) off.push(endpoint); p.setProperty('FUENTE_DATOS_OFF', off.join(',')); Logger.log('🔻 '+endpoint+' forzado a Sheets. OFF=['+off.join(',')+']'); return {ok:true, off:off}; }
 function reactivarUnoME(endpoint){ var p=PropertiesService.getScriptProperties(); var off=(p.getProperty('FUENTE_DATOS_OFF')||'').split(',').map(function(s){return s.trim();}).filter(Boolean).filter(function(e){return e!==endpoint;}); p.setProperty('FUENTE_DATOS_OFF', off.join(',')); Logger.log('🔼 '+endpoint+' reactivado a Supabase. OFF=['+off.join(',')+']'); return {ok:true, off:off}; }
 
+// [reads-reflip] UN clic: re-flipea SOLO ventas_hoy_zona a Supabase (la lectura del bug del cajero, que
+// ahora es real-time porque ventas tiene dual-write). Deja estado_cajas/cobros/creditos en Sheets (sus
+// fuentes aún no son 100% real-time). Rollback total = desactivarSupabaseME(). Granular = reactivarUnoME('estado_cajas') etc.
+function flipSoloVentasZona(){
+  desactivarUnoME('estado_cajas');
+  desactivarUnoME('cobros_en_vuelo');
+  desactivarUnoME('creditos_pendientes');
+  var r = activarSupabaseME();
+  var off = PropertiesService.getScriptProperties().getProperty('FUENTE_DATOS_OFF') || '';
+  Logger.log('✅ SOLO ventas_hoy_zona lee de Supabase (real-time). En Sheets: ['+off+']. Rollback: desactivarSupabaseME()');
+  return { ok:true, supabase:['ventas_hoy_zona'], sheets: off.split(',') };
+}
+
 // ---------- Canary #3: getCreditosPendientes (Sheets vs me.creditos_pendientes()) ----------
 function compararCreditosPendientesME(){ return _compararCreditos(30); }
 function _compararCreditos(dias){
