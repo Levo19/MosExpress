@@ -3737,6 +3737,18 @@
 
                  <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
 
+                 <!-- [Tarjeta de presentación] El operador imprime una tarjeta con QR a WhatsApp (canal controlado) -->
+                 <div class="text-center">
+                    <h2 class="text-2xl font-black text-gray-800">📇 TARJETA</h2>
+                    <p class="text-sm text-gray-500 font-bold mt-1">Para quien quiere contactar a la jefa: imprime una tarjeta con QR a WhatsApp</p>
+                 </div>
+                 <button @click="abrirTarjetaModal"
+                         class="w-full bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2">
+                    📇 IMPRIMIR TARJETA
+                 </button>
+
+                 <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
+
                  <!-- Panel de configuración compacto -->
                  <div class="bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden">
                     <div class="px-4 py-2 bg-gray-100 border-b border-gray-200">
@@ -5372,6 +5384,68 @@
                 <button @click="confirmarRechazarAsignado" :disabled="!razonRechazoAsig.trim() || procesandoCobroAsig" class="bg-red-500 text-white font-black py-2.5 rounded-xl text-sm disabled:opacity-50">
                     Confirmar rechazo
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL: TARJETA DE PRESENTACIÓN ===== -->
+    <div v-if="tarjetaModalAbierto" class="fixed inset-0 bg-gray-900/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm" @click.self="tarjetaModalAbierto = false">
+        <div class="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm" style="max-height:90vh;overflow-y:auto;">
+            <div class="flex justify-between items-center mb-1">
+                <h3 class="text-lg font-black text-gray-800">📇 Tarjeta de presentación</h3>
+                <button @click="tarjetaModalAbierto = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">✕</button>
+            </div>
+
+            <!-- ① Elegir -->
+            <div v-if="tarjetaEstado === 'idle'">
+                <p class="text-sm text-gray-500 font-bold mb-4">¿La persona quiere contactar a la jefa? Imprime su tarjeta:</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <button @click="imprimirTarjeta('CLIENTE')"
+                            class="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black py-6 rounded-2xl shadow-lg active:scale-95 transition-transform flex flex-col items-center gap-2">
+                        <span class="text-3xl">🛒</span>
+                        <span class="text-sm">CLIENTE</span>
+                        <span class="text-[11px] font-bold opacity-90">o interesado</span>
+                    </button>
+                    <button @click="imprimirTarjeta('PROVEEDOR')"
+                            class="bg-gradient-to-br from-amber-500 to-orange-600 text-white font-black py-6 rounded-2xl shadow-lg active:scale-95 transition-transform flex flex-col items-center gap-2">
+                        <span class="text-3xl">🏭</span>
+                        <span class="text-sm">PROVEEDOR</span>
+                        <span class="text-[11px] font-bold opacity-90">nos ofrece</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ② Imprimiendo -->
+            <div v-else-if="tarjetaEstado === 'imprimiendo'" class="py-10 text-center">
+                <div class="text-5xl mb-3 animate-bounce">🖨️</div>
+                <p class="font-black text-gray-700">Imprimiendo tu tarjeta…</p>
+                <div class="mt-4 h-2 w-2/3 mx-auto bg-gray-100 rounded-full overflow-hidden">
+                    <div class="h-full w-1/2 bg-indigo-500 rounded-full animate-pulse"></div>
+                </div>
+            </div>
+
+            <!-- ③ Listo -->
+            <div v-else-if="tarjetaEstado === 'ok'" class="py-8 text-center">
+                <div class="text-6xl mb-2">✅</div>
+                <p class="text-xl font-black text-emerald-600">¡Tarjeta lista!</p>
+                <p class="text-sm text-gray-600 font-bold mt-2">Entrégala y dile:<br>«Escanea el QR y escríbenos» 😊</p>
+                <div class="grid grid-cols-2 gap-2 mt-5">
+                    <button @click="tarjetaEstado = 'idle'" class="bg-indigo-50 text-indigo-700 font-black py-3 rounded-xl border-2 border-indigo-200 active:scale-95 transition-transform text-sm">Imprimir otra</button>
+                    <button @click="tarjetaModalAbierto = false" class="bg-gray-100 text-gray-600 font-bold py-3 rounded-xl active:scale-95 transition-transform text-sm">Cerrar</button>
+                </div>
+            </div>
+
+            <!-- ④ Plan B: la impresora no respondió → mostrar QR en pantalla para escanear ahí mismo -->
+            <div v-else-if="tarjetaEstado === 'offline'" class="py-4 text-center">
+                <div class="text-4xl mb-1">😅</div>
+                <p class="font-black text-gray-700">La impresora no respondió</p>
+                <p class="text-xs text-gray-500 font-bold mb-3">No importa — que escanee este QR directo de la pantalla:</p>
+                <img :src="tarjetaQRfallback" alt="QR WhatsApp" class="w-56 h-56 mx-auto rounded-xl border-2 border-gray-200 bg-white" />
+                <p class="text-sm font-black text-gray-700 mt-3">Escanea y escríbenos por WhatsApp</p>
+                <div class="grid grid-cols-2 gap-2 mt-4">
+                    <button @click="imprimirTarjeta(tarjetaTipoActual)" class="bg-indigo-500 text-white font-black py-3 rounded-xl active:scale-95 transition-transform text-sm">Reintentar impresión</button>
+                    <button @click="tarjetaModalAbierto = false" class="bg-gray-100 text-gray-600 font-bold py-3 rounded-xl active:scale-95 transition-transform text-sm">Cerrar</button>
+                </div>
             </div>
         </div>
     </div>
@@ -8898,6 +8972,83 @@
                 '\x1d\x28\x6b\x03\x00\x31\x51\x30' +                                     // imprimir
                 '\n'
             );
+        };
+
+        // ════════════════════════════════════════════════════════════════════
+        // [Tarjeta de presentación] El operador imprime una tarjeta térmica con QR a WhatsApp (canal
+        // controlado). Config (números + marca) en mos.config vía me.get_tarjeta_config (anon, sin token).
+        // ════════════════════════════════════════════════════════════════════
+        const _tarjetaCfg        = ref({});
+        const tarjetaModalAbierto = ref(false);
+        const tarjetaEstado      = ref('idle');   // idle | imprimiendo | ok | offline
+        const tarjetaQRfallback  = ref('');        // url de imagen QR para el plan B en pantalla
+        const tarjetaTipoActual  = ref('CLIENTE'); // CLIENTE | PROVEEDOR (para reintentar / mostrar QR)
+        const _cargarTarjetaConfig = async () => {
+            try {
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_tarjeta_config`, {
+                    method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                    body:'{}'
+                });
+                if (res.ok) { const d = await res.json(); if (d && typeof d === 'object') _tarjetaCfg.value = d; }
+            } catch(_) {}
+        };
+        // Arma {txt ESC/POS, waUrl, ref} para el tipo dado. La marca va doble alto; el QR es el héroe.
+        const _tarjetaData = (tipo) => {
+            const cfg = _tarjetaCfg.value || {};
+            const est = config.value.estacion || {};
+            const estNombre = est.Estacion_Nombre || est.idEstacion || 'Tienda';
+            const esCliente = (tipo === 'CLIENTE');
+            const numero = String((esCliente ? cfg.TARJETA_WA_COMERCIAL : cfg.TARJETA_WA_COMPRAS) || '').replace(/\D/g, '');
+            const marca  = cfg.TARJETA_MARCA || 'INVERSION MOS';
+            const d = new Date();
+            const p2 = n => String(n).padStart(2, '0');
+            const ref = (esCliente ? 'CLI' : 'PRV') + '-' + d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate()) + '-' + p2(d.getHours()) + p2(d.getMinutes());
+            const mensaje = esCliente
+                ? `Hola, me dieron esta tarjeta en ${estNombre}. Soy cliente y quiero hacer una consulta. (Ref: ${ref})`
+                : `Hola, soy proveedor. Me dieron su tarjeta en ${estNombre} y quiero ofrecerles productos. (Ref: ${ref})`;
+            const waUrl = `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
+            const W = 48, SEP = '='.repeat(W) + '\n', SEPd = '-'.repeat(W) + '\n';
+            let txt = '\x1b\x40\x1b\x61\x01';                              // init + centrar
+            txt += '\x1b\x21\x30' + marca + '\x1b\x21\x00\n';             // marca doble alto/ancho
+            txt += SEP;
+            txt += '\x1b\x21\x08' + (esCliente ? 'ATENCION COMERCIAL' : 'CANAL DE COMPRAS') + '\x1b\x21\x00\n\n';  // titulo bold
+            txt += (esCliente ? 'Quieres hacer un pedido o consulta?' : 'Eres proveedor? Envianos tu catalogo') + '\n\n';
+            txt += 'Escanea y escribenos por WhatsApp\n\n';
+            txt += qrESCPOS(waUrl);                                       // QR heroe (ya centra)
+            txt += '\n' + SEPd;
+            txt += 'Solo WhatsApp - sin llamadas\n';
+            txt += 'Te respondemos en horario\n';
+            txt += SEPd;
+            txt += 'Ref: ' + ref + '\n' + estNombre + '\n';
+            txt += '\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02';  // feed + corte (igual que el ticket)
+            return { txt, waUrl, ref };
+        };
+        const abrirTarjetaModal = () => {
+            tarjetaEstado.value = 'idle';
+            tarjetaModalAbierto.value = true;
+            _cargarTarjetaConfig();   // refresca config al abrir (lazy)
+        };
+        const imprimirTarjeta = async (tipo) => {
+            tarjetaTipoActual.value = tipo;
+            tarjetaEstado.value = 'imprimiendo';
+            try { if (navigator.vibrate) navigator.vibrate(30); } catch(_) {}   // háptico del tap
+            // asegurar config (números) cargada — si el operador tocó antes de que llegue, la traemos ahora
+            if (!_tarjetaCfg.value || (!_tarjetaCfg.value.TARJETA_WA_COMERCIAL && !_tarjetaCfg.value.TARJETA_WA_COMPRAS)) {
+                await _cargarTarjetaConfig();
+            }
+            const est = config.value.estacion || {};
+            const { txt, waUrl } = _tarjetaData(tipo);
+            tarjetaQRfallback.value = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(waUrl)}`;
+            try {
+                await mandarImpresionPrintNode(est.PrintNode_ID, 'Tarjeta ' + tipo, b64ESC(txt));
+                tarjetaEstado.value = 'ok';
+                try { playBeepOK(); } catch(_) {}
+                agregarToast('¡Tarjeta lista!', 'Entrégala y dile que escanee el QR 😊');
+            } catch(e) {
+                tarjetaEstado.value = 'offline';   // plan B: el QR se muestra en pantalla para escanear ahí mismo
+                try { playBeepError(); } catch(_) {}
+            }
         };
 
         const toggleSound = () => { /* no-op: sonidos siempre activos por política */ };
@@ -16324,6 +16475,9 @@
           // F4 — Tutorial onboarding del botón Admin
           tutAdminVisto, tutAdminMarcarVisto,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra,
+          // [Tarjeta de presentación]
+          tarjetaModalAbierto, tarjetaEstado, tarjetaQRfallback, tarjetaTipoActual,
+          abrirTarjetaModal, imprimirTarjeta,
           // [v40.3] Cobros asignados
           cobrosAsignados, modalCobrarAsignado, cobroAsignadoActivo,
           cobroAsigMetodo, cobroAsigMixtoEf, cobroAsigMixtoVi,
