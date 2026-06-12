@@ -147,12 +147,25 @@ function mintSupabaseToken(deviceId){
   var secret = PropertiesService.getScriptProperties().getProperty('SUPABASE_JWT_SECRET');
   if(!secret) return { ok:false, error:'falta SUPABASE_JWT_SECRET en Script Properties (Supabase → Settings → API → JWT Secret)' };
 
-  // [autorización por UUID, SIN zona — los dispositivos/empleados ROTAN entre zonas] Valida que el UUID
-  // esté REGISTRADO + ACTIVO + app=mosExpress (igual que verificarDispositivo). La zona la decide el turno
-  // (qué caja abre), no el dispositivo. Fail-closed: dispositivo no registrado/activo → no token.
-  var r = _sbSelect('mos.dispositivos', { filters: { id_dispositivo:'eq.'+idd, app:'eq.mosExpress', estado:'eq.ACTIVO' } });
-  if(!r.ok) return { ok:false, error:'no se pudo verificar dispositivo: '+(r.error||'') };
-  if(!(r.data || []).length) return { ok:false, error:'dispositivo no registrado/activo para mosExpress' };
+  // [autorización por UUID, SIN zona — los dispositivos/empleados ROTAN] Valida contra la hoja DISPOSITIVOS
+  // VIVA de MOS (autoritativa, igual que verificarDispositivo), NO la sombra (que puede estar atrasada y
+  // rechazar un dispositivo válido — fix del ALTO 'revocación stale' del 20×). El token está cacheado ~5min
+  // → el openById se amortiza. Fail-closed: no registrado/ACTIVO → no token.
+  var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID');
+  if(!mosSsId) return { ok:false, error:'falta MOS_SS_ID' };
+  var dispSheet;
+  try { dispSheet = SpreadsheetApp.openById(mosSsId).getSheetByName('DISPOSITIVOS'); }
+  catch(e){ return { ok:false, error:'no se pudo abrir DISPOSITIVOS de MOS: '+(e&&e.message) }; }
+  if(!dispSheet) return { ok:false, error:'DISPOSITIVOS no disponible' };
+  var datos = obtenerDatosHojaComoJSON(dispSheet), devOk = false;
+  for(var di=0; di<datos.length; di++){
+    var dd = datos[di];
+    var idMatch  = (String(dd.ID_Dispositivo) === idd || String(dd.idDispositivo) === idd);
+    var appMatch = (!dd.App || dd.App === 'mosExpress');
+    var actMatch = (dd.Estado === 'ACTIVO' || dd.estado === 'ACTIVO' || dd.activo === 1 || dd.activo === '1');
+    if(idMatch && appMatch && actMatch){ devOk = true; break; }
+  }
+  if(!devOk) return { ok:false, error:'dispositivo no registrado/activo para mosExpress' };
 
   var now = Math.floor(Date.now()/1000);
   var header  = { alg:'HS256', typ:'JWT' };
