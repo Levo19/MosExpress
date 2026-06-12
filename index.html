@@ -13460,7 +13460,10 @@
                             id_venta_gas: v.id_venta,
                             ref_local: v.ref_local || ''
                         };
-                    }).sort((a, b) => b.timestamp - a.timestamp); // más recientes primero
+                    }).sort((a, b) => (b.timestamp - a.timestamp)
+                        // [fix orden] desempate por correlativo cuando caen en el MISMO segundo (la fecha se
+                        // guarda al segundo) → el cajero ve la secuencia sin huecos. numeric:true compara 001618>001617.
+                        || String(b.correlativo || '').localeCompare(String(a.correlativo || ''), undefined, { numeric: true }));
                     agregarToast('Zona actualizada', `${ventasZona.value.length} tickets cargados`);
                 }
             } catch(e) {
