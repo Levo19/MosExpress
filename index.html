@@ -13373,14 +13373,35 @@
             agregarToast('Extra registrado', (extra.tipo.startsWith('EGRESO') ? '- ' : '+ ') + 'S/ ' + extra.monto.toFixed(2) + ' — ' + extra.concepto + (extra.tipo.endsWith('_VIRTUAL') ? ' 📲' : ''));
         };
 
-        // [Fase 2] ¿lectura directa a Supabase activada? Flag local, OFF por defecto (cero riesgo).
-        const lecturaDirectaSupabase = () => { try { return localStorage.getItem('me_lectura_directa') === '1'; } catch(_) { return false; } };
-        // [Fase 2] ¿ESCRITURA directa activada? Flag local, OFF por defecto. Cuando ON: NV online se crea
-        // directo en Supabase (sin GAS), y se GATEA la pre-reserva (el RPC es el único minter → sin doble-mint).
-        const escrituraDirectaSupabase = () => { try { return localStorage.getItem('me_escritura_directa') === '1'; } catch(_) { return false; } };
-        // [Fase 2] ¿impresión DIRECTA vía Edge Function? Flag local, OFF por defecto. Independiente de
-        // escritura directa (se puede activar solo el print). Reemplaza el salto a GAS por la Edge Function.
-        const impresionDirectaEdge = () => { try { return localStorage.getItem('me_impresion_directa') === '1'; } catch(_) { return false; } };
+        // [Fase 2 · INTERRUPTOR CENTRAL] Flags de toda la flota, leídos de mos.config vía me.get_flags() (anon,
+        // sin token). El frontend los refresca al arrancar y cada 2min. Cada helper hace `serverFlag || local`:
+        // el server prende/apaga a TODOS desde un lugar (kill-switch instantáneo vía pg), y localStorage sigue
+        // como override por-dispositivo (piloto). Fail-safe: si get_flags falla, quedan los últimos buenos (o
+        // vacío → manda localStorage → default OFF = seguro, cae a GAS).
+        let _serverFlags = {};
+        const _cargarFlags = async () => {
+            try {
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_flags`, {
+                    method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                    body: '{}'
+                });
+                if (res.ok) { const d = await res.json(); if (d && typeof d === 'object') _serverFlags = d; }
+            } catch(_) { /* fail-safe: conservar los últimos flags buenos */ }
+        };
+        _cargarFlags();                          // al arranque
+        setInterval(_cargarFlags, 120000);       // refresco cada 2min (propagación del flip/kill)
+        const _flagOn = (serverKey, localKey) => {
+            try { return _serverFlags[serverKey] === '1' || localStorage.getItem(localKey) === '1'; }
+            catch(_) { return _serverFlags[serverKey] === '1'; }
+        };
+        // [Fase 2] ¿lectura directa a Supabase activada? server (ME_LECTURA_DIRECTA) || local. OFF por defecto.
+        const lecturaDirectaSupabase = () => _flagOn('ME_LECTURA_DIRECTA', 'me_lectura_directa');
+        // [Fase 2] ¿ESCRITURA directa activada? server (ME_ESCRITURA_DIRECTA) || local. Cuando ON: NV online se
+        // crea directo en Supabase (sin GAS) y se GATEA la pre-reserva (el RPC es el único minter → sin doble-mint).
+        const escrituraDirectaSupabase = () => _flagOn('ME_ESCRITURA_DIRECTA', 'me_escritura_directa');
+        // [Fase 2] ¿impresión DIRECTA vía Edge Function? server (ME_IMPRESION_DIRECTA) || local. Independiente.
+        const impresionDirectaEdge = () => _flagOn('ME_IMPRESION_DIRECTA', 'me_impresion_directa');
         // Manda un print job DIRECTO a PrintNode vía la Edge Function `imprimir` (key en secret server-side).
         // Mismo contrato de retorno que el path GAS ({status:'success', printJobId}). Lanza si falla → fallback.
         const _imprimirDirectoPN = async (printerId, titulo, textoRaw) => {
