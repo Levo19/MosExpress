@@ -3601,11 +3601,15 @@
                            <!-- GRANEL: input de gramos + atajos -->
                            <template v-if="esGranel(item)">
                              <div class="flex items-center mt-1 gap-1">
-                               <input type="number" inputmode="decimal" step="1" min="1"
+                               <!-- [fix granel] buffer _gramosStr (igual que el [v2.7.9] de Guías): durante el tipeo
+                                  el valor vive en _gramosStr → ningún re-render (flash 700ms, polling) lo resetea
+                                  a Math.round(cantidad*1000). type=text → el select() reemplaza confiable (no append). -->
+                             <input type="text" inputmode="decimal"
                                       class="gramos-input w-20 text-center font-bold text-sm bg-gray-50 border border-gray-300 rounded-lg py-1 px-2 focus:border-amber-500 focus:outline-none"
-                                      :value="Math.round(item.cantidad * 1000)"
+                                      :value="item._gramosStr != null ? item._gramosStr : Math.round(item.cantidad * 1000)"
                                       @focus="$event.target.select()"
-                                      @change="setCantidadGramos(index, $event.target.value)"
+                                      @input="item._gramosStr = $event.target.value"
+                                      @blur="_gramosBlur(index, item)"
                                       @keyup.enter="$event.target.blur()">
                                <span class="text-[10px] font-bold text-gray-500">g</span>
                              </div>
@@ -14091,16 +14095,20 @@
         // incluso en el PRIMER granel cuando el carrito recién se monta (vacío→lista). Reemplaza el setTimeout
         // fijo de 150ms que competía con el foco al scanner y se comía el primer dígito.
         const _focusGramosCarrito = () => {
-          const _try = () => {
-            const inp = document.querySelector('[data-cart-idx="0"] .gramos-input');
-            if (inp) { inp.focus({ preventScroll: true }); inp.select(); return true; }
-            return false;
-          };
+          // nextTick = el input ya está en el DOM pero ANTES del paint/interacción → enfoca temprano (antes de
+          // que el cajero pueda tipear). El select lo hace el @focus. SIN rAF ni retry (un foco tardío re-disparaba
+          // el foco DESPUÉS de tipear y borraba dígitos, peor en tablet). El valor lo protege el buffer _gramosStr.
           nextTick(() => {
-            requestAnimationFrame(() => {
-              if (!_try()) setTimeout(_try, 120);   // reintento por si el montaje del carrito tardó (1er item)
-            });
+            const inp = document.querySelector('[data-cart-idx="0"] .gramos-input');
+            if (inp) inp.focus({ preventScroll: true });
           });
+        };
+        // [fix granel] @blur del input de gramos: confirma el buffer _gramosStr (gramos) y lo limpia. setCantidadGramos
+        // parsea (gramos→kg) o elimina el item si <1. El buffer es lo que evita que un re-render borre lo tipeado.
+        const _gramosBlur = (index, item) => {
+          const val = item._gramosStr != null ? item._gramosStr : Math.round(item.cantidad * 1000);
+          item._gramosStr = null;
+          setCantidadGramos(index, val);
         };
         const agregarCarritoObj = (prodObj) => {
           // Limpiar búsqueda al agregar cualquier producto (click o enter)
@@ -14241,6 +14249,7 @@
         // Atajos rápidos para granel: ¼ kg, ½ kg, 1 kg
         const setCantidadKg = (idx, kg) => {
           if (idx < 0 || idx >= carrito.value.length) return;
+          carrito.value[idx]._gramosStr = null;   // [fix granel] limpiar buffer → el input refleja el atajo (¼/½/1kg)
           carrito.value[idx].cantidad = parseFloat(kg);
           calcularImportes(carrito.value[idx]);
           flashCartItem(idx, 1);
@@ -16396,7 +16405,7 @@
           iniciarTurno, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
-          esGranel, setCantidadGramos, setCantidadKg,
+          esGranel, setCantidadGramos, setCantidadKg, _gramosBlur,
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
