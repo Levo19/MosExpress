@@ -74,6 +74,58 @@ function mirrorVentaASheets(data){
   return { ok:true, dedup:false, idVenta:idVenta, correlativo:correlativo };
 }
 
+// [Fase 2 · contrato #2] Reconciliación Supabase→Sheets: red de seguridad para cuando el mirror falla.
+// Busca ventas NV de HOY en me.ventas cuyo ref_local NO esté en VENTAS_CABECERA y las espeja (vía
+// mirrorVentaASheets, idempotente). Así, aunque un MIRROR_VENTA se pierda, el cierre nunca sub-cuenta.
+// Pensado para correr periódico (trigger 5-10min) o al iniciar el cierre. Aditivo: NO toca el flujo de venta.
+function reconciliarDirectasSheets(){
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
+  if(!sheetCab) return { ok:false, error:'VENTAS_CABECERA no existe' };
+
+  // ref_locals ya en Sheets (set, col 14)
+  var enSheets = {};
+  var lastRow = sheetCab.getLastRow();
+  if(lastRow >= 2){
+    var refCol = sheetCab.getRange(2, 14, lastRow - 1, 1).getValues();
+    for(var i=0;i<refCol.length;i++){ var rl = String(refCol[i][0]||''); if(rl) enSheets[rl] = 1; }
+  }
+
+  // ventas NV de hoy (Lima) en Supabase
+  var tz = Session.getScriptTimeZone();
+  var hoy0 = Utilities.formatDate(new Date(), 'America/Lima', "yyyy-MM-dd'T'00:00:00XXX");
+  var r = _sbSelect('me.ventas', { filters: { fecha:'gte.'+hoy0, tipo_doc:'eq.NOTA_DE_VENTA' } });
+  if(!r.ok) return { ok:false, error:'no se pudo leer me.ventas: '+(r.error||'') };
+
+  var faltantes = (r.data||[]).filter(function(v){ var rl=String(v.ref_local||''); return rl && !enSheets[rl]; });
+  var espejadas = 0, errores = [];
+  faltantes.forEach(function(v){
+    try {
+      // traer detalle de esa venta
+      var det = _sbSelect('me.ventas_detalle', { filters: { id_venta:'eq.'+String(v.id_venta) } });
+      var items = (det.ok ? (det.data||[]) : []).map(function(d){
+        return { sku:d.sku, nombre:d.nombre, cantidad:d.cantidad, precio:d.precio, subtotal:d.subtotal,
+                 cod_barras:d.cod_barras, valor_unitario:d.valor_unitario, tipo_igv:d.tipo_igv, unidad_medida:d.unidad_medida };
+      });
+      var payload = {
+        idVenta: v.id_venta, correlativo: v.correlativo,
+        data_sync: { last_sync: v.ref_local },
+        header: { total: v.total, tipoDoc: v.tipo_doc, metodo: v.forma_pago, obs: v.obs,
+                  cliente: { doc: v.cliente_doc, nombre: v.cliente_nombre, tipo: v.tipo_doc_cliente } },
+        auth: { vendedor: v.vendedor, estacion: v.estacion, deviceId: v.dispositivo_id },
+        pos:  { cajaId: v.id_caja },
+        items: items
+      };
+      var m = mirrorVentaASheets(payload);   // idempotente (dedup por ref_local) + LockService
+      if(m.ok && !m.dedup) espejadas++;
+      else if(!m.ok) errores.push(v.ref_local + ': ' + (m.error||''));
+    } catch(e){ errores.push(String(v.ref_local) + ': ' + (e && e.message)); }
+  });
+  var out = { ok:true, ventasHoyEnSupabase:(r.data||[]).length, faltabanEnSheets:faltantes.length, espejadas:espejadas, errores:errores };
+  Logger.log('[reconciliarDirectasSheets] ' + JSON.stringify(out));
+  return out;
+}
+
 function _b64url_(bytes){ return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
 function _b64urlStr_(str){ return _b64url_(Utilities.newBlob(str).getBytes()); }
 
