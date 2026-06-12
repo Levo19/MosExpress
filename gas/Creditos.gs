@@ -28,6 +28,28 @@ var _CREDITO_COBRO_HEADERS = [
   'Mensaje_Admin','Reasignaciones'
 ];
 
+// ════════════════════════════════════════════════════════════
+// [Lote1-A · fix C1+C2+C3] Lock GLOBAL del flujo de cobro de créditos.
+// Sin esto, dos confirmaciones simultáneas del mismo cobro creaban DOS
+// INGRESOS (doble cobro), y el trigger escalarCobrosVencidos podía revertir
+// a CREDITO una venta MIENTRAS el cajero la cobraba (re-asignable = re-cobrable).
+// Reentrante vía _credLockHeld (confirmarCobroAsignado llama internamente a
+// cobrarCreditoConExtra; reasignar llama a asignar). Patrón _conLock de WH.
+// REGLA: dentro del lock SOLO operaciones de Sheets (rápidas). Los UrlFetch
+// pesados (push a MOS, reimpresión PrintNode) van FUERA — es el MISMO
+// ScriptLock que usa el correlativo de ventas y no debemos retenerlo segundos.
+// ════════════════════════════════════════════════════════════
+var _credLockHeld = false;
+function _conLockCred(fn, onBusy) {
+  if (_credLockHeld) return fn();           // reentrante dentro de la misma ejecución
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); }
+  catch (e) { return onBusy ? onBusy() : { ok: false, error: 'Sistema ocupado' }; }
+  _credLockHeld = true;
+  try { return fn(); }
+  finally { _credLockHeld = false; try { lock.releaseLock(); } catch(_){} }
+}
+
 function _getHojaCobrosAsignados() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('CREDITOS_COBRO_ASIGNADO');
@@ -225,56 +247,73 @@ function confirmarCobroAsignado(data) {
   if (!data.idCobro)     return generarRespuestaError('idCobro requerido');
   if (!data.metodoFinal) return generarRespuestaError('metodoFinal requerido');
 
-  var hoja = _getHojaCobrosAsignados();
-  var fa = hoja.getDataRange().getValues();
-  var cRow = -1, cobroData = null;
-  for (var i = 1; i < fa.length; i++) {
-    if (String(fa[i][0]) === String(data.idCobro)) {
-      cRow = i + 1;
-      cobroData = {
-        idVenta:    String(fa[i][1]),
-        cajaDest:   String(fa[i][2]),
-        estado:     String(fa[i][5]),
-        adminAsig:  String(fa[i][6]),
-        monto:      parseFloat(fa[i][11]) || 0,
-        cliente:    String(fa[i][12])
-      };
-      break;
+  // [Lote1-A · fix C2] SECCIÓN CRÍTICA bajo el lock global de cobros:
+  // leer estado → cobrar (reentrante) → marcar COBRADO, todo atómico.
+  // Antes la validación 'ASIGNADO' y la marca 'COBRADO' estaban separadas por
+  // todo el flujo del cobro → dos confirmaciones concurrentes del mismo idCobro
+  // ambas veían ASIGNADO → doble cobro (TOCTOU). El push al admin y la
+  // reimpresión (UrlFetch lentos) quedan FUERA del lock.
+  var res = _conLockCred(function() {
+    var hoja = _getHojaCobrosAsignados();
+    var fa = hoja.getDataRange().getValues();
+    var cRow = -1, cobroData = null;
+    for (var i = 1; i < fa.length; i++) {
+      if (String(fa[i][0]) === String(data.idCobro)) {
+        cRow = i + 1;
+        cobroData = {
+          idVenta:    String(fa[i][1]),
+          cajaDest:   String(fa[i][2]),
+          estado:     String(fa[i][5]),
+          adminAsig:  String(fa[i][6]),
+          monto:      parseFloat(fa[i][11]) || 0,
+          cliente:    String(fa[i][12])
+        };
+        break;
+      }
     }
-  }
-  if (cRow < 2) return generarRespuestaError('Cobro ' + data.idCobro + ' no encontrado');
-  if (cobroData.estado !== 'ASIGNADO') {
-    return generarRespuestaError('El cobro no está en estado ASIGNADO (actual: ' + cobroData.estado + ')');
-  }
+    if (cRow < 2) return { error: 'Cobro ' + data.idCobro + ' no encontrado' };
+    if (cobroData.estado !== 'ASIGNADO') {
+      return { error: 'El cobro no está en estado ASIGNADO (actual: ' + cobroData.estado + ')' };
+    }
 
-  // Llamar internamente al endpoint existente cobrarCreditoConExtra
-  var cobroResp = cobrarCreditoConExtra({
-    idVenta:       cobroData.idVenta,
-    cajaReceptora: cobroData.cajaDest,
-    metodo:        data.metodoFinal,
-    montoEfectivo: data.montoEfectivo,
-    montoVirtual:  data.montoVirtual,
-    obs:           'Cobro asignado ' + data.idCobro,
-    auth:          data.auth || {},
-    adminAuth:     null   // ya autorizado al asignar, el cajero solo confirma
+    // Llamar internamente al endpoint existente cobrarCreditoConExtra
+    // (reentrante: _credLockHeld=true → no re-toma el lock)
+    var cobroResp = cobrarCreditoConExtra({
+      idVenta:       cobroData.idVenta,
+      cajaReceptora: cobroData.cajaDest,
+      metodo:        data.metodoFinal,
+      montoEfectivo: data.montoEfectivo,
+      montoVirtual:  data.montoVirtual,
+      obs:           'Cobro asignado ' + data.idCobro,
+      auth:          data.auth || {},
+      adminAuth:     null   // ya autorizado al asignar, el cajero solo confirma
+    });
+
+    // Detectar error del cobrarCreditoConExtra (ContentService no se puede leer directo)
+    var cobroResult;
+    try {
+      cobroResult = JSON.parse(cobroResp.getContent());
+    } catch(eP) {
+      return { error: 'Error parsing cobro response' };
+    }
+    if (cobroResult.status !== 'success') {
+      return { error: 'Error procesando cobro: ' + (cobroResult.mensaje || '') };
+    }
+
+    // Marcar row CREDITOS_COBRO_ASIGNADO como COBRADO
+    hoja.getRange(cRow, 6).setValue('COBRADO');                            // Estado
+    hoja.getRange(cRow, 9).setValue(new Date());                            // Fecha_Res
+    hoja.getRange(cRow, 5).setValue(String(data.metodoFinal).toUpperCase());// Metodo final
+    SpreadsheetApp.flush();
+    return { ok: true, cobroData: cobroData };
+  }, function() {
+    return { error: 'Sistema ocupado procesando otro cobro — reintenta en unos segundos' };
   });
 
-  // Detectar error del cobrarCreditoConExtra (ContentService no se puede leer directo)
-  var cobroResult;
-  try {
-    cobroResult = JSON.parse(cobroResp.getContent());
-  } catch(eP) {
-    return generarRespuestaError('Error parsing cobro response');
-  }
-  if (cobroResult.status !== 'success') {
-    return generarRespuestaError('Error procesando cobro: ' + (cobroResult.mensaje || ''));
-  }
+  if (res.error) return generarRespuestaError(res.error);
+  var cobroData = res.cobroData;
 
-  // Marcar row CREDITOS_COBRO_ASIGNADO como COBRADO
-  hoja.getRange(cRow, 6).setValue('COBRADO');                            // Estado
-  hoja.getRange(cRow, 9).setValue(new Date());                            // Fecha_Res
-  hoja.getRange(cRow, 5).setValue(String(data.metodoFinal).toUpperCase());// Metodo final
-  SpreadsheetApp.flush();
+  // ── Desde aquí, FUERA del lock (best-effort, no afectan el dinero ya registrado) ──
   // [creditos-directo] espejo de la transición a Supabase en tiempo real (best-effort)
   try { _dualWriteCobroPatchME(data.idCobro, { estado:'COBRADO', fecha_res:new Date(), metodo_sug:String(data.metodoFinal).toUpperCase() }); } catch(_dw){}
 
@@ -328,31 +367,42 @@ function rechazarCobroAsignado(data) {
   if (!data.idCobro) return generarRespuestaError('idCobro requerido');
   if (!data.razon)   return generarRespuestaError('razon es obligatoria');
 
-  var hoja = _getHojaCobrosAsignados();
-  var fa = hoja.getDataRange().getValues();
-  var cRow = -1, cobroData = null;
-  for (var i = 1; i < fa.length; i++) {
-    if (String(fa[i][0]) === String(data.idCobro)) {
-      cRow = i + 1;
-      cobroData = {
-        estado:    String(fa[i][5]),
-        adminAsig: String(fa[i][6]),
-        cliente:   String(fa[i][12]),
-        monto:     parseFloat(fa[i][11]) || 0,
-        cajaDest:  String(fa[i][2])
-      };
-      break;
+  // [Lote1-A] Validación + transición bajo el MISMO lock que confirmar/escalar:
+  // un rechazo concurrente con una confirmación ya no puede pisar el estado.
+  var res = _conLockCred(function() {
+    var hoja = _getHojaCobrosAsignados();
+    var fa = hoja.getDataRange().getValues();
+    var cRow = -1, cobroData = null;
+    for (var i = 1; i < fa.length; i++) {
+      if (String(fa[i][0]) === String(data.idCobro)) {
+        cRow = i + 1;
+        cobroData = {
+          estado:    String(fa[i][5]),
+          adminAsig: String(fa[i][6]),
+          cliente:   String(fa[i][12]),
+          monto:     parseFloat(fa[i][11]) || 0,
+          cajaDest:  String(fa[i][2])
+        };
+        break;
+      }
     }
-  }
-  if (cRow < 2) return generarRespuestaError('Cobro no encontrado');
-  if (cobroData.estado !== 'ASIGNADO') {
-    return generarRespuestaError('Solo se puede rechazar un cobro ASIGNADO');
-  }
+    if (cRow < 2) return { error: 'Cobro no encontrado' };
+    if (cobroData.estado !== 'ASIGNADO') {
+      return { error: 'Solo se puede rechazar un cobro ASIGNADO' };
+    }
 
-  hoja.getRange(cRow, 6).setValue('RECHAZADO');
-  hoja.getRange(cRow, 9).setValue(new Date());
-  hoja.getRange(cRow, 10).setValue(String(data.razon).substring(0, 250));
-  SpreadsheetApp.flush();
+    hoja.getRange(cRow, 6).setValue('RECHAZADO');
+    hoja.getRange(cRow, 9).setValue(new Date());
+    hoja.getRange(cRow, 10).setValue(String(data.razon).substring(0, 250));
+    SpreadsheetApp.flush();
+    return { ok: true, cobroData: cobroData };
+  }, function() {
+    return { error: 'Sistema ocupado — reintenta en unos segundos' };
+  });
+  if (res.error) return generarRespuestaError(res.error);
+  var cobroData = res.cobroData;
+
+  // ── Fuera del lock (best-effort) ──
   // [creditos-directo] espejo de la transición a Supabase en tiempo real (best-effort)
   try { _dualWriteCobroPatchME(data.idCobro, { estado:'RECHAZADO', fecha_res:new Date(), razon:String(data.razon).substring(0, 250) }); } catch(_dw){}
 
@@ -641,6 +691,36 @@ function getCreditosPendientes(diasAtras) {
 //   4. Push push al admin asignador: "expiró, re-asignar?"
 // Ya NO usa el TTL hardcodeado 1h — lee Fecha_Vencimiento de cada row.
 function escalarCobrosVencidos() {
+  // [Lote1-A · fix C3] TODO el escaneo bajo el MISMO lock que confirmar/cobrar.
+  // Antes el trigger podía leer la venta aún en CREDITO (el cajero no llegaba al
+  // setValue) → marcaba EXPIRADO y revertía la venta MIENTRAS se cobraba →
+  // INGRESO registrado + venta re-asignable = doble cobro. Con el lock, el
+  // trigger espera a que el cobro termine y su guard ve el FormaPago final.
+  // Los push (UrlFetch lentos) se recolectan y se envían FUERA del lock.
+  var pushes = [];
+  var out = _conLockCred(function() {
+    return _escalarCobrosVencidosCore(pushes);
+  }, function() {
+    Logger.log('[escalarCobros] lock ocupado — el próximo tick (5min) reintenta');
+    return { ok: false, error: 'lock ocupado' };
+  });
+  // ── Push fuera del lock ──
+  if (pushes.length) {
+    var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+    if (url) {
+      pushes.forEach(function(p) {
+        try {
+          UrlFetchApp.fetch(url, {
+            method: 'post', contentType: 'application/json',
+            payload: JSON.stringify(p), muteHttpExceptions: true
+          });
+        } catch(_){}
+      });
+    }
+  }
+  return out;
+}
+function _escalarCobrosVencidosCore(pushes) {
   var hoja = _getHojaCobrosAsignados();
   var fa = hoja.getDataRange().getValues();
   if (fa.length < 2) return { ok: true, vencidos: 0 };
@@ -659,7 +739,6 @@ function escalarCobrosVencidos() {
   var iHorasTTL  = hdrs.indexOf('Horas_TTL');
   var ahora = new Date().getTime();
   var UNA_HORA = 60 * 60 * 1000;
-  var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ventasSh = ss.getSheetByName('VENTAS_CABECERA');
   var n = 0;
@@ -688,22 +767,35 @@ function escalarCobrosVencidos() {
     // del cobro real). En vez, sincronizar el row a COBRADO.
     var idVentaCheck = String(fa[i][iIdVenta]);
     var fpVentaActual = '';
+    var fpCheckConfiable = false;   // [Lote1-A · fix A3] solo expirar si el guard pudo leer FormaPago REAL
     try {
       if (ventasSh) {
         var vdCheck = ventasSh.getDataRange().getValues();
         var vHdrsCheck = vdCheck[0].map(function(h){ return String(h || '').trim(); });
         var iVId    = vHdrsCheck.indexOf('ID_Venta') >= 0 ? vHdrsCheck.indexOf('ID_Venta')
                     : vHdrsCheck.indexOf('ID') >= 0 ? vHdrsCheck.indexOf('ID') : 0;
+        // [fix A3] SIN fallback numérico hardcodeado (antes `: 8`): si algún día se
+        // inserta una columna antes de FormaPago, el guard leería la col equivocada
+        // y EXPIRARÍA cobros YA pagados en silencio. Sin header → guard no confiable
+        // → NO expirar (fail-safe; mejor un cobro vencido tarde que revertir uno pagado).
         var iVFpCk  = vHdrsCheck.indexOf('FormaPago') >= 0 ? vHdrsCheck.indexOf('FormaPago')
-                    : vHdrsCheck.indexOf('Forma_Pago') >= 0 ? vHdrsCheck.indexOf('Forma_Pago') : 8;
-        for (var kk = vdCheck.length - 1; kk > 0; kk--) {
-          if (String(vdCheck[kk][iVId]) === idVentaCheck) {
-            fpVentaActual = String(vdCheck[kk][iVFpCk] || '').toUpperCase();
-            break;
+                    : vHdrsCheck.indexOf('Forma_Pago');
+        if (iVFpCk >= 0) {
+          fpCheckConfiable = true;   // header OK → la lectura es confiable (aunque la venta no exista)
+          for (var kk = vdCheck.length - 1; kk > 0; kk--) {
+            if (String(vdCheck[kk][iVId]) === idVentaCheck) {
+              fpVentaActual = String(vdCheck[kk][iVFpCk] || '').toUpperCase();
+              break;
+            }
           }
+        } else {
+          Logger.log('[escalarCobros] header FormaPago NO encontrado — guard no confiable, no se expira nada');
         }
       }
-    } catch(eCheck) { Logger.log('Check fp venta: ' + eCheck.message); }
+    } catch(eCheck) { fpCheckConfiable = false; Logger.log('Check fp venta: ' + eCheck.message); }
+    // [fix A3] Guard no confiable (header ausente o error de lectura) → saltar este
+    // cobro sin expirarlo. El próximo tick lo reintenta con datos sanos.
+    if (!fpCheckConfiable) continue;
 
     // Si la venta YA fue cobrada (no es CREDITO/POR_COBRAR), sincronizar
     // el row a COBRADO en vez de expirarlo. Sin push falso al admin.
@@ -747,26 +839,18 @@ function escalarCobrosVencidos() {
 
     n++;
 
-    // Push al admin asignador (no a todos, solo al que asignó)
-    if (url) {
-      try {
-        UrlFetchApp.fetch(url, {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify({
-            action: 'enviarPushUsuario',
-            usuario: String(fa[i][iAdminAsig] || ''),
-            titulo: '⏰ Cobro expirado · ' + String(fa[i][iCliente] || 'cliente'),
-            cuerpo: 'S/ ' + parseFloat(fa[i][iMonto] || 0).toFixed(2) +
-                    ' asignado a ' + String(fa[i][iVendedor]) + ' venció sin cobrarse. ' +
-                    'Volvió a CRÉDITO. Re-asignar?',
-            idNotif: 'CREDITO_COBRO_EXPIRADO',
-            extra: { idVenta: String(fa[i][iIdVenta]) }
-          }),
-          muteHttpExceptions: true
-        });
-      } catch(_){}
-    }
+    // [Lote1-A] Push al admin asignador — RECOLECTADO; se envía FUERA del lock
+    // (UrlFetch lento no debe retener el ScriptLock que usan las ventas).
+    pushes.push({
+      action: 'enviarPushUsuario',
+      usuario: String(fa[i][iAdminAsig] || ''),
+      titulo: '⏰ Cobro expirado · ' + String(fa[i][iCliente] || 'cliente'),
+      cuerpo: 'S/ ' + parseFloat(fa[i][iMonto] || 0).toFixed(2) +
+              ' asignado a ' + String(fa[i][iVendedor]) + ' venció sin cobrarse. ' +
+              'Volvió a CRÉDITO. Re-asignar?',
+      idNotif: 'CREDITO_COBRO_EXPIRADO',
+      extra: { idVenta: String(fa[i][iIdVenta]) }
+    });
   }
   Logger.log('escalarCobrosVencidos · vencidos: ' + n);
   return { ok: true, vencidos: n };
@@ -918,76 +1002,87 @@ function cancelarCobroAsignado(data) {
   if (!data.adminAuth || !data.adminAuth.nombre) {
     return generarRespuestaError('adminAuth requerido');
   }
-  var hoja = _getHojaCobrosAsignados();
-  var fa = hoja.getDataRange().getValues();
-  var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
-  var iIdCobro = hdrs.indexOf('ID_Cobro');
-  var iIdVenta = hdrs.indexOf('ID_Venta');
-  var iEstado  = hdrs.indexOf('Estado');
-  var iRes     = hdrs.indexOf('Fecha_Res');
-  var iRazon   = hdrs.indexOf('Razon');
-  var iVendDest= hdrs.indexOf('Vendedor_Dest');
-  var iCliente = hdrs.indexOf('Cliente_Nombre');
-  var iMonto   = hdrs.indexOf('Monto');
-  for (var i = 1; i < fa.length; i++) {
-    if (String(fa[i][iIdCobro]) !== String(data.idCobro)) continue;
-    if (String(fa[i][iEstado]) !== 'ASIGNADO') {
-      return generarRespuestaError('Solo se puede cancelar mientras está ASIGNADO (actual: ' + fa[i][iEstado] + ')');
-    }
-    var idVenta = String(fa[i][iIdVenta]);
-    // Marcar como CANCELADO_ADMIN
-    hoja.getRange(i + 1, iEstado + 1).setValue('CANCELADO_ADMIN');
-    hoja.getRange(i + 1, iRes + 1).setValue(new Date());
-    hoja.getRange(i + 1, iRazon + 1).setValue('Cancelado por admin: ' + (data.razon || 'sin razón'));
-    try { _dualWriteCobroPatchME(data.idCobro, { estado:'CANCELADO_ADMIN', fecha_res:new Date(), razon:'Cancelado por admin: ' + (data.razon || 'sin razón') }); } catch(_dw){}  // [creditos-directo]
-    // Restaurar VENTAS_CABECERA → CREDITO
-    try {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var ventasSh = ss.getSheetByName('VENTAS_CABECERA');
-      if (ventasSh) {
-        var vdAll = ventasSh.getDataRange().getValues();
-        var vHdrs = vdAll[0].map(function(h){ return String(h || '').trim(); });
-        var iVId   = vHdrs.indexOf('ID') >= 0 ? vHdrs.indexOf('ID') : 0;
-        var iVCob  = vHdrs.indexOf('Cobrado') >= 0 ? vHdrs.indexOf('Cobrado') : vHdrs.indexOf('cobrado');
-        var iVFp   = vHdrs.indexOf('FormaPago') >= 0 ? vHdrs.indexOf('FormaPago') : vHdrs.indexOf('Forma_Pago');
-        for (var k = vdAll.length - 1; k > 0; k--) {
-          if (String(vdAll[k][iVId]) === idVenta) {
-            if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
-            if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
-            try { _meMarcarDirtySync('VENTAS_CABECERA', idVenta); } catch(_e){}   // [fix C2-gap] re-sync el revert a CREDITO (≤15min)
-            break;
+  // [Lote1-A] Validación + transición + restore de la venta bajo el lock global:
+  // cancelar concurrente con confirmar ya no puede revertir una venta cobrada.
+  var res = _conLockCred(function() {
+    var hoja = _getHojaCobrosAsignados();
+    var fa = hoja.getDataRange().getValues();
+    var hdrs = fa[0].map(function(h){ return String(h || '').trim(); });
+    var iIdCobro = hdrs.indexOf('ID_Cobro');
+    var iIdVenta = hdrs.indexOf('ID_Venta');
+    var iEstado  = hdrs.indexOf('Estado');
+    var iRes     = hdrs.indexOf('Fecha_Res');
+    var iRazon   = hdrs.indexOf('Razon');
+    var iVendDest= hdrs.indexOf('Vendedor_Dest');
+    var iCliente = hdrs.indexOf('Cliente_Nombre');
+    var iMonto   = hdrs.indexOf('Monto');
+    for (var i = 1; i < fa.length; i++) {
+      if (String(fa[i][iIdCobro]) !== String(data.idCobro)) continue;
+      if (String(fa[i][iEstado]) !== 'ASIGNADO') {
+        return { error: 'Solo se puede cancelar mientras está ASIGNADO (actual: ' + fa[i][iEstado] + ')' };
+      }
+      var idVenta = String(fa[i][iIdVenta]);
+      // Marcar como CANCELADO_ADMIN
+      hoja.getRange(i + 1, iEstado + 1).setValue('CANCELADO_ADMIN');
+      hoja.getRange(i + 1, iRes + 1).setValue(new Date());
+      hoja.getRange(i + 1, iRazon + 1).setValue('Cancelado por admin: ' + (data.razon || 'sin razón'));
+      // Restaurar VENTAS_CABECERA → CREDITO
+      try {
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var ventasSh = ss.getSheetByName('VENTAS_CABECERA');
+        if (ventasSh) {
+          var vdAll = ventasSh.getDataRange().getValues();
+          var vHdrs = vdAll[0].map(function(h){ return String(h || '').trim(); });
+          var iVId   = vHdrs.indexOf('ID') >= 0 ? vHdrs.indexOf('ID') : 0;
+          var iVCob  = vHdrs.indexOf('Cobrado') >= 0 ? vHdrs.indexOf('Cobrado') : vHdrs.indexOf('cobrado');
+          var iVFp   = vHdrs.indexOf('FormaPago') >= 0 ? vHdrs.indexOf('FormaPago') : vHdrs.indexOf('Forma_Pago');
+          for (var k = vdAll.length - 1; k > 0; k--) {
+            if (String(vdAll[k][iVId]) === idVenta) {
+              if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
+              if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
+              try { _meMarcarDirtySync('VENTAS_CABECERA', idVenta); } catch(_e){}   // [fix C2-gap] re-sync el revert a CREDITO (≤15min)
+              break;
+            }
           }
         }
-      }
-    } catch(eR) { Logger.log('Cancelar - restore venta: ' + eR.message); }
+      } catch(eR) { Logger.log('Cancelar - restore venta: ' + eR.message); }
+      SpreadsheetApp.flush();
+      return { ok: true, vendDest: String(fa[i][iVendDest] || ''),
+               cliente: String(fa[i][iCliente] || 'cliente'),
+               monto: parseFloat(fa[i][iMonto] || 0) };
+    }
+    return { error: 'Cobro ' + data.idCobro + ' no encontrado' };
+  }, function() {
+    return { error: 'Sistema ocupado — reintenta en unos segundos' };
+  });
+  if (res.error) return generarRespuestaError(res.error);
 
-    // Push al cajero destino (avisar que ya no debe cobrar)
-    try {
-      var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
-      if (url) {
-        UrlFetchApp.fetch(url, {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify({
-            action: 'enviarPushUsuario',
-            usuario: String(fa[i][iVendDest] || ''),
-            titulo: '⊘ Cobro cancelado · ' + String(fa[i][iCliente] || 'cliente'),
-            cuerpo: 'S/ ' + parseFloat(fa[i][iMonto] || 0).toFixed(2) +
-                    ' fue cancelado por ' + (data.adminAuth.nombre || 'admin') +
-                    '. Ya no debes cobrarlo.',
-            idNotif: 'CREDITO_COBRO_CANCELADO'
-          }),
-          muteHttpExceptions: true
-        });
-      }
-    } catch(_){}
+  // ── Fuera del lock (best-effort) ──
+  try { _dualWriteCobroPatchME(data.idCobro, { estado:'CANCELADO_ADMIN', fecha_res:new Date(), razon:'Cancelado por admin: ' + (data.razon || 'sin razón') }); } catch(_dw){}  // [creditos-directo]
+  // Push al cajero destino (avisar que ya no debe cobrar)
+  try {
+    var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+    if (url) {
+      UrlFetchApp.fetch(url, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({
+          action: 'enviarPushUsuario',
+          usuario: res.vendDest,
+          titulo: '⊘ Cobro cancelado · ' + res.cliente,
+          cuerpo: 'S/ ' + res.monto.toFixed(2) +
+                  ' fue cancelado por ' + (data.adminAuth.nombre || 'admin') +
+                  '. Ya no debes cobrarlo.',
+          idNotif: 'CREDITO_COBRO_CANCELADO'
+        }),
+        muteHttpExceptions: true
+      });
+    }
+  } catch(_){}
 
-    SpreadsheetApp.flush();
-    return ContentService.createTextOutput(JSON.stringify({
-      status: 'success', mensaje: 'Cobro cancelado y ticket retornado a CRÉDITO'
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-  return generarRespuestaError('Cobro ' + data.idCobro + ' no encontrado');
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', mensaje: 'Cobro cancelado y ticket retornado a CRÉDITO'
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================================================

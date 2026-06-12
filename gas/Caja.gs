@@ -991,6 +991,13 @@ function confirmarRetomaCaja(data) {
 }
 
 function cobrarVentaExistente(data) {
+  // [Lote1-A] Mismo lock que el flujo de cobro de créditos: un cobro directo de
+  // POR_COBRAR concurrente con un cobro asignado de la MISMA venta ya no puede
+  // generar doble registro (la validación de FormaPago de uno ve el cambio del otro).
+  return _conLockCred(function() { return _cobrarVentaExistenteImpl(data); },
+    function() { return generarRespuestaError('Sistema ocupado procesando otro cobro — reintenta en unos segundos'); });
+}
+function _cobrarVentaExistenteImpl(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
   if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
@@ -1000,8 +1007,19 @@ function cobrarVentaExistente(data) {
     if (String(filas[i][0]) === String(data.idVenta)) {
       var formaAnt = String(filas[i][8] || '');
       var cajaAnt  = String(filas[i][10] || '');
+      // OJO: COBRAR_VENTA es un setter GENERAL de FormaPago (cobrar POR_COBRAR,
+      // cambiar moneda de una cobrada, y REVERTIR a POR_COBRAR). NO validar
+      // "pendiente" aquí — rompería confirmarMoneda/revertirCobro. La defensa
+      // contra dobles registros de dinero vive en cobrarCreditoConExtra (que SÍ
+      // crea movimientos) + este lock compartido.
+      // [Lote1-A guard mínimo] ANULADO sí es terminal: no se cobra ni se revierte.
+      if (formaAnt.toUpperCase() === 'ANULADO') {
+        return generarRespuestaError('La venta está ANULADA — no se puede cambiar su forma de pago');
+      }
       sheet.getRange(i + 1, 9).setValue(data.metodo);
       if (data.cajaId) sheet.getRange(i + 1, 11).setValue(String(data.cajaId));
+      // [Lote1-A · M1] PATCH inmediato a la sombra (antes solo dirty-sync ≤15min)
+      try { _dualWriteVentaPatchME(data.idVenta, { forma_pago: String(data.metodo) }); } catch(_dwV){}
 
       // Log de auditoría
       try {
@@ -1029,6 +1047,12 @@ function cobrarVentaExistente(data) {
 }
 
 function creditarVenta(data) {
+  // [Lote1-A] Mismo lock que el flujo de cobros: creditar concurrente con un
+  // cobro de la misma venta ya no puede revertir a CREDITO una venta recién pagada.
+  return _conLockCred(function() { return _creditarVentaImpl(data); },
+    function() { return generarRespuestaError('Sistema ocupado — reintenta en unos segundos'); });
+}
+function _creditarVentaImpl(data) {
   if (!data.idVenta) return generarRespuestaError("idVenta requerido");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
@@ -1038,8 +1062,14 @@ function creditarVenta(data) {
     if (String(filas[i][0]) === String(data.idVenta)) {
       var formaAnt = String(filas[i][8] || '');
       var obsAnt   = String(filas[i][14] || '');
+      // [Lote1-A guard] ANULADO es terminal
+      if (formaAnt.toUpperCase() === 'ANULADO') {
+        return generarRespuestaError('La venta está ANULADA — no se puede creditar');
+      }
       sheet.getRange(i + 1, 9).setValue('CREDITO');
       sheet.getRange(i + 1, 15).setValue(String(data.obs || ''));
+      // [Lote1-A · M1] PATCH inmediato a la sombra (antes solo dirty-sync ≤15min)
+      try { _dualWriteVentaPatchME(data.idVenta, { forma_pago: 'CREDITO' }); } catch(_dwV){}
 
       try {
         var actor = _audExtraerActor(data);

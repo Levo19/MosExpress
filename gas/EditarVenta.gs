@@ -40,6 +40,14 @@ var _CONCEPTOS_EXTRA = [
 //   adminAuth:  { nombre, rol, via } // si requirió PIN
 // }
 function cobrarCreditoConExtra(data) {
+  // [Lote1-A · fix C1] TODO el flujo (validar venta pendiente → crear extras →
+  // cambiar FormaPago) bajo el lock global de cobros. Sin esto, dos requests
+  // simultáneos (doble tap / replay) leían ambos FormaPago='CREDITO', ambos
+  // pasaban la validación y ambos creaban INGRESO → doble ingreso en caja.
+  return _conLockCred(function() { return _cobrarCreditoConExtraImpl(data); },
+    function() { return generarRespuestaError('Sistema ocupado procesando otro cobro — reintenta en unos segundos'); });
+}
+function _cobrarCreditoConExtraImpl(data) {
   if (!data.idVenta)       return generarRespuestaError('idVenta requerido');
   if (!data.cajaReceptora) return generarRespuestaError('cajaReceptora requerida');
   if (!data.metodo)        return generarRespuestaError('metodo requerido');
@@ -105,7 +113,12 @@ function cobrarCreditoConExtra(data) {
 
   var monto = parseFloat(ventaPrev.total) || 0;
   var metodoUpper = String(data.metodo).toUpperCase();
-  var idExtra = 'EX-' + new Date().getTime();
+  // [Lote1-A · fix A1] Sufijo aleatorio en el id: 'EX-'+ms solo COLISIONABA entre
+  // cajas distintas en el mismo milisegundo → como id_extra es la clave de
+  // idempotencia del dual-write, el segundo upsert SOBRESCRIBÍA al primero en
+  // la sombra Supabase (un movimiento desaparecía). Mismo patrón que 'RES-'.
+  var _sufijoEx = function() { return Utilities.getUuid().split('-')[0]; };
+  var idExtra = 'EX-' + new Date().getTime() + '-' + _sufijoEx();
 
   // Caso MIXTO: crear DOS movimientos (uno EFECTIVO + uno VIRTUAL)
   var extrasCreados = [];
@@ -119,13 +132,12 @@ function cobrarCreditoConExtra(data) {
       );
     }
     if (efe > 0) {
-      var idE = 'EX-' + new Date().getTime() + '-E';
+      var idE = 'EX-' + new Date().getTime() + '-' + _sufijoEx() + '-E';
       extras.appendRow([idE, data.cajaReceptora, new Date(), 'INGRESO', efe, conceptoExtra, obsExtra, actor.usuario]);
       extrasCreados.push({ idExtra: idE, tipo: 'INGRESO', monto: efe });
     }
     if (vir > 0) {
-      Utilities.sleep(2);  // garantizar id único
-      var idV = 'EX-' + new Date().getTime() + '-V';
+      var idV = 'EX-' + new Date().getTime() + '-' + _sufijoEx() + '-V';
       extras.appendRow([idV, data.cajaReceptora, new Date(), 'INGRESO_VIRTUAL', vir, conceptoExtra, obsExtra, actor.usuario]);
       extrasCreados.push({ idExtra: idV, tipo: 'INGRESO_VIRTUAL', monto: vir });
     }
@@ -141,6 +153,25 @@ function cobrarCreditoConExtra(data) {
   ventas.getRange(vRow, 9).setValue(data.metodo);
   // Si la caja receptora es distinta, NO sobreescribir ID_Caja original (preserva trazabilidad).
   // El vínculo entre el cobro y la caja receptora vive en el log + en MOVIMIENTOS_EXTRA.
+
+  // [Lote1-A · fix A2] PATCH inmediato del cambio CREDITO→pagado a la sombra.
+  // Antes solo llegaba por el dirty-sync (≤15min): con lecturas flipeadas a
+  // Supabase, el crédito cobrado seguía "pendiente" esa ventana → re-asignable.
+  // Best-effort (igual que anulación); el batch lo corrige si falla.
+  try { _dualWriteVentaPatchME(data.idVenta, { forma_pago: String(data.metodo) }); } catch(_dwV){}
+  // Espejar también los extras creados a la sombra en tiempo real (best-effort;
+  // _dualWriteMovExtraME es upsert por id_extra = idempotente, keys por cabecera).
+  try {
+    extrasCreados.forEach(function(ex) {
+      if (typeof _dualWriteMovExtraME === 'function') {
+        _dualWriteMovExtraME({
+          ID_Extra: ex.idExtra, ID_Caja: data.cajaReceptora, Timestamp: new Date(),
+          Tipo: ex.tipo, Monto: ex.monto, Concepto: conceptoExtra, Obs: obsExtra,
+          Registrado_Por: actor.usuario
+        });
+      }
+    });
+  } catch(_dwM){}
 
   // ── Log en VENTAS_CABECERA: cobro de crédito con vínculo ──
   auditarLog('VENTAS_CABECERA', data.idVenta, {
