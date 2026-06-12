@@ -240,6 +240,13 @@ function _cerrarCajaAtomico(opts) {
     return _cerrarCajaAtomicoCore(opts);
   }
 
+  // [Fase 2 · red final del cierre] ANTES de tomar el lock (para no anidar con el lock del mirror) y antes de
+  // que el cierre lea VENTAS_CABECERA: re-espejar a Sheets cualquier venta/movimiento DIRECTO que se haya
+  // caído del mirror → el cierre, que lee Sheets, NUNCA sub-cuenta una venta directa, aunque el mirror y la
+  // reconciliación de 10min hayan fallado. Idempotente + best-effort (si falla, NO bloquea el cierre).
+  // reconciliarDirectasSheets ya tiene su guard interno: si la escritura directa está OFF, es no-op barato.
+  try { reconciliarDirectasSheets(); } catch(eRec) { Logger.log('[cierre·reconcil] ' + (eRec && eRec.message)); }
+
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); }
   catch(e) { return generarRespuestaError('LOCK_TIMEOUT: otra operación en curso, reintentá en unos segundos'); }
