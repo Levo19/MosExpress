@@ -42,12 +42,15 @@ function mirrorVentaASheets(data){
     }
 
     var tipoDocCliente = parseInt((h.cliente && h.cliente.tipo) || 0, 10);
+    // [CPE-directo] campos NF (cols 17-19): vacíos para NV; para boleta/factura llevan el resultado de NubeFact
+    // (estado/hash/enlace) que viene en data.nf_* → así la fila de Sheets de la boleta no queda sin la data fiscal.
     sheetCab.appendRow([
       idVenta, new Date(), auth.vendedor || '', auth.estacion || '',
       (h.cliente && h.cliente.doc) || '', (h.cliente && h.cliente.nombre) || '',
       (h.total != null ? h.total : 0), h.tipoDoc || 'NOTA_DE_VENTA', h.metodo || 'EFECTIVO',
       correlativo, pos.cajaId || '', auth.deviceId || '', 'COMPLETADO',
-      ref, String(h.obs || ''), tipoDocCliente, '', '', ''
+      ref, String(h.obs || ''), tipoDocCliente,
+      String(data.nf_estado || ''), String(data.nf_hash || ''), String(data.nf_enlace || '')
     ]);
     // detalle DENTRO del lock → cabecera+detalle atómicos (sin ventana de fila huérfana)
     var items = data.items || [];
@@ -143,7 +146,8 @@ function reconciliarDirectasSheets(){
   // un truncado SILENCIOSO (la red de seguridad NO debe sub-cubrir sin avisar). 2000 NV/día es inverosímil
   // para este negocio; si algún día se alcanza, lo logueamos en vez de truncar a ciegas.
   var _LIM_RECON = 2000;
-  var r = _sbSelect('me.ventas', { filters: { fecha:'gte.'+hoy0, tipo_doc:'eq.NOTA_DE_VENTA' }, order:'fecha.asc', limit:_LIM_RECON });
+  // incluye NV + CPE (boleta/factura): cuando el CPE-directo esté vivo, sus ventas también se reconcilian.
+  var r = _sbSelect('me.ventas', { filters: { fecha:'gte.'+hoy0, tipo_doc:'in.(NOTA_DE_VENTA,BOLETA,FACTURA)' }, order:'fecha.asc', limit:_LIM_RECON });
   if(!r.ok) return { ok:false, error:'no se pudo leer me.ventas: '+(r.error||'') };
   if((r.data||[]).length >= _LIM_RECON) Logger.log('⚠️ [reconciliarDirectasSheets] me.ventas alcanzó el límite '+_LIM_RECON+' — posible truncado, paginar.');
 
@@ -164,7 +168,9 @@ function reconciliarDirectasSheets(){
                   cliente: { doc: v.cliente_doc, nombre: v.cliente_nombre, tipo: v.tipo_doc_cliente } },
         auth: { vendedor: v.vendedor, estacion: v.estacion, deviceId: v.dispositivo_id },
         pos:  { cajaId: v.id_caja },
-        items: items
+        items: items,
+        // [CPE-directo] propagar el resultado NF (boleta/factura) al mirror para no perder la data fiscal en Sheets
+        nf_estado: v.nf_estado || '', nf_hash: v.nf_hash || '', nf_enlace: v.nf_enlace || ''
       };
       var m = mirrorVentaASheets(payload);   // idempotente (dedup por ref_local) + LockService
       if(m.ok && !m.dedup) espejadas++;

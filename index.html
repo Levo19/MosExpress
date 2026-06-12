@@ -13402,6 +13402,9 @@
         const escrituraDirectaSupabase = () => _flagOn('ME_ESCRITURA_DIRECTA', 'me_escritura_directa');
         // [Fase 2] ¿impresión DIRECTA vía Edge Function? server (ME_IMPRESION_DIRECTA) || local. Independiente.
         const impresionDirectaEdge = () => _flagOn('ME_IMPRESION_DIRECTA', 'me_impresion_directa');
+        // [Fase 2] ¿emisión CPE (boleta/factura) DIRECTA vía Edge emitir-cpe? server (ME_CPE_DIRECTO) || local.
+        // Compliance-crítico: requiere escritura directa ON + secrets NubeFact seteados. OFF por defecto.
+        const cpeDirectoSupabase = () => _flagOn('ME_CPE_DIRECTO', 'me_cpe_directo');
         // Manda un print job DIRECTO a PrintNode vía la Edge Function `imprimir` (key en secret server-side).
         // Mismo contrato de retorno que el path GAS ({status:'success', printJobId}). Lanza si falla → fallback.
         const _imprimirDirectoPN = async (printerId, titulo, textoRaw) => {
@@ -13448,11 +13451,82 @@
             return d;
         };
         // Espeja la venta a Sheets (cierre/SUNAT cuadran). Fire-and-forget; reconciliarDirectasSheets es el backstop.
-        const _mirrorVentaAsync = (ventaBase, idVenta, correlativo) => {
+        const _mirrorVentaAsync = (ventaBase, idVenta, correlativo, nf) => {
             try {
                 const body = Object.assign({}, ventaBase, { tipoEvento:'MIRROR_VENTA', idVenta: idVenta, correlativo: correlativo });
+                // [CPE-directo] si es boleta/factura, llevar el resultado NF (estado/hash/enlace) al mirror
+                if (nf) { body.nf_estado = nf.nf_estado || ''; body.nf_hash = nf.nf_hash || ''; body.nf_enlace = nf.nf_enlace || ''; }
                 fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) }).catch(()=>{});
             } catch(_) {}
+        };
+        // [Fase 2] Emite el CPE (boleta/factura) DIRECTO a SUNAT vía la Edge Function emitir-cpe (token NubeFact
+        // en secret). Mismo data+correlativo que el path GAS. Devuelve {ok,hash,enlace,qrString,aceptada,...}.
+        const _emitirCPEDirecto = async (ventaBase, correlativo) => {
+            const token = await _mintTokenSB();
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/emitir-cpe`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+                body: JSON.stringify({ data: ventaBase, correlativo: correlativo })
+            });
+            const d = await res.json().catch(()=>null);
+            if (!d) throw new Error('emitir-cpe sin respuesta (HTTP '+res.status+')');
+            return d;   // {ok, hash, enlace, qrString, aceptada} | {ok:false, rechazadoPorSunat, ...} | {ok:false, error}
+        };
+        // [Fase 2] Orquesta el CPE-directo: crea la venta CPE en Supabase (correlativo B/F atómico, nf_estado
+        // PENDIENTE) → emite a NubeFact por la Edge → patchea el resultado NF. Devuelve {correlativo, id_venta,
+        // nfData (para imprimir QR SUNAT), nfEstado, nf (para el mirror)}. Si la EMISIÓN falla, la venta queda
+        // PENDIENTE (la reconciliación de CPE la re-emite); igual imprime con el correlativo (nota: sin QR SUNAT).
+        const _crearCPEDirecto = async (ventaBase, localId) => {
+            const token = await _mintTokenSB();
+            const h = ventaBase.header || {};
+            const est = config.value.estacion || {};
+            const posc = ventaBase.pos_config || ventaBase.pos || {};
+            const tipoDoc = h.tipoDoc;   // 'BOLETA' | 'FACTURA'
+            // serie del documento ACTUAL (igual que NV usa serieActual): al vender CPE, serieActual ya es la
+            // serie de la boleta/factura. Fallback a la config de la estación. DEBE coincidir con la serie que
+            // usa GAS para esa estación (mismo contador) — verificar en el primer test.
+            const serie = posc.serieActual
+                || (tipoDoc === 'FACTURA' ? (est.Serie_Factura || est.SerieFactura || 'F001')
+                                          : (est.Serie_Boleta  || est.SerieBoleta  || 'B001'));
+            const payload = {
+                ref_local: localId, serie: serie, tipo_doc: tipoDoc,
+                vendedor: (ventaBase.auth && ventaBase.auth.vendedor) || config.value.vendedor || '',
+                estacion: (ventaBase.auth && ventaBase.auth.estacion) || est.idEstacion || '',
+                cliente_doc: (h.cliente && h.cliente.doc) || '', cliente_nombre: (h.cliente && h.cliente.nombre) || '',
+                tipo_doc_cliente: (h.cliente && h.cliente.tipo) || 0,
+                total: h.total, forma_pago: h.metodo || 'EFECTIVO',
+                id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '', obs: h.obs || '',
+                items: (ventaBase.items || []).map(it => ({ sku: it.sku, nombre: it.nombre, cantidad: it.cantidad,
+                    precio: it.precio, subtotal: it.subtotal, cod_barras: it.codBarras || it.cod_barras || '',
+                    valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv, unidad_medida: it.unidad_de_medida || it.unidad_medida }))
+            };
+            // 1) crear la venta CPE (mintea correlativo B/F + inserta PENDIENTE)
+            const rcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/crear_cpe_directo`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p: payload })
+            });
+            if (!rcRes.ok) throw new Error('crear_cpe_directo HTTP ' + rcRes.status);
+            const rc = await rcRes.json();
+            if (!rc || rc.status !== 'success') throw new Error('crear_cpe_directo: ' + ((rc && rc.error) || 'fallo'));
+
+            // 2) emitir a NubeFact por la Edge (best-effort: si falla, queda PENDIENTE → reconciliación re-emite)
+            let nfData = null, nfEstado = 'PENDIENTE';
+            try {
+                const em = await _emitirCPEDirecto(ventaBase, rc.correlativo);
+                if (em && em.ok) { nfEstado = 'EMITIDO'; nfData = { hash: em.hash, enlace: em.enlace, qrString: em.qrString }; }
+                else if (em && em.rechazadoPorSunat) { nfEstado = 'RECHAZADO'; nfData = { hash: em.hash, enlace: em.enlace, qrString: em.qrString }; }
+                else { nfEstado = 'ERROR'; }
+                // 3) patchear el resultado NF en la venta (por ref_local)
+                await fetch(`${SUPABASE_URL}/rest/v1/rpc/set_cpe_nf`, {
+                    method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                    body: JSON.stringify({ p_ref_local: localId, p_nf: { nf_estado: nfEstado, nf_hash: (nfData && nfData.hash) || '', nf_enlace: (nfData && nfData.enlace) || '' } })
+                }).catch(()=>{});
+            } catch (eEmit) { console.warn('[CPE emitir] quedó PENDIENTE:', eEmit && eEmit.message); nfEstado = 'ERROR'; }
+
+            return { correlativo: rc.correlativo, id_venta: rc.id_venta, nfData: nfData, nfEstado: nfEstado,
+                     nf: { nf_estado: nfEstado, nf_hash: (nfData && nfData.hash) || '', nf_enlace: (nfData && nfData.enlace) || '' } };
         };
         // [Fase 2] Crea un movimiento de caja DIRECTO en Supabase (RPC crear_movimiento_directo). Idempotente
         // por id_extra (generado por el cliente, reusado en RPC+mirror). Devuelve {status,id_extra,dedup}.
@@ -15091,6 +15165,35 @@
                    return;   // EXCLUSIVIDAD: no pendingSales, no procesarVenta
                } catch (eDir) {
                    console.warn('[escritura directa] fallback a GAS:', eDir && eDir.message);
+                   // sigue al path GAS normal (sin return)
+               }
+           }
+
+           // ── [Fase 2] CPE DIRECTO (boleta/factura) — flag ME_CPE_DIRECTO + escritura directa, online ──
+           // Crea la venta CPE en Supabase + emite a NubeFact por la Edge + imprime con el QR SUNAT apenas llega.
+           // Compliance-crítico: detrás de su propio flag. Si algo falla → fallback transparente al path GAS.
+           if (escrituraDirectaSupabase() && cpeDirectoSupabase() && (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA')) {
+               try {
+                   const rd = await _crearCPEDirecto(ventaBase, localId);
+                   imprimirTicketVenta(rd.correlativo, true, rd.nfData);   // QR SUNAT si emitió; si quedó PENDIENTE, sin QR oficial
+                   const idx = ventasHoy.value.findIndex(v => v.id === localId);
+                   if (idx !== -1) {
+                       ventasHoy.value[idx].correlativo  = rd.correlativo;
+                       ventasHoy.value[idx].id_venta_gas = rd.id_venta;
+                       ventasHoy.value[idx].syncStatus   = 'synced';
+                       ventasHoy.value[idx].raw_data.status = 'synced';
+                       if (rd.nfEstado)         ventasHoy.value[idx].nfEstado   = rd.nfEstado;
+                       if (rd.nfData && rd.nfData.hash)     ventasHoy.value[idx].nfHash     = rd.nfData.hash;
+                       if (rd.nfData && rd.nfData.enlace)   ventasHoy.value[idx].nfEnlace   = rd.nfData.enlace;
+                       if (rd.nfData && rd.nfData.qrString) ventasHoy.value[idx].nfQrString = rd.nfData.qrString;
+                       ventasHoy.value[idx].isNew = true;
+                       lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                   }
+                   _mirrorVentaAsync(ventaBase, rd.id_venta, rd.correlativo, rd.nf);   // mirror con NF
+                   agregarToast(rd.nfEstado === 'EMITIDO' ? 'CPE emitido ✓' : ('CPE ' + rd.nfEstado), rd.correlativo);
+                   return;   // EXCLUSIVIDAD
+               } catch (eCpe) {
+                   console.warn('[CPE directo] fallback a GAS:', eCpe && eCpe.message);
                    // sigue al path GAS normal (sin return)
                }
            }
