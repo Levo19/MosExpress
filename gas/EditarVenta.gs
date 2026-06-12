@@ -528,7 +528,11 @@ function registrarExtraCajaConLog(data) {
     sheet.appendRow(['ID_Extra','ID_Caja','Timestamp','Tipo','Monto','Concepto','Obs','Registrado_Por']);
   }
   var actor = _audExtraerActor(data);
-  var id = 'EX-' + new Date().getTime();
+  // [fix 20x idempotencia cruzada Fase 2] usar el idExtra provisto por el cliente (el MISMO que usó el path
+  // directo a Supabase) si vino; si no, generar uno (back-compat). Así, si la escritura directa escribió en
+  // me.movimientos_extra pero su respuesta se perdió y caemos a este fallback, el id_extra coincide → el batch
+  // upserta (no duplica en Supabase) y la reconciliación ve la fila en Sheets → el cierre NO cuenta doble.
+  var id = String(data.idExtra || '').trim() || ('EX-' + new Date().getTime());
   sheet.appendRow([
     id, data.cajaId, new Date(),
     String(data.tipo).toUpperCase(),

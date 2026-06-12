@@ -74,11 +74,56 @@ function mirrorVentaASheets(data){
   return { ok:true, dedup:false, idVenta:idVenta, correlativo:correlativo };
 }
 
+// [Fase 2] Espeja a Sheets un movimiento de caja YA creado directo en Supabase (por crear_movimiento_directo),
+// para que el cierre —que lee MOVIMIENTOS_EXTRA de Sheets— cuadre. Idempotente por ID_Extra (col 1).
+// LockService alrededor de scan+append (sin constraint único en Sheets, el lock es la única defensa contra
+// doble fila). Comportamiento IDÉNTICO al handler GAS real (registrarExtraCajaConLog): igual que él, NO dispara
+// _chequearAlertaEfectivo (no introducir divergencia atada al flag). Lo llama la PWA async tras el mov directo.
+function mirrorMovimientoASheets(data){
+  data = data || {};
+  var id = String(data.id_extra || '').trim();
+  if(!id) return { ok:false, error:'id_extra requerido' };
+  var idCaja = String(data.id_caja || '');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); }
+  catch(e){ return { ok:false, error:'MIRROR_MOV_OCUPADO: no se pudo tomar el lock (reintentar)' }; }
+  var dedup = false;
+  try {
+    var sheet = ss.getSheetByName('MOVIMIENTOS_EXTRA');
+    if(!sheet){
+      sheet = ss.insertSheet('MOVIMIENTOS_EXTRA');
+      sheet.appendRow(['ID_Extra','ID_Caja','Timestamp','Tipo','Monto','Concepto','Obs','Registrado_Por']);
+    }
+    // idempotencia: ¿ya espejado? dedup por ID_Extra (col 1), escaneo de 1 columna (liviano)
+    var lastRow = sheet.getLastRow();
+    if(lastRow >= 2){
+      var idCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      for(var i=0;i<idCol.length;i++){ if(String(idCol[i][0]) === id){ dedup = true; break; } }
+    }
+    if(!dedup){
+      sheet.appendRow([
+        id, idCaja, new Date(), String(data.tipo || 'EGRESO'),
+        parseFloat(data.monto) || 0, String(data.concepto || ''),
+        String(data.obs || ''), String(data.registrado_por || '')
+      ]);
+      SpreadsheetApp.flush();
+    }
+  } finally { lock.releaseLock(); }
+
+  return { ok:true, dedup:dedup, id_extra:id };
+}
+
 // [Fase 2 · contrato #2] Reconciliación Supabase→Sheets: red de seguridad para cuando el mirror falla.
 // Busca ventas NV de HOY en me.ventas cuyo ref_local NO esté en VENTAS_CABECERA y las espeja (vía
 // mirrorVentaASheets, idempotente). Así, aunque un MIRROR_VENTA se pierda, el cierre nunca sub-cuenta.
 // Pensado para correr periódico (trigger 5-10min) o al iniciar el cierre. Aditivo: NO toca el flujo de venta.
 function reconciliarDirectasSheets(){
+  // [guard-flag] El backstop solo tiene sentido cuando hay escritura directa (CORRELATIVO_SOURCE=supabase).
+  // Si está en 'sheets', no hay ventas directas que reconciliar → evita GETs desperdiciados si el trigger
+  // quedó instalado antes de tiempo.
+  try { if(_fuenteCorrelativo() !== 'supabase') return { ok:true, skip:true, motivo:'CORRELATIVO_SOURCE!=supabase' }; } catch(_){}
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
   if(!sheetCab) return { ok:false, error:'VENTAS_CABECERA no existe' };
@@ -94,8 +139,13 @@ function reconciliarDirectasSheets(){
   // ventas NV de hoy (Lima) en Supabase
   var tz = Session.getScriptTimeZone();
   var hoy0 = Utilities.formatDate(new Date(), 'America/Lima', "yyyy-MM-dd'T'00:00:00XXX");
-  var r = _sbSelect('me.ventas', { filters: { fecha:'gte.'+hoy0, tipo_doc:'eq.NOTA_DE_VENTA' } });
+  // limit/order deterministas: si PostgREST tuviera db-max-rows y hubiera más NV/día que el tope, evitamos
+  // un truncado SILENCIOSO (la red de seguridad NO debe sub-cubrir sin avisar). 2000 NV/día es inverosímil
+  // para este negocio; si algún día se alcanza, lo logueamos en vez de truncar a ciegas.
+  var _LIM_RECON = 2000;
+  var r = _sbSelect('me.ventas', { filters: { fecha:'gte.'+hoy0, tipo_doc:'eq.NOTA_DE_VENTA' }, order:'fecha.asc', limit:_LIM_RECON });
   if(!r.ok) return { ok:false, error:'no se pudo leer me.ventas: '+(r.error||'') };
+  if((r.data||[]).length >= _LIM_RECON) Logger.log('⚠️ [reconciliarDirectasSheets] me.ventas alcanzó el límite '+_LIM_RECON+' — posible truncado, paginar.');
 
   var faltantes = (r.data||[]).filter(function(v){ var rl=String(v.ref_local||''); return rl && !enSheets[rl]; });
   var espejadas = 0, errores = [];
@@ -121,7 +171,44 @@ function reconciliarDirectasSheets(){
       else if(!m.ok) errores.push(v.ref_local + ': ' + (m.error||''));
     } catch(e){ errores.push(String(v.ref_local) + ': ' + (e && e.message)); }
   });
-  var out = { ok:true, ventasHoyEnSupabase:(r.data||[]).length, faltabanEnSheets:faltantes.length, espejadas:espejadas, errores:errores };
+  // ── Pasada de MOVIMIENTOS (mismo backstop): movimientos de hoy en me.movimientos_extra sin fila en
+  // MOVIMIENTOS_EXTRA de Sheets → espejarlos (idempotente por id_extra). Igual que ventas: si un MIRROR_MOV
+  // se perdió, el cierre nunca sub-cuenta un egreso/ingreso.
+  var movEspejados = 0, movErrores = [], movFaltaban = 0, movEnSupa = 0;
+  try {
+    var enSheetsMov = {};
+    var shMov = ss.getSheetByName('MOVIMIENTOS_EXTRA');
+    if(shMov){
+      var lrM = shMov.getLastRow();
+      if(lrM >= 2){
+        var idColM = shMov.getRange(2, 1, lrM - 1, 1).getValues();
+        for(var k=0;k<idColM.length;k++){ var idm=String(idColM[k][0]||''); if(idm) enSheetsMov[idm]=1; }
+      }
+    }
+    var rm = _sbSelect('me.movimientos_extra', { filters: { ts:'gte.'+hoy0 }, order:'ts.asc', limit:_LIM_RECON });
+    if(rm.ok){
+      movEnSupa = (rm.data||[]).length;
+      if(movEnSupa >= _LIM_RECON) Logger.log('⚠️ [reconciliarDirectasSheets] me.movimientos_extra alcanzó el límite '+_LIM_RECON+' — posible truncado, paginar.');
+      var movFaltantes = (rm.data||[]).filter(function(m){ var i=String(m.id_extra||''); return i && !enSheetsMov[i]; });
+      movFaltaban = movFaltantes.length;
+      movFaltantes.forEach(function(m){
+        try {
+          var mm = mirrorMovimientoASheets({
+            id_extra: m.id_extra, id_caja: m.id_caja, tipo: m.tipo, monto: m.monto,
+            concepto: m.concepto, obs: m.obs, registrado_por: m.registrado_por
+          });
+          if(mm.ok && !mm.dedup) movEspejados++;
+          else if(!mm.ok) movErrores.push(String(m.id_extra)+': '+(mm.error||''));
+        } catch(e){ movErrores.push(String(m.id_extra)+': '+(e && e.message)); }
+      });
+    } else {
+      movErrores.push('no se pudo leer me.movimientos_extra: '+(rm.error||''));
+    }
+  } catch(eMov){ movErrores.push('pasada movimientos: '+(eMov && eMov.message)); }
+
+  var out = { ok:true, ventasHoyEnSupabase:(r.data||[]).length, faltabanEnSheets:faltantes.length,
+              espejadas:espejadas, errores:errores,
+              movHoyEnSupabase:movEnSupa, movFaltaban:movFaltaban, movEspejados:movEspejados, movErrores:movErrores };
   Logger.log('[reconciliarDirectasSheets] ' + JSON.stringify(out));
   return out;
 }
@@ -140,6 +227,73 @@ function instalarTriggerReconciliacionDirectas(){
 function _b64url_(bytes){ return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
 function _b64urlStr_(str){ return _b64url_(Utilities.newBlob(str).getBytes()); }
 
+// [gate-horario-ALTO] Chequeo de ventana horaria a NIVEL APP (mosExpress) usando la MISMA config central
+// (HORARIOS_APPS de MOS) y la MISMA matemática cruza-medianoche que resolverHorarioPersonal. Reusa la hoja
+// para no duplicar la fuente de verdad. FAIL-OPEN: ante cualquier error, config ausente, día sin configurar
+// u hora inválida → devuelve true (permitir). Razón: es una app de dinero; jamás bloquear el minteo (y por
+// ende las ventas) por un hipo del servicio de horario. Solo rechaza cuando hay una ventana EXPLÍCITA y
+// estamos fuera de ella. Los horarios CUSTOM por operador siguen los hace cumplir el overlay del frontend
+// (que sí tiene el contexto del operador logueado; el mint solo conoce el dispositivo).
+var _HOR_DIAS_ME = ['lun','mar','mie','jue','vie','sab','dom'];
+function _parseHoraME(s){
+  var m = String(s||'').match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  var hh = parseInt(m[1],10), mm = parseInt(m[2],10);
+  if(hh<0||hh>23||mm<0||mm>59) return null;
+  return hh + (mm/60);
+}
+function _horarioAppPermitidoME(mosSS){
+  try {
+    // Cache 120s: la ventana no cambia entre heartbeats; amortiza el read cross-spreadsheet.
+    var cache = CacheService.getScriptCache();
+    var ck = 'HOR_APP_ME_PERMITIDO';
+    var cached = cache.get(ck);
+    if(cached === '1') return true;
+    if(cached === '0') return false;
+
+    var sh = mosSS && mosSS.getSheetByName('HORARIOS_APPS');
+    if(!sh) return true; // sin hoja de horarios → fail-open
+    var rows = sh.getDataRange().getValues();
+    if(!rows || rows.length < 2) return true;
+    var hdr = rows[0];
+    var iApp = hdr.indexOf('app'), iHor = hdr.indexOf('horarioJson');
+    if(iApp < 0 || iHor < 0) return true;
+    var horJson = null;
+    for(var r=1; r<rows.length; r++){
+      if(String(rows[r][iApp]) === 'mosExpress'){ horJson = rows[r][iHor]; break; }
+    }
+    if(!horJson) return true; // sin config para mosExpress → fail-open
+    var hor = {};
+    try { hor = JSON.parse(horJson) || {}; } catch(_){ return true; } // JSON corrupto → fail-open
+
+    var tz = Session.getScriptTimeZone();
+    var ahora = new Date();
+    var diaIdx = parseInt(Utilities.formatDate(ahora, tz, 'u'), 10); // 1=lun..7=dom
+    var diaKey = _HOR_DIAS_ME[Math.max(0, Math.min(6, diaIdx - 1))];
+    var cd = hor[diaKey] || {};
+    var permitido;
+    if(!cd.activo){
+      permitido = false; // día explícitamente cerrado
+    } else {
+      var apert = _parseHoraME(cd.apertura), cierre = _parseHoraME(cd.cierre);
+      if(apert === null || cierre === null){
+        permitido = true; // hora inválida → fail-open (igual que el motor central)
+      } else {
+        var horaActual = parseInt(Utilities.formatDate(ahora, tz, 'H'), 10);
+        var minActual  = parseInt(Utilities.formatDate(ahora, tz, 'm'), 10);
+        var horaDec = horaActual + (minActual/60);
+        if(cierre > apert)      permitido = (horaDec >= apert && horaDec < cierre);     // 07:00-19:00
+        else if(cierre < apert) permitido = (horaDec >= apert || horaDec < cierre);     // 14:00-02:00 cruza 00:00
+        else                    permitido = false;                                      // apert === cierre
+      }
+    }
+    cache.put(ck, permitido ? '1' : '0', 120);
+    return permitido;
+  } catch(e){
+    return true; // cualquier error → fail-open (nunca bloquear el minteo)
+  }
+}
+
 // Emite un JWT 'authenticated' scoped por zona para un dispositivo. Lo llama la PWA al iniciar + en heartbeat.
 function mintSupabaseToken(deviceId){
   var idd = String(deviceId || '').trim();
@@ -153,8 +307,8 @@ function mintSupabaseToken(deviceId){
   // → el openById se amortiza. Fail-closed: no registrado/ACTIVO → no token.
   var mosSsId = PropertiesService.getScriptProperties().getProperty('MOS_SS_ID');
   if(!mosSsId) return { ok:false, error:'falta MOS_SS_ID' };
-  var dispSheet;
-  try { dispSheet = SpreadsheetApp.openById(mosSsId).getSheetByName('DISPOSITIVOS'); }
+  var mosSS, dispSheet;
+  try { mosSS = SpreadsheetApp.openById(mosSsId); dispSheet = mosSS.getSheetByName('DISPOSITIVOS'); }
   catch(e){ return { ok:false, error:'no se pudo abrir DISPOSITIVOS de MOS: '+(e&&e.message) }; }
   if(!dispSheet) return { ok:false, error:'DISPOSITIVOS no disponible' };
   var datos = obtenerDatosHojaComoJSON(dispSheet), devOk = false;
@@ -165,7 +319,12 @@ function mintSupabaseToken(deviceId){
     var actMatch = (dd.Estado === 'ACTIVO' || dd.estado === 'ACTIVO' || dd.activo === 1 || dd.activo === '1');
     if(idMatch && appMatch && actMatch){ devOk = true; break; }
   }
+  // Estado=ACTIVO ya cubre el bloqueo por UUID (bloquearDispositivosDeUsuario pone Estado='INACTIVO').
   if(!devOk) return { ok:false, error:'dispositivo no registrado/activo para mosExpress' };
+
+  // [gate-horario-ALTO] Defense-in-depth: no emitir token fuera de la ventana horaria de la app (config
+  // central, fail-open). El overlay del frontend ya bloquea; esto cierra el bypass directo a las RPC.
+  if(!_horarioAppPermitidoME(mosSS)) return { ok:false, error:'fuera de horario operativo' };
 
   var now = Math.floor(Date.now()/1000);
   var header  = { alg:'HS256', typ:'JWT' };

@@ -1066,6 +1066,13 @@ function anularVentaIndividual(data) {
   for (var i = filas.length - 1; i > 0; i--) {
     if (String(filas[i][0]) === String(data.ventaId)) {
       var formaAnt = String(filas[i][8] || '');
+      // [idempotencia-ALTO] si ya está ANULADO, no re-disparar dual-write ni notificación WH.
+      // _pickupDescontarVentaImpl (WH) NO es idempotente → un replay/id stale restaría 2 veces del pickup.
+      if (formaAnt.toUpperCase() === 'ANULADO') {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: "success", mensaje: "Venta ya estaba anulada", noop: true
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
       sheet.getRange(i + 1, 9).setValue('ANULADO');
       // [anulacion-directo] espejo a Supabase en tiempo real (PATCH parcial, best-effort)
       try { _dualWriteVentaPatchME(data.ventaId, { forma_pago: 'ANULADO' }); } catch(_dw){}
@@ -1107,6 +1114,9 @@ function anulacionMasiva(data) {
   for (var i = 1; i < filas.length; i++) {
     if (data.ids.indexOf(String(filas[i][0])) !== -1) {
       var _antesFP = filas[i][8];
+      // [guard-ALTO] solo anular POR_COBRAR (su propósito documentado). Saltar EFECTIVO/MIXTO/CREDITO
+      // ya cobradas y las ya ANULADO → no descuadra caja ni re-dispara el descuento de pickup en WH.
+      if (String(_antesFP || '').toUpperCase() !== 'POR_COBRAR') continue;
       sheet.getRange(i + 1, 9).setValue('ANULADO');
       anulados++;
       idsAnulados.push(String(filas[i][0]));

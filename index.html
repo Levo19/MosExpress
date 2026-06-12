@@ -13323,11 +13323,27 @@
                 obs: nuevoExtra.value.obs.trim(),
                 timestamp: Date.now()
             };
+            // [Fase 2] id único GENERADO UNA VEZ y compartido por AMBOS paths (directo + GAS) = clave de
+            // idempotencia. Si el RPC directo escribe pero su respuesta se pierde y caemos al fallback GAS,
+            // el GAS usa el MISMO id_extra → upsert por id_extra (no duplica en Supabase) y la reconciliación
+            // ve la fila en Sheets → no re-espeja → el cierre NO cuenta doble.
+            const idExtra = 'EX-' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+            extra.id = idExtra;
+            let directoOK = false;
+            // Online + flag → RPC crear_movimiento_directo + mirror a Sheets. Si falla, cae al path GAS (transparente).
+            if (escrituraDirectaSupabase() && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                try {
+                    await _crearMovimientoDirecto(extra, idExtra);
+                    _mirrorMovimientoAsync(extra, idExtra);   // fire-and-forget; reconciliación = backstop
+                    directoOK = true;
+                } catch(eD) { console.warn('[mov directo] fallback a GAS:', eD && eD.message); directoOK = false; }
+            }
             try {
-                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                if (!directoOK && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                     await fetch(API_URL, { method: 'POST', body: JSON.stringify({
                         tipoEvento: 'EXTRA_CAJA',
                         cajaId: idCajaActual.value,
+                        idExtra: idExtra,   // [fix 20x] mismo id que el path directo = idempotencia cruzada
                         tipo: extra.tipo, monto: extra.monto,
                         concepto: extra.concepto, obs: extra.obs,
                         registradoPor: config.value.vendedor,
@@ -13392,6 +13408,38 @@
         const _mirrorVentaAsync = (ventaBase, idVenta, correlativo) => {
             try {
                 const body = Object.assign({}, ventaBase, { tipoEvento:'MIRROR_VENTA', idVenta: idVenta, correlativo: correlativo });
+                fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) }).catch(()=>{});
+            } catch(_) {}
+        };
+        // [Fase 2] Crea un movimiento de caja DIRECTO en Supabase (RPC crear_movimiento_directo). Idempotente
+        // por id_extra (generado por el cliente, reusado en RPC+mirror). Devuelve {status,id_extra,dedup}.
+        const _crearMovimientoDirecto = async (extra, idExtra) => {
+            const token = await _mintTokenSB();
+            const est = config.value.estacion || {};
+            const payload = {
+                id_extra: idExtra, id_caja: idCajaActual.value || '',
+                tipo: extra.tipo, monto: extra.monto,
+                concepto: extra.concepto, obs: extra.obs,
+                registrado_por: config.value.vendedor || '',
+                zona_id: est.Zona_ID || est.zonaId || '', dispositivo_id: deviceId.value || ''
+            };
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/crear_movimiento_directo`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p: payload })
+            });
+            if (!res.ok) throw new Error('crear_movimiento_directo HTTP ' + res.status);
+            const d = await res.json();
+            if (!d || d.status !== 'success') throw new Error('crear_movimiento_directo: ' + ((d && d.error) || 'fallo'));
+            return d;
+        };
+        // Espeja el movimiento a Sheets (cierre cuadra + alerta efectivo). Fire-and-forget; la pasada de
+        // movimientos en reconciliarDirectasSheets es el backstop si esto se pierde.
+        const _mirrorMovimientoAsync = (extra, idExtra) => {
+            try {
+                const body = { tipoEvento:'MIRROR_MOV', id_extra: idExtra, id_caja: idCajaActual.value || '',
+                    tipo: extra.tipo, monto: extra.monto, concepto: extra.concepto, obs: extra.obs,
+                    registrado_por: config.value.vendedor || '' };
                 fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) }).catch(()=>{});
             } catch(_) {}
         };
