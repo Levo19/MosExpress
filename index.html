@@ -2447,7 +2447,8 @@
 
     <!-- HEADER PWA -->
     <header class="bg-posPrimary text-white px-3 shadow-md flex items-center gap-2 z-30 shrink-0"
-            :class="currentModule === 'POS' ? 'py-2' : 'py-1.5'">
+            :class="currentModule === 'POS' ? 'py-2' : 'py-1.5'"
+            :style="{ background: colorModulo, transition: 'background .35s ease' }">
 
       <!-- ── MODO POS: logo acordeón + buscador ── -->
       <template v-if="currentModule === 'POS'">
@@ -3904,8 +3905,8 @@
         <div class="flex-1 relative" style="background:#3b82f6">
             <span :class="cajaAbierta ? 'bg-emerald-200' : 'bg-red-500 animate-pulse'" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full"></span>
         </div>
-        <div class="flex-1 relative" style="background:#f59e0b">
-            <span v-if="etiqsPendientes.length > 0" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-700 animate-pulse"></span>
+        <div class="flex-1 relative" style="background:#ea580c">
+            <span v-if="etiqsPendientes.length > 0" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
         </div>
         <div class="absolute left-1/2 -translate-x-1/2 top-[3px] w-10 h-1 rounded-full bg-white/70"></div>
     </div>
@@ -3915,25 +3916,25 @@
          @mouseleave="programarColapso(1200)" @mouseenter="expandirNav"
          class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0 transition-transform">
         <!-- Tab POS (Destaque Central o Izquierdo) -->
-        <button @click="cambiarModulo('POS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'POS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'">
+        <button @click="cambiarModulo('POS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'POS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'POS' ? { color: colorModulo } : {}">
             <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='POS'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
             POS
-            <div v-if="currentModule === 'POS'" class="absolute -top-[1px] w-12 h-[3px] bg-posPrimary rounded-b-full"></div>
+            <div v-if="currentModule === 'POS'" class="absolute -top-[1px] w-12 h-[3px] rounded-b-full" :style="{ background: colorModulo }"></div>
         </button>
         
         <!-- Tab Caja / Mis Ventas -->
-        <button @click="cambiarModulo('CAJA')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'CAJA' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'">
+        <button @click="cambiarModulo('CAJA')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'CAJA' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'CAJA' ? { color: colorModulo } : {}">
             <div class="relative">
                <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='CAJA'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
                <span v-if="cajaAbierta" class="absolute -top-1 -right-2 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-white"></span>
                <span v-else class="absolute -top-1 -right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>
             </div>
             {{ config.esCajero ? 'CAJA TURNO' : 'MIS VENTAS' }}
-            <div v-if="currentModule === 'CAJA'" class="absolute -top-[1px] w-12 h-[3px] bg-posPrimary rounded-b-full"></div>
+            <div v-if="currentModule === 'CAJA'" class="absolute -top-[1px] w-12 h-[3px] rounded-b-full" :style="{ background: colorModulo }"></div>
         </button>
         
         <!-- Tab Tools -->
-        <button @click="cambiarModulo('TOOLS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'TOOLS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'">
+        <button @click="cambiarModulo('TOOLS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'TOOLS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'TOOLS' ? { color: colorModulo } : {}">
             <div class="relative">
                 <!-- Wrench / tools icon -->
                 <!-- [v2.7.80] Ícono palpitante cuando hay etiqsPendientes — para que el
@@ -3950,7 +3951,7 @@
                       class="absolute -top-2 -right-3 bg-red-600 text-white text-[9px] font-black rounded-full min-w-[16px] h-[16px] px-1 flex items-center justify-center ring-2 ring-white shadow">{{ etiqsPendientes.length > 99 ? '99+' : etiqsPendientes.length }}</span>
             </div>
             TOOLS
-            <div v-if="currentModule === 'TOOLS'" class="absolute -top-[1px] w-12 h-[3px] bg-posPrimary rounded-b-full"></div>
+            <div v-if="currentModule === 'TOOLS'" class="absolute -top-[1px] w-12 h-[3px] rounded-b-full" :style="{ background: colorModulo }"></div>
         </button>
     </nav>
 
@@ -9054,31 +9055,41 @@
             }
             return out;
         };
-        const _iconoTarjeta = (tipo) => {   // carrito=cliente · camión=proveedor, centrado en 576px (ancho 80mm)
+        // Cabecera como UN bitmap nítido: ícono (carrito/camión) + banda negra sólida con la palabra en BLANCO.
+        // Antes la banda era texto invertido doble-alto → se veía borrosa; en canvas queda filosa. Proveedor
+        // lleva además un marco interior (líneas) = "enmarcado". Centrado en 576px (ancho 80mm).
+        const _cabeceraTarjeta = (tipo, palabra) => {
             try {
-                const W = 576, H = 116, cx = W / 2, cy = 50;
+                const W = 576, Hi = 112, Hb = 72, H = Hi + Hb, cx = W / 2, cy = 52;
                 const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
                 const x = cv.getContext('2d');
                 x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
                 x.strokeStyle = '#000'; x.fillStyle = '#000'; x.lineWidth = 9; x.lineCap = 'round'; x.lineJoin = 'round';
                 if (tipo === 'CLIENTE') {
                     x.beginPath();
-                    x.moveTo(cx - 78, cy - 36); x.lineTo(cx - 96, cy - 36);                                   // mango
+                    x.moveTo(cx - 78, cy - 36); x.lineTo(cx - 96, cy - 36);                                   // mango carrito
                     x.moveTo(cx - 62, cy - 28); x.lineTo(cx + 64, cy - 28);                                   // canasta
                     x.lineTo(cx + 48, cy + 26); x.lineTo(cx - 46, cy + 26); x.lineTo(cx - 62, cy - 28);
                     x.stroke();
                     x.beginPath(); x.arc(cx - 30, cy + 46, 11, 0, 6.2832); x.fill();                          // ruedas
                     x.beginPath(); x.arc(cx + 34, cy + 46, 11, 0, 6.2832); x.fill();
                 } else {
-                    x.strokeRect(cx - 88, cy - 30, 92, 56);                                                   // carga
+                    x.strokeRect(cx - 88, cy - 30, 92, 56);                                                   // carga camión
                     x.beginPath();
                     x.moveTo(cx + 4, cy - 6); x.lineTo(cx + 46, cy - 6); x.lineTo(cx + 70, cy + 12);          // cabina
                     x.lineTo(cx + 70, cy + 26); x.lineTo(cx + 4, cy + 26); x.stroke();
                     x.beginPath(); x.arc(cx - 44, cy + 40, 13, 0, 6.2832); x.fill();                          // ruedas
                     x.beginPath(); x.arc(cx + 46, cy + 40, 13, 0, 6.2832); x.fill();
                 }
+                // banda negra NÍTIDA + palabra blanca
+                x.fillStyle = '#000'; x.fillRect(0, Hi, W, Hb);
+                if (tipo !== 'CLIENTE') { x.strokeStyle = '#fff'; x.lineWidth = 3; x.strokeRect(12, Hi + 9, W - 24, Hb - 18); }  // marco proveedor
+                x.fillStyle = '#fff';
+                x.font = '700 48px Arial, "Helvetica Neue", sans-serif';
+                x.textAlign = 'center'; x.textBaseline = 'middle';
+                x.fillText(palabra, W / 2, Hi + Hb / 2 + 3);
                 return _canvasARaster(cv);
-            } catch (_) { return []; }   // si el canvas falla → sin ícono, la tarjeta igual imprime
+            } catch (_) { return []; }   // si el canvas falla → sin cabecera bitmap, la tarjeta igual imprime
         };
         // Arma {bytes (array), waUrl, ref}. Cliente = banda negra; Proveedor = banda + marco de líneas. Ícono bitmap.
         const _tarjetaData = (tipo) => {
@@ -9102,25 +9113,10 @@
             const S = (s) => { const t = _norm(s); for (let i=0;i<t.length;i++) bytes.push(t.charCodeAt(i) & 0xff); };   // texto visible (quita acentos)
             const Sraw = (s) => { for (let i=0;i<s.length;i++) bytes.push(s.charCodeAt(i) & 0xff); };                    // string→bytes SIN normalizar (comandos con bytes binarios, ej. QR)
             const B = (arr) => { for (let i=0;i<arr.length;i++) bytes.push(arr[i] & 0xff); };                            // bytes crudos (raster)
-            const banda = (palabra) => {   // banda NEGRA full-width (invertido) + palabra bold doble-alto centrada
-                const pad = Math.max(0, Math.floor((W - palabra.length) / 2));
-                S('\x1b\x61\x01\x1d\x42\x01\x1b\x21\x18');
-                S(' '.repeat(pad) + palabra + ' '.repeat(Math.max(0, W - palabra.length - pad)));
-                S('\x1b\x21\x00\x1d\x42\x00\n');
-            };
 
             S('\x1b\x40\x1b\x61\x01');     // init + centrar
-            B(_iconoTarjeta(tipo));        // ÍCONO bitmap (carrito/camión)
-            S('\n');
-            if (esCliente) {
-                banda('CLIENTE');
-                S('\x1b\x21\x08atencion comercial\x1b\x21\x00\n');
-            } else {
-                S('\x1b\x21\x08' + '='.repeat(W) + '\x1b\x21\x00\n');   // línea doble (marco) arriba
-                banda('PROVEEDOR');
-                S('\x1b\x21\x08' + '='.repeat(W) + '\x1b\x21\x00\n');   // línea doble (marco) abajo
-                S('\x1b\x21\x08canal de compras\x1b\x21\x00\n');
-            }
+            B(_cabeceraTarjeta(tipo, esCliente ? 'CLIENTE' : 'PROVEEDOR'));   // CABECERA bitmap nítida: ícono + banda + palabra
+            S('\n\x1b\x21\x08' + (esCliente ? 'atencion comercial' : 'canal de compras') + '\x1b\x21\x00\n');
             S('\n\x1b\x21\x30' + marca + '\x1b\x21\x00\n');             // marca grande
             S('\x1b\x21\x08' + (esCliente ? 'Quieres hacer un pedido?' : 'Nos ofreces productos?') + '\x1b\x21\x00\n');
             S('\x1b\x21\x08Escanea el QR y escribenos\x1b\x21\x00\n\n');
@@ -9866,9 +9862,19 @@
         };
         try {
             const _mp = localStorage.getItem('me_modo_pro');
-            modoPro.value = (_mp != null) ? (_mp === '1') : esPC.value;   // autodetect PC si no hay preferencia guardada
+            // autodetect: PC (hover+fino) O pantalla ≥600px (tablet) → la barra auto-oculta da espacio en ambos.
+            // (los ATAJOS de teclado siguen solo en PC vía esPC; el auto-ocultar va en PC y tablet.)
+            const esTabletOMas = !!(window.matchMedia && window.matchMedia('(min-width: 600px)').matches);
+            modoPro.value = (_mp != null) ? (_mp === '1') : (esPC.value || esTabletOMas);
         } catch(_) { modoPro.value = esPC.value; }
         if (modoPro.value) programarColapso(3500);   // arranca expandida, colapsa a los 3.5s (para que la vean)
+
+        // [Color por módulo] toda la app habla el color del módulo activo → cohesión con la barra colapsada.
+        // POS=verde · CAJA/Mis Ventas=azul · TOOLS=naranja. (mismo lenguaje en header + nav + barra.)
+        const colorModulo = computed(() =>
+            currentModule.value === 'CAJA'  ? '#3b82f6'
+          : currentModule.value === 'TOOLS' ? '#ea580c'
+          :                                    '#10b981');
 
         // ── Listeners de actividad ───────────────────────────
         ['touchstart', 'click', 'keydown', 'mousemove', 'scroll'].forEach(ev => {
@@ -16630,7 +16636,7 @@
           cambiarCantidad, eliminarItem, setMonto,
           esGranel, setCantidadGramos, setCantidadKg, gramosBlur, gramosLive,
           esPC, cobrarFx,   // [Atajos PC]
-          modoPro, navColapsado, expandirNav, programarColapso, toggleModoPro,   // [Modo Pro]
+          modoPro, navColapsado, expandirNav, programarColapso, toggleModoPro, colorModulo,   // [Modo Pro / color]
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
