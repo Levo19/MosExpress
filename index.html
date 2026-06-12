@@ -26,6 +26,9 @@
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes scaleIn { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+    /* [Atajos PC] pulso al disparar Cobrar/Confirmar con la barra espaciadora */
+    @keyframes fxCobrarPulse { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,.65); } 100% { box-shadow: 0 0 0 22px rgba(16,185,129,0); } }
+    .fx-cobrar-pulse { animation: fxCobrarPulse .46s ease-out; }
     /* [v2.6.0] Pulse del overlay "sin caja activa" — anillo expandiéndose */
     @keyframes cajaPulse { 0% { transform: scale(.95); opacity: .55; } 100% { transform: scale(1.4); opacity: 0; } }
 
@@ -3651,8 +3654,8 @@
                         en tablets/móviles. En PC se ve igual pero el espacio extra es invisible
                         porque no hay nav (queda fondo blanco abajo). -->
                    <footer class="bg-white border-t pt-4 px-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50 shrink-0" style="padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 24px);">
-                       <button @click="abrirModalPago" :disabled="carrito.length === 0" class="w-full bg-emerald-500 text-white font-black text-lg py-4 rounded-xl shadow-lg shadow-emerald-200 disabled:bg-gray-300 disabled:shadow-none transition-transform active:scale-95 flex justify-between px-6 items-center">
-                         <span>COBRAR</span>
+                       <button @click="abrirModalPago" :disabled="carrito.length === 0" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="w-full bg-emerald-500 text-white font-black text-lg py-4 rounded-xl shadow-lg shadow-emerald-200 disabled:bg-gray-300 disabled:shadow-none transition-transform active:scale-95 flex justify-between px-6 items-center relative">
+                         <span class="flex items-center gap-2">COBRAR<span v-if="esPC && carrito.length > 0" class="text-[10px] font-bold bg-white/20 px-1.5 py-0.5 rounded">⎵ Espacio</span></span>
                          <span class="text-2xl">S/ {{ granTotal.toFixed(2) }}</span>
                        </button>
                    </footer>
@@ -4405,7 +4408,7 @@
                </div>
             </div>
     
-            <button @click="procesarPago" :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente) || !!errorDocumento" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
+            <button @click="procesarPago" data-pago-confirmar :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente) || !!errorDocumento" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
                     :class="pago.ventaCreditoDirecto ? '!bg-orange-500 shadow-orange-200' : ''">
                <svg v-if="procesando" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                <span>{{ procesando ? 'IMPRIMIENDO...' : (pago.ventaCreditoDirecto ? '📋 EMITIR A CRÉDITO' : 'IMPRIMIR TICKET') }}</span>
@@ -9656,6 +9659,80 @@
             }
         };
         window.addEventListener('keydown', _onIdleKeydown);
+
+        // ════════════════════════════════════════════════════════════════════
+        // [Atajos PC · pro-mode] Autodetecta PC (mouse fino + hover) → habilita atajos de teclado.
+        //   ESPACIO → Cobrar (POS · carrito>0 · buscador VACÍO)  |  Confirmar+imprimir (modal de pago)
+        //   ESC     → cerrar modal de pago  |  limpiar el input de gramos del granel (queda vacío)
+        //   /       → ir al buscador        |  Alt+1/2/3 → POS / CAJA / TOOLS
+        // GUARD DE ORO: si el cajero está ESCRIBIENDO (buscador con texto, o un campo de nombre) → la tecla
+        // pasa normal (no rompe la búsqueda por nombre ni el escaneo). El input de gramos NO cuenta como "texto".
+        // ════════════════════════════════════════════════════════════════════
+        const esPC = ref(false);
+        const cobrarFx = ref(false);   // flash visual del botón Cobrar/Confirmar
+        const _fxAtajo = (sonido) => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination); o.type = 'sine';
+                if (sonido === 'print') { o.frequency.setValueAtTime(440, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(210, ctx.currentTime + 0.13); }
+                else { o.frequency.setValueAtTime(680, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(1020, ctx.currentTime + 0.12); }
+                g.gain.setValueAtTime(0.22, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
+                o.start(); o.stop(ctx.currentTime + 0.17);
+            } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate(40); } catch(_){}
+            cobrarFx.value = true; setTimeout(() => { cobrarFx.value = false; }, 460);
+        };
+        let _atajoHintMostrado = false;
+        const _atajosPC = (e) => {
+            if (!esPC.value || !config.value.completado) return;
+            const ae = document.activeElement;
+            const aeEsScanner = (ae === scannerInput.value);   // el scanner ES texto pero con buscador vacío = "listo para cobrar"
+            const enTexto = !!(ae && (ae.tagName === 'TEXTAREA' ||
+                (ae.tagName === 'INPUT' && !['number','checkbox','radio','range'].includes(String(ae.type||'').toLowerCase()) && !ae.classList.contains('gramos-input'))));
+
+            if (e.key === 'Escape') {
+                // En el granel: limpiar el campo (queda vacío para tipear de cero)
+                if (ae && ae.classList && ae.classList.contains('gramos-input')) {
+                    const wrap = ae.closest('[data-cart-idx]');
+                    const idx = wrap ? parseInt(wrap.getAttribute('data-cart-idx'), 10) : -1;
+                    if (idx >= 0 && carrito.value[idx]) carrito.value[idx]._gramosStr = '';
+                    e.preventDefault();
+                    return;
+                }
+                if (modalPago.value) { modalPago.value = false; try { _prereservaCancelar(); } catch(_){} e.preventDefault(); return; }
+                return;
+            }
+            if (e.key === ' ') {
+                if (modalPago.value) {
+                    // si está escribiendo un nombre (campo de texto que NO es el scanner) → dejar el espacio
+                    if (enTexto && !aeEsScanner) return;
+                    const b = document.querySelector('[data-pago-confirmar]');
+                    if (b && !b.disabled) { e.preventDefault(); b.click(); _fxAtajo('print'); }
+                    return;
+                }
+                // Cobrar: POS · carrito>0 · buscador VACÍO · (foco en el scanner vacío  o  fuera de un campo de texto)
+                if (currentModule.value === 'POS' && carrito.value.length > 0 && String(bBuscador.value || '').trim() === '' && (aeEsScanner || !enTexto)) {
+                    e.preventDefault();
+                    abrirModalPago(); _fxAtajo('cobrar');
+                    if (!_atajoHintMostrado) { _atajoHintMostrado = true; agregarToast('Atajo ⎵', 'Espacio = Cobrar / Confirmar · Esc = cerrar'); }
+                }
+                return;
+            }
+            if (e.key === '/' && !enTexto) {
+                e.preventDefault();
+                if (currentModule.value !== 'POS') cambiarModulo('POS');
+                nextTick(() => { try { if (scannerInput.value) scannerInput.value.focus(); } catch(_){} });
+                return;
+            }
+            if (e.altKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
+                e.preventDefault();
+                cambiarModulo(e.key === '1' ? 'POS' : e.key === '2' ? 'CAJA' : 'TOOLS');
+                return;
+            }
+        };
+        try { esPC.value = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches); } catch(_) { esPC.value = false; }
+        window.addEventListener('keydown', _atajosPC);
 
         // ── Listeners de actividad ───────────────────────────
         ['touchstart', 'click', 'keydown', 'mousemove', 'scroll'].forEach(ev => {
@@ -16416,6 +16493,7 @@
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
           esGranel, setCantidadGramos, setCantidadKg, gramosBlur, gramosLive,
+          esPC, cobrarFx,   // [Atajos PC]
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
