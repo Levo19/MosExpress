@@ -19,9 +19,11 @@ function mintSupabaseToken(deviceId){
   if(!secret) return { ok:false, error:'falta SUPABASE_JWT_SECRET en Script Properties (Supabase → Settings → API → JWT Secret)' };
 
   // Zonas autoritativas desde el binding admin-only (mos.dispositivo_zonas). Fail-closed: sin zona → no token.
-  var r = _sbSelect('mos.dispositivo_zonas', { id_dispositivo:'eq.'+idd, activo:'eq.true' });
+  // [fix] los filtros van en opts.filters (no como claves sueltas) — sino _sbQuery_ los ignora y trae TODO.
+  var r = _sbSelect('mos.dispositivo_zonas', { filters: { id_dispositivo:'eq.'+idd, activo:'eq.true' } });
   if(!r.ok) return { ok:false, error:'no se pudo leer binding dispositivo->zona: '+(r.error||'') };
-  var zonas = (r.data || []).map(function(x){ return String(x.id_zona); }).filter(Boolean);
+  var seen = {}, zonas = [];
+  (r.data || []).forEach(function(x){ var z = String(x.id_zona||''); if(z && !seen[z]){ seen[z]=1; zonas.push(z); } });  // dedup defensivo
   if(!zonas.length) return { ok:false, error:'dispositivo sin zona asignada — el admin debe asignarlo en mos.dispositivo_zonas' };
 
   var now = Math.floor(Date.now()/1000);
@@ -38,17 +40,19 @@ function mintSupabaseToken(deviceId){
 }
 
 // Wrapper de prueba para el editor (sin args): mintea para el 1er dispositivo con binding y muestra el token.
-function _testMintToken(){
-  var r = _sbSelect('mos.dispositivo_zonas', { activo:'eq.true' });
-  if(!r.ok || !(r.data||[]).length){ Logger.log('sin dispositivos con binding'); return; }
+function probarMintToken(){
+  var secret = PropertiesService.getScriptProperties().getProperty('SUPABASE_JWT_SECRET');
+  if(!secret){ Logger.log('❌ FALTA cargar SUPABASE_JWT_SECRET en Propiedades del script (Supabase → Settings → API → JWT Secret)'); return; }
+  Logger.log('✅ SUPABASE_JWT_SECRET presente ('+secret.length+' chars)');
+  var r = _sbSelect('mos.dispositivo_zonas', { filters:{ activo:'eq.true' }, limit:1 });
+  if(!r.ok || !(r.data||[]).length){ Logger.log('sin dispositivos con binding en mos.dispositivo_zonas'); return; }
   var dev = String(r.data[0].id_dispositivo);
   var out = mintSupabaseToken(dev);
-  Logger.log('mint para '+dev+' → '+JSON.stringify({ok:out.ok, zonas:out.zonas, error:out.error}));
+  Logger.log('mint para dispositivo '+dev+' → '+JSON.stringify({ok:out.ok, zonas:out.zonas, error:out.error}));
   if(out.ok){
-    // decodificar payload para verificar (solo log, el token NO se imprime entero en prod)
     var parts = out.token.split('.');
     var payJson = Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[1])).getDataAsString();
-    Logger.log('payload: '+payJson);
-    Logger.log('token (primeros 40): '+out.token.substring(0,40)+'...');
+    Logger.log('payload del JWT: '+payJson);
+    Logger.log('TOKEN COMPLETO (pegámelo para probarlo): '+out.token);
   }
 }
