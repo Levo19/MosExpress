@@ -10466,6 +10466,12 @@
              console.log("Mock Impresion (modo dev):", titulo);
              return { status: 'mock_success' };
           }
+          // [Fase 2] Impresión DIRECTA vía Edge Function (flag me_impresion_directa, OFF por defecto). Saca el
+          // salto a GAS → ticket más rápido (~100-300ms vs ~500ms-1s). Si falla, cae al path GAS (transparente).
+          if (impresionDirectaEdge()) {
+            try { return await _imprimirDirectoPN(printerId, titulo, textoRaw); }
+            catch(eE) { console.warn('[impresion Edge] fallback a GAS:', eE && eE.message); }
+          }
           const resp = await fetch(API_URL, {
               method: 'POST',
               body: JSON.stringify({
@@ -13372,6 +13378,22 @@
         // [Fase 2] ¿ESCRITURA directa activada? Flag local, OFF por defecto. Cuando ON: NV online se crea
         // directo en Supabase (sin GAS), y se GATEA la pre-reserva (el RPC es el único minter → sin doble-mint).
         const escrituraDirectaSupabase = () => { try { return localStorage.getItem('me_escritura_directa') === '1'; } catch(_) { return false; } };
+        // [Fase 2] ¿impresión DIRECTA vía Edge Function? Flag local, OFF por defecto. Independiente de
+        // escritura directa (se puede activar solo el print). Reemplaza el salto a GAS por la Edge Function.
+        const impresionDirectaEdge = () => { try { return localStorage.getItem('me_impresion_directa') === '1'; } catch(_) { return false; } };
+        // Manda un print job DIRECTO a PrintNode vía la Edge Function `imprimir` (key en secret server-side).
+        // Mismo contrato de retorno que el path GAS ({status:'success', printJobId}). Lanza si falla → fallback.
+        const _imprimirDirectoPN = async (printerId, titulo, textoRaw) => {
+            const token = await _mintTokenSB();
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/imprimir`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+                body: JSON.stringify({ printerId: printerId, title: titulo, content: textoRaw })
+            });
+            const d = await res.json().catch(()=>null);
+            if (!res.ok || !d || d.status !== 'success') throw new Error('Edge imprimir: ' + ((d && d.mensaje) || ('HTTP '+res.status)));
+            return d;
+        };
         // Crea la venta NV DIRECTO en Supabase (RPC crear_venta_directa). Devuelve {status,id_venta,correlativo,dedup}.
         const _crearVentaDirecta = async (ventaBase, localId) => {
             const token = await _mintTokenSB();
