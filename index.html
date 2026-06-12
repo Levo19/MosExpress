@@ -14086,6 +14086,22 @@
           bBuscador.value = ''; filtrarCatalogo();
         };
 
+        // [fix granel-focus] Enfoca el input de gramos del 1er item del carrito de forma ROBUSTA: espera al
+        // render de Vue (nextTick) + al paint (requestAnimationFrame) → el input ya existe y está estable,
+        // incluso en el PRIMER granel cuando el carrito recién se monta (vacío→lista). Reemplaza el setTimeout
+        // fijo de 150ms que competía con el foco al scanner y se comía el primer dígito.
+        const _focusGramosCarrito = () => {
+          const _try = () => {
+            const inp = document.querySelector('[data-cart-idx="0"] .gramos-input');
+            if (inp) { inp.focus({ preventScroll: true }); inp.select(); return true; }
+            return false;
+          };
+          nextTick(() => {
+            requestAnimationFrame(() => {
+              if (!_try()) setTimeout(_try, 120);   // reintento por si el montaje del carrito tardó (1er item)
+            });
+          });
+        };
         const agregarCarritoObj = (prodObj) => {
           // Limpiar búsqueda al agregar cualquier producto (click o enter)
           bBuscador.value = '';
@@ -14111,10 +14127,7 @@
               }
               finalIdx = 0;
               vibrate(30);
-              setTimeout(() => {
-                const inp = document.querySelector('[data-cart-idx="0"] .gramos-input');
-                if (inp) { inp.focus(); inp.select(); }
-              }, 150);
+              _focusGramosCarrito();
             } else {
               // Unidad: sumar +1 como siempre
               it.cantidad++;
@@ -14162,10 +14175,7 @@
             // Granel nuevo: dar focus al input de gramos para que el cajero
             // ingrese el peso de la balanza inmediatamente
             if (_esGranelProd) {
-              setTimeout(() => {
-                const inp = document.querySelector('[data-cart-idx="0"] .gramos-input');
-                if (inp) { inp.focus(); inp.select(); }
-              }, 150);
+              _focusGramosCarrito();
             }
           }
 
@@ -14191,7 +14201,12 @@
               setTimeout(() => speakES(_precioVoz(_montoVoz)), 250);
           }
           _voiceNextAdd = false; // siempre resetear tras agregar
-          setTimeout(() => { if(scannerInput.value && !mostrarTeclado.value) scannerInput.value.focus({ preventScroll: true }); else if(scannerInput.value && mostrarTeclado.value) scannerInput.value.focus(); }, 100);
+          // [fix granel-focus] NO re-enfocar el scanner si fue granel: el foco debe quedarse en el input de
+          // gramos. Antes este focus (100ms) competía con el de gramos (150ms) → el primer dígito caía en el
+          // scanner y se perdía (sobre todo en el 1er granel, por el flicker del montaje del carrito).
+          if (!_esGranelProd) {
+            setTimeout(() => { if(scannerInput.value && !mostrarTeclado.value) scannerInput.value.focus({ preventScroll: true }); else if(scannerInput.value && mostrarTeclado.value) scannerInput.value.focus(); }, 100);
+          }
         };
 
         const cambiarCantidad = (idx, delta) => {
