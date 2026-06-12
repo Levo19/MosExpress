@@ -9016,7 +9016,13 @@
             txt += (esCliente ? 'Quieres hacer un pedido o consulta?' : 'Eres proveedor? Envianos tu catalogo') + '\n\n';
             txt += 'Escanea y escribenos por WhatsApp\n\n';
             txt += qrESCPOS(waUrl);                                       // QR heroe (ya centra)
-            txt += '\n' + SEPd;
+            // [num debajo del QR] para quien no quiere/puede escanear: muestra el número legible y grande
+            var numFmt = numero ? ('+' + numero.slice(0,2) + ' ' + numero.slice(2).replace(/(\d{3})(?=\d)/g, '$1 ')) : '';
+            if (numFmt) {
+                txt += '\nO escribenos al WhatsApp:\n';
+                txt += '\x1b\x21\x10' + numFmt + '\x1b\x21\x00\n';        // doble alto = legible para tipear
+            }
+            txt += SEPd;
             txt += 'Solo WhatsApp - sin llamadas\n';
             txt += 'Te respondemos en horario\n';
             txt += SEPd;
