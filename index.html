@@ -13361,7 +13361,10 @@
             const token = await _mintTokenSB();
             const h = ventaBase.header || {};
             const est = config.value.estacion || {};
-            const serie = est.Serie_Nota || est.SerieNV || est.Serie_NV || 'NVa2';
+            // [fix CRITICO 20x] ventaBase lleva caja+serie en pos_config (NO pos). Usar la serieActual
+            // autoritativa (la misma que el path GAS) y el cajId real → el cierre cuenta la venta.
+            const posc = ventaBase.pos_config || ventaBase.pos || {};
+            const serie = posc.serieActual || est.Serie_Nota || est.SerieNV || est.Serie_NV || 'NVa2';
             const payload = {
                 ref_local: localId, serie: serie, tipo_doc: 'NOTA_DE_VENTA',
                 vendedor: (ventaBase.auth && ventaBase.auth.vendedor) || config.value.vendedor || '',
@@ -13369,7 +13372,7 @@
                 cliente_doc: (h.cliente && h.cliente.doc) || '', cliente_nombre: (h.cliente && h.cliente.nombre) || '',
                 tipo_doc_cliente: (h.cliente && h.cliente.tipo) || 0,
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
-                id_caja: (ventaBase.pos && ventaBase.pos.cajaId) || '', dispositivo_id: deviceId.value || '',
+                id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '',
                 obs: h.obs || '',
                 items: (ventaBase.items || []).map(it => ({ sku: it.sku, nombre: it.nombre, cantidad: it.cantidad,
                     precio: it.precio, subtotal: it.subtotal, cod_barras: it.codBarras || it.cod_barras || '',

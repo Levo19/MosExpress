@@ -16,7 +16,7 @@ function mirrorVentaASheets(data){
   data = data || {};
   var h    = data.header || {};
   var auth = data.auth   || {};
-  var pos  = data.pos    || {};
+  var pos  = data.pos_config || data.pos || {};   // [fix CRITICO 20x] ventaBase lleva la caja en pos_config
   var ref  = String((data.data_sync && data.data_sync.last_sync) || data.ref_local || '').trim();
   if(!ref) return { ok:false, error:'ref_local requerido' };
   var idVenta = String(data.idVenta || '');
@@ -124,6 +124,17 @@ function reconciliarDirectasSheets(){
   var out = { ok:true, ventasHoyEnSupabase:(r.data||[]).length, faltabanEnSheets:faltantes.length, espejadas:espejadas, errores:errores };
   Logger.log('[reconciliarDirectasSheets] ' + JSON.stringify(out));
   return out;
+}
+
+// [Fase 2 · fix ALTO 20x] Registra el trigger de reconciliación (cada 10min) — sino el backstop queda huérfano.
+// Correr UNA vez en el editor antes de habilitar la escritura directa. Idempotente.
+function instalarTriggerReconciliacionDirectas(){
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if(t.getHandlerFunction()==='reconciliarDirectasSheets') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('reconciliarDirectasSheets').timeBased().everyMinutes(10).create();
+  Logger.log('✅ Trigger reconciliarDirectasSheets cada 10min instalado (backstop del mirror)');
+  return { ok:true };
 }
 
 function _b64url_(bytes){ return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
