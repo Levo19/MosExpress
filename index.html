@@ -13353,6 +13353,45 @@
 
         // [Fase 2] ¿lectura directa a Supabase activada? Flag local, OFF por defecto (cero riesgo).
         const lecturaDirectaSupabase = () => { try { return localStorage.getItem('me_lectura_directa') === '1'; } catch(_) { return false; } };
+        // [Fase 2] ¿ESCRITURA directa activada? Flag local, OFF por defecto. Cuando ON: NV online se crea
+        // directo en Supabase (sin GAS), y se GATEA la pre-reserva (el RPC es el único minter → sin doble-mint).
+        const escrituraDirectaSupabase = () => { try { return localStorage.getItem('me_escritura_directa') === '1'; } catch(_) { return false; } };
+        // Crea la venta NV DIRECTO en Supabase (RPC crear_venta_directa). Devuelve {status,id_venta,correlativo,dedup}.
+        const _crearVentaDirecta = async (ventaBase, localId) => {
+            const token = await _mintTokenSB();
+            const h = ventaBase.header || {};
+            const est = config.value.estacion || {};
+            const serie = est.Serie_Nota || est.SerieNV || est.Serie_NV || 'NVa2';
+            const payload = {
+                ref_local: localId, serie: serie, tipo_doc: 'NOTA_DE_VENTA',
+                vendedor: (ventaBase.auth && ventaBase.auth.vendedor) || config.value.vendedor || '',
+                estacion: (ventaBase.auth && ventaBase.auth.estacion) || est.idEstacion || '',
+                cliente_doc: (h.cliente && h.cliente.doc) || '', cliente_nombre: (h.cliente && h.cliente.nombre) || '',
+                tipo_doc_cliente: (h.cliente && h.cliente.tipo) || 0,
+                total: h.total, forma_pago: h.metodo || 'EFECTIVO',
+                id_caja: (ventaBase.pos && ventaBase.pos.cajaId) || '', dispositivo_id: deviceId.value || '',
+                obs: h.obs || '',
+                items: (ventaBase.items || []).map(it => ({ sku: it.sku, nombre: it.nombre, cantidad: it.cantidad,
+                    precio: it.precio, subtotal: it.subtotal, cod_barras: it.codBarras || it.cod_barras || '',
+                    valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv, unidad_medida: it.unidad_de_medida || it.unidad_medida }))
+            };
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/crear_venta_directa`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p: payload })
+            });
+            if (!res.ok) throw new Error('crear_venta_directa HTTP ' + res.status);
+            const d = await res.json();
+            if (!d || d.status !== 'success') throw new Error('crear_venta_directa: ' + ((d && d.error) || 'fallo'));
+            return d;
+        };
+        // Espeja la venta a Sheets (cierre/SUNAT cuadran). Fire-and-forget; reconciliarDirectasSheets es el backstop.
+        const _mirrorVentaAsync = (ventaBase, idVenta, correlativo) => {
+            try {
+                const body = Object.assign({}, ventaBase, { tipoEvento:'MIRROR_VENTA', idVenta: idVenta, correlativo: correlativo });
+                fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) }).catch(()=>{});
+            } catch(_) {}
+        };
         // Pide a GAS un JWT scoped por zona (MINT_TOKEN). Cachea hasta ~30s antes de exp.
         const _mintTokenSB = async () => {
             const now = Math.floor(Date.now()/1000);
@@ -14311,7 +14350,8 @@
             try { cargarClienteVarios(); } catch(_) {}
             // [v2.5.58] Pre-reservar correlativo de NV en BACKGROUND.
             // Si el cajero cambia tipoDoc a Boleta/Factura, _onCambioTipoDoc libera esta reserva.
-            try { _prereservaIniciar('NOTA_DE_VENTA'); } catch(_) {}
+            // [Fase 2] en modo escritura-directa NO se pre-reserva (el RPC es el único minter → sin doble-mint).
+            try { if (!escrituraDirectaSupabase()) _prereservaIniciar('NOTA_DE_VENTA'); } catch(_) {}
         };
 
         // [v2.5.58] Estado de la pre-reserva en curso
@@ -14376,7 +14416,7 @@
         const _onCambioTipoDoc = (nuevoTipo) => {
             if (nuevoTipo !== 'NOTA_DE_VENTA') {
                 _prereservaCancelar();
-            } else {
+            } else if (!escrituraDirectaSupabase()) {
                 _prereservaIniciar('NOTA_DE_VENTA');
             }
         };
@@ -14571,7 +14611,7 @@
            // hasta 3s. Si tras 3s sigue sin llegar y hay red → preguntar al cajero
            // (Usar LOCAL o esperar más). Si offline real → LOCAL OK (irá a cola).
            // PROHIBIDO IMPRIMIR LOCAL CUANDO HAY INTERNET: garantía estricta.
-           if (pago.value.tipoDoc === 'NOTA_DE_VENTA' && !offlineMode.value) {
+           if (pago.value.tipoDoc === 'NOTA_DE_VENTA' && !offlineMode.value && !escrituraDirectaSupabase()) {
                await esperarCorrelativoONV(3000); // resuelve cuando llega o cuando cajero decide
            }
 
@@ -14932,6 +14972,32 @@
                return;
            }
 
+           // ── [Fase 2] ESCRITURA DIRECTA a Supabase (flag OFF default · solo NV · ya estamos online) ──
+           // Crea la venta directo en Supabase (sin GAS), imprime con el correlativo del RPC, espeja a Sheets
+           // async (reconciliarDirectasSheets es el backstop), y NO entra a pendingSales = EXCLUSIVIDAD de path.
+           // Si falla por cualquier motivo → cae transparente al path GAS de abajo.
+           if (escrituraDirectaSupabase() && tipoDocVenta === 'NOTA_DE_VENTA') {
+               try {
+                   const rd = await _crearVentaDirecta(ventaBase, localId);
+                   imprimirTicketVenta(rd.correlativo, true, null);
+                   const idx = ventasHoy.value.findIndex(v => v.id === localId);
+                   if (idx !== -1) {
+                       ventasHoy.value[idx].correlativo  = rd.correlativo;
+                       ventasHoy.value[idx].id_venta_gas = rd.id_venta;
+                       ventasHoy.value[idx].syncStatus   = 'synced';
+                       ventasHoy.value[idx].raw_data.status = 'synced';
+                       ventasHoy.value[idx].isNew = true;
+                       lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                   }
+                   _mirrorVentaAsync(ventaBase, rd.id_venta, rd.correlativo);
+                   agregarToast('Venta directa ✓', rd.correlativo + (rd.dedup ? ' (ya existía)' : ''));
+                   return;   // EXCLUSIVIDAD: no pendingSales, no procesarVenta
+               } catch (eDir) {
+                   console.warn('[escritura directa] fallback a GAS:', eDir && eDir.message);
+                   // sigue al path GAS normal (sin return)
+               }
+           }
+
            // ── Online: intentar obtener correlativo definitivo (timeout 4s) ──
            // Más allá de eso, el cajero no debería esperar más → caer a LOCAL.
            let _fastTimeoutHit = false;
@@ -15087,7 +15153,7 @@
           // → la próxima venta encuentra el número en mano y NO espera el round-trip a Postgres
           // (evita el overlay "Asegurando numeración"). Si no se vende más, la reserva expira
           // (gap NV aceptable). Online-only: offline no tiene sentido reservar.
-          try { if (!offlineMode.value) setTimeout(() => { try { _prereservaIniciar('NOTA_DE_VENTA'); } catch(_){} }, 0); } catch(_) {}
+          try { if (!offlineMode.value && !escrituraDirectaSupabase()) setTimeout(() => { try { _prereservaIniciar('NOTA_DE_VENTA'); } catch(_){} }, 0); } catch(_) {}
           // Reset autorización crédito directo para próxima venta
           pago.value.ventaCreditoDirecto = false;
           pago.value.adminAuth = null;
