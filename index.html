@@ -8905,7 +8905,23 @@
                    try {
                        const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(venta.raw_data) });
                        const res = await req.json();
-                       if (res.status === 'success') {
+                       // [Lote1-C · fix A3] success solo vale CON idVenta (misma validación
+                       // v2.7.4 de _enviarVentaConReintentos). Antes: el backend devolvía
+                       // success con idVenta=null al rechazar (NO_CAJA_ACTIVA al subir la cola
+                       // con caja ya cerrada) → la cola la daba por subida → ticket impreso
+                       // sin fila en VENTAS_CABECERA = venta fantasma SILENCIOSA.
+                       if (res.status === 'success' && !res.idVenta) {
+                           console.warn('[ME sync] success SIN idVenta — venta rechazada por el backend:', venta.id, res);
+                           pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                           const hIdxF = ventasHoy.value.findIndex(v => v.id === venta.id);
+                           if (hIdxF > -1) { ventasHoy.value[hIdxF].syncStatus = 'fantasma'; }
+                           lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                           try { playBeepError?.(); } catch(_){}
+                           agregarToast('⚠ Venta NO registrada en el servidor',
+                               (venta.raw_data?.header?.total ? 'S/ ' + venta.raw_data.header.total + ' · ' : '') +
+                               'el backend la rechazó (' + (res.error || 'caja cerrada') + '). Avisa al cajero/admin.', 'error');
+                           exito = true;   // sale del while SIN marcarla como sincronizada
+                       } else if (res.status === 'success') {
                            pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
                            const historiaIdx = ventasHoy.value.findIndex(v => v.id === venta.id);
                            if (historiaIdx > -1) {
@@ -9798,6 +9814,9 @@
                 return;
             }
             if (e.key === ' ') {
+                // [Lote1-C · fix A2] Espacio SOSTENIDO no repite el atajo (doble venta).
+                // En campos de texto reales se respeta el repeat nativo (escribir espacios).
+                if (e.repeat) { if (!enTexto || aeEsScanner) e.preventDefault(); return; }
                 if (modalPago.value) {
                     // si está escribiendo un nombre (campo de texto que NO es el scanner) → dejar el espacio
                     if (enTexto && !aeEsScanner) return;
@@ -10791,12 +10810,37 @@
                         nuevas.push(norm);
                     } else {
                         const idx = ventasZona.value.findIndex(e => e.id === norm.id);
-                        if (idx !== -1 && !ventasZona.value[idx].cobradoMetodo) {
-                            ventasZona.value[idx].cobrado = norm.cobrado;
-                            ventasZona.value[idx].anulada = norm.anulada;
-                            ventasZona.value[idx].credito = norm.credito;
-                            ventasZona.value[idx].obs = norm.obs;
-                            ventasZona.value[idx].raw_data.header.metodo = norm.raw_data.header.metodo;
+                        if (idx !== -1) {
+                            const loc = ventasZona.value[idx];
+                            // [Lote1-C · fix C1] Guard in-flight POR TICKET con TTL (patrón WH
+                            // v2.13.173): mientras una mutación de dinero (cobro/anulación/revert)
+                            // está en vuelo (<20s), el server NO pisa el estado local. PASADA la
+                            // ventana, el server SIEMPRE gana (reconvergencia). Antes:
+                            //   · cobradoMetodo seteado local = el server no actualizaba NUNCA →
+                            //     un cobro cuyo POST falló quedaba "✓ Cobrado" para siempre
+                            //     (descuadre silencioso al cierre);
+                            //   · la anulación NO seteaba cobradoMetodo → el poll de 3s la
+                            //     REVERTÍA en pantalla con el POST aún en vuelo.
+                            const inFlight = loc._mutPend && (Date.now() - loc._mutPend) < 20000;
+                            if (!inFlight) {
+                                loc.cobrado = norm.cobrado;
+                                loc.anulada = norm.anulada;
+                                loc.credito = norm.credito;
+                                loc.obs = norm.obs;
+                                loc.raw_data.header.metodo = norm.raw_data.header.metodo;
+                                if (loc.cobradoMetodo) {
+                                    if (norm.cobrado) {
+                                        // server confirma un cobro → adoptar su método como verdad
+                                        loc.cobradoMetodo = norm.raw_data.header.metodo || loc.cobradoMetodo;
+                                    } else {
+                                        // server dice NO cobrado pasada la ventana → el POST se
+                                        // perdió: limpiar el optimismo para que el cajero VEA que
+                                        // sigue pendiente y pueda re-cobrar (antes quedaba ✓ falso)
+                                        loc.cobradoMetodo = '';
+                                    }
+                                    loc._mutPend = 0;
+                                }
+                            }
                         }
                     }
                 });
@@ -10833,6 +10877,7 @@
                 if (_pollingCajeroCount % 10 === 0) {
                     verificarCajeroActivo();
                     verificarTrasladosEntrantes();
+                    try { _reintentarMutacionesDinero(); } catch(_){}   // [Lote1-C] cola de dinero pendiente
                 }
             }, 3000);
         };
@@ -12933,20 +12978,37 @@
             }
             // Actualizar localmente
             const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+            const _prevMoneda = idx !== -1 ? { cobrado: ventasZona.value[idx].cobrado, metodo: ventasZona.value[idx].raw_data.header.metodo, cobradoMetodo: ventasZona.value[idx].cobradoMetodo, credito: ventasZona.value[idx].credito } : null;
             if (idx !== -1) {
                 ventasZona.value[idx].cobrado = true;
                 ventasZona.value[idx].cobradoMetodo = metodoFinal;
                 ventasZona.value[idx].credito = false;
                 ventasZona.value[idx].raw_data.header.metodo = metodoFinal;
+                ventasZona.value[idx]._mutPend = Date.now();   // [Lote1-C] in-flight
             }
             modalMoneda.value = false;
             ticketParaMoneda.value = null;
             procesandoMoneda.value = false;
             agregarToast('Forma de pago cambiada', metodoFinal);
-            // Sincronizar con GAS en segundo plano
+            // [Lote1-C · fix C1] Sincronizar VALIDANDO respuesta + cola si no hay red
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
-                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }) })
-                    .catch(() => {});
+                _enviarMutacionDinero(
+                    { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value },
+                    venta.id,
+                    () => {
+                        const i2 = ventasZona.value.findIndex(v => v.id === venta.id);
+                        if (i2 !== -1 && _prevMoneda) {
+                            ventasZona.value[i2].cobrado = _prevMoneda.cobrado;
+                            ventasZona.value[i2].cobradoMetodo = _prevMoneda.cobradoMetodo;
+                            ventasZona.value[i2].credito = _prevMoneda.credito;
+                            ventasZona.value[i2].raw_data.header.metodo = _prevMoneda.metodo;
+                        }
+                    }
+                );
+            } else if (venta.id_venta_gas) {
+                const q = _mutQueueGet();
+                q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
+                _mutQueueSave(q);
             }
         };
 
@@ -12966,12 +13028,18 @@
                 }
                 // Quitar de cobradosEnSesion
                 cobradosEnSesion.value = cobradosEnSesion.value.filter(c => c.id !== venta.id);
-                localStorage.setItem('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value));
-                // Sincronizar con GAS
+                try { lsSet('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value)); } catch(_){}
+                _mutMarcar(venta.id);   // [Lote1-C] in-flight
+                // [Lote1-C · fix C1] Sincronizar VALIDANDO respuesta + cola si no hay red
                 if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
-                    fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                        tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value
-                    }) }).catch(() => {});
+                    _enviarMutacionDinero(
+                        { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value },
+                        venta.id, null /* rechazo → el poll reconverge al estado real */
+                    );
+                } else if (venta.id_venta_gas) {
+                    const q = _mutQueueGet();
+                    q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
+                    _mutQueueSave(q);
                 }
                 agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
             }, { accion: 'REVERTIR_COBRO', refDocumento: venta.correlativo || venta.id });
@@ -12995,11 +13063,17 @@
                     ventasZona.value.splice(idx, 1, updated);
                 }
                 cobradosEnSesion.value = cobradosEnSesion.value.filter(c => c.id !== venta.id);
-                localStorage.setItem('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value));
+                try { lsSet('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value)); } catch(_){}
+                _mutMarcar(venta.id);   // [Lote1-C] in-flight
                 if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
-                    fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                        tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value
-                    }) }).catch(() => {});
+                    _enviarMutacionDinero(
+                        { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value },
+                        venta.id, null
+                    );
+                } else if (venta.id_venta_gas) {
+                    const q = _mutQueueGet();
+                    q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
+                    _mutQueueSave(q);
                 }
                 agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
             }, { accion: 'REVERTIR_COBRO', refDocumento: venta.correlativo || venta.id });
@@ -13008,25 +13082,33 @@
         const confirmarCredito = async () => {
             if (!obsCredito.value.trim()) { agregarToast('Requerido', 'Indica a quién se da el crédito'); return; }
             if (!ticketParaCredito.value?.id_venta_gas) { agregarToast('Error', 'Ticket aún no sincronizado'); return; }
-            try {
-                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                    await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                        tipoEvento: 'CREDITAR_VENTA',
-                        idVenta: ticketParaCredito.value.id_venta_gas,
-                        obs: obsCredito.value.trim()
-                    })});
-                }
-            } catch(e) { /* offline: actualizar solo local */ }
-            const idx = ventasZona.value.findIndex(v => v.id === ticketParaCredito.value.id);
+            const _vCred = ticketParaCredito.value;
+            const _obsCred = obsCredito.value.trim();
+            // Optimista + in-flight
+            const idx = ventasZona.value.findIndex(v => v.id === _vCred.id);
             if (idx !== -1) {
                 ventasZona.value[idx].credito = true;
-                ventasZona.value[idx].obs = obsCredito.value.trim();
+                ventasZona.value[idx].obs = _obsCred;
                 ventasZona.value[idx].raw_data.header.metodo = 'CREDITO';
+                ventasZona.value[idx]._mutPend = Date.now();   // [Lote1-C] in-flight
             }
             modalCredito.value = false;
             ticketParaCredito.value = null;
             obsCredito.value = '';
             agregarToast('Crédito registrado', 'El ticket fue marcado como CRÉDITO');
+            // [Lote1-C · fix M7] Antes: fetch sin validar respuesta + catch vacío — si GAS
+            // rechazaba, la UI igual marcaba CRÉDITO. Ahora valida + rollback + cola offline.
+            const payloadCred = { tipoEvento: 'CREDITAR_VENTA', idVenta: _vCred.id_venta_gas, obs: _obsCred };
+            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                _enviarMutacionDinero(payloadCred, _vCred.id, () => {
+                    const i2 = ventasZona.value.findIndex(v => v.id === _vCred.id);
+                    if (i2 !== -1) { ventasZona.value[i2].credito = false; ventasZona.value[i2].raw_data.header.metodo = ''; }
+                });
+            } else {
+                const q = _mutQueueGet();
+                q.push({ payload: payloadCred, ventaLocalId: _vCred.id, ts: Date.now() });
+                _mutQueueSave(q);
+            }
         };
 
         // ════════════════════════════════════════════════════════════
@@ -13578,6 +13660,9 @@
         const confirmarCobrarAsignado = async () => {
             const cobro = cobroAsignadoActivo.value;
             if (!cobro) return;
+            if (procesandoCobroAsig.value) return;   // [Lote1-C · B18] lock anti doble-tap (el rechazo ya lo tenía)
+            procesandoCobroAsig.value = true;
+            setTimeout(() => { procesandoCobroAsig.value = false; }, 2500);   // liberar tras la ventana de doble-tap
             // Validación MIXTO antes de cerrar
             let payload = {
                 tipoEvento: 'CONFIRMAR_COBRO_ASIGNADO',
@@ -13618,9 +13703,9 @@
                 }
             } catch(_){}
             agregarToast('✓ Cobro confirmado', 'S/ ' + parseFloat(cobro.monto).toFixed(2) + ' · ' + (cobro.cliente || ''));
-            const idx = cobrosAsignados.value.findIndex(c => c.idCobro === cobro.idCobro);
-            if (idx >= 0) {
-                cobrosAsignados.value[idx]._justPaid = true;
+            const idx0 = cobrosAsignados.value.findIndex(c => c.idCobro === cobro.idCobro);
+            if (idx0 >= 0) {
+                cobrosAsignados.value[idx0]._justPaid = true;
                 cobrosAsignados.value = [...cobrosAsignados.value];
             }
             cerrarCobrarAsignado();
@@ -13630,6 +13715,9 @@
             }, 1200);
 
             // POST en background sin bloquear UI
+            // [Lote1-C · fix A4] Rollback por idCobro (NO por índice: a los 1.2s el cobro
+            // se filtra de la lista → el índice capturado apuntaba a OTRO cobro/undefined
+            // → TypeError → caía al catch de red con un toast doblemente falso).
             fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
                 .then(r => r.json())
                 .then(d => {
@@ -13637,24 +13725,31 @@
                         // OK — refresh silencioso del listado
                         setTimeout(() => cargarCobrosAsignados(), 800);
                     } else {
-                        // Backend rechazó — restaurar el cobro en la lista y avisar
-                        agregarToast('⚠ Error al guardar',
-                            d?.mensaje || 'No se pudo procesar — restaurando cobro',
+                        // Backend rechazó — avisar fuerte y resincronizar el estado real
+                        try { playBeepError?.(); } catch(_){}
+                        try { if (navigator.vibrate) navigator.vibrate([80, 40, 80]); } catch(_){}
+                        agregarToast('⚠ El cobro NO se registró',
+                            (d?.mensaje || d?.error || 'El servidor lo rechazó') + ' — el cobro vuelve a la lista',
                             'error');
-                        if (idx >= 0) {
-                            cobrosAsignados.value[idx]._justPaid = false;
+                        const iR = cobrosAsignados.value.findIndex(c => c.idCobro === cobro.idCobro);
+                        if (iR >= 0) {
+                            cobrosAsignados.value[iR]._justPaid = false;
                             cobrosAsignados.value = [...cobrosAsignados.value];
                         }
-                        // Refresh para resincronizar estado real
+                        // Refresh para resincronizar estado real (re-trae el cobro si ya se filtró)
                         setTimeout(() => cargarCobrosAsignados(), 500);
                     }
                 })
                 .catch(e => {
-                    // Red caída — el polling lo reintentará al recuperar
-                    console.warn('[ME cobro async] falló:', e.message);
-                    agregarToast('Sin conexión',
-                        'Cobro registrado local — se sincroniza al volver red',
-                        'warning');
+                    // [Lote1-C · fix A4] Red caída — SOLO errores de red llegan aquí ahora.
+                    // Texto honesto: NO existe cola local de cobros asignados; el polling de
+                    // 30s re-trae el cobro como pendiente si el POST nunca llegó.
+                    console.warn('[ME cobro async] red falló:', e.message);
+                    try { playBeepError?.(); } catch(_){}
+                    agregarToast('📡 Sin conexión — cobro NO confirmado',
+                        'Verifica el ticket en ~30s: si reaparece como pendiente, confírmalo de nuevo',
+                        'error');
+                    setTimeout(() => cargarCobrosAsignados(), 5000);
                 });
         };
 
@@ -13791,11 +13886,13 @@
         // Mismo contrato de retorno que el path GAS ({status:'success', printJobId}). Lanza si falla → fallback.
         const _imprimirDirectoPN = async (printerId, titulo, textoRaw) => {
             const token = await _mintTokenSB();
-            const res = await fetch(`${SUPABASE_URL}/functions/v1/imprimir`, {
+            // [Lote1-C · fix A5] timeout 6s — antes un Edge colgado dejaba la venta sin
+            // ticket por minutos (carrito ya limpio = cajero ciego) sin caer al fallback GAS.
+            const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/imprimir`, {
                 method:'POST',
                 headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
                 body: JSON.stringify({ printerId: printerId, title: titulo, content: textoRaw })
-            });
+            }, 6000);
             const d = await res.json().catch(()=>null);
             if (!res.ok || !d || d.status !== 'success') throw new Error('Edge imprimir: ' + ((d && d.mensaje) || ('HTTP '+res.status)));
             return d;
@@ -13822,11 +13919,13 @@
                     precio: it.precio, subtotal: it.subtotal, cod_barras: it.codBarras || it.cod_barras || '',
                     valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv, unidad_medida: it.unidad_de_medida || it.unidad_medida }))
             };
-            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/crear_venta_directa`, {
+            // [Lote1-C · fix A5] timeout 6s → si Supabase cuelga, cae al fallback GAS
+            // (la idempotencia por ref_local evita duplicados si la escritura SÍ entró).
+            const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/crear_venta_directa`, {
                 method:'POST',
                 headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
                 body: JSON.stringify({ p: payload })
-            });
+            }, 6000);
             if (!res.ok) throw new Error('crear_venta_directa HTTP ' + res.status);
             const d = await res.json();
             if (!d || d.status !== 'success') throw new Error('crear_venta_directa: ' + ((d && d.error) || 'fallo'));
@@ -13845,11 +13944,13 @@
         // en secret). Mismo data+correlativo que el path GAS. Devuelve {ok,hash,enlace,qrString,aceptada,...}.
         const _emitirCPEDirecto = async (ventaBase, correlativo) => {
             const token = await _mintTokenSB();
-            const res = await fetch(`${SUPABASE_URL}/functions/v1/emitir-cpe`, {
+            // [Lote1-C · fix A5] timeout 15s (NubeFact puede tardar; si excede, la venta
+            // queda PENDIENTE y la reconciliación de CPE la re-emite — sin doble emisión).
+            const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/emitir-cpe`, {
                 method:'POST',
                 headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
                 body: JSON.stringify({ data: ventaBase, correlativo: correlativo })
-            });
+            }, 15000);
             const d = await res.json().catch(()=>null);
             if (!d) throw new Error('emitir-cpe sin respuesta (HTTP '+res.status+')');
             return d;   // {ok, hash, enlace, qrString, aceptada} | {ok:false, rechazadoPorSunat, ...} | {ok:false, error}
@@ -13946,8 +14047,10 @@
         const _mintTokenSB = async () => {
             const now = Math.floor(Date.now()/1000);
             if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
-            const res = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
-                body: JSON.stringify({ tipoEvento:'MINT_TOKEN', deviceId: deviceId.value }) });
+            // [Lote1-C · fix A5] timeout 6s — un GAS colgado en el mint dejaba TODA la
+            // cadena directa (venta+impresión) esperando minutos sin caer al fallback.
+            const res = await _meFetchTimeout(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
+                body: JSON.stringify({ tipoEvento:'MINT_TOKEN', deviceId: deviceId.value }) }, 6000);
             const d = await res.json();
             if (!d || !d.ok || !d.token) throw new Error('mint-token: ' + ((d && d.error) || 'sin token'));
             _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 300);
@@ -14020,6 +14123,83 @@
             cargandoZona.value = false;
         };
 
+        // ════════════════════════════════════════════════════════════
+        // [Lote1-C · fix C1] MUTACIONES DE DINERO CONFIABLES
+        // Antes: COBRAR_VENTA / ANULACION se mandaban fire-and-forget con
+        // .catch(()=>{}) → si el POST fallaba, el dinero quedaba registrado
+        // SOLO en el dispositivo. Ahora: (a) se valida la respuesta del
+        // backend (rechazo → rollback visual + alarma), (b) fallo de RED →
+        // cola persistente con reintento, (c) el merge del polling reconverge.
+        // ════════════════════════════════════════════════════════════
+        const _MUT_KEY = 'mosexpress_mut_dinero_pend';
+        const _mutQueueGet = () => { try { return JSON.parse(localStorage.getItem(_MUT_KEY) || '[]'); } catch(_) { return []; } };
+        const _mutQueueSave = (q) => { try { lsSet(_MUT_KEY, JSON.stringify(q.slice(-50))); } catch(_){} };
+        // Marca el ticket como "mutación en vuelo" (el merge del polling no lo pisa 20s)
+        const _mutMarcar = (ventaLocalId) => {
+            const idx = ventasZona.value.findIndex(v => v.id === ventaLocalId);
+            if (idx !== -1) ventasZona.value[idx]._mutPend = Date.now();
+        };
+        // Envía una mutación de dinero y VALIDA la respuesta.
+        //  - éxito → limpia el in-flight (el próximo poll adopta el estado server)
+        //  - rechazo del backend → onReject(d) (rollback visual) + alarma
+        //  - fallo de RED → encola para reintento (idempotente: el backend setea
+        //    el mismo valor; re-aplicar no duplica dinero)
+        const _enviarMutacionDinero = (payload, ventaLocalId, onReject) => {
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
+                .then(r => r.json())
+                .then(d => {
+                    if (d && d.status === 'success') {
+                        const idx = ventasZona.value.findIndex(v => v.id === ventaLocalId);
+                        if (idx !== -1) ventasZona.value[idx]._mutPend = 0;   // poll adopta server
+                    } else {
+                        try { playBeepError?.(); } catch(_){}
+                        agregarToast('⚠ NO se registró en el servidor',
+                            (d && (d.mensaje || d.error)) || 'El backend rechazó la operación — el ticket vuelve a su estado real', 'error');
+                        if (onReject) try { onReject(d); } catch(_){}
+                        const idx = ventasZona.value.findIndex(v => v.id === ventaLocalId);
+                        if (idx !== -1) ventasZona.value[idx]._mutPend = 0;   // server gana ya
+                        setTimeout(() => { try { actualizarVentasZonaSilencioso(); } catch(_){} }, 600);
+                    }
+                })
+                .catch(() => {
+                    // Red caída: encolar con reintento persistente (sobrevive reload)
+                    const q = _mutQueueGet();
+                    q.push({ payload, ventaLocalId, ts: Date.now() });
+                    _mutQueueSave(q);
+                    agregarToast('📡 Sin conexión', 'La operación se reintenta sola al volver la señal', 'warning');
+                });
+        };
+        // Reintento de la cola (lo dispara el polling de zona cada ~30s)
+        let _mutRetryBusy = false;
+        const _reintentarMutacionesDinero = () => {
+            if (_mutRetryBusy || offlineMode.value) return;
+            const q = _mutQueueGet();
+            if (!q.length) return;
+            _mutRetryBusy = true;
+            const item = q[0];
+            // refrescar la ventana in-flight mientras siga pendiente
+            if (item.ventaLocalId) _mutMarcar(item.ventaLocalId);
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(item.payload) })
+                .then(r => r.json())
+                .then(d => {
+                    // éxito O rechazo definitivo del backend → sacar de la cola
+                    // (el poll reconverge la UI con el estado real del server)
+                    const q2 = _mutQueueGet();
+                    q2.shift();
+                    _mutQueueSave(q2);
+                    if (item.ventaLocalId) {
+                        const idx = ventasZona.value.findIndex(v => v.id === item.ventaLocalId);
+                        if (idx !== -1) ventasZona.value[idx]._mutPend = 0;
+                    }
+                    if (!(d && d.status === 'success')) {
+                        agregarToast('⚠ Operación pendiente rechazada',
+                            (d && (d.mensaje || d.error)) || 'Revisa el ticket en la lista', 'warning');
+                    }
+                })
+                .catch(() => { /* sigue sin red — próximo tick reintenta */ })
+                .finally(() => { _mutRetryBusy = false; });
+        };
+
         // --- CAJERO: abrir modal de cobro para un ticket de vendedor ---
         const abrirCobroPendiente = (venta) => {
             ventaCobrar.value = venta;
@@ -14041,6 +14221,7 @@
             if (idx !== -1) {
                 ventasZona.value[idx].cobrado = true;
                 ventasZona.value[idx].cobradoMetodo = metodoFinal;
+                ventasZona.value[idx]._mutPend = Date.now();   // [Lote1-C] ventana in-flight para el merge
             }
             // Registrar cobro en sesión para el Z report
             const efeNeto = pCobro.metodo === 'VIRTUAL' ? 0 : pCobro.metodo === 'MIXTO' ? parseFloat((venta.total - (pCobro.montoVirtual||0)).toFixed(2)) : venta.total;
@@ -14061,10 +14242,24 @@
             if (modoCajero.value) resetearCajero();
             playVentaOK();
             agregarToast('Cobro registrado', venta.correlativo);
-            // Sincronizar con GAS en segundo plano (fire and forget)
+            // [Lote1-C · fix C1] Sincronizar con GAS VALIDANDO la respuesta (antes era
+            // fire-and-forget con catch vacío = cobros que solo existían en el dispositivo).
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
-                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }) })
-                    .catch(() => {});
+                _enviarMutacionDinero(
+                    { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value },
+                    venta.id,
+                    () => {   // rollback visual si el backend rechaza
+                        const i2 = ventasZona.value.findIndex(v => v.id === venta.id);
+                        if (i2 !== -1) { ventasZona.value[i2].cobrado = false; ventasZona.value[i2].cobradoMetodo = ''; }
+                        cobradosEnSesion.value = cobradosEnSesion.value.filter(c => !(c.correlativo === venta.correlativo && c.total === venta.total));
+                        try { lsSet('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value)); } catch(_){}
+                    }
+                );
+            } else if (venta.id_venta_gas) {
+                // offline: encolar directo (reintenta el polling al volver la red)
+                const q = _mutQueueGet();
+                q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
+                _mutQueueSave(q);
             }
         };
 
@@ -15156,7 +15351,19 @@
         const reintentarBuscarCliente = corregirDocumento;
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
+        // [Lote1-C · fix A2] LOCK de reentrada para TODO procesarPago. Antes
+        // `procesando=true` se seteaba DESPUÉS de dos awaits (revalidación cajero
+        // 1.5s + espera correlativo 3s) → doble tap / Espacio sostenido en esa
+        // ventana = DOS ventas reales con localId distintos (la idempotencia no
+        // ayuda). El wrapper cubre todos los returns tempranos vía finally.
+        let _pagoLock = false;
         const procesarPago = async () => {
+           if (_pagoLock || procesando.value) return;
+           _pagoLock = true;
+           try { await _procesarPagoImpl(); }
+           finally { _pagoLock = false; }
+        };
+        const _procesarPagoImpl = async () => {
            if (!carrito.value.length) return agregarToast('Carrito vacío', 'Agrega productos antes de cobrar.');
            if (vuelto.value < 0) return;
            // [v2.7.4] PRE-VALIDACIÓN AGRESIVA (zero-latency):
@@ -15183,7 +15390,7 @@
                        agregarToast('⛔ Sin cajero activo',
                            'No hay cajero abierto en ' + config.value.zona + ' · pide al cajero que abra caja antes de vender',
                            'warning', 8000);
-                       try { playError && playError(); } catch(_){}
+                       try { playBeepError && playBeepError(); } catch(_){}   // [Lote1-C fix M9] playError NO existia (ReferenceError tragado = sin alarma)
                        return; // NO imprime · NO toca el carrito
                    }
                }
@@ -15702,11 +15909,11 @@
                        // Si ya se imprimió (timeout), informamos al cajero/admin con sonido
                        if (!_fastTimeoutHit) {
                            agregarToast('⛔ Venta rechazada', msgUser, 'warning', 10000);
-                           try { playError && playError(); } catch(_){}
+                           try { playBeepError && playBeepError(); } catch(_){}   // [Lote1-C fix M9] playError NO existia (ReferenceError tragado = sin alarma)
                        } else {
                            agregarToast('⛔ Ticket impreso pero venta NO registrada',
                                msgUser + ' · revisa el ticket físico', 'warning', 12000);
-                           try { playError && playError(); } catch(_){}
+                           try { playBeepError && playBeepError(); } catch(_){}   // [Lote1-C fix M9] playError NO existia (ReferenceError tragado = sin alarma)
                        }
                        // SACAR de pendingSales — no reintentar (es rechazo lógico)
                        pendingSales.value = pendingSales.value.filter(v => v.id !== localId);
@@ -15782,6 +15989,9 @@
                 if (idx === -1) return;
                 ventasZona.value[idx].anulada = true;
                 ventasZona.value[idx].expanded = false;
+                // [Lote1-C · fix C1] in-flight: antes el poll de 3s podía REVERTIR el
+                // anulado en pantalla mientras el POST seguía en vuelo (no había marca).
+                ventasZona.value[idx]._mutPend = Date.now();
             } else {
                 const idx = ventasHoy.value.findIndex(v => v.id === venta.id);
                 if (idx === -1) return;
@@ -15793,8 +16003,24 @@
                 lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
             }
             agregarToast('Comprobante Anulado', venta.correlativo);
+            // [Lote1-C · fix C1] VALIDANDO respuesta + cola si no hay red (antes fire-and-forget)
+            const payloadAnu = { tipoEvento: 'ANULACION', ventaId: venta.id_venta_gas || venta.id, correlativo: venta.correlativo, deviceId: deviceId.value };
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                fetch(API_URL, { method: 'POST', body: JSON.stringify({ tipoEvento: 'ANULACION', ventaId: venta.id_venta_gas || venta.id, correlativo: venta.correlativo, deviceId: deviceId.value }) }).catch(() => {});
+                _enviarMutacionDinero(payloadAnu, config.value.esCajero ? venta.id : null,
+                    () => {   // backend rechazó la anulación → restaurar visual
+                        if (config.value.esCajero) {
+                            const i2 = ventasZona.value.findIndex(v => v.id === venta.id);
+                            if (i2 !== -1) ventasZona.value[i2].anulada = false;
+                        } else {
+                            const i2 = ventasHoy.value.findIndex(v => v.id === venta.id);
+                            if (i2 !== -1) { ventasHoy.value[i2].anulada = false; ventasHoy.value[i2].syncStatus = 'synced'; }
+                            lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                        }
+                    });
+            } else if (venta.id_venta_gas || venta.id) {
+                const q = _mutQueueGet();
+                q.push({ payload: payloadAnu, ventaLocalId: config.value.esCajero ? venta.id : null, ts: Date.now() });
+                _mutQueueSave(q);
             }
         };
 
@@ -16628,6 +16854,10 @@
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
+          // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
+          // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
+          // scannerFocused (animación del logo inerte — escrituras iban al ctx no-reactivo)
+          resetearCajero, horaActual, scannerFocused,
           procesandoCierre, cerrarCaja, cerrarSesion,
           bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago,
