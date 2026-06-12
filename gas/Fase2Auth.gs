@@ -27,38 +27,48 @@ function mirrorVentaASheets(data){
   var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
   if(!sheetCab) return { ok:false, error:'VENTAS_CABECERA no existe' };
 
-  // idempotencia: ¿ya espejada? dedup por Ref_Local (col 14), escaneo de 1 columna (liviano)
-  var lastRow = sheetCab.getLastRow();
-  if(lastRow >= 2){
-    var refCol = sheetCab.getRange(2, 14, lastRow - 1, 1).getValues();
-    for(var i=0;i<refCol.length;i++){ if(String(refCol[i][0]) === ref) return { ok:true, dedup:true, idVenta:idVenta, correlativo:correlativo }; }
-  }
-
-  var tipoDocCliente = parseInt((h.cliente && h.cliente.tipo) || 0, 10);
-  sheetCab.appendRow([
-    idVenta, new Date(), auth.vendedor || '', auth.estacion || '',
-    (h.cliente && h.cliente.doc) || '', (h.cliente && h.cliente.nombre) || '',
-    (h.total != null ? h.total : 0), h.tipoDoc || 'NOTA_DE_VENTA', h.metodo || 'EFECTIVO',
-    correlativo, pos.cajaId || '', auth.deviceId || '', 'COMPLETADO',
-    ref, String(h.obs || ''), tipoDocCliente, '', '', ''
-  ]);
-
-  var items = data.items || [];
-  if(items.length){
-    var sheetDet = ss.getSheetByName('VENTAS_DETALLE');
-    if(sheetDet){
-      var rows = items.map(function(it){
-        var vu = parseFloat(it.valor_unitario) || Math.round(parseFloat(it.precio||0)/1.18*100)/100;
-        return [ idVenta, it.sku, it.nombre, it.cantidad, it.precio, it.subtotal,
-                 String(it.codBarras || it.cod_barras || ''), Math.round(vu*100)/100,
-                 parseInt(it.tipo_igv || 1, 10), String(it.unidad_de_medida || it.unidad_medida || 'NIU') ];
-      });
-      var lr = sheetDet.getLastRow();
-      sheetDet.getRange(lr+1, 7, rows.length, 1).setNumberFormat('@STRING@');
-      sheetDet.getRange(lr+1, 2, rows.length, 1).setNumberFormat('@STRING@');
-      sheetDet.getRange(lr+1, 1, rows.length, rows[0].length).setValues(rows);
+  // [fix C2/ALTO 20x] LockService alrededor de scan+append: sin esto, dos MIRROR_VENTA concurrentes con el
+  // mismo ref_local podrían ambos pasar el dedup y escribir DOS filas (el cierre cuenta doble). Sheets no
+  // tiene constraint único que lo frene → el lock es la única defensa del lado Sheets.
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); }
+  catch(e){ return { ok:false, error:'MIRROR_OCUPADO: no se pudo tomar el lock (reintentar)' }; }
+  try {
+    // idempotencia: ¿ya espejada? dedup por Ref_Local (col 14), escaneo de 1 columna (liviano)
+    var lastRow = sheetCab.getLastRow();
+    if(lastRow >= 2){
+      var refCol = sheetCab.getRange(2, 14, lastRow - 1, 1).getValues();
+      for(var i=0;i<refCol.length;i++){ if(String(refCol[i][0]) === ref) return { ok:true, dedup:true, idVenta:idVenta, correlativo:correlativo }; }
     }
-  }
+
+    var tipoDocCliente = parseInt((h.cliente && h.cliente.tipo) || 0, 10);
+    sheetCab.appendRow([
+      idVenta, new Date(), auth.vendedor || '', auth.estacion || '',
+      (h.cliente && h.cliente.doc) || '', (h.cliente && h.cliente.nombre) || '',
+      (h.total != null ? h.total : 0), h.tipoDoc || 'NOTA_DE_VENTA', h.metodo || 'EFECTIVO',
+      correlativo, pos.cajaId || '', auth.deviceId || '', 'COMPLETADO',
+      ref, String(h.obs || ''), tipoDocCliente, '', '', ''
+    ]);
+    // detalle DENTRO del lock → cabecera+detalle atómicos (sin ventana de fila huérfana)
+    var items = data.items || [];
+    if(items.length){
+      var sheetDet = ss.getSheetByName('VENTAS_DETALLE');
+      if(sheetDet){
+        var rows = items.map(function(it){
+          var vu = parseFloat(it.valor_unitario) || Math.round(parseFloat(it.precio||0)/1.18*100)/100;
+          return [ idVenta, it.sku, it.nombre, it.cantidad, it.precio, it.subtotal,
+                   String(it.codBarras || it.cod_barras || ''), Math.round(vu*100)/100,
+                   parseInt(it.tipo_igv || 1, 10), String(it.unidad_de_medida || it.unidad_medida || 'NIU') ];
+        });
+        var lr = sheetDet.getLastRow();
+        sheetDet.getRange(lr+1, 7, rows.length, 1).setNumberFormat('@STRING@');
+        sheetDet.getRange(lr+1, 2, rows.length, 1).setNumberFormat('@STRING@');
+        sheetDet.getRange(lr+1, 1, rows.length, rows[0].length).setValues(rows);
+      }
+    }
+    SpreadsheetApp.flush();
+  } finally { lock.releaseLock(); }
+
   // jornada del vendedor (cacheada, barata) — parity con procesarVenta
   try { _registrarJornadaEnMOS(String(auth.vendedor || '')); } catch(_){}
   return { ok:true, dedup:false, idVenta:idVenta, correlativo:correlativo };
