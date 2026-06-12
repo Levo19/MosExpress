@@ -5834,6 +5834,12 @@
     const { createApp, ref, markRaw, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
 
     const API_URL     = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+    // [Fase 2] Lectura DIRECTA a Supabase (app→Supabase). url + anon key son PÚBLICOS (van en el cliente).
+    // El acceso real lo da el JWT scoped que mintea GAS (MINT_TOKEN). anon NO puede leer las RPC (probado).
+    const SUPABASE_URL      = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+    // cache del JWT scoped (se re-mintea cuando faltan <30s para exp). Off por defecto (flag localStorage).
+    const _sbTok = { token: null, exp: 0 };
     const MOS_GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
     // Exponer al ámbito global para el script de bloqueo horario que vive
     // fuera de Vue (cargado antes del mount). Lo usa _meConfirmarDesbloqueo.
@@ -13345,6 +13351,33 @@
             agregarToast('Extra registrado', (extra.tipo.startsWith('EGRESO') ? '- ' : '+ ') + 'S/ ' + extra.monto.toFixed(2) + ' — ' + extra.concepto + (extra.tipo.endsWith('_VIRTUAL') ? ' 📲' : ''));
         };
 
+        // [Fase 2] ¿lectura directa a Supabase activada? Flag local, OFF por defecto (cero riesgo).
+        const lecturaDirectaSupabase = () => { try { return localStorage.getItem('me_lectura_directa') === '1'; } catch(_) { return false; } };
+        // Pide a GAS un JWT scoped por zona (MINT_TOKEN). Cachea hasta ~30s antes de exp.
+        const _mintTokenSB = async () => {
+            const now = Math.floor(Date.now()/1000);
+            if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
+            const res = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
+                body: JSON.stringify({ tipoEvento:'MINT_TOKEN', deviceId: deviceId.value }) });
+            const d = await res.json();
+            if (!d || !d.ok || !d.token) throw new Error('mint-token: ' + ((d && d.error) || 'sin token'));
+            _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 300);
+            return d.token;
+        };
+        // Lee ventas de hoy de la zona DIRECTO de Supabase (PWA→PostgREST). RLS scope por el JWT.
+        const _ventasZonaDirecto = async () => {
+            const token = await _mintTokenSB();
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/ventas_hoy_zona_rls`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: '{}'
+            });
+            if (!res.ok) throw new Error('rpc directo HTTP ' + res.status);
+            const d = await res.json();
+            if (!d || !Array.isArray(d.ventas)) throw new Error('rpc directo: respuesta inesperada');
+            return d;
+        };
+
         const cargarVentasZona = async () => {
             if (!config.value.estacion) return;
             cargandoZona.value = true;
@@ -13352,11 +13385,18 @@
             const prefijos = [est.Serie_Nota, est.Serie_Boleta, est.Serie_Factura].filter(Boolean).join(',');
             const desdeParam = sessionStartTime.value ? `&desde=${encodeURIComponent(sessionStartTime.value)}` : '';
             try {
-                const res = await fetch(`${API_URL}?accion=ventas_hoy_zona&prefijos=${encodeURIComponent(prefijos)}${desdeParam}`);
-                const rawText = await res.text();
-                let data;
-                try { data = JSON.parse(rawText); } catch(pe) { throw new Error('Respuesta no JSON: ' + rawText.substring(0, 120)); }
-                if (!data || !Array.isArray(data.ventas)) throw new Error('Respuesta inesperada del servidor: ' + rawText.substring(0, 120));
+                let data = null;
+                // [Fase 2] lectura DIRECTA a Supabase (flag local OFF por defecto), con fallback TRANSPARENTE a GAS
+                if (lecturaDirectaSupabase()) {
+                    try { data = await _ventasZonaDirecto(); }
+                    catch(eD) { console.warn('[lectura directa] fallback a GAS:', eD && eD.message); data = null; }
+                }
+                if (!data) {
+                    const res = await fetch(`${API_URL}?accion=ventas_hoy_zona&prefijos=${encodeURIComponent(prefijos)}${desdeParam}`);
+                    const rawText = await res.text();
+                    try { data = JSON.parse(rawText); } catch(pe) { throw new Error('Respuesta no JSON: ' + rawText.substring(0, 120)); }
+                }
+                if (!data || !Array.isArray(data.ventas)) throw new Error('Respuesta inesperada del servidor');
                 if (data.status === 'success') {
                     ventasZona.value = data.ventas.map(v => {
                         return {
