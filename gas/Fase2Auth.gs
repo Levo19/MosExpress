@@ -18,25 +18,24 @@ function mintSupabaseToken(deviceId){
   var secret = PropertiesService.getScriptProperties().getProperty('SUPABASE_JWT_SECRET');
   if(!secret) return { ok:false, error:'falta SUPABASE_JWT_SECRET en Script Properties (Supabase → Settings → API → JWT Secret)' };
 
-  // Zonas autoritativas desde el binding admin-only (mos.dispositivo_zonas). Fail-closed: sin zona → no token.
-  // [fix] los filtros van en opts.filters (no como claves sueltas) — sino _sbQuery_ los ignora y trae TODO.
-  var r = _sbSelect('mos.dispositivo_zonas', { filters: { id_dispositivo:'eq.'+idd, activo:'eq.true' } });
-  if(!r.ok) return { ok:false, error:'no se pudo leer binding dispositivo->zona: '+(r.error||'') };
-  var seen = {}, zonas = [];
-  (r.data || []).forEach(function(x){ var z = String(x.id_zona||''); if(z && !seen[z]){ seen[z]=1; zonas.push(z); } });  // dedup defensivo
-  if(!zonas.length) return { ok:false, error:'dispositivo sin zona asignada — el admin debe asignarlo en mos.dispositivo_zonas' };
+  // [autorización por UUID, SIN zona — los dispositivos/empleados ROTAN entre zonas] Valida que el UUID
+  // esté REGISTRADO + ACTIVO + app=mosExpress (igual que verificarDispositivo). La zona la decide el turno
+  // (qué caja abre), no el dispositivo. Fail-closed: dispositivo no registrado/activo → no token.
+  var r = _sbSelect('mos.dispositivos', { filters: { id_dispositivo:'eq.'+idd, app:'eq.mosExpress', estado:'eq.ACTIVO' } });
+  if(!r.ok) return { ok:false, error:'no se pudo verificar dispositivo: '+(r.error||'') };
+  if(!(r.data || []).length) return { ok:false, error:'dispositivo no registrado/activo para mosExpress' };
 
   var now = Math.floor(Date.now()/1000);
   var header  = { alg:'HS256', typ:'JWT' };
   var payload = {
     iss:'supabase', role:'authenticated', aud:'authenticated', sub:idd,
-    zonas: zonas, app:'mosExpress',
+    app:'mosExpress',   // SIN zona: el dispositivo rota, la zona la pone el turno/caja
     iat: now, exp: now + 300   // 5 minutos (corto a propósito; re-mint en heartbeat)
   };
   var signingInput = _b64urlStr_(JSON.stringify(header)) + '.' + _b64urlStr_(JSON.stringify(payload));
   var sig = Utilities.computeHmacSha256Signature(signingInput, secret);
   var token = signingInput + '.' + _b64url_(sig);
-  return { ok:true, token:token, zonas:zonas, exp:payload.exp };
+  return { ok:true, token:token, app:'mosExpress', exp:payload.exp };
 }
 
 // Wrapper de prueba para el editor (sin args): mintea para el 1er dispositivo con binding y muestra el token.
@@ -44,11 +43,11 @@ function probarMintToken(){
   var secret = PropertiesService.getScriptProperties().getProperty('SUPABASE_JWT_SECRET');
   if(!secret){ Logger.log('❌ FALTA cargar SUPABASE_JWT_SECRET en Propiedades del script (Supabase → Settings → API → JWT Secret)'); return; }
   Logger.log('✅ SUPABASE_JWT_SECRET presente ('+secret.length+' chars)');
-  var r = _sbSelect('mos.dispositivo_zonas', { filters:{ activo:'eq.true' }, limit:1 });
-  if(!r.ok || !(r.data||[]).length){ Logger.log('sin dispositivos con binding en mos.dispositivo_zonas'); return; }
+  var r = _sbSelect('mos.dispositivos', { filters:{ app:'eq.mosExpress', estado:'eq.ACTIVO' }, limit:1 });
+  if(!r.ok || !(r.data||[]).length){ Logger.log('sin dispositivos mosExpress ACTIVOS en mos.dispositivos'); return; }
   var dev = String(r.data[0].id_dispositivo);
   var out = mintSupabaseToken(dev);
-  Logger.log('mint para dispositivo '+dev+' → '+JSON.stringify({ok:out.ok, zonas:out.zonas, error:out.error}));
+  Logger.log('mint para dispositivo '+dev+' → '+JSON.stringify({ok:out.ok, app:out.app, error:out.error}));
   if(out.ok){
     var parts = out.token.split('.');
     var payJson = Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[1])).getDataAsString();

@@ -13364,13 +13364,14 @@
             _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 300);
             return d.token;
         };
-        // Lee ventas de hoy de la zona DIRECTO de Supabase (PWA→PostgREST). RLS scope por el JWT.
-        const _ventasZonaDirecto = async () => {
+        // Lee ventas de hoy de la estación DIRECTO de Supabase (PWA→PostgREST). Autoriza el token de dispositivo
+        // ME; pasa los prefijos de la estación (el dispositivo rota libre entre zonas, igual que el path GAS).
+        const _ventasZonaDirecto = async (prefijos, desde) => {
             const token = await _mintTokenSB();
-            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/ventas_hoy_zona_rls`, {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/ventas_hoy_zona_auth`, {
                 method:'POST',
                 headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
-                body: '{}'
+                body: JSON.stringify({ prefijos_str: prefijos || null, desde_str: desde || null })
             });
             if (!res.ok) throw new Error('rpc directo HTTP ' + res.status);
             const d = await res.json();
@@ -13388,7 +13389,7 @@
                 let data = null;
                 // [Fase 2] lectura DIRECTA a Supabase (flag local OFF por defecto), con fallback TRANSPARENTE a GAS
                 if (lecturaDirectaSupabase()) {
-                    try { data = await _ventasZonaDirecto(); }
+                    try { data = await _ventasZonaDirecto(prefijos, sessionStartTime.value || null); }
                     catch(eD) { console.warn('[lectura directa] fallback a GAS:', eD && eD.message); data = null; }
                 }
                 if (!data) {
