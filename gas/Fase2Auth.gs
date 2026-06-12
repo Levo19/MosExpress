@@ -8,6 +8,62 @@
 // HS256 mintado en GAS es seguro: el secreto no sale de GAS; el navegador solo recibe el token corto.
 // (Upgrade futuro: firma asimétrica RS256 vía Edge Function — ver MIGRACION_FASE2_PLAN.md C4.)
 
+// [Fase 2] Espeja a Sheets una venta NV YA creada directo en Supabase (por crear_venta_directa), para que
+// el cierre/SUNAT/reportes —que leen Sheets— sigan cuadrando. Idempotente por Ref_Local (no re-escribe).
+// NO mintea correlativo (ya viene del RPC), NO dual-writea (ya está en Supabase), NO imprime. Lo llama la
+// PWA async tras la venta directa. Recibe el ventaBase + idVenta + correlativo del RPC.
+function mirrorVentaASheets(data){
+  data = data || {};
+  var h    = data.header || {};
+  var auth = data.auth   || {};
+  var pos  = data.pos    || {};
+  var ref  = String((data.data_sync && data.data_sync.last_sync) || data.ref_local || '').trim();
+  if(!ref) return { ok:false, error:'ref_local requerido' };
+  var idVenta = String(data.idVenta || '');
+  var correlativo = String(data.correlativo || '');
+  if(!idVenta || !correlativo) return { ok:false, error:'idVenta/correlativo requeridos (vienen del RPC directo)' };
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
+  if(!sheetCab) return { ok:false, error:'VENTAS_CABECERA no existe' };
+
+  // idempotencia: ¿ya espejada? dedup por Ref_Local (col 14), escaneo de 1 columna (liviano)
+  var lastRow = sheetCab.getLastRow();
+  if(lastRow >= 2){
+    var refCol = sheetCab.getRange(2, 14, lastRow - 1, 1).getValues();
+    for(var i=0;i<refCol.length;i++){ if(String(refCol[i][0]) === ref) return { ok:true, dedup:true, idVenta:idVenta, correlativo:correlativo }; }
+  }
+
+  var tipoDocCliente = parseInt((h.cliente && h.cliente.tipo) || 0, 10);
+  sheetCab.appendRow([
+    idVenta, new Date(), auth.vendedor || '', auth.estacion || '',
+    (h.cliente && h.cliente.doc) || '', (h.cliente && h.cliente.nombre) || '',
+    (h.total != null ? h.total : 0), h.tipoDoc || 'NOTA_DE_VENTA', h.metodo || 'EFECTIVO',
+    correlativo, pos.cajaId || '', auth.deviceId || '', 'COMPLETADO',
+    ref, String(h.obs || ''), tipoDocCliente, '', '', ''
+  ]);
+
+  var items = data.items || [];
+  if(items.length){
+    var sheetDet = ss.getSheetByName('VENTAS_DETALLE');
+    if(sheetDet){
+      var rows = items.map(function(it){
+        var vu = parseFloat(it.valor_unitario) || Math.round(parseFloat(it.precio||0)/1.18*100)/100;
+        return [ idVenta, it.sku, it.nombre, it.cantidad, it.precio, it.subtotal,
+                 String(it.codBarras || it.cod_barras || ''), Math.round(vu*100)/100,
+                 parseInt(it.tipo_igv || 1, 10), String(it.unidad_de_medida || it.unidad_medida || 'NIU') ];
+      });
+      var lr = sheetDet.getLastRow();
+      sheetDet.getRange(lr+1, 7, rows.length, 1).setNumberFormat('@STRING@');
+      sheetDet.getRange(lr+1, 2, rows.length, 1).setNumberFormat('@STRING@');
+      sheetDet.getRange(lr+1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+  }
+  // jornada del vendedor (cacheada, barata) — parity con procesarVenta
+  try { _registrarJornadaEnMOS(String(auth.vendedor || '')); } catch(_){}
+  return { ok:true, dedup:false, idVenta:idVenta, correlativo:correlativo };
+}
+
 function _b64url_(bytes){ return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
 function _b64urlStr_(str){ return _b64url_(Utilities.newBlob(str).getBytes()); }
 

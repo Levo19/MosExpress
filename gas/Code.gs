@@ -248,6 +248,11 @@ function doPost(e) {
       var _mt = mintSupabaseToken(data.deviceId || data.id || '');
       return ContentService.createTextOutput(JSON.stringify(_mt)).setMimeType(ContentService.MimeType.JSON);
     }
+    // [Fase 2] Espejo a Sheets de una venta NV creada directo en Supabase (cierre/SUNAT cuadran).
+    if (data.tipoEvento === 'MIRROR_VENTA') {
+      var _mv = mirrorVentaASheets(data);
+      return ContentService.createTextOutput(JSON.stringify(_mv)).setMimeType(ContentService.MimeType.JSON);
+    }
     if (data.tipoEvento === 'CAMBIO_IMPRESORA_CAJA') return cambiarImpresoraCaja(data);
     if (data.tipoEvento === 'LIMPIAR_DUPLICADOS') {
       var _r = limpiarGuiasDuplicadasCaja(data.cajaId);
