@@ -9009,21 +9009,23 @@
                 : `Hola, soy proveedor. Me dieron su tarjeta en ${estNombre} y quiero ofrecerles productos. (Ref: ${ref})`;
             const waUrl = `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
             const W = 48, SEP = '='.repeat(W) + '\n', SEPd = '-'.repeat(W) + '\n';
+            // Tamaños ESC/POS: \x08=bold · \x18=bold+doble-alto · \x30=doble alto+ancho · \x00=normal
             let txt = '\x1b\x40\x1b\x61\x01';                              // init + centrar
-            txt += '\x1b\x21\x30' + marca + '\x1b\x21\x00\n';             // marca doble alto/ancho
+            txt += '\x1b\x21\x30' + marca + '\x1b\x21\x00\n';             // marca grande
             txt += SEP;
-            txt += '\x1b\x21\x08' + (esCliente ? 'ATENCION COMERCIAL' : 'CANAL DE COMPRAS') + '\x1b\x21\x00\n\n';  // titulo bold
-            txt += (esCliente ? 'Quieres hacer un pedido o consulta?' : 'Eres proveedor? Envianos tu catalogo') + '\n\n';
-            txt += 'Escanea y escribenos por WhatsApp\n\n';
+            txt += '\x1b\x21\x18' + (esCliente ? 'ATENCION COMERCIAL' : 'CANAL DE COMPRAS') + '\x1b\x21\x00\n\n';  // titulo bold+grande
+            txt += '\x1b\x21\x08' + (esCliente ? 'Quieres hacer un pedido?' : 'Eres proveedor?') + '\x1b\x21\x00\n\n';  // bold
+            txt += '\x1b\x21\x08' + 'Escanea el QR y escribenos' + '\x1b\x21\x00\n\n';  // bold
             txt += qrESCPOS(waUrl);                                       // QR heroe (ya centra)
-            // [num debajo del QR] para quien no quiere/puede escanear: muestra el número legible y grande
-            var numFmt = numero ? ('+' + numero.slice(0,2) + ' ' + numero.slice(2).replace(/(\d{3})(?=\d)/g, '$1 ')) : '';
+            // [num debajo del QR] sin +51 (siempre Perú) + grande y PROPORCIONADO (doble alto+ancho, no alargado)
+            var numLocal = (numero.slice(0,2) === '51') ? numero.slice(2) : numero;
+            var numFmt = numLocal.replace(/(\d{3})(?=\d)/g, '$1 ');       // 987 654 321
             if (numFmt) {
-                txt += '\nO escribenos al WhatsApp:\n';
-                txt += '\x1b\x21\x10' + numFmt + '\x1b\x21\x00\n';        // doble alto = legible para tipear
+                txt += '\n' + '\x1b\x21\x08' + 'O al WhatsApp:' + '\x1b\x21\x00\n';   // label bold
+                txt += '\x1b\x21\x30' + numFmt + '\x1b\x21\x00\n';        // número grande y proporcionado
             }
             txt += SEPd;
-            txt += 'Solo WhatsApp - sin llamadas\n';
+            txt += '\x1b\x21\x08' + 'Solo WhatsApp - sin llamadas' + '\x1b\x21\x00\n';  // bold
             txt += 'Te respondemos en horario\n';
             txt += SEPd;
             txt += 'Ref: ' + ref + '\n' + estNombre + '\n';
