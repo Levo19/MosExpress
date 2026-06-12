@@ -243,6 +243,11 @@ function doPost(e) {
     // [v2.5.58] Pre-reserva correlativo vía POST (acepta header)
     if (data.tipoEvento === 'RESERVAR_CORRELATIVO') return reservarCorrelativo(data);
     if (data.tipoEvento === 'CANCELAR_RESERVA_CORRELATIVO') return cancelarReservaCorrelativo(data);
+    // [Fase 2] La PWA pide un JWT scoped por zona para hablar DIRECTO a Supabase (mint-token).
+    if (data.tipoEvento === 'MINT_TOKEN') {
+      var _mt = mintSupabaseToken(data.deviceId || data.id || '');
+      return ContentService.createTextOutput(JSON.stringify(_mt)).setMimeType(ContentService.MimeType.JSON);
+    }
     if (data.tipoEvento === 'CAMBIO_IMPRESORA_CAJA') return cambiarImpresoraCaja(data);
     if (data.tipoEvento === 'LIMPIAR_DUPLICADOS') {
       var _r = limpiarGuiasDuplicadasCaja(data.cajaId);
