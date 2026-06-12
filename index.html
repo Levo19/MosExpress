@@ -3608,8 +3608,8 @@
                                       class="gramos-input w-20 text-center font-bold text-sm bg-gray-50 border border-gray-300 rounded-lg py-1 px-2 focus:border-amber-500 focus:outline-none"
                                       :value="item._gramosStr != null ? item._gramosStr : Math.round(item.cantidad * 1000)"
                                       @focus="$event.target.select()"
-                                      @input="item._gramosStr = $event.target.value"
-                                      @blur="_gramosBlur(index, item)"
+                                      @input="item._gramosStr = $event.target.value; gramosLive(index, item)"
+                                      @blur="gramosBlur(index, item)"
                                       @keyup.enter="$event.target.blur()">
                                <span class="text-[10px] font-bold text-gray-500">g</span>
                              </div>
@@ -14105,10 +14105,20 @@
         };
         // [fix granel] @blur del input de gramos: confirma el buffer _gramosStr (gramos) y lo limpia. setCantidadGramos
         // parsea (gramos→kg) o elimina el item si <1. El buffer es lo que evita que un re-render borre lo tipeado.
-        const _gramosBlur = (index, item) => {
+        // NOTA: nombres SIN '_' inicial — Vue 3 oculta del template las props de la raíz que empiezan con '_'/'$'.
+        const gramosBlur = (index, item) => {
           const val = item._gramosStr != null ? item._gramosStr : Math.round(item.cantidad * 1000);
           item._gramosStr = null;
           setCantidadGramos(index, val);
+          // [spec] al confirmar (enter / click-afuera) → foco INMEDIATO al buscador de código de barras
+          // (no esperar al auto-foco de 1.5s). Si el cajero tocó otro producto, su handler re-enfoca después.
+          nextTick(() => { try { if (scannerInput.value) scannerInput.value.focus({ preventScroll: true }); } catch(_){} });
+        };
+        // [tiempo real] recalcula el subtotal MIENTRAS tipea (sin commitear ni eliminar). El input sigue mostrando
+        // el buffer _gramosStr → no se altera; solo actualiza cantidad+importes para que el precio se vea en vivo.
+        const gramosLive = (index, item) => {
+          const g = parseFloat(String(item._gramosStr).replace(',', '.')) || 0;
+          if (g >= 1) { item.cantidad = Math.round(g) / 1000; calcularImportes(item); }
         };
         const agregarCarritoObj = (prodObj) => {
           // Limpiar búsqueda al agregar cualquier producto (click o enter)
@@ -16405,7 +16415,7 @@
           iniciarTurno, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
-          esGranel, setCantidadGramos, setCantidadKg, _gramosBlur,
+          esGranel, setCantidadGramos, setCantidadKg, gramosBlur, gramosLive,
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
