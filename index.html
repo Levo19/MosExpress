@@ -9033,7 +9033,54 @@
                 if (res.ok) { const d = await res.json(); if (d && typeof d === 'object') _tarjetaCfg.value = d; }
             } catch(_) {}
         };
-        // Arma {txt ESC/POS, waUrl, ref} para el tipo dado. La marca va doble alto; el QR es el héroe.
+        // ── [Tarjeta · bitmap] base64 BINARIO (b64ESC normaliza y corrompe imágenes) + íconos nítidos canvas→raster ──
+        const _b64Bytes = (bytes) => {
+            let s = ''; const CH = 8192;
+            for (let i = 0; i < bytes.length; i += CH) s += String.fromCharCode.apply(null, bytes.slice(i, i + CH));
+            return btoa(s);
+        };
+        const _canvasARaster = (cv) => {   // canvas monocromo → comando GS v 0 (raster). negro = oscuro+opaco.
+            const w = cv.width, h = cv.height;
+            const data = cv.getContext('2d').getImageData(0, 0, w, h).data;
+            const bpr = Math.ceil(w / 8);
+            const out = [0x1d, 0x76, 0x30, 0x00, bpr & 0xff, (bpr >> 8) & 0xff, h & 0xff, (h >> 8) & 0xff];
+            for (let y = 0; y < h; y++) for (let bx = 0; bx < bpr; bx++) {
+                let b = 0;
+                for (let bit = 0; bit < 8; bit++) {
+                    const x = bx * 8 + bit;
+                    if (x < w) { const i = (y * w + x) * 4; const lum = (data[i] + data[i+1] + data[i+2]) / 3; if (data[i+3] > 128 && lum < 128) b |= (0x80 >> bit); }
+                }
+                out.push(b);
+            }
+            return out;
+        };
+        const _iconoTarjeta = (tipo) => {   // carrito=cliente · camión=proveedor, centrado en 576px (ancho 80mm)
+            try {
+                const W = 576, H = 116, cx = W / 2, cy = 50;
+                const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+                const x = cv.getContext('2d');
+                x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+                x.strokeStyle = '#000'; x.fillStyle = '#000'; x.lineWidth = 9; x.lineCap = 'round'; x.lineJoin = 'round';
+                if (tipo === 'CLIENTE') {
+                    x.beginPath();
+                    x.moveTo(cx - 78, cy - 36); x.lineTo(cx - 96, cy - 36);                                   // mango
+                    x.moveTo(cx - 62, cy - 28); x.lineTo(cx + 64, cy - 28);                                   // canasta
+                    x.lineTo(cx + 48, cy + 26); x.lineTo(cx - 46, cy + 26); x.lineTo(cx - 62, cy - 28);
+                    x.stroke();
+                    x.beginPath(); x.arc(cx - 30, cy + 46, 11, 0, 6.2832); x.fill();                          // ruedas
+                    x.beginPath(); x.arc(cx + 34, cy + 46, 11, 0, 6.2832); x.fill();
+                } else {
+                    x.strokeRect(cx - 88, cy - 30, 92, 56);                                                   // carga
+                    x.beginPath();
+                    x.moveTo(cx + 4, cy - 6); x.lineTo(cx + 46, cy - 6); x.lineTo(cx + 70, cy + 12);          // cabina
+                    x.lineTo(cx + 70, cy + 26); x.lineTo(cx + 4, cy + 26); x.stroke();
+                    x.beginPath(); x.arc(cx - 44, cy + 40, 13, 0, 6.2832); x.fill();                          // ruedas
+                    x.beginPath(); x.arc(cx + 46, cy + 40, 13, 0, 6.2832); x.fill();
+                }
+                return _canvasARaster(cv);
+            } catch (_) { return []; }   // si el canvas falla → sin ícono, la tarjeta igual imprime
+        };
+        // Arma {bytes (array), waUrl, ref}. Cliente = banda negra; Proveedor = banda + marco de líneas. Ícono bitmap.
         const _tarjetaData = (tipo) => {
             const cfg = _tarjetaCfg.value || {};
             const est = config.value.estacion || {};
@@ -9048,29 +9095,47 @@
                 ? `Hola, me dieron esta tarjeta en ${estNombre}. Soy cliente y quiero hacer una consulta. (Ref: ${ref})`
                 : `Hola, soy proveedor. Me dieron su tarjeta en ${estNombre} y quiero ofrecerles productos. (Ref: ${ref})`;
             const waUrl = `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
-            const W = 48, SEP = '='.repeat(W) + '\n', SEPd = '-'.repeat(W) + '\n';
-            // Tamaños ESC/POS: \x08=bold · \x18=bold+doble-alto · \x30=doble alto+ancho · \x00=normal
-            let txt = '\x1b\x40\x1b\x61\x01';                              // init + centrar
-            txt += '\x1b\x21\x30' + marca + '\x1b\x21\x00\n';             // marca grande
-            txt += SEP;
-            txt += '\x1b\x21\x18' + (esCliente ? 'ATENCION COMERCIAL' : 'CANAL DE COMPRAS') + '\x1b\x21\x00\n\n';  // titulo bold+grande
-            txt += '\x1b\x21\x08' + (esCliente ? 'Quieres hacer un pedido?' : 'Eres proveedor?') + '\x1b\x21\x00\n\n';  // bold
-            txt += '\x1b\x21\x08' + 'Escanea el QR y escribenos' + '\x1b\x21\x00\n\n';  // bold
-            txt += qrESCPOS(waUrl);                                       // QR heroe (ya centra)
-            // [num debajo del QR] sin +51 (siempre Perú) + grande y PROPORCIONADO (doble alto+ancho, no alargado)
-            var numLocal = (numero.slice(0,2) === '51') ? numero.slice(2) : numero;
-            var numFmt = numLocal.replace(/(\d{3})(?=\d)/g, '$1 ');       // 987 654 321
-            if (numFmt) {
-                txt += '\n' + '\x1b\x21\x08' + 'O al WhatsApp:' + '\x1b\x21\x00\n';   // label bold
-                txt += '\x1b\x21\x30' + numFmt + '\x1b\x21\x00\n';        // número grande y proporcionado
+
+            const W = 48, SEPd = '-'.repeat(W);
+            const bytes = [];
+            const _norm = (s) => String(s||'').normalize('NFD').split('').filter(c => c.charCodeAt(0) <= 0xFF && (c.charCodeAt(0) < 0x0300 || c.charCodeAt(0) > 0x036F)).join('');
+            const S = (s) => { const t = _norm(s); for (let i=0;i<t.length;i++) bytes.push(t.charCodeAt(i) & 0xff); };   // texto visible (quita acentos)
+            const Sraw = (s) => { for (let i=0;i<s.length;i++) bytes.push(s.charCodeAt(i) & 0xff); };                    // string→bytes SIN normalizar (comandos con bytes binarios, ej. QR)
+            const B = (arr) => { for (let i=0;i<arr.length;i++) bytes.push(arr[i] & 0xff); };                            // bytes crudos (raster)
+            const banda = (palabra) => {   // banda NEGRA full-width (invertido) + palabra bold doble-alto centrada
+                const pad = Math.max(0, Math.floor((W - palabra.length) / 2));
+                S('\x1b\x61\x01\x1d\x42\x01\x1b\x21\x18');
+                S(' '.repeat(pad) + palabra + ' '.repeat(Math.max(0, W - palabra.length - pad)));
+                S('\x1b\x21\x00\x1d\x42\x00\n');
+            };
+
+            S('\x1b\x40\x1b\x61\x01');     // init + centrar
+            B(_iconoTarjeta(tipo));        // ÍCONO bitmap (carrito/camión)
+            S('\n');
+            if (esCliente) {
+                banda('CLIENTE');
+                S('\x1b\x21\x08atencion comercial\x1b\x21\x00\n');
+            } else {
+                S('\x1b\x21\x08' + '='.repeat(W) + '\x1b\x21\x00\n');   // línea doble (marco) arriba
+                banda('PROVEEDOR');
+                S('\x1b\x21\x08' + '='.repeat(W) + '\x1b\x21\x00\n');   // línea doble (marco) abajo
+                S('\x1b\x21\x08canal de compras\x1b\x21\x00\n');
             }
-            txt += SEPd;
-            txt += '\x1b\x21\x08' + 'Solo WhatsApp - sin llamadas' + '\x1b\x21\x00\n';  // bold
-            txt += 'Te respondemos en horario\n';
-            txt += SEPd;
-            txt += 'Ref: ' + ref + '\n' + estNombre + '\n';
-            txt += '\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02';  // feed + corte (igual que el ticket)
-            return { txt, waUrl, ref };
+            S('\n\x1b\x21\x30' + marca + '\x1b\x21\x00\n');             // marca grande
+            S('\x1b\x21\x08' + (esCliente ? 'Quieres hacer un pedido?' : 'Nos ofreces productos?') + '\x1b\x21\x00\n');
+            S('\x1b\x21\x08Escanea el QR y escribenos\x1b\x21\x00\n\n');
+            Sraw(qrESCPOS(waUrl));         // QR héroe — bytes crudos (NO normalizar: lleva longitudes binarias)
+            const numLocal = (numero.slice(0,2) === '51') ? numero.slice(2) : numero;
+            const numFmt = numLocal.replace(/(\d{3})(?=\d)/g, '$1 ');
+            if (numFmt) {
+                S('\n\x1b\x21\x08O al WhatsApp:\x1b\x21\x00\n');
+                S('\x1b\x21\x30' + numFmt + '\x1b\x21\x00\n');
+            }
+            S(SEPd + '\n\x1b\x21\x08Solo WhatsApp - sin llamadas\x1b\x21\x00\n');
+            S('Te respondemos en horario\n' + SEPd + '\n');
+            S('Ref: ' + ref + '\n' + estNombre + '\n');
+            S('\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02');  // feed + corte
+            return { bytes, waUrl, ref };
         };
         const abrirTarjetaModal = () => {
             tarjetaEstado.value = 'idle';
@@ -9086,10 +9151,10 @@
                 await _cargarTarjetaConfig();
             }
             const est = config.value.estacion || {};
-            const { txt, waUrl } = _tarjetaData(tipo);
+            const { bytes, waUrl } = _tarjetaData(tipo);
             tarjetaQRfallback.value = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(waUrl)}`;
             try {
-                await mandarImpresionPrintNode(est.PrintNode_ID, 'Tarjeta ' + tipo, b64ESC(txt));
+                await mandarImpresionPrintNode(est.PrintNode_ID, 'Tarjeta ' + tipo, _b64Bytes(bytes));
                 tarjetaEstado.value = 'ok';
                 try { playBeepOK(); } catch(_) {}
                 agregarToast('¡Tarjeta lista!', 'Entrégala y dile que escanee el QR 😊');
