@@ -831,6 +831,9 @@ function _escalarCobrosVencidosCore(pushes) {
             if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
             if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
             try { _meMarcarDirtySync('VENTAS_CABECERA', idV); } catch(_e){}   // [fix C2-gap] re-sync el revert a CREDITO (≤15min)
+            // [Lote3-C · M2-GAS] PATCH inmediato a la sombra (antes solo dirty-sync ≤15min):
+            // con lecturas flipeadas, la venta expirada seguía "cobrada" en Supabase esa ventana.
+            try { _dualWriteVentaPatchME(idV, { forma_pago: 'CREDITO' }); } catch(_dwR){}
             break;
           }
         }
@@ -1041,6 +1044,7 @@ function cancelarCobroAsignado(data) {
               if (iVFp >= 0)  ventasSh.getRange(k + 1, iVFp + 1).setValue('CREDITO');
               if (iVCob >= 0) ventasSh.getRange(k + 1, iVCob + 1).setValue(false);
               try { _meMarcarDirtySync('VENTAS_CABECERA', idVenta); } catch(_e){}   // [fix C2-gap] re-sync el revert a CREDITO (≤15min)
+              try { _dualWriteVentaPatchME(idVenta, { forma_pago: 'CREDITO' }); } catch(_dwR){}   // [Lote3-C · M2-GAS] PATCH inmediato
               break;
             }
           }

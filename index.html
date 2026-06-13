@@ -13843,7 +13843,7 @@
                 }
             } catch(e) { /* guardar local igualmente */ }
             extrasMovimientos.value.push(extra);
-            localStorage.setItem('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value));
+            try { lsSet('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value)); } catch(_){}   // [Lote3-C · M8-FE] lsSet+try anti-cuota
             nuevoExtra.value = { tipo: 'EGRESO', monto: '', concepto: '', obs: '', virtual: false };
             modalExtra.value = false;
             procesandoExtra.value = false;
@@ -14235,7 +14235,10 @@
                 virtual: virNeto,
                 timestamp: Date.now()
             });
-            localStorage.setItem('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value));
+            // [Lote3-C · fix M8-FE] lsSet (con GC anti-cuota) + try: un QuotaExceeded
+            // del setItem crudo abortaba la función DESPUÉS de marcar cobrado y ANTES
+            // de enviar COBRAR_VENTA → cobro local sin POST + modal colgado.
+            try { lsSet('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value)); } catch(_){}
             // Cerrar modal inmediatamente
             modalCobro.value = false;
             ventaCobrar.value = null;
