@@ -153,6 +153,10 @@ function _sbUpsert(schemaTable, rows, onConflict, returnRep) {
   return _sb('POST', schemaTable, { data: rows, upsert: true, onConflict: onConflict, returnRep: !!returnRep });
 }
 function _sbUpdate(schemaTable, patch, filters) {
+  // [Hardening 50x] guard simétrico al de _sbDelete: PATCH sin filtros = UPDATE de toda la tabla → BLOQUEADO.
+  if (!filters || !Object.keys(filters).length) {
+    return { ok: false, code: 0, error: 'PATCH sin filtros BLOQUEADO (seguridad)' };
+  }
   return _sb('PATCH', schemaTable, { data: patch, filters: filters });
 }
 /** DELETE con guard: rechaza si no hay filtros (evita borrar la tabla entera). */
