@@ -67,9 +67,10 @@ function _sbOnce_(method, schemaTable, opts) {
   var st = _sbParse_(schemaTable);
   var isRead = (method === 'GET');
 
-  // Guard de seguridad: DELETE sin filtros borraría la tabla entera.
-  if (method === 'DELETE' && !(opts.filters && Object.keys(opts.filters).length)) {
-    return { ok: false, code: 0, error: 'DELETE sin filtros BLOQUEADO (seguridad)' };
+  // Guard de seguridad: DELETE/PATCH sin filtros afectaría la tabla ENTERA.
+  // [20x] PATCH sin filtros = UPDATE de todas las filas (catastrófico) — mismo riesgo que DELETE.
+  if ((method === 'DELETE' || method === 'PATCH') && !(opts.filters && Object.keys(opts.filters).length)) {
+    return { ok: false, code: 0, error: method + ' sin filtros BLOQUEADO (seguridad)' };
   }
 
   var headers = {
