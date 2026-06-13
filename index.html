@@ -1355,7 +1355,7 @@
       fatal.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
       fatal.innerHTML = '<div style="font-size:64px;margin-bottom:18px">🔒</div>'
         + '<h2 style="font-size:20px;margin:0 0 8px;color:#f1f5f9">Módulo de seguridad no cargado</h2>'
-        + '<p style="font-size:14px;color:#94a3b8;max-width:420px;line-height:1.5;margin:0 0 24px">No se pudo cargar el módulo de verificación de dispositivos. Revisa tu conexión y reintentá.</p>'
+        + '<p style="font-size:14px;color:#94a3b8;max-width:420px;line-height:1.5;margin:0 0 24px">No se pudo cargar el módulo de verificación de dispositivos. Revisa tu conexión y reintenta.</p>'
         + '<button onclick="location.reload()" style="padding:12px 22px;border-radius:10px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;font-size:14px;border:0;cursor:pointer">🔄 Reintentar</button>';
       document.documentElement.appendChild(fatal);
       return;
@@ -2963,7 +2963,7 @@
           <!-- ═══ PASO 3 · ESTACIÓN ═══ -->
           <div v-else-if="wizStep === 3">
             <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
-            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">Elegí tu estación · {{ configWizard.zona }}</p>
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">Elige tu estación · {{ configWizard.zona }}</p>
 
             <!-- [v2.7.74] Mensaje claro si la zona no tiene estaciones configuradas. -->
             <div v-if="!wizEstacionesInfo.length" class="text-center py-8 px-4">
@@ -6595,7 +6595,7 @@
         // Sonido warn (descendente) — impresora pasa a offline
         const playMeImpWarn = () => {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
                 [{ f: 600, d: 0.12 }, { f: 360, d: 0.18 }].forEach(({ f, d }, i) => {
                     const t = i * 0.13;
@@ -6611,7 +6611,7 @@
         // Sonido done (ascendente, campanita) — impresora vuelve online
         const playMeImpDone = () => {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
                 [{ f: 880, d: 0.12 }, { f: 1318, d: 0.16 }].forEach(({ f, d }, i) => {
                     const t = i * 0.10;
@@ -7832,10 +7832,14 @@
           if(html5QrcodeScanner) html5QrcodeScanner.clear().catch(() => {});
         });
 
-        const agregarToast = (title, msg = '', tipo = 'info') => {
+        const agregarToast = (title, msg = '', tipo = 'info', duracion = null) => {
             const id = toastIdCounter++;
             toasts.value.push({ id, title, msg, tipo });
-            const dur = (tipo === 'error' || tipo === 'warning') ? 12000 : 3500;
+            // [Lote4 · B16-FE] respetar la duración explícita (4º arg) — antes se ignoraba
+            // (varias llamadas pasaban 8000/12000 que nunca aplicaban).
+            const dur = (typeof duracion === 'number' && duracion > 0)
+                ? duracion
+                : ((tipo === 'error' || tipo === 'warning') ? 12000 : 3500);
             if (tipo === 'error') {
                 try { localStorage.setItem('mosexpress_last_error', JSON.stringify({ title, msg, at: new Date().toISOString() })); } catch(_){}
             }
@@ -8362,7 +8366,7 @@
                                        if (config.value.esCajero && _cajaAyer) {
                                            agregarToast(
                                                '🌙 Sesión anterior cerrada',
-                                               'Tu jornada del ' + _fmtFechaLima(j.data.logout_auto_ts) + ' se cerró auto · ya podés iniciar nueva',
+                                               'Tu jornada del ' + _fmtFechaLima(j.data.logout_auto_ts) + ' se cerró auto · ya puedes iniciar nueva',
                                                'info',
                                                6000
                                            );
@@ -8470,7 +8474,7 @@
              // Sin cache válido → bloquear
              dispositivoAutorizado.value = false;
              dispositivoEstadoMos.value  = 'SIN_VERIFICAR';
-             if (!silencioso) agregarToast('🔒 Sin verificar', 'No se pudo confirmar autorización con el servidor. Revisá tu conexión y reintentá.', 'error', 8000);
+             if (!silencioso) agregarToast('🔒 Sin verificar', 'No se pudo confirmar autorización con el servidor. Revisa tu conexión y reintenta.', 'error', 8000);
              return false;
            } finally {
              if (!silencioso) verificandoDispositivo.value = false;
@@ -9163,6 +9167,16 @@
                 await _cargarTarjetaConfig();
             }
             const est = config.value.estacion || {};
+            // [Lote4 · B17-FE] guard: si la config no cargó, el número queda '' y el QR
+            // apuntaría a wa.me/?text=... SIN destinatario → tarjeta inútil. Abortar con aviso.
+            const _cfgT = _tarjetaCfg.value || {};
+            const _numT = String((tipo === 'CLIENTE' ? _cfgT.TARJETA_WA_COMERCIAL : _cfgT.TARJETA_WA_COMPRAS) || '').replace(/\D/g, '');
+            if (!_numT) {
+                tarjetaEstado.value = 'idle';
+                try { playBeepError(); } catch(_) {}
+                agregarToast('⚠ Sin número configurado', 'No hay WhatsApp para ' + (tipo === 'CLIENTE' ? 'clientes' : 'proveedores') + '. Configúralo en MOS antes de imprimir.', 'error');
+                return;
+            }
             const { bytes, waUrl } = _tarjetaData(tipo);
             tarjetaQRfallback.value = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(waUrl)}`;
             try {
@@ -9178,11 +9192,25 @@
 
         const toggleSound = () => { /* no-op: sonidos siempre activos por política */ };
 
+        // [Lote4 · M11-FE] AudioContext SINGLETON compartido por todos los play* del POS.
+        // Antes cada beep creaba un contexto nuevo sin close() → en iOS/Safari el límite
+        // de contextos concurrentes (~4) se agota en ráfagas de escaneo → el audio
+        // enmudece hasta el GC. Un solo contexto + resume() en cada uso (iOS-safe: el
+        // resume tras un gesto reactiva el contexto suspendido por autoplay-policy).
+        let _posAudioCtx = null;
+        const _audioCtx = () => {
+            try {
+                if (!_posAudioCtx) _posAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (_posAudioCtx.state === 'suspended') _posAudioCtx.resume().catch(() => {});
+                return _posAudioCtx;
+            } catch(_) { return null; }
+        };
+
         const playBeepOK = () => {
             try { if ('vibrate' in navigator) navigator.vibrate(40); } catch(e) {}
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.connect(gain); gain.connect(ctx.destination);
@@ -9200,7 +9228,7 @@
             try { if ('vibrate' in navigator) navigator.vibrate([90, 50, 90]); } catch(e) {}
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_e) {} }
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
@@ -9219,7 +9247,7 @@
         const playVentaOK = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 [
                     { t: 0.00, f: 880,  v: 0.85, d: 0.12 },
                     { t: 0.14, f: 1320, v: 0.9,  d: 0.18 },
@@ -9242,7 +9270,7 @@
         const playSyncOK = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 [
                     { t: 0.00, f: 660, v: 0.7, d: 0.07 },
                     { t: 0.12, f: 880, v: 0.7, d: 0.07 },
@@ -9264,7 +9292,7 @@
         const playOnlineBack = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.connect(gain); gain.connect(ctx.destination);
@@ -9282,7 +9310,7 @@
         const playCoinSound = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 [
                     { t: 0.00, f: 1200, v: 0.85, d: 0.10 },
                     { t: 0.08, f: 1500, v: 0.80, d: 0.10 },
@@ -9312,7 +9340,7 @@
         const playBeepStockZero = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 [
                     { t: 0.00, f: 1047, v: 0.8, d: 0.07 },
                     { t: 0.10, f: 520,  v: 0.7, d: 0.16 },
@@ -9331,7 +9359,7 @@
         const playBeepNameMatch = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 [
                     { t: 0.00, f: 700, v: 0.6, d: 0.05 },
                     { t: 0.07, f: 700, v: 0.6, d: 0.05 },
@@ -9351,7 +9379,7 @@
         // un ticket nuevo en la lista. Más sutil que el de cobro asignado.
         const playCashRing = () => {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
                 [
                     { t: 0.00, f: 1200, v: 0.45, d: 0.08 },
@@ -9373,7 +9401,7 @@
         // de caja (el cajero NECESITA enterarse aunque tenga el sonido bajo).
         const playSonidoCobroAsignado = () => {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 // Resume si está suspendido (Chromium suspende AudioContext sin gesture)
                 if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
                 const notas = [
@@ -9403,7 +9431,7 @@
         const playPromoDing = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 [
                     { t: 0.00, f: 1568, v: 0.5, d: 0.18 },
                     { t: 0.05, f: 2093, v: 0.45, d: 0.22 },
@@ -9782,7 +9810,7 @@
         const cobrarFx = ref(false);   // flash visual del botón Cobrar/Confirmar
         const _fxAtajo = (sonido) => {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 const o = ctx.createOscillator(), g = ctx.createGain();
                 o.connect(g); g.connect(ctx.destination); o.type = 'sine';
                 if (sonido === 'print') { o.frequency.setValueAtTime(440, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(210, ctx.currentTime + 0.13); }
@@ -9876,7 +9904,7 @@
         const toggleModoPro = () => {
             modoPro.value = !modoPro.value;
             try { localStorage.setItem('me_modo_pro', modoPro.value ? '1' : '0'); } catch(_){}
-            if (modoPro.value) { _setNavColapsado(false); programarColapso(3500); agregarToast('Modo Pro ✓', 'La barra se oculta para darte más espacio · pasá el mouse abajo o tocá la línea'); }
+            if (modoPro.value) { _setNavColapsado(false); programarColapso(3500); agregarToast('Modo Pro ✓', 'La barra se oculta para darte más espacio · pasa el mouse abajo o toca la línea'); }
             else { _setNavColapsado(false); if (_navTimer) clearTimeout(_navTimer); }
         };
         try {
@@ -9938,7 +9966,7 @@
         const playWelcomeFanfare = () => {
             if (!soundEnabled.value) return;
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 [
                     { t: 0.00, f: 523,  v: 0.7,  d: 0.18 },  // C5
                     { t: 0.15, f: 659,  v: 0.7,  d: 0.18 },  // E5
@@ -10665,10 +10693,10 @@
         const wizTutorial = ref({
             visible: false, idx: 0,
             pasos: [
-                { emoji: '👤', texto: 'Tipea tu nombre o tocá una de las caritas si ya entraste antes — la app recuerda los últimos 5 usuarios.' },
-                { emoji: '📍', texto: 'Cada zona te muestra si ya hay un cajero activo. Si lo hay y querés ir como vendedor, igual podés entrar.' },
-                { emoji: '🖨', texto: 'En el paso 3 ves el estado de la impresora EN VIVO (🟢 lista · 🔴 apagada · 🟡 verificando). Elegí tranquilo.' },
-                { emoji: '💵', texto: 'Si abrís como cajero, podés dictar el monto inicial con el botón 🎤 — sin teclado.' }
+                { emoji: '👤', texto: 'Tipea tu nombre o toca una de las caritas si ya entraste antes — la app recuerda los últimos 5 usuarios.' },
+                { emoji: '📍', texto: 'Cada zona te muestra si ya hay un cajero activo. Si lo hay y querés ir como vendedor, igual puedes entrar.' },
+                { emoji: '🖨', texto: 'En el paso 3 ves el estado de la impresora EN VIVO (🟢 lista · 🔴 apagada · 🟡 verificando). Elige tranquilo.' },
+                { emoji: '💵', texto: 'Si abres como cajero, puedes dictar el monto inicial con el botón 🎤 — sin teclado.' }
             ]
         });
         const wizTutorialCheckShow = () => {
@@ -11566,7 +11594,7 @@
                    const w = window.open(_turnoUrl, '_blank');
                    if (!w) {
                      agregarToast('⚠ Popup bloqueado',
-                         'El navegador bloqueó la ventana del turno. Tocá aquí para abrirla',
+                         'El navegador bloqueó la ventana del turno. Toca aquí para abrirla',
                          'warning');
                      // Fallback: ofrecer al cajero un botón manual
                      try {
@@ -15205,7 +15233,7 @@
         // Beep suave para "correlativo en mano" — discreto, no invasivo
         const playBeepSuave = () => {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = _audioCtx(); if (!ctx) return;
                 const o = ctx.createOscillator();
                 const g = ctx.createGain();
                 o.connect(g); g.connect(ctx.destination);
@@ -15247,7 +15275,7 @@
                    pago.value.docCliente = doc;
                    clienteModoManual.value = true;
                    try { playBeepError?.(); } catch(_){}
-                   agregarToast('⚠ API SUNAT/RENIEC caída', d.message + ' · usá VARIOS por ahora', 'error', 10000);
+                   agregarToast('⚠ API SUNAT/RENIEC caída', d.message + ' · usa VARIOS por ahora', 'error', 10000);
                    console.error('[APISPeru]', d.codigo, '·', d.message);
                } else {
                    // not_found / NET_ERROR / API_5XX → opciones manuales
@@ -15255,13 +15283,13 @@
                    clienteModoManual.value = true;
                    try { playBeepError?.(); } catch(_){}
                    const msg = d.message || 'Doc ' + doc + ' no está en RENIEC/SUNAT';
-                   agregarToast('Sin coincidencias', msg + ' · reintentá o usá VARIOS/CE');
+                   agregarToast('Sin coincidencias', msg + ' · reintenta o usa VARIOS/CE');
                }
            } catch(e) {
                pago.value.docCliente = doc;
                clienteModoManual.value = true;
                try { playBeepError?.(); } catch(_){}
-               agregarToast('Error consulta', 'Sin conexión a RENIEC/SUNAT. Reintentá o usá VARIOS.');
+               agregarToast('Error consulta', 'Sin conexión a RENIEC/SUNAT. Reintenta o usa VARIOS.');
            } finally {
                buscandoCliente.value = false;
            }
@@ -15413,7 +15441,7 @@
            // forzar VARIOS o que elija. Bloquea hasta que haya cliente válido.
            if (!pago.value.nombreCliente || !pago.value.docCliente) {
                try { playBeepError?.(); } catch(_){}
-               agregarToast('⚠ Falta cliente', 'Selecciona un cliente del listado o tocá "Usar VARIOS"');
+               agregarToast('⚠ Falta cliente', 'Selecciona un cliente del listado o toca "Usar VARIOS"');
                return;
            }
            // [v40.1] Validaciones según reglas SUNAT reales:
@@ -15425,7 +15453,7 @@
                const docLen = String(pago.value.docCliente || '').length;
                if (docLen !== 8 && docLen !== 11) {
                    try { playBeepError?.(); } catch(_){}
-                   agregarToast('⚠ Boleta ≥ S/700', 'SUNAT exige DNI (8) o RUC (11) para boletas de S/ 700 o más. Buscá al cliente.');
+                   agregarToast('⚠ Boleta ≥ S/700', 'SUNAT exige DNI (8) o RUC (11) para boletas de S/ 700 o más. Busca al cliente.');
                    return;
                }
            }
@@ -15437,7 +15465,7 @@
                }
                if (!String(pago.value.direccionCliente || '').trim()) {
                    try { playBeepError?.(); } catch(_){}
-                   agregarToast('⚠ Falta dirección', 'FACTURA requiere dirección fiscal. Reintentá la búsqueda del RUC.');
+                   agregarToast('⚠ Falta dirección', 'FACTURA requiere dirección fiscal. Reintenta la búsqueda del RUC.');
                    return;
                }
            }
@@ -16845,8 +16873,9 @@
           conexionEstado,
           asegurandoNumeracion, asegurandoSegs,
           decisionLocalAbierto,
-          // Aliases SIN underscore — Vue 3 bloquea _xxx root en template
-          _pingHeartbeat:       _pingHeartbeat,       // dejo el original también para legacy
+          // [Lote4 · B14-FE] alias SIN underscore (Vue 3 filtra las claves _xxx root del
+          // template). Quitada la clave `_pingHeartbeat` del return (Vue la ocultaba igual,
+          // era trampa para el próximo dev). El uso interno sigue por el const directo.
           pingHeartbeat:        _pingHeartbeat,       // alias para template (sin _)
           resolverDecisionLocal: resolverDecisionLocal,
           uiState,
@@ -16950,7 +16979,7 @@
           // [v2.7.6] Devolución al almacén (two-party witness)
           devEstadosZona, setDevEstado, capturarFotoDev, puedeConfirmarDevolucion,
           auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente, auditCargando, auditConfirmados,
-          camaraAuditAbierta, toggleCamaraAudit, auditEscanear, _guardarAuditHoy,
+          camaraAuditAbierta, toggleCamaraAudit, auditEscanear,
           auditInputRefs, autoGuardarItem, auditCardClass, auditInputClass,
           stockMap, zonasUnicasStock,
           abrirAuditoria, cerrarAuditoria, iniciarAuditoria, confirmarAuditoria,
@@ -16958,7 +16987,6 @@
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
           modalPin, pinInput, pinError, confirmarPin, pinValidando, pinPress, pinDel,
-          _cobroRestante, _cobroUrgencia,
           modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro, revertirCobroDesdeModal,
           // F3 — Acciones admin sobre tickets + cola pendientes
           modalAdminAcc, ticketParaAdmin, abrirAccionesAdmin,
@@ -16978,7 +17006,7 @@
           cobrosAsignados, modalCobrarAsignado, cobroAsignadoActivo,
           cobroAsigMetodo, cobroAsigMixtoEf, cobroAsigMixtoVi,
           modalRechazarAsignado, razonRechazoAsig, procesandoCobroAsig,
-          _fmtFechaCorta, abrirModalCobrarAsignado, cerrarCobrarAsignado,
+          abrirModalCobrarAsignado, cerrarCobrarAsignado,
           confirmarCobrarAsignado, abrirRechazarAsignado, confirmarRechazarAsignado,
           cargarCobrosAsignados,
           usuarioBloqueado, modalDesbloqueo, desbloqueoPin, desbloqueoError, desbloqueoCargando,
