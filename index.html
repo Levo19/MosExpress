@@ -11545,6 +11545,34 @@
                      let cierreOk = false;
                      let resCierre = null;
                      let ultimoError = null;
+
+                     // [cierre-directo · INERTE hasta ME_CIERRE_DIRECTO=1] Intentar la RPC directa primero.
+                     // Hace el arqueo (núcleo de dinero) en Supabase al instante; el cierre GAS corre en
+                     // BACKGROUND como mirror a Sheets + efectos secundarios (guía SALIDA_VENTAS para WH,
+                     // cancelar cobros, push) — es idempotente. Si la RPC falla → cae al cierre GAS síncrono
+                     // de abajo (fallback total). Con el flag en 0 este bloque NO se ejecuta (comportamiento intacto).
+                     if (cierreDirecto()) {
+                         try {
+                             const rd = await _cerrarCajaDirecto(_idCaja, montoFinal, idsAnular, 'CERRADA');
+                             if (rd && rd.status === 'success') {
+                                 cierreOk = true;
+                                 resCierre = rd;
+                                 // mirror + efectos secundarios en background (fire-and-forget). Si falla, el
+                                 // cierre GAS es idempotente y regenera la guía en una re-llamada; avisamos.
+                                 fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                                     tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal,
+                                     idsAnular: idsAnular, ventasTotal: cobradosEnSesion.value.length
+                                 }) }).catch(() => {
+                                     agregarToast('⚠ Cierre OK, sincronización pendiente',
+                                         'El arqueo quedó registrado, pero la guía/Sheets se sincroniza al volver la red.', 'warning');
+                                 });
+                             }
+                         } catch(eD) {
+                             console.warn('[cierre directo] fallback a GAS:', eD && eD.message);
+                             // cierreOk sigue false → el loop GAS de abajo hace el cierre completo (fallback)
+                         }
+                     }
+
                      for (let intento = 0; intento < 2 && !cierreOk; intento++) {
                          try {
                              const reqCierre = await _fetchConTimeout(API_URL, {
@@ -13910,6 +13938,27 @@
         // [Fase 2] ¿emisión CPE (boleta/factura) DIRECTA vía Edge emitir-cpe? server (ME_CPE_DIRECTO) || local.
         // Compliance-crítico: requiere escritura directa ON + secrets NubeFact seteados. OFF por defecto.
         const cpeDirectoSupabase = () => _flagOn('ME_CPE_DIRECTO', 'me_cpe_directo');
+        // [Fase 2] ¿CIERRE de caja DIRECTO vía RPC me.cerrar_caja? server (ME_CIERRE_DIRECTO) || local. OFF por
+        // defecto. El RPC hace el núcleo de dinero (arqueo) en Supabase; el cierre GAS corre en background como
+        // mirror a Sheets + efectos secundarios (guía SALIDA_VENTAS para WH, cobros, push). Fallback a GAS si falla.
+        const cierreDirecto = () => _flagOn('ME_CIERRE_DIRECTO', 'me_cierre_directo');
+        // Cierra la caja DIRECTO en Supabase (RPC me.cerrar_caja). Devuelve el arqueo {status, monto_final,
+        // monto_final_auto, descuadre, ids_anulados, ...}. Lanza si falla → el caller cae al cierre GAS.
+        const _cerrarCajaDirecto = async (idCaja, montoFinal, idsAnular, estadoFinal) => {
+            const token = await _mintTokenSB();
+            const payload = { id_caja: idCaja, estado_final: estadoFinal || 'CERRADA' };
+            if (montoFinal !== null && montoFinal !== undefined && montoFinal !== '') payload.monto_final = montoFinal;
+            if (Array.isArray(idsAnular) && idsAnular.length) payload.ids_anular = idsAnular;
+            const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/cerrar_caja`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p: payload })
+            }, 8000);
+            if (!res.ok) throw new Error('cerrar_caja HTTP ' + res.status);
+            const d = await res.json();
+            if (!d || d.status !== 'success') throw new Error('cerrar_caja: ' + ((d && d.error) || 'fallo'));
+            return d;
+        };
         // Manda un print job DIRECTO a PrintNode vía la Edge Function `imprimir` (key en secret server-side).
         // Mismo contrato de retorno que el path GAS ({status:'success', printJobId}). Lanza si falla → fallback.
         const _imprimirDirectoPN = async (printerId, titulo, textoRaw) => {
