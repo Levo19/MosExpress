@@ -219,6 +219,62 @@ function reconciliarDirectasSheets(){
   return out;
 }
 
+// [Fase 2 · gate de lectura directa] Verifica la PARIDAD Sheets↔Supabase de los últimos N días.
+// El riesgo de flipear ME_LECTURA_DIRECTA=1 es una venta que esté en Sheets (fuente de verdad) pero
+// NO en me.ventas → el cajero leería directo de Supabase y NO la vería → la re-emite → duplicada.
+// Este check (SOLO LECTURA) cuenta exactamente ese hueco. Si solo_en_sheets=0 varios días → seguro flipear.
+//   GET ?accion=verificar_paridad_lectura&dias=3
+function verificarParidadLectura(diasAtras){
+  var dias = parseInt(diasAtras, 10); if(!dias || dias < 1) dias = 3;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetCab = ss.getSheetByName('VENTAS_CABECERA');
+  if(!sheetCab) return { ok:false, error:'VENTAS_CABECERA no existe' };
+  var tz = 'America/Lima';
+  var desde = new Date(Date.now() - dias*24*60*60*1000);
+  var desdeIso = Utilities.formatDate(desde, tz, "yyyy-MM-dd'T'00:00:00XXX");
+  var hoyKey = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+
+  // ── Sheets: ventas recientes NO anuladas (cols: 1=idVenta, 2=fecha, 9=formaPago, 14=ref_local) ──
+  var data = sheetCab.getDataRange().getValues();
+  var shByRef = {}, shSinRef = [], shTotal = 0;
+  for(var i=1;i<data.length;i++){
+    var fechaCell = data[i][1];
+    var fecha = (fechaCell instanceof Date) ? fechaCell : new Date(fechaCell);
+    if(isNaN(fecha.getTime()) || fecha < desde) continue;
+    var fp = String(data[i][8]||'').toUpperCase();
+    if(fp === 'ANULADO') continue;                 // anuladas no importan para el cajero
+    shTotal++;
+    var ref = String(data[i][13]||'').trim();
+    var idV = String(data[i][0]||'').trim();
+    if(ref) shByRef[ref] = { idVenta:idV, fecha:Utilities.formatDate(fecha, tz, 'yyyy-MM-dd HH:mm'), fp:fp };
+    else    shSinRef.push({ idVenta:idV, fecha:Utilities.formatDate(fecha, tz, 'yyyy-MM-dd HH:mm'), fp:fp });
+  }
+
+  // ── Supabase: ref_locals de me.ventas en el mismo rango ──
+  var enSupa = {};
+  var r = _sbSelect('me.ventas', { filters: { fecha:'gte.'+desdeIso }, order:'fecha.asc', limit:5000 });
+  if(!r.ok) return { ok:false, error:'no se pudo leer me.ventas: '+(r.error||'') };
+  (r.data||[]).forEach(function(v){ var rl=String(v.ref_local||'').trim(); if(rl) enSupa[rl]=1; });
+  var supaTotal = (r.data||[]).length;
+
+  // ── Hueco: ref en Sheets que NO está en Supabase (el riesgo del flip) ──
+  var soloEnSheets = [];
+  Object.keys(shByRef).forEach(function(ref){
+    if(!enSupa[ref]) soloEnSheets.push(Object.assign({ ref_local:ref }, shByRef[ref]));
+  });
+
+  return { ok:true, data:{
+    dias: dias, desde: desdeIso, hoyLima: hoyKey,
+    sheets_total: shTotal,
+    sheets_con_ref: Object.keys(shByRef).length,
+    sheets_sin_ref: shSinRef.length,             // GAS-only o pre-directo: NO están en Supabase por definición
+    supabase_total: supaTotal,
+    solo_en_sheets_count: soloEnSheets.length,    // ⚠ EL NÚMERO QUE IMPORTA: 0 = seguro flipear
+    solo_en_sheets: soloEnSheets.slice(0, 30),    // muestra (máx 30)
+    ventas_sin_ref_muestra: shSinRef.slice(0, 30) // las sin ref_local (revisar si son recientes/operativas)
+  }};
+}
+
 // [Fase 2 · fix ALTO 20x] Registra el trigger de reconciliación (cada 10min) — sino el backstop queda huérfano.
 // Correr UNA vez en el editor antes de habilitar la escritura directa. Idempotente.
 function instalarTriggerReconciliacionDirectas(){

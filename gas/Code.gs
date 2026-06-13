@@ -26,6 +26,8 @@ function doGet(e) {
     if (accion === 'verificar_dispositivo') return verificarDispositivo(e.parameter.id);
     if (accion === 'ventas_hoy_zona')       return ventasHoyZonaFlip(e.parameter.prefijos, e.parameter.desde);  // [Fase 1.D] flag FUENTE_DATOS (default sheets)
     if (accion === 'detalle_venta')         return detalleVenta(e.parameter.id_venta);
+    // [Fase 2 · gate lectura directa] paridad Sheets↔Supabase (solo lectura) — GET ?accion=verificar_paridad_lectura&dias=3
+    if (accion === 'verificar_paridad_lectura') return ContentService.createTextOutput(JSON.stringify(verificarParidadLectura(e.parameter.dias))).setMimeType(ContentService.MimeType.JSON);
     if (accion === 'stock_zonas')           return getStockZonas();
     if (accion === 'lista_auditoria')       return getListaAuditoria(e.parameter.zona, e.parameter.usuario);
     if (accion === 'cajero_activo')         return cajeroActivo(e.parameter.zona);
