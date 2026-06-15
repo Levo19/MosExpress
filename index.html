@@ -10511,6 +10511,12 @@
             // id_personal es obligatorio para el pulso; si no lo tenemos, usar el
             // nombre normalizado como identidad estable (la RPC dedupea por esta key).
             const idp = String(cw.idPersonal || '').trim() || ('NOID:' + String(cw.vendedor || '').trim().toLowerCase());
+            // [v2.8.10] Base de mensajería: adjuntar device_id (siempre que exista) y
+            // push_token FCM (cuando _pushInit ya lo capturó). Si el token aún no está
+            // listo, se manda lo que haya (device_id) y el token en un pulso posterior;
+            // la RPC conserva el previo cuando el pulso viene sin token (no lo borra).
+            const _devId = (typeof deviceId !== 'undefined' && deviceId?.value) || (localStorage.getItem('mosexpress_deviceId') || '');
+            const _pushTk = _pushTokenActual || '';
             try {
                 const token = await _mintTokenSB();
                 await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_presencia`, {
@@ -10521,7 +10527,9 @@
                         nombre:   cw.vendedor || '',
                         zona:     cw.zona || '',
                         estacion: cw.estacion?.Estacion_Nombre || '',
-                        rol:      cw.esCajero ? 'cajero' : 'vendedor'
+                        rol:      cw.esCajero ? 'cajero' : 'vendedor',
+                        device_id:  String(_devId || ''),
+                        push_token: String(_pushTk || '')
                     }})
                 });
             } catch (e) { /* fire-and-forget */ }
@@ -12903,6 +12911,12 @@
         };
         let _pushHandlerSet = false;
         let _pushTokenRegistrado = false;
+        // [v2.8.10] Token FCM actual de ESTE dispositivo, capturado por _pushInit.
+        // Lo consume el heartbeat de presencia (_wizRegistrarPresencia) como push_token,
+        // para sentar la base de mensajería dirigida en me.presencia. Puede llegar tarde
+        // (push se inicializa async tras el login): el pulso manda lo que haya y el
+        // token cuando exista (la RPC conserva el previo si el pulso viene sin token).
+        let _pushTokenActual = '';
 
         const _pushInit = async () => {
             try {
@@ -12966,6 +12980,8 @@
                     console.warn('[Push ME] getToken devolvió vacío');
                     return;
                 }
+                // [v2.8.10] Exponer el token al heartbeat de presencia (base mensajería).
+                _pushTokenActual = token;
 
                 // [v2.7.18] Si deviceId vacío, no registrar (token sin device es inútil para targeted)
                 const devIdReg = deviceId.value || '';
