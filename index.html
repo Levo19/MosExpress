@@ -10542,6 +10542,30 @@
         const _wizDetenerHeartbeat = () => {
             if (_wizHeartbeatTimer) { clearInterval(_wizHeartbeatTimer); _wizHeartbeatTimer = null; }
         };
+        // ── [v2.8.12] Baja EXPLÍCITA de presencia (cerrar sesión / cerrar caja). ──
+        // Borra la fila de me.presencia AL INSTANTE (RPC me.salir_presencia) para que
+        // el vendedor desaparezca YA del login de los demás dispositivos, sin esperar
+        // el TTL de 2 min. fire-and-forget: si falla la red, el TTL lo barre igual.
+        // Se le pasa el id_personal (o NOID:nombre, igual que el heartbeat) Y el
+        // device_id, para limpiar también filas huérfanas del mismo aparato.
+        const _wizSalirPresencia = async (idOverride, nombreOverride) => {
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            // Identidad: misma key que _wizRegistrarPresencia (id_personal o NOID:nombre).
+            const cw = config.value || {};
+            const _nombre = String(nombreOverride != null ? nombreOverride : (cw.vendedor || '')).trim();
+            const _idRaw  = String(idOverride != null ? idOverride : (cw.idPersonal || '')).trim();
+            const idp = _idRaw || (_nombre ? ('NOID:' + _nombre.toLowerCase()) : '');
+            const _devId = (typeof deviceId !== 'undefined' && deviceId?.value) || (localStorage.getItem('mosexpress_deviceId') || '');
+            if (!idp && !_devId) return;       // nada que dar de baja
+            try {
+                const token = await _mintTokenSB();
+                await fetch(`${SUPABASE_URL}/rest/v1/rpc/salir_presencia`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { id_personal: idp, device_id: String(_devId || '') } })
+                });
+            } catch (e) { /* fire-and-forget: el TTL de 2min limpia igual */ }
+        };
 
         // ── Métodos de navegación ──
         // [v2.8.9] Flujo rediseñado (4→3 pasos): 1 ¿Quién? · 2 Zona viva (elige
@@ -10897,8 +10921,23 @@
                     const cached = localStorage.getItem('mosexpress_clima_v1');
                     if (cached) {
                         const c = JSON.parse(cached);
-                        if (c.texto) wizClima.value.texto = c.texto; // mostrar aunque sea viejo
-                        if (Date.now() - (c.ts || 0) < 3600000) cacheVigente = true; // 1h
+                        // [v2.8.12 FIX] Invalidar cache ENVENENADO con "Lima". El código viejo
+                        // (pre-GPS) cacheaba "Lima" como default; ese cache se pintaba primero
+                        // y el usuario seguía viendo Lima aunque ya tuviera el fix. La ciudad
+                        // de operación nunca es Lima → si el cache dice Lima, lo descartamos
+                        // (borramos del LS y re-pedimos GPS/Pisco). No afecta a Pisco ni a una
+                        // ciudad real venida del GPS.
+                        const _ciudadCache = String(c.ciudad || '').trim().toLowerCase();
+                        const _textoCache  = String(c.texto || '').toLowerCase();
+                        const _esLimaEnvenenado = _ciudadCache === 'lima' || /\blima\b/.test(_textoCache);
+                        if (_esLimaEnvenenado) {
+                            try { localStorage.removeItem('mosexpress_clima_v1'); } catch(_) {}
+                            // No pintamos el texto viejo ni marcamos cacheVigente → cae al
+                            // fallback Pisco + GPS de abajo.
+                        } else {
+                            if (c.texto) wizClima.value.texto = c.texto; // mostrar aunque sea viejo
+                            if (Date.now() - (c.ts || 0) < 3600000) cacheVigente = true; // 1h
+                        }
                     }
                 } catch(_) {}
                 if (!navigator.onLine) return;       // sin red: nos quedamos con el cache
@@ -11911,13 +11950,25 @@
                  localStorage.removeItem('mosexpress_ventas_hoy');
 
                  // 5. Desloguear terminal
+                 // [v2.8.12] Capturar identidad ANTES de borrar config (para la baja de presencia).
+                 const _idSalidaCaja = String(config.value.idPersonal || '').trim();
+                 const _nombreSalidaCaja = String(config.value.vendedor || '').trim();
                  config.value.completado = false;
                  config.value.vendedor = '';
                  config.value.estacion = null;
                  config.value.esCajero = false;
                  localStorage.removeItem('mosexpress_config');
                  localStorage.removeItem('mosexpress_session_date');
+                 // [v2.8.12] Cerrar CAJA = cierre explícito de turno → logout real: borrar
+                 // el fast-track ("Continuar tu turno") para que el cajero no reaparezca en
+                 // el login. (La caja ya está CERRADA en backend, así que tampoco vuelve por
+                 // el detector de caja por device.)
+                 try { localStorage.removeItem('mosexpress_ultimos_users'); } catch(_){}
+                 wizUltimoTurno.value = null;
+                 wizUltimosUsers.value = [];
                  try { _wizDetenerHeartbeat(); } catch(_){}
+                 // [v2.8.12] Baja INMEDIATA de presencia (no esperar el TTL de 2min).
+                 try { _wizSalirPresencia(_idSalidaCaja, _nombreSalidaCaja); } catch(_){}
                  configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
                  cajeroWizardInfo.value = null;
                  wizardCajeroOcupado.value = false;
@@ -14597,6 +14648,9 @@
         // Cierre de sesión para vendedores (sin caja)
         const cerrarSesion = async () => {
              if (!await _meModalConfirm(`¿Cerrar sesión de ${config.value.vendedor}?`, { warning: true, titulo: 'Cerrar sesión', okText: 'Cerrar sesión' })) return;
+             // [v2.8.12] Capturar identidad ANTES de resetear config (la necesita la baja de presencia).
+             const _idSalida = String(config.value.idPersonal || '').trim();
+             const _nombreSalida = String(config.value.vendedor || '').trim();
              clearInterval(_intervalVendedorCajeroCheck);
              _intervalVendedorCajeroCheck = null;
              ventasHoy.value = [];
@@ -14607,7 +14661,16 @@
              localStorage.removeItem('mosexpress_caja_activa');
              localStorage.removeItem('mosexpress_caja_payload');
              localStorage.removeItem('mosexpress_session_start');
+             // [v2.8.12] CERRAR SESIÓN = logout REAL: borrar el fast-track ("Continuar tu
+             // turno") para que NO se re-ofrezca tras un cierre explícito. (Recargar la app
+             // con caja abierta sigue siendo válido: ahí restaura mosexpress_config y ni
+             // siquiera se muestra el wizard.) Limpiamos historial + el ref en vivo.
+             try { localStorage.removeItem('mosexpress_ultimos_users'); } catch(_){}
+             wizUltimoTurno.value = null;
+             wizUltimosUsers.value = [];
              try { _wizDetenerHeartbeat(); } catch(_){}
+             // [v2.8.12] Baja INMEDIATA de presencia (no esperar el TTL de 2min).
+             try { _wizSalirPresencia(_idSalida, _nombreSalida); } catch(_){}
              configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
              cajaAbierta.value = false;
              // [v40.3] Detener polling cobros asignados al cerrar caja
