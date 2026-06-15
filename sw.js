@@ -25,16 +25,37 @@ _fcmMsg.onBackgroundMessage(payload => {
   }
   const title = payload.notification?.title || 'MosExpress';
   const body  = payload.notification?.body  || '';
+  // [Mensajería] Preservar idNotif/mensajeId para deep-link al hacer click.
+  const pd = payload.data || {};
   self.registration.showNotification(title, {
     body,
     icon:    'https://levo19.github.io/MOS/icon-192.png',
     badge:   'https://levo19.github.io/MOS/icon-192.png',
     tag:     'me-push',
-    vibrate: [200, 100, 200]
+    vibrate: [200, 100, 200],
+    data:    { idNotif: pd.idNotif || '', mensajeId: pd.mensajeId || (pd.extra && pd.extra.mensajeId) || null }
   });
 });
 
-const VERSION = '2.8.13';
+// ── [Mensajería] Click en notificación → enfocar app + deep-link a la bandeja ──
+self.addEventListener('notificationclick', event => {
+  const d = (event.notification && event.notification.data) || {};
+  event.notification.close();
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const cmd = { type: 'mos_command', data: { action: 'me_deeplink', mensajeId: d.mensajeId || null } };
+    if (all.length > 0) {
+      const c = all[0];
+      try { await c.focus(); } catch(_) {}
+      try { c.postMessage(cmd); } catch(_) {}
+    } else {
+      // App cerrada: abrir + el polling de la bandeja levanta el badge igual
+      try { await self.clients.openWindow('./'); } catch(_) {}
+    }
+  })());
+});
+
+const VERSION = '2.8.14';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',

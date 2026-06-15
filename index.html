@@ -253,6 +253,11 @@
       }
     }
     .animate-alertas-palpitar { animation: alertasPalpitar 1.1s ease-in-out infinite; }
+    /* [Mensajería] campana + badge de no-leídos */
+    @keyframes msgBell { 0%,100% { transform: rotate(0); } 10% { transform: rotate(14deg); } 20% { transform: rotate(-12deg); } 30% { transform: rotate(8deg); } 40% { transform: rotate(-6deg); } 50% { transform: rotate(0); } }
+    .animate-msg-bell { animation: msgBell 2.2s ease-in-out infinite; transform-origin: 50% 0; }
+    @keyframes msgBadge { 0% { transform: scale(.6); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
+    .animate-msg-badge { animation: msgBadge .35s ease-out; }
     @keyframes toolsAlerta {
       0%, 100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 0 rgba(220,38,38,0)); }
       25%      { transform: scale(1.15) rotate(-6deg); filter: drop-shadow(0 0 4px rgba(220,38,38,.8)); }
@@ -1816,6 +1821,7 @@
       .wiz-bg, .wiz-card-anim, .wiz-tienda,
       .wiz-cajero-chip, .wiz-corona, .wiz-shake { animation: none !important; }
       .wiz-tienda { opacity: 1; transform: none; }
+      .animate-msg-bell, .animate-msg-badge { animation: none !important; }
     }
 
   </style>
@@ -2585,6 +2591,15 @@
 
       <!-- Badges siempre visibles (derecha) -->
       <div class="flex items-center gap-1.5 shrink-0" :class="currentModule !== 'POS' ? 'ml-2' : ''">
+        <!-- [Mensajería] Bandeja de avisos — badge de no-leídos (todos los roles) -->
+        <button @click="abrirInbox" title="Avisos / mensajes"
+                class="relative w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 active:scale-90 flex items-center justify-center transition-colors">
+          <svg class="w-5 h-5" :class="msgNoLeidos > 0 ? 'animate-msg-bell' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+          <span v-if="msgNoLeidos > 0"
+                class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center ring-2 ring-white/70 shadow animate-msg-badge">
+            {{ msgNoLeidos > 9 ? '9+' : msgNoLeidos }}
+          </span>
+        </button>
         <!-- [v2.7.0] PIEZA D — Status conexión tri-state con heartbeat ping -->
         <button @click="pingHeartbeat()" :title="'Tap para ping ahora · estado: ' + conexionEstado"
                 v-if="conexionEstado !== 'ONLINE'"
@@ -3781,6 +3796,20 @@
                     📇 IMPRIMIR TARJETA
                  </button>
 
+                 <!-- [Mensajería] ENVIAR AVISO — solo admin/master (rol + PIN) -->
+                 <template v-if="esAdminME">
+                    <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
+                    <div class="text-center">
+                       <h2 class="text-2xl font-black text-gray-800">📨 AVISOS</h2>
+                       <p class="text-sm text-gray-500 font-bold mt-1">Envía un mensaje a una persona, una zona o a todos los presentes</p>
+                    </div>
+                    <button @click="abrirEnviarMensaje"
+                            class="w-full bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2">
+                       📨 ENVIAR AVISO
+                    </button>
+                    <p class="text-xs text-gray-400 text-center mt-2">Requiere clave admin · llega como notificación</p>
+                 </template>
+
                  <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
 
                  <!-- Panel de configuración compacto -->
@@ -3919,6 +3948,122 @@
                 </button>
             </div>
         </div>
+    </div>
+
+    <!-- ═══ [Mensajería] BANDEJA DE AVISOS (vendedor) ═══ -->
+    <div v-if="msgInboxAbierto" class="fixed inset-0 z-[70] bg-gray-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+         @click.self="cerrarInbox">
+      <div class="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl shadow-2xl border border-white/20 max-h-[88vh] flex flex-col overflow-hidden animate-[slideUp_0.25s]">
+        <!-- Header -->
+        <div class="px-5 py-4 bg-gradient-to-r from-sky-600 to-cyan-600 text-white flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+            <h3 class="text-lg font-black">Avisos</h3>
+            <span v-if="msgNoLeidos > 0" class="bg-white/25 text-white text-[11px] font-black rounded-full px-2 py-0.5">{{ msgNoLeidos }} sin leer</span>
+          </div>
+          <button @click="cerrarInbox" class="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 font-black active:scale-90">✕</button>
+        </div>
+        <!-- Lista -->
+        <div class="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
+          <div v-if="msgCargandoInbox && msgLista.length === 0" class="text-center text-gray-400 py-10 font-bold text-sm">Cargando avisos…</div>
+          <div v-else-if="msgLista.length === 0" class="text-center text-gray-400 py-12">
+            <div class="text-4xl mb-2">📭</div>
+            <p class="font-bold text-sm">No tienes avisos</p>
+          </div>
+          <div v-for="m in msgLista" :key="m.id"
+               @click="abrirMensaje(m)"
+               :class="['rounded-2xl p-3 border-2 cursor-pointer active:scale-[0.99] transition-all',
+                        String(m.prioridad).toLowerCase() === 'alta' && !m.leido ? 'bg-red-50 border-red-300'
+                        : !m.leido ? 'bg-sky-50 border-sky-300' : 'bg-white border-gray-200']">
+            <div class="flex items-start gap-2">
+              <span v-if="!m.leido" class="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 animate-pulse" :class="String(m.prioridad).toLowerCase() === 'alta' ? 'bg-red-500' : 'bg-sky-500'"></span>
+              <span v-else class="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 bg-gray-200"></span>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <p :class="['font-black text-sm leading-tight truncate', !m.leido ? 'text-gray-900' : 'text-gray-500']">
+                    <span v-if="String(m.prioridad).toLowerCase() === 'alta'">⚠ </span>{{ m.titulo || '(sin título)' }}
+                  </p>
+                  <span class="text-[10px] text-gray-400 font-bold shrink-0 tabular-nums">{{ msgHora(m.created_at || m.fecha || m.creado_en) }}</span>
+                </div>
+                <p :class="['text-xs mt-0.5 leading-snug', msgAbiertoId === m.id ? 'text-gray-700' : 'text-gray-500 truncate', !m.leido && msgAbiertoId !== m.id ? 'font-semibold' : '']"
+                   :style="msgAbiertoId === m.id ? 'white-space:pre-wrap' : ''">{{ m.cuerpo || '' }}</p>
+                <p v-if="m.remitente" class="text-[10px] text-gray-400 mt-1 font-bold">— {{ m.remitente }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ [Mensajería] ENVIAR AVISO (admin) ═══ -->
+    <div v-if="msgEnviarAbierto" class="fixed inset-0 z-[70] bg-gray-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+         @click.self="cerrarEnviarMensaje">
+      <div class="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl shadow-2xl border border-white/20 max-h-[90vh] flex flex-col overflow-hidden animate-[slideUp_0.25s]">
+        <div class="px-5 py-4 bg-gradient-to-r from-sky-600 to-cyan-600 text-white flex items-center justify-between shrink-0">
+          <h3 class="text-lg font-black">📨 Enviar aviso</h3>
+          <button @click="cerrarEnviarMensaje" class="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 font-black active:scale-90">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+          <!-- Destino -->
+          <div>
+            <p class="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">Para</p>
+            <div class="grid grid-cols-3 gap-2">
+              <button @click="msgSetDestinoTipo('persona')" :class="['py-2 rounded-xl text-xs font-black border-2 active:scale-95 transition', msgForm.destinoTipo === 'persona' ? 'bg-sky-600 text-white border-sky-700' : 'bg-gray-50 text-gray-600 border-gray-200']">👤 Persona</button>
+              <button @click="msgSetDestinoTipo('zona')" :class="['py-2 rounded-xl text-xs font-black border-2 active:scale-95 transition', msgForm.destinoTipo === 'zona' ? 'bg-sky-600 text-white border-sky-700' : 'bg-gray-50 text-gray-600 border-gray-200']">🏪 Zona</button>
+              <button @click="msgSetDestinoTipo('broadcast')" :class="['py-2 rounded-xl text-xs font-black border-2 active:scale-95 transition', msgForm.destinoTipo === 'broadcast' ? 'bg-sky-600 text-white border-sky-700' : 'bg-gray-50 text-gray-600 border-gray-200']">📢 Todos</button>
+            </div>
+          </div>
+
+          <!-- Selector según tipo -->
+          <div v-if="msgForm.destinoTipo === 'persona'">
+            <div v-if="msgCargandoPres" class="text-center text-gray-400 text-sm py-4 font-bold">Cargando presentes…</div>
+            <div v-else-if="msgPersonasPresentes.length === 0" class="text-center text-gray-400 text-sm py-4 font-bold">Nadie presente ahora mismo</div>
+            <div v-else class="max-h-44 overflow-y-auto space-y-1.5">
+              <button v-for="p in msgPersonasPresentes" :key="p.id_personal"
+                      @click="msgElegirPersona(p)"
+                      :class="['w-full text-left px-3 py-2 rounded-xl border-2 active:scale-[0.99] transition flex items-center justify-between', msgForm.destinoId === p.id_personal ? 'bg-sky-50 border-sky-400' : 'bg-gray-50 border-gray-200']">
+                <span class="font-bold text-sm text-gray-800">{{ p.nombre }}</span>
+                <span class="text-[10px] text-gray-400 font-bold">{{ p.zonaNombre }}</span>
+              </button>
+            </div>
+          </div>
+          <div v-else-if="msgForm.destinoTipo === 'zona'">
+            <div v-if="msgCargandoPres" class="text-center text-gray-400 text-sm py-4 font-bold">Cargando zonas…</div>
+            <div v-else-if="msgZonasPresentes.length === 0" class="text-center text-gray-400 text-sm py-4 font-bold">Ninguna zona con gente ahora</div>
+            <div v-else class="max-h-44 overflow-y-auto space-y-1.5">
+              <button v-for="z in msgZonasPresentes" :key="z.zona"
+                      @click="msgElegirZona(z)"
+                      :class="['w-full text-left px-3 py-2 rounded-xl border-2 active:scale-[0.99] transition flex items-center justify-between', msgForm.destinoId === z.zona ? 'bg-sky-50 border-sky-400' : 'bg-gray-50 border-gray-200']">
+                <span class="font-bold text-sm text-gray-800">{{ z.zonaNombre }}</span>
+                <span class="text-[10px] text-gray-400 font-bold">{{ z.dentro }} dentro</span>
+              </button>
+            </div>
+          </div>
+          <div v-else class="bg-sky-50 border-2 border-sky-200 rounded-xl px-3 py-2 text-sm font-bold text-sky-700">📢 Llega a todos los presentes en este momento</div>
+
+          <!-- Título / cuerpo / prioridad -->
+          <div>
+            <p class="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">Mensaje</p>
+            <input v-model="msgForm.titulo" type="text" maxlength="80" placeholder="Título (obligatorio)"
+                   class="w-full p-3 rounded-xl border-2 border-gray-200 text-gray-800 font-bold focus:outline-none focus:ring-2 focus:ring-sky-400 mb-2">
+            <textarea v-model="msgForm.cuerpo" rows="3" maxlength="500" placeholder="Detalle (opcional)"
+                      class="w-full p-3 rounded-xl border-2 border-gray-200 text-gray-800 focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none"></textarea>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-black text-gray-500 uppercase tracking-widest">Prioridad</span>
+            <button @click="msgForm.prioridad = 'normal'" :class="['px-3 py-1.5 rounded-lg text-xs font-black border-2 active:scale-95', msgForm.prioridad === 'normal' ? 'bg-gray-700 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200']">Normal</button>
+            <button @click="msgForm.prioridad = 'alta'" :class="['px-3 py-1.5 rounded-lg text-xs font-black border-2 active:scale-95', msgForm.prioridad === 'alta' ? 'bg-red-600 text-white border-red-700' : 'bg-red-50 text-red-500 border-red-200']">⚠ Alta</button>
+          </div>
+        </div>
+        <!-- Footer -->
+        <div class="p-4 border-t border-gray-100 shrink-0">
+          <button @click="confirmarEnviarMensaje" :disabled="!msgPuedeEnviar || msgEnviando"
+                  class="w-full py-3.5 rounded-2xl font-black text-white active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-sky-600 to-cyan-600 shadow-lg flex items-center justify-center gap-2">
+            <svg v-if="msgEnviando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            {{ msgEnviando ? 'Enviando…' : 'Enviar aviso' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- [Modo Pro] Barra COLAPSADA: línea fina con colores de marca + dots de alerta + grip. Hover/tap → expande -->
@@ -6902,6 +7047,30 @@
         const adminProcesando    = ref(false);
         const adminAuthCache     = ref(null);     // último PIN admin validado (se reusa entre flujos)
 
+        // ── [Mensajería] Avisos internos (admin → vendedor / zona / broadcast) ──
+        // Backend: RPCs me.enviar_mensaje / me.mis_mensajes / me.marcar_leido (Content-Profile 'me')
+        // + GAS action 'msg_push_destinatarios' que dispara el FCM vía MOS.
+        // El admin se decide por config.rol (ADMIN/MASTER) Y, para enviar, además
+        // exige PIN admin (defensa en profundidad: el rol persiste en localStorage).
+        const esAdminME = computed(() => {
+            const r = String((config.value && config.value.rol) || 'VENDEDOR').toUpperCase();
+            return r === 'ADMIN' || r === 'MASTER';
+        });
+        // Bandeja (vendedor)
+        const msgInboxAbierto   = ref(false);
+        const msgLista          = ref([]);          // mensajes del id_personal+zona actual
+        const msgNoLeidos       = ref(0);           // badge
+        const msgCargandoInbox  = ref(false);
+        const msgAbiertoId      = ref(null);        // mensaje expandido en la bandeja
+        let   _msgPollTimer     = null;             // polling de la bandeja (limpiado en onUnmounted)
+        let   _msgPrevNoLeidos  = -1;               // -1 = primer load (no beep); detecta mensajes NUEVOS (sonido)
+        // Enviar (admin)
+        const msgEnviarAbierto  = ref(false);
+        const msgEnviando       = ref(false);
+        const msgPresentes      = ref({});          // snapshot presencia para el selector
+        const msgCargandoPres   = ref(false);
+        const msgForm           = ref({ titulo: '', cuerpo: '', prioridad: 'normal', destinoTipo: 'persona', destinoId: '', destinoNombre: '' });
+
         // ── F3: Cola de pendientes con auto-reimpresión tras sync ──
         const ultimosSincronizados = ref([]);     // tickets sincronizados en la última corrida (efímero)
         const reimpAuto            = ref(JSON.parse(localStorage.getItem('mosexpress_reimp_auto') || 'true'));
@@ -7809,6 +7978,9 @@
                 if (typeof _espiaCliCerrar === 'function') {
                   _espiaCliCerrar('master_push_stop');
                 }
+              } else if (action === 'me_deeplink' || action === 'ME_MENSAJE') {
+                // [Mensajería] Click en la notificación de aviso (desde sw notificationclick)
+                try { _msgDeepLink(cmd.mensajeId || null); } catch(_) {}
               }
             });
           }
@@ -7834,6 +8006,11 @@
           }, 30 * 1000);
           // Primer intento a los 3s (cubre usuarios ya logueados)
           setTimeout(() => _pushInit(), 3000);
+
+          // [Mensajería] Polling de la bandeja (badge no-leídos) — solo si logueado.
+          // Si arranca antes del wizard, _msgCargarInbox hace early-return; el setInterval
+          // reintenta cada 45s y empieza a traer datos en cuanto config.completado sea true.
+          setTimeout(() => { try { _msgIniciarPolling(); } catch(_) {} }, 4000);
         });
 
         onUnmounted(() => {
@@ -7851,6 +8028,7 @@
           _audioRemotoDetener();
           _intervalVendedorCajeroCheck = null;
           if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
+          _msgDetenerPolling();
           detenerPollingZona();
           detenerCamaraCajero();
           if(html5QrcodeScanner) html5QrcodeScanner.clear().catch(() => {});
@@ -13071,6 +13249,15 @@
                         }
                         const t = payload.notification?.title || '';
                         const b = payload.notification?.body  || '';
+                        // [Mensajería] Si es un aviso ME → refrescar bandeja + deep-link.
+                        // El idNotif/extra puede llegar como payload.data (FCM lo serializa así).
+                        const _idNotif = payload.data?.idNotif || '';
+                        if (_idNotif === 'ME_MENSAJE') {
+                            try { _msgCargarInbox(true); } catch(_) {}
+                            agregarToast(t, b, 'info', 6000);
+                            try { _playMensajeNuevo(); } catch(_) {}
+                            return;
+                        }
                         agregarToast(t, b, 'info');
                         try {
                             const reg = await navigator.serviceWorker.ready;
@@ -13160,6 +13347,256 @@
         };
         // [v2.7.18] Exponer para que forzar_push pueda invocarlo
         window._pushInitME = _pushInit;
+
+        // ══════════════════════════════════════════════════════════════════
+        // [Mensajería] BANDEJA (vendedor) + ENVÍO (admin)
+        // ══════════════════════════════════════════════════════════════════
+        // Identidad: id_personal viene del wizard (config.idPersonal). Si está
+        // vacío (login viejo sin idPersonal), usamos el mismo esquema de fallback
+        // que el heartbeat de presencia ('NOID:<nombre>') para que el server pueda
+        // matchear igual. La zona se deriva de config.zona o de la estación.
+        const _msgIdPersonal = () => {
+            const c = config.value || {};
+            const idp = String(c.idPersonal || '').trim();
+            if (idp) return idp;
+            return 'NOID:' + String(c.vendedor || '').trim().toLowerCase();
+        };
+        const _msgZona = () => {
+            const c = config.value || {};
+            return String(c.zona || (c.estacion && c.estacion.Zona_ID) || '').trim();
+        };
+
+        // Beep suave para mensaje nuevo recibido (iOS-safe vía _audioCtx)
+        const _playMensajeNuevo = () => {
+            try { if ('vibrate' in navigator) navigator.vibrate([60, 40, 60]); } catch(_) {}
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = _audioCtx(); if (!ctx) return;
+                [{ t: 0.00, f: 784, d: 0.10 }, { t: 0.12, f: 1047, d: 0.14 }].forEach(({ t, f, d }) => {
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(0.7, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(_) {}
+        };
+
+        // ── Cargar bandeja del vendedor (polling + al abrir) ──
+        const _msgCargarInbox = async (silencioso) => {
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            if (!config.value.completado) return;
+            if (!silencioso) msgCargandoInbox.value = true;
+            try {
+                const token = await _mintTokenSB();
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/mis_mensajes`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { id_personal: _msgIdPersonal(), zona: _msgZona(), limit: 50 } })
+                });
+                if (!res.ok) return;
+                const d = await res.json();
+                const lista = Array.isArray(d) ? d : (d && Array.isArray(d.mensajes) ? d.mensajes : []);
+                msgLista.value = lista;
+                const nuevoConteo = lista.filter(m => !m.leido).length;
+                // Detectar mensajes recién llegados → sonido + (si bandeja cerrada) toast.
+                // _msgPrevNoLeidos === -1 ⇒ primer load tras login: no beep (solo setea base).
+                if (_msgPrevNoLeidos >= 0 && nuevoConteo > _msgPrevNoLeidos) {
+                    _playMensajeNuevo();
+                    if (!msgInboxAbierto.value) {
+                        const primero = lista.find(m => !m.leido);
+                        if (primero) agregarToast(
+                            (String(primero.prioridad).toLowerCase() === 'alta' ? '⚠ ' : '📨 ') + (primero.titulo || 'Nuevo mensaje'),
+                            String(primero.cuerpo || '').substring(0, 80),
+                            'info', 6000
+                        );
+                    }
+                }
+                _msgPrevNoLeidos = nuevoConteo;
+                msgNoLeidos.value = nuevoConteo;
+            } catch(_) { /* silencioso: reintenta el próximo poll */ }
+            finally { if (!silencioso) msgCargandoInbox.value = false; }
+        };
+
+        const _msgIniciarPolling = () => {
+            if (_msgPollTimer) clearInterval(_msgPollTimer);
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            _msgCargarInbox(true);
+            _msgPollTimer = setInterval(() => _msgCargarInbox(true), 45 * 1000);
+        };
+        const _msgDetenerPolling = () => {
+            if (_msgPollTimer) { clearInterval(_msgPollTimer); _msgPollTimer = null; }
+        };
+
+        const abrirInbox = () => {
+            msgInboxAbierto.value = true;
+            msgAbiertoId.value = null;
+            _msgCargarInbox(false);
+        };
+        const cerrarInbox = () => { msgInboxAbierto.value = false; msgAbiertoId.value = null; };
+
+        // Abrir un mensaje → marcar leído optimista
+        const abrirMensaje = async (msg) => {
+            if (!msg) return;
+            msgAbiertoId.value = (msgAbiertoId.value === msg.id) ? null : msg.id;
+            if (msg.leido || !msg.id) return;
+            // Optimista: marcar local + decrementar badge ya
+            msg.leido = true;
+            msgNoLeidos.value = Math.max(0, msgNoLeidos.value - 1);
+            _msgPrevNoLeidos = Math.max(0, _msgPrevNoLeidos - 1);
+            try {
+                const token = await _mintTokenSB();
+                await fetch(`${SUPABASE_URL}/rest/v1/rpc/marcar_leido`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { mensaje_id: msg.id, id_personal: _msgIdPersonal() } })
+                });
+            } catch(_) { /* el server reconcilia en el próximo poll; ya está optimista */ }
+        };
+
+        // Deep-link desde push (foreground o SW click): abrir bandeja + refrescar.
+        const _msgDeepLink = (mensajeId) => {
+            abrirInbox();
+            // tras refrescar, intentar expandir el mensaje objetivo
+            if (mensajeId) {
+                setTimeout(() => {
+                    const m = msgLista.value.find(x => String(x.id) === String(mensajeId));
+                    if (m) abrirMensaje(m);
+                }, 800);
+            }
+        };
+        window._meMsgDeepLink = _msgDeepLink;
+
+        // ── ENVIAR (admin) ──────────────────────────────────────────
+        // Snapshot de presencia para el selector de destino (reusa presencia_por_zona).
+        const _msgCargarPresentes = async () => {
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            msgCargandoPres.value = true;
+            try {
+                const token = await _mintTokenSB();
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/presencia_por_zona`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (res.ok) { const d = await res.json(); if (d && typeof d === 'object') msgPresentes.value = d; }
+            } catch(_) {}
+            finally { msgCargandoPres.value = false; }
+        };
+
+        // Lista plana de personas presentes (solo vendedores: traen id_personal).
+        const msgPersonasPresentes = computed(() => {
+            const out = [];
+            const pres = msgPresentes.value || {};
+            Object.keys(pres).forEach(zid => {
+                const z = pres[zid] || {};
+                const zonaN = z.zona_nombre || zid;
+                (Array.isArray(z.vendedores) ? z.vendedores : []).forEach(v => {
+                    if (v && v.id_personal && v.nombre) out.push({ id_personal: String(v.id_personal), nombre: v.nombre, zona: zid, zonaNombre: zonaN });
+                });
+            });
+            return out;
+        });
+        // Zonas con gente presente (para destino 'zona').
+        const msgZonasPresentes = computed(() => {
+            const out = [];
+            const pres = msgPresentes.value || {};
+            Object.keys(pres).forEach(zid => {
+                const z = pres[zid] || {};
+                const dentro = (z.cajero ? 1 : 0) + (Array.isArray(z.vendedores) ? z.vendedores.length : 0);
+                if (dentro > 0) out.push({ zona: zid, zonaNombre: z.zona_nombre || zid, dentro });
+            });
+            return out;
+        });
+
+        const abrirEnviarMensaje = () => {
+            if (!esAdminME.value) { agregarToast('Solo admin', 'No tienes permiso para enviar avisos', 'warning'); return; }
+            // Defensa en profundidad: el rol vive en localStorage; exigir PIN admin.
+            pedirPin(() => {
+                msgForm.value = { titulo: '', cuerpo: '', prioridad: 'normal', destinoTipo: 'persona', destinoId: '', destinoNombre: '' };
+                msgEnviarAbierto.value = true;
+                _msgCargarPresentes();
+            }, { accion: 'ENVIAR_AVISO', refDocumento: '' });
+        };
+        const cerrarEnviarMensaje = () => { msgEnviarAbierto.value = false; };
+
+        const msgSetDestinoTipo = (tipo) => {
+            msgForm.value.destinoTipo = tipo;
+            msgForm.value.destinoId = '';
+            msgForm.value.destinoNombre = '';
+        };
+        const msgElegirPersona = (p) => { msgForm.value.destinoId = p.id_personal; msgForm.value.destinoNombre = p.nombre + ' · ' + p.zonaNombre; };
+        const msgElegirZona    = (z) => { msgForm.value.destinoId = z.zona;        msgForm.value.destinoNombre = z.zonaNombre + ' (' + z.dentro + ')'; };
+
+        const msgPuedeEnviar = computed(() => {
+            const f = msgForm.value;
+            if (!String(f.titulo || '').trim()) return false;
+            if (f.destinoTipo === 'broadcast') return true;
+            return !!String(f.destinoId || '').trim();
+        });
+
+        const confirmarEnviarMensaje = async () => {
+            if (!msgPuedeEnviar.value || msgEnviando.value) return;
+            const f = msgForm.value;
+            msgEnviando.value = true;
+            try {
+                const token = await _mintTokenSB();
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/enviar_mensaje`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {
+                        remitente:   config.value.vendedor || 'Admin',
+                        destino_tipo: f.destinoTipo,
+                        destino_id:  f.destinoTipo === 'broadcast' ? null : String(f.destinoId),
+                        titulo:      String(f.titulo).trim(),
+                        cuerpo:      String(f.cuerpo || '').trim(),
+                        prioridad:   f.prioridad === 'alta' ? 'alta' : 'normal'
+                    } })
+                });
+                const d = res.ok ? await res.json() : null;
+                if (!d || d.ok === false) {
+                    throw new Error((d && d.error) || 'No se pudo enviar');
+                }
+                const destinatarios = Array.isArray(d.destinatarios) ? d.destinatarios : [];
+                const mensajeId = d.mensaje_id || null;
+                // Feedback optimista inmediato (el push se dispara en background)
+                playBeepOK();
+                agregarToast('✓ Aviso enviado', destinatarios.length
+                    ? ('A ' + destinatarios.length + ' present' + (destinatarios.length === 1 ? 'e' : 'es'))
+                    : 'Quedó guardado; se verá al conectarse', 'info', 5000);
+                msgEnviarAbierto.value = false;
+                // Disparar el FCM real vía GAS ME → MOS (fire-and-forget, tolerante a fallos)
+                if (destinatarios.length) {
+                    fetch(API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action: 'msg_push_destinatarios',
+                            destinatarios: destinatarios.map(x => ({ id_personal: x.id_personal, nombre: x.nombre, push_token: x.push_token })),
+                            titulo: String(f.titulo).trim(),
+                            cuerpo: String(f.cuerpo || '').trim(),
+                            prioridad: f.prioridad === 'alta' ? 'alta' : 'normal',
+                            mensajeId: mensajeId
+                        })
+                    }).catch(() => { /* in-app no depende del push */ });
+                }
+            } catch(e) {
+                playBeepError();
+                agregarToast('Error', 'No se pudo enviar el aviso: ' + (e?.message || ''), 'warning');
+            } finally {
+                msgEnviando.value = false;
+            }
+        };
+
+        // Helper de formato de hora corta para la bandeja
+        const msgHora = (iso) => {
+            try {
+                const dt = new Date(iso);
+                if (isNaN(dt.getTime())) return '';
+                return dt.toLocaleString('es-PE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+            } catch(_) { return ''; }
+        };
 
         // ── ADMIN PIN UNIFICADO — clave 8 dígitos = global(4) + admin(4) ──
         // Caché offline: { globalPin, adminPins:[{pin,nombre,idPersonal}] }
@@ -17379,6 +17816,14 @@
           modalAdminBaja, adminBajaEstado, adminAbrirBajaCPE, adminConfirmarBaja,
           modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminEditCliBuscar, adminConfirmarEditarCliente,
           adminProcesando, reimpAuto, lsSet,
+          // [Mensajería] Bandeja (vendedor) + Enviar (admin)
+          esAdminME,
+          msgInboxAbierto, msgLista, msgNoLeidos, msgCargandoInbox, msgAbiertoId,
+          abrirInbox, cerrarInbox, abrirMensaje, msgHora,
+          msgEnviarAbierto, msgEnviando, msgCargandoPres, msgForm,
+          msgPersonasPresentes, msgZonasPresentes, msgPuedeEnviar,
+          abrirEnviarMensaje, cerrarEnviarMensaje, msgSetDestinoTipo,
+          msgElegirPersona, msgElegirZona, confirmarEnviarMensaje,
           // F4 — Tutorial onboarding del botón Admin
           tutAdminVisto, tutAdminMarcarVisto,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra,
