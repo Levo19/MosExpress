@@ -296,6 +296,10 @@ function doPost(e) {
     if (data.accion === 'imprimir')                return procesarImpresion(data);
     // [v2.5.16] Verifica estado de impresora en PrintNode antes de imprimir
     if (data.accion === 'verificarImpresora')      return verificarEstadoImpresora(data);
+    // [Mensajería] Relay del PUSH de un mensaje a los destinatarios presentes.
+    // La RPC me.enviar_mensaje ya persistió el mensaje y resolvió la lista; acá GAS
+    // dispara el FCM real (vía MOS enviarPushUsuario) por cada destinatario.
+    if (data.action === 'msg_push_destinatarios')  return msgPushDestinatarios(data);
 
     // Default: registrar venta
     var response = procesarVenta(data);
@@ -467,4 +471,70 @@ function _notificarMOS(titulo, cuerpo, excluirUsuario, idNotif) {
     });
     Logger.log('[Push→MOS] HTTP ' + resp.getResponseCode() + ' | ' + resp.getContentText().substring(0, 120));
   } catch(e) { Logger.log('[Push→MOS] excepcion: ' + e.message); }
+}
+
+// ── [Mensajería] Disparar el PUSH FCM de un mensaje a los destinatarios ──────
+// El FCM real lo hace MOS (Push.gs:enviarPushUsuario, que tiene la server key).
+// ME NO conoce la key: solo reenvía. enviarPushUsuario matchea por NOMBRE (lower)
+// contra PUSH_TOKENS, por eso usamos d.nombre como 'usuario'.
+//
+// Entrada (POST con action='msg_push_destinatarios'):
+//   {
+//     destinatarios: [ { id_personal, nombre, push_token } ],  // de me.enviar_mensaje
+//     titulo, cuerpo,
+//     prioridad?  ('normal'|'alta'),
+//     mensajeId?  (para el deep-link in-app)
+//   }
+// Devuelve { status, data:{ enviados, fallidos, total, detalle } }.
+// El IN-APP NO depende de esto: sale del polling de me.mis_mensajes. Esto es
+// SOLO el aviso push en vivo; tolerante a fallos (un destinatario sin token en
+// PUSH_TOKENS no rompe a los demás).
+function msgPushDestinatarios(data) {
+  var url = PropertiesService.getScriptProperties().getProperty('MOS_WEB_APP_URL');
+  if (!url) return generarRespuestaError('MOS_WEB_APP_URL no configurado');
+
+  var dests = (data && data.destinatarios) || [];
+  if (!Array.isArray(dests) || dests.length === 0) {
+    // Sin destinatarios presentes no es error: el mensaje quedó persistido y se
+    // verá in-app cuando entren. Respondemos ok con 0 enviados.
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success', data: { enviados: 0, fallidos: 0, total: 0, detalle: [] }
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  var titulo = String((data && data.titulo) || 'Mensaje');
+  var cuerpo = String((data && data.cuerpo) || '');
+  if ((data && data.prioridad) === 'alta' && titulo.indexOf('⚠') !== 0) titulo = '⚠ ' + titulo;
+
+  var enviados = 0, fallidos = 0, detalle = [];
+  for (var i = 0; i < dests.length; i++) {
+    var d = dests[i] || {};
+    var nombre = String(d.nombre || '').trim();
+    if (!nombre) { fallidos++; detalle.push({ id_personal: d.id_personal || '', ok: false, error: 'sin nombre' }); continue; }
+    try {
+      var resp = UrlFetchApp.fetch(url, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({
+          action:  'enviarPushUsuario',
+          usuario: nombre,
+          titulo:  titulo,
+          cuerpo:  cuerpo,
+          idNotif: 'ME_MENSAJE',
+          extra:   { mensajeId: (data && data.mensajeId) || null, id_personal: d.id_personal || '' }
+        }),
+        muteHttpExceptions: true
+      });
+      var ok = resp.getResponseCode() === 200;
+      if (ok) enviados++; else fallidos++;
+      detalle.push({ id_personal: d.id_personal || '', usuario: nombre, ok: ok, http: resp.getResponseCode() });
+    } catch (ePush) {
+      fallidos++;
+      detalle.push({ id_personal: d.id_personal || '', usuario: nombre, ok: false, error: ePush.message });
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success',
+    data: { enviados: enviados, fallidos: fallidos, total: dests.length, detalle: detalle }
+  })).setMimeType(ContentService.MimeType.JSON);
 }
