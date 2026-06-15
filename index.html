@@ -7070,6 +7070,7 @@
         const msgPresentes      = ref({});          // snapshot presencia para el selector
         const msgCargandoPres   = ref(false);
         const msgForm           = ref({ titulo: '', cuerpo: '', prioridad: 'normal', destinoTipo: 'persona', destinoId: '', destinoNombre: '' });
+        let   _msgClaveAdmin    = '';               // [92b] clave admin verificada (efímera) para enviar — el server la RE-verifica
 
         // ── F3: Cola de pendientes con auto-reimpresión tras sync ──
         const ultimosSincronizados = ref([]);     // tickets sincronizados en la última corrida (efímero)
@@ -13514,13 +13515,17 @@
         const abrirEnviarMensaje = () => {
             if (!esAdminME.value) { agregarToast('Solo admin', 'No tienes permiso para enviar avisos', 'warning'); return; }
             // Defensa en profundidad: el rol vive en localStorage; exigir PIN admin.
-            pedirPin(() => {
+            // [92b] El server (me.enviar_mensaje) RE-verifica esta clave — el v-if/PIN del
+            // front ya NO es la única barrera. Guardamos la clave verificada efímeramente
+            // para mandarla en el body del RPC; se limpia tras enviar / al cerrar el modal.
+            pedirPin((resultado) => {
+                _msgClaveAdmin = String((resultado && resultado.clave) || '');
                 msgForm.value = { titulo: '', cuerpo: '', prioridad: 'normal', destinoTipo: 'persona', destinoId: '', destinoNombre: '' };
                 msgEnviarAbierto.value = true;
                 _msgCargarPresentes();
             }, { accion: 'ENVIAR_AVISO', refDocumento: '' });
         };
-        const cerrarEnviarMensaje = () => { msgEnviarAbierto.value = false; };
+        const cerrarEnviarMensaje = () => { msgEnviarAbierto.value = false; _msgClaveAdmin = ''; };
 
         const msgSetDestinoTipo = (tipo) => {
             msgForm.value.destinoTipo = tipo;
@@ -13540,6 +13545,14 @@
         const confirmarEnviarMensaje = async () => {
             if (!msgPuedeEnviar.value || msgEnviando.value) return;
             const f = msgForm.value;
+            // [92b] Sin clave admin verificada no hay envío. El server la RE-verifica;
+            // si falta acá, el modal se abrió sin PIN válido → re-pedir.
+            const claveAdmin = String(_msgClaveAdmin || '');
+            if (!/^\d{8}$/.test(claveAdmin)) {
+                agregarToast('Sesión admin expirada', 'Vuelve a abrir el envío e ingresa tu clave', 'warning');
+                msgEnviarAbierto.value = false; _msgClaveAdmin = '';
+                return;
+            }
             msgEnviando.value = true;
             try {
                 const token = await _mintTokenSB();
@@ -13552,7 +13565,8 @@
                         destino_id:  f.destinoTipo === 'broadcast' ? null : String(f.destinoId),
                         titulo:      String(f.titulo).trim(),
                         cuerpo:      String(f.cuerpo || '').trim(),
-                        prioridad:   f.prioridad === 'alta' ? 'alta' : 'normal'
+                        prioridad:   f.prioridad === 'alta' ? 'alta' : 'normal',
+                        clave_admin: claveAdmin
                     } })
                 });
                 const d = res.ok ? await res.json() : null;
@@ -13586,6 +13600,7 @@
                 agregarToast('Error', 'No se pudo enviar el aviso: ' + (e?.message || ''), 'warning');
             } finally {
                 msgEnviando.value = false;
+                _msgClaveAdmin = '';   // [92b] clave efímera: consumir siempre (éxito o error)
             }
         };
 
@@ -13737,6 +13752,10 @@
             modalPin.value = false;
             pinInput.value = '';
             pinError.value = '';
+            // [92b] Adjuntar la clave cruda al resultado para acciones que la re-verifican
+            // server-side (ej. mensajería: me.enviar_mensaje exige clave_admin). El callback
+            // decide si la usa/persiste; no se guarda en ningún lado por defecto.
+            try { resultado.clave = clave; } catch(_) {}
             if (_pinCallback.value) { _pinCallback.value(resultado); _pinCallback.value = null; }
         };
 
@@ -15134,6 +15153,13 @@
              wizardCajeroOcupado.value = false;
              cajeroWizardInfo.value = null;
              currentModule.value = 'CAJA';
+             // [Mensajería] Limpiar estado de bandeja al cerrar sesión: el badge/lista del
+             // usuario saliente NO debe heredarse al siguiente que entre en esta misma
+             // instancia (sin reload). El polling sigue vivo pero hace early-return mientras
+             // no haya sesión; al re-loguear vuelve a traer el inbox de la nueva identidad.
+             msgInboxAbierto.value = false; msgAbiertoId.value = null;
+             msgLista.value = []; msgNoLeidos.value = 0; _msgPrevNoLeidos = -1;
+             _msgClaveAdmin = '';
              agregarToast("Sesión cerrada", "Hasta luego");
         };
 
