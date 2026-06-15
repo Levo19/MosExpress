@@ -10849,30 +10849,81 @@
         };
 
         // ── Clima opcional ──
+        // [v2.7.x] Usa la ubicación REAL del dispositivo (GPS). Si el usuario
+        // niega el permiso, no hay GPS o expira el timeout → fallback a PISCO
+        // (operación real), NUNCA Lima. No bloquea el login: muestra el clima
+        // cacheado al instante y lo actualiza cuando llega la geoloc/respuesta.
+        const _CLIMA_PISCO = { lat: -13.71, lon: -76.20, ciudad: 'Pisco' };
+        const _wizClimaEmoji = (code) => (
+            code === 0 ? '☀' : code < 3 ? '🌤' : code < 50 ? '☁' : code < 70 ? '🌧' : '⛈'
+        );
+        // Reverse-geocode ligero (open-meteo, sin API key) → nombre de ciudad.
+        const _wizReverseCiudad = (lat, lon) => {
+            return fetch(`https://geocoding-api.open-meteo.com/v1/search?latitude=${lat}&longitude=${lon}&count=1&language=es`)
+                .then(r => r.json())
+                .then(d => d?.results?.[0]?.name || '')
+                .catch(() => '');
+        };
+        // Pide el clima para coords dadas y pinta el texto (con nombre de ciudad).
+        const _wizFetchClima = (lat, lon, ciudadFallback) => {
+            if (!navigator.onLine) return;
+            fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`)
+                .then(r => r.json())
+                .then(async (d) => {
+                    const t = Math.round(d?.current_weather?.temperature ?? 0);
+                    const code = d?.current_weather?.weathercode ?? 0;
+                    const emoji = _wizClimaEmoji(code);
+                    // Intentar nombre real por reverse-geocode; si falla, el fallback.
+                    let ciudad = ciudadFallback || '';
+                    try {
+                        const real = await _wizReverseCiudad(lat, lon);
+                        if (real) ciudad = real;
+                    } catch(_) {}
+                    const texto = ciudad ? `${emoji} ${ciudad} · ${t}°C` : `${emoji} ${t}°C`;
+                    wizClima.value.texto = texto;
+                    try {
+                        lsSet('mosexpress_clima_v1', JSON.stringify({
+                            texto, ts: Date.now(), lat, lon, ciudad
+                        }));
+                    } catch(_) {}
+                })
+                .catch(() => {});
+        };
         const _wizCargarClima = () => {
             try {
-                const cached = localStorage.getItem('mosexpress_clima_v1');
-                if (cached) {
-                    const c = JSON.parse(cached);
-                    if (Date.now() - (c.ts || 0) < 3600000) { // 1h cache
-                        wizClima.value.texto = c.texto || '';
-                        return;
+                // 1) Pintar cache al instante (no parpadea, no bloquea el render).
+                let cacheVigente = false;
+                try {
+                    const cached = localStorage.getItem('mosexpress_clima_v1');
+                    if (cached) {
+                        const c = JSON.parse(cached);
+                        if (c.texto) wizClima.value.texto = c.texto; // mostrar aunque sea viejo
+                        if (Date.now() - (c.ts || 0) < 3600000) cacheVigente = true; // 1h
                     }
+                } catch(_) {}
+                if (!navigator.onLine) return;       // sin red: nos quedamos con el cache
+                if (cacheVigente) return;            // cache fresco: no re-pedir GPS ni API
+
+                // 2) Fallback inmediato a PISCO (sin esperar al GPS) si no hay texto.
+                if (!wizClima.value.texto) {
+                    _wizFetchClima(_CLIMA_PISCO.lat, _CLIMA_PISCO.lon, _CLIMA_PISCO.ciudad);
                 }
-                // intento ligero — open-meteo no requiere API key
-                // skip si offline
-                if (!navigator.onLine) return;
-                fetch('https://api.open-meteo.com/v1/forecast?latitude=-12.046&longitude=-77.042&current_weather=true&timezone=America/Lima')
-                    .then(r => r.json())
-                    .then(d => {
-                        const t = Math.round(d?.current_weather?.temperature ?? 0);
-                        const code = d?.current_weather?.weathercode ?? 0;
-                        const emoji = code === 0 ? '☀' : code < 3 ? '🌤' : code < 50 ? '☁' : code < 70 ? '🌧' : '⛈';
-                        const texto = `${emoji} Lima · ${t}°C`;
-                        wizClima.value.texto = texto;
-                        lsSet('mosexpress_clima_v1', JSON.stringify({ texto, ts: Date.now() }));
-                    })
-                    .catch(() => {});
+
+                // 3) Intentar GPS real en paralelo; al llegar, refresca con coords reales.
+                //    iOS/Safari: si el permiso fue denegado o expira → nos quedamos
+                //    con Pisco/cache, sin romper nada.
+                if (navigator.geolocation && window.isSecureContext) {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                            const { latitude, longitude } = pos.coords || {};
+                            if (typeof latitude === 'number' && typeof longitude === 'number') {
+                                _wizFetchClima(latitude, longitude, '');
+                            }
+                        },
+                        () => { /* denegado / sin GPS: ya tenemos Pisco como fallback */ },
+                        { timeout: 8000, maximumAge: 600000, enableHighAccuracy: false }
+                    );
+                }
             } catch(e) {}
         };
 
