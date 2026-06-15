@@ -2900,7 +2900,12 @@
          visuales/sonoros · estado impresora en vivo · ultimos users
     ═══════════════════════════════════════════════════════════ -->
     <div v-if="!config.completado && !mostrarModalSesionAnterior" class="absolute inset-0 z-50 wiz-bg flex flex-col items-center justify-center p-4 overflow-y-auto">
-      <div class="w-full max-w-md">
+      <div class="w-full max-w-md relative">
+        <!-- [v2.8.13] Botón de ayuda "?" — abre el mini-tutorial en cualquier
+             paso. Visible siempre en la esquina superior del login. -->
+        <button @click="wizTutorialOpen" type="button" aria-label="¿Cómo funciona?"
+                class="absolute top-0 right-0 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/25 active:scale-90 text-white font-black text-lg backdrop-blur border border-white/20 transition-all shadow-lg"
+                title="¿Cómo funciona?">?</button>
         <!-- Header con saludo + progreso -->
         <div class="text-center mb-4">
           <p class="text-white/70 font-semibold text-sm">{{ wizSaludo }}</p>
@@ -10975,12 +10980,24 @@
                 { emoji: '🖨', texto: 'Elige tu caja: el puntito te dice si la impresora está 🟢 lista o 🔴 apagada. Al tocarla, ¡tu turno arranca!' }
             ]
         });
+        // [v2.8.13] Flag versionado: al rediseñar el wizard (4→3 pasos) los
+        // usuarios viejos ya tenían 'mosexpress_wiz_tutorial_seen'='1', así que
+        // el auto-show nunca volvía a dispararse y el tutorial desaparecía.
+        // Nueva key → se muestra UNA vez más con los tips del flujo nuevo.
+        const WIZ_TUT_FLAG = 'mosexpress_wiz_tutorial_seen_v2';
         const wizTutorialCheckShow = () => {
             try {
-                if (!localStorage.getItem('mosexpress_wiz_tutorial_seen')) {
-                    setTimeout(() => { wizTutorial.value.visible = true; }, 600);
+                if (!localStorage.getItem(WIZ_TUT_FLAG)) {
+                    setTimeout(() => { wizTutorial.value.idx = 0; wizTutorial.value.visible = true; }, 600);
                 }
             } catch(e) {}
+        };
+        // Apertura manual desde el botón "?" del wizard (siempre disponible,
+        // en cualquiera de los 3 pasos; no depende del flag de "ya visto").
+        const wizTutorialOpen = () => {
+            try { wizBeep('tap'); } catch(e) {}
+            wizTutorial.value.idx = 0;
+            wizTutorial.value.visible = true;
         };
         const wizTutorialNext = () => {
             wizBeep('tap');
@@ -10992,7 +11009,7 @@
         };
         const wizTutorialClose = () => {
             wizTutorial.value.visible = false;
-            try { lsSet('mosexpress_wiz_tutorial_seen', '1'); } catch(e) {}
+            try { lsSet(WIZ_TUT_FLAG, '1'); } catch(e) {}
         };
 
         // [v2.5.34] Watch: cuando el catálogo termine de descargar, disparar
@@ -17320,7 +17337,7 @@
           // [v2.8.9] Zona viva (rediseño login)
           wizZonaExpandida, wizZonaShake, wizZonaToggleCajero, wizZonaConfirmCajero, wizZonaAddVendedor,
           wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
-          wizTutorial, wizTutorialNext, wizTutorialClose,
+          wizTutorial, wizTutorialNext, wizTutorialClose, wizTutorialOpen,
           // [v2.5.40] Chip impresora live + cambio impresora
           meImpresoraEstado, meImpresoraIcon, meImpresoraEstadoLabel, meImpresoraClass,
           meImpresoraNombre, meImpresoraReason, meImpresoraUltimaImpTexto,
