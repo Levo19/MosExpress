@@ -1754,6 +1754,70 @@
     }
     .wiz-user-card:hover { border-color: #10b981; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(16,185,129,.15); }
 
+    /* ── Zona viva (rediseño login v2.8.9) ── */
+    /* Card-tienda con entrada escalonada */
+    .wiz-tienda {
+      animation: wizTiendaIn .4s cubic-bezier(.16,1,.3,1) both;
+    }
+    @keyframes wizTiendaIn {
+      0% { opacity: 0; transform: translateY(14px) scale(.97); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    /* Cajero destacado: corona + glow ámbar + anillo pulsante "otro nivel" */
+    .wiz-cajero-chip {
+      position: relative;
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+      border: 2px solid #fbbf24;
+      box-shadow: 0 0 0 0 rgba(251,191,36,.55), 0 4px 14px rgba(245,158,11,.25);
+      animation: wizCajeroPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes wizCajeroPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,.45), 0 4px 14px rgba(245,158,11,.22); }
+      50%      { box-shadow: 0 0 0 6px rgba(251,191,36,0), 0 4px 18px rgba(245,158,11,.32); }
+    }
+    .wiz-corona {
+      position: absolute; top: -10px; left: 50%; transform: translateX(-50%) rotate(-8deg);
+      font-size: 1rem; filter: drop-shadow(0 1px 1px rgba(180,120,0,.4));
+      animation: wizCoronaBob 2.4s ease-in-out infinite;
+    }
+    @keyframes wizCoronaBob {
+      0%, 100% { transform: translateX(-50%) rotate(-8deg) translateY(0); }
+      50%      { transform: translateX(-50%) rotate(-8deg) translateY(-2px); }
+    }
+    .wiz-avatar-cajero {
+      box-shadow: 0 0 0 3px rgba(251,191,36,.9), 0 4px 12px rgba(245,158,11,.35) !important;
+    }
+    /* Shake al intentar 2º cajero (acción bloqueada) */
+    .wiz-shake { animation: wizShake .42s cubic-bezier(.36,.07,.19,.97) both; }
+    @keyframes wizShake {
+      10%, 90% { transform: translateX(-1px); }
+      20%, 80% { transform: translateX(2px); }
+      30%, 50%, 70% { transform: translateX(-4px); }
+      40%, 60% { transform: translateX(4px); }
+    }
+    /* Botón +Cajero (ámbar) y +Vendedor (azul) — efecto diferenciador */
+    .wiz-add-cajero {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      box-shadow: 0 4px 12px rgba(217,119,6,.35);
+    }
+    .wiz-add-cajero:active { transform: scale(.95); }
+    .wiz-add-cajero.is-locked {
+      background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+      color: #9ca3af; box-shadow: none; cursor: not-allowed;
+    }
+    .wiz-add-vendedor {
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      box-shadow: 0 4px 12px rgba(37,99,235,.35);
+    }
+    .wiz-add-vendedor:active { transform: scale(.95); }
+
+    /* Respeto a usuarios con movimiento reducido */
+    @media (prefers-reduced-motion: reduce) {
+      .wiz-bg, .wiz-card-anim, .wiz-tienda,
+      .wiz-cajero-chip, .wiz-corona, .wiz-shake { animation: none !important; }
+      .wiz-tienda { opacity: 1; transform: none; }
+    }
+
   </style>
   <div id="meCerradoOverlay">
     <div class="me-cer-emoji">🌙</div>
@@ -2842,7 +2906,7 @@
           <p class="text-white/70 font-semibold text-sm">{{ wizSaludo }}</p>
           <h1 class="text-3xl font-black text-white drop-shadow-lg">{{ wizTitulo }}</h1>
           <div class="flex justify-center gap-1.5 mt-3">
-            <span v-for="n in 4" :key="n"
+            <span v-for="n in 3" :key="n"
                   :class="['w-8 h-1.5 rounded-full transition-all duration-300',
                            wizStep >= n ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,.6)]' : 'bg-white/20']">
             </span>
@@ -2915,199 +2979,154 @@
             </p>
           </div>
 
-          <!-- ═══ PASO 2 · ZONA ═══ -->
+          <!-- ═══ PASO 2 · ZONA = TIENDA VIVA (fusiona zona + rol + monto) ═══ -->
           <div v-else-if="wizStep === 2">
             <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
-            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">¿Dónde vas a trabajar?</p>
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">¿En qué tienda entras?</p>
 
-            <!-- [v2.7.74] Mensaje claro si no hay zonas (catálogo no cargado).
-                 Antes la lista quedaba en blanco sin explicación. -->
+            <!-- Sin zonas (catálogo no cargado) -->
             <div v-if="!wizZonasInfo.length" class="text-center py-8 px-4">
               <div class="text-4xl mb-3">📡</div>
-              <p class="text-sm font-bold text-gray-700 mb-1">Sin zonas disponibles</p>
+              <p class="text-sm font-bold text-gray-700 mb-1">Sin tiendas disponibles</p>
               <p class="text-xs text-gray-500 mb-4 leading-relaxed">El catálogo aún no se descargó del servidor.<br>Verifica tu conexión y reintenta.</p>
               <button @click="sincronizarCatalogoBase()" class="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl active:scale-95">
                 🔁 Reintentar descarga
               </button>
             </div>
 
-            <div v-else class="space-y-2">
-              <button v-for="zInfo in wizZonasInfo" :key="zInfo.zona"
-                      @click="wizSelectZona(zInfo)"
-                      :class="['w-full text-left p-3 rounded-2xl border-2 active:scale-[.98] transition-all',
-                               configWizard.zona === zInfo.zona
-                                 ? 'border-emerald-400 bg-emerald-50 shadow-md'
-                                 : 'border-gray-100 hover:border-emerald-300 bg-white']">
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="text-xl">📍</span>
-                  <strong class="text-base font-black text-gray-800 flex-1">{{ zInfo.zona }}</strong>
-                  <span v-if="zInfo.cajeroActivo"
-                        class="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-300">
-                    🔴 Cajero ya activo
-                  </span>
-                  <span v-else class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
-                    🟢 Libre
+            <div v-else class="space-y-3">
+              <div v-for="zInfo in wizZonasInfo" :key="zInfo.zona"
+                   :class="['wiz-tienda rounded-2xl border-2 p-3 transition-all bg-white',
+                            wizZonaShake === zInfo.zona ? 'wiz-shake' : '',
+                            configWizard.zona === zInfo.zona && wizZonaExpandida === zInfo.zona
+                              ? 'border-amber-300 shadow-md' : 'border-gray-100']">
+                <!-- Cabecera tienda -->
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl">🏪</span>
+                  <strong class="text-base font-black text-gray-800 flex-1 truncate">{{ zInfo.zonaNombre }}</strong>
+                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                    {{ zInfo.estadoChip }}
                   </span>
                 </div>
-                <div class="text-[11px] text-gray-500 flex gap-3 flex-wrap">
-                  <span>{{ zInfo.cantEstaciones }} estación{{ zInfo.cantEstaciones !== 1 ? 'es' : '' }}</span>
-                  <span v-if="zInfo.ventasPendientes > 0">📋 {{ zInfo.ventasPendientes }} pendientes</span>
-                </div>
-                <p v-if="zInfo.cajeroActivo" class="text-[10px] text-orange-700 mt-1 font-semibold leading-snug">
-                  💡 Vas a entrar como VENDEDOR (cajero: <strong>{{ zInfo.cajeroNombre }}</strong> · ID: {{ zInfo.cajeroIdCaja }} · abierta {{ zInfo.cajeroDesde }})
+                <p class="text-[10px] text-gray-400 mt-0.5 ml-9">
+                  {{ zInfo.cantEstaciones }} caja{{ zInfo.cantEstaciones !== 1 ? 's' : '' }}
                 </p>
-              </button>
+
+                <!-- Quién está dentro -->
+                <div v-if="zInfo.dentro > 0" class="flex flex-wrap items-end gap-3 mt-2.5 ml-1">
+                  <!-- Cajero con corona + glow -->
+                  <div v-if="zInfo.cajeroActivo" class="wiz-cajero-chip rounded-xl px-2.5 pt-3 pb-1.5 flex flex-col items-center min-w-[68px]">
+                    <span class="wiz-corona">👑</span>
+                    <div class="wiz-silueta wiz-silueta-mid wiz-avatar-cajero" :style="{ background: zInfo.cajeroColor }">
+                      <span>{{ zInfo.cajeroIniciales }}</span>
+                    </div>
+                    <p class="text-[10px] font-black text-amber-800 mt-1 truncate max-w-[64px] text-center">{{ (zInfo.cajeroNombre || '').split(' ')[0] }}</p>
+                    <p class="text-[8px] text-amber-600 leading-none">{{ zInfo.cajeroDesde || 'cajero' }}</p>
+                  </div>
+                  <!-- Vendedores con avatar azul -->
+                  <div v-for="v in zInfo.vendedores" :key="v.nombre" class="flex flex-col items-center min-w-[54px]">
+                    <div class="wiz-silueta wiz-silueta-mid" :style="{ background: v.color }">
+                      <span>{{ v.iniciales }}</span>
+                    </div>
+                    <p class="text-[10px] font-bold text-gray-600 mt-1 truncate max-w-[52px] text-center">{{ (v.nombre || '').split(' ')[0] }}</p>
+                  </div>
+                </div>
+                <p v-else class="text-[11px] text-gray-400 italic mt-2 ml-1">Nadie dentro todavía — sé el primero</p>
+
+                <!-- Botones de rol -->
+                <div class="grid grid-cols-2 gap-2 mt-3">
+                  <button @click="wizZonaToggleCajero(zInfo)"
+                          :class="['py-2.5 rounded-xl font-black text-xs text-white flex items-center justify-center gap-1 transition-all',
+                                   zInfo.cajeroActivo ? 'wiz-add-cajero is-locked' : 'wiz-add-cajero']">
+                    <span v-if="zInfo.cajeroActivo">🔒</span><span v-else>👑</span>
+                    <span>+ Cajero</span>
+                  </button>
+                  <button @click="wizZonaAddVendedor(zInfo)"
+                          class="wiz-add-vendedor py-2.5 rounded-xl font-black text-xs text-white flex items-center justify-center gap-1">
+                    🛍 + Vendedor
+                  </button>
+                </div>
+                <p v-if="zInfo.cajeroActivo" class="text-[10px] text-gray-400 mt-1.5 text-center leading-snug">
+                  Ya hay cajero. Entra como vendedor para sumarte.
+                </p>
+
+                <!-- Panel INLINE de monto (al tocar +Cajero, zona libre) -->
+                <div v-if="wizZonaExpandida === zInfo.zona && !zInfo.cajeroActivo" class="mt-3 pt-3 border-t border-amber-100 wiz-card-anim">
+                  <label class="block text-[10px] uppercase tracking-wider text-amber-600 font-black mb-2 text-center">💵 Monto inicial de caja</label>
+                  <div class="flex items-center gap-1 bg-amber-50 border-2 border-amber-300 rounded-2xl px-3 py-2 mb-2">
+                    <span class="text-2xl font-black text-amber-700">S/</span>
+                    <input v-model.number="configWizard.monto" type="number" inputmode="decimal"
+                           class="flex-1 text-2xl font-black text-center bg-transparent outline-none text-amber-900" placeholder="0.00">
+                    <button @click="wizDictarMonto" class="p-1 rounded-lg bg-amber-200 text-amber-700 active:scale-90" title="Dictar por voz">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+                    </button>
+                  </div>
+                  <div class="grid grid-cols-5 gap-1 mb-2">
+                    <button v-for="m in [50, 100, 200, 300, 500]" :key="m"
+                            @click="configWizard.monto = m; wizBeep('tap')"
+                            :class="['py-2 rounded-lg text-xs font-black border-2 active:scale-95 transition-all',
+                                     configWizard.monto === m ? 'bg-amber-100 border-amber-400 text-amber-700'
+                                     : 'bg-white border-gray-200 text-gray-500 hover:border-amber-300']">
+                      {{ m }}
+                    </button>
+                  </div>
+                  <p v-if="wizMontoSugerido > 0" class="text-[10px] text-gray-500 text-center mb-2">
+                    💡 Sugerido <strong class="text-amber-700">S/ {{ wizMontoSugerido }}</strong> (cierre del último turno)
+                  </p>
+                  <button @click="wizZonaConfirmCajero(zInfo)"
+                          :disabled="configWizard.monto == null || configWizard.monto === '' || configWizard.monto < 0"
+                          class="w-full py-3 rounded-2xl font-black text-base text-white bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                    👑 Abrir caja →
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- ═══ PASO 3 · ESTACIÓN ═══ -->
+          <!-- ═══ PASO 3 · ESTACIÓN (minimalista) ═══ -->
           <div v-else-if="wizStep === 3">
             <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
-            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">Elige tu estación · {{ configWizard.zona }}</p>
+            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">
+              Tu caja · {{ configWizard.zona }}
+              <span :class="['ml-1 px-1.5 py-0.5 rounded-full text-[9px]', configWizard.esCajero ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700']">
+                {{ configWizard.esCajero ? '👑 cajero' : '🛍 vendedor' }}
+              </span>
+            </p>
 
-            <!-- [v2.7.74] Mensaje claro si la zona no tiene estaciones configuradas. -->
+            <!-- Sin estaciones -->
             <div v-if="!wizEstacionesInfo.length" class="text-center py-8 px-4">
-              <div class="text-4xl mb-3">🛒</div>
-              <p class="text-sm font-bold text-gray-700 mb-1">Sin estaciones en esta zona</p>
-              <p class="text-xs text-gray-500 mb-4 leading-relaxed">La zona <b>{{ configWizard.zona }}</b> no tiene cajas configuradas en el servidor.<br>Contacta al admin para que la configure.</p>
+              <div class="text-4xl mb-3">🖨</div>
+              <p class="text-sm font-bold text-gray-700 mb-1">Sin cajas en esta tienda</p>
+              <p class="text-xs text-gray-500 mb-4 leading-relaxed">La tienda <b>{{ configWizard.zona }}</b> no tiene cajas configuradas en el servidor.<br>Contacta al admin.</p>
               <button @click="wizPrevStep" class="px-5 py-2 bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold rounded-xl active:scale-95">
-                ← Elegir otra zona
+                ← Elegir otra tienda
               </button>
             </div>
 
             <div v-else class="space-y-2">
               <button v-for="estInfo in wizEstacionesInfo" :key="estInfo.estacion.Estacion_Nombre"
                       @click="wizSelectEstacion(estInfo)"
-                      :class="['w-full text-left p-3 rounded-2xl border-2 active:scale-[.98] transition-all',
-                               configWizard.estacion?.Estacion_Nombre === estInfo.estacion.Estacion_Nombre
-                                 ? 'border-emerald-400 bg-emerald-50 shadow-md'
-                                 : 'border-gray-100 hover:border-emerald-300 bg-white']">
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="text-xl">🛒</span>
-                  <strong class="text-sm font-black text-gray-800 flex-1">{{ estInfo.estacion.Estacion_Nombre }}</strong>
+                      :disabled="procesandoCaja"
+                      class="w-full text-left p-3 rounded-2xl border-2 border-gray-100 hover:border-emerald-300 bg-white active:scale-[.98] disabled:opacity-60 transition-all flex items-center gap-3">
+                <span class="text-2xl">🖨</span>
+                <div class="flex-1 min-w-0">
+                  <strong class="text-sm font-black text-gray-800 block truncate">{{ estInfo.estacion.Estacion_Nombre }}</strong>
+                  <p class="text-[10px] text-gray-400 truncate">{{ estInfo.impReason }}</p>
                 </div>
-                <!-- Estado impresora en vivo -->
-                <div class="text-[11px] flex items-center gap-2 mt-1.5 px-2 py-1.5 rounded-lg"
-                     :class="estInfo.impStateClass">
-                  <span class="text-base">{{ estInfo.impIcon }}</span>
-                  <div class="flex-1 min-w-0">
-                    <p class="font-black truncate">{{ estInfo.impNombre || 'Sin impresora asignada' }}</p>
-                    <p class="text-[9px] opacity-80 truncate">{{ estInfo.impReason }}</p>
-                  </div>
-                </div>
-                <p v-if="estInfo.usersActivos && estInfo.usersActivos.length"
-                   class="text-[10px] text-gray-500 mt-1.5 italic">
-                  👥 También en esta estación: {{ estInfo.usersActivos.join(', ') }}
-                </p>
+                <span class="text-lg shrink-0" :title="estInfo.impReason">{{ estInfo.impIcon }}</span>
               </button>
             </div>
-          </div>
 
-          <!-- ═══ PASO 4 · ROL + MONTO (si cajero) ═══ -->
-          <div v-else-if="wizStep === 4">
-            <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
-            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3 text-center">Una última cosa, {{ (configWizard.vendedor || '').split(' ')[0] }}</p>
-
-            <div v-if="wizardVerificando" class="flex items-center justify-center gap-2 py-3 text-xs text-gray-400 font-bold">
-              <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-              Verificando si hay cajero activo en {{ configWizard.zona }}...
-            </div>
-
-            <div v-else>
-              <!-- Cajero ya ocupado -->
-              <div v-if="wizardCajeroOcupado" class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-3 mb-3">
-                <div class="flex items-start gap-2">
-                  <span class="w-3 h-3 bg-orange-500 rounded-full animate-pulse shrink-0 mt-1"></span>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-xs font-black text-orange-700">Cajero activo en {{ configWizard.zona }}</p>
-                    <p class="text-[11px] text-orange-800 font-semibold mt-0.5">
-                      <strong>{{ cajeroWizardInfo?.vendedor || '...' }}</strong>
-                      <span v-if="cajeroWizardInfo?.idCaja" class="opacity-75"> · ID {{ cajeroWizardInfo.idCaja }}</span>
-                    </p>
-                    <p class="text-[10px] text-orange-600 mt-1">✓ Vas a entrar como VENDEDOR (lo único disponible mientras haya caja abierta)</p>
-                  </div>
-                </div>
+            <!-- Progreso de apertura (al tocar una caja) -->
+            <div v-if="procesandoCaja && wizProgreso.activo" class="mt-3 space-y-1.5">
+              <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                <div class="bg-emerald-500 h-full transition-all duration-300" :style="{ width: wizProgreso.pct + '%' }"></div>
               </div>
-
-              <!-- Cards rol grandes -->
-              <div class="grid grid-cols-2 gap-2 mb-3">
-                <button @click="!wizardCajeroOcupado && wizSelectRol(true)"
-                        :disabled="wizardCajeroOcupado"
-                        :class="['p-3 rounded-2xl border-2 active:scale-95 transition-all flex flex-col items-center',
-                                 wizardCajeroOcupado ? 'opacity-40 cursor-not-allowed border-gray-200 bg-gray-50'
-                                 : configWizard.esCajero ? 'bg-emerald-500 text-white border-emerald-600 shadow-lg'
-                                 : 'border-gray-200 hover:border-emerald-400 bg-white']">
-                  <span class="text-2xl mb-1">💰</span>
-                  <span class="font-black text-sm">CAJERO</span>
-                  <span :class="['text-[9px] mt-0.5', configWizard.esCajero && !wizardCajeroOcupado ? 'opacity-80' : 'text-gray-400']">Abre caja</span>
-                </button>
-                <button @click="wizSelectRol(false)"
-                        :class="['p-3 rounded-2xl border-2 active:scale-95 transition-all flex flex-col items-center',
-                                 !configWizard.esCajero ? 'bg-blue-500 text-white border-blue-600 shadow-lg'
-                                 : 'border-gray-200 hover:border-blue-400 bg-white']">
-                  <span class="text-2xl mb-1">🛍</span>
-                  <span class="font-black text-sm">VENDEDOR</span>
-                  <span :class="['text-[9px] mt-0.5', !configWizard.esCajero ? 'opacity-80' : 'text-gray-400']">Solo vende</span>
-                </button>
-              </div>
-
-              <!-- Monto inicial (cajero) -->
-              <div v-if="configWizard.esCajero" class="mb-3">
-                <label class="block text-[10px] uppercase tracking-wider text-gray-400 font-black mb-2 text-center">💵 Monto inicial de caja</label>
-                <div class="flex items-center gap-1 bg-emerald-50 border-2 border-emerald-300 rounded-2xl px-3 py-2 mb-2">
-                  <span class="text-2xl font-black text-emerald-700">S/</span>
-                  <input v-model.number="configWizard.monto" type="number" inputmode="decimal"
-                         class="flex-1 text-2xl font-black text-center bg-transparent outline-none text-emerald-900" placeholder="0.00">
-                  <button @click="wizDictarMonto" class="p-1 rounded-lg bg-emerald-200 text-emerald-700 active:scale-90" title="Dictar por voz">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
-                  </button>
-                </div>
-                <!-- Chips de monto rápido -->
-                <div class="grid grid-cols-5 gap-1 mb-1.5">
-                  <button v-for="m in [50, 100, 200, 300, 500]" :key="m"
-                          @click="configWizard.monto = m; wizBeep('tap')"
-                          :class="['py-2 rounded-lg text-xs font-black border-2 active:scale-95 transition-all',
-                                   configWizard.monto === m ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
-                                   : 'bg-white border-gray-200 text-gray-500 hover:border-emerald-300']">
-                    {{ m }}
-                  </button>
-                </div>
-                <p v-if="wizMontoSugerido > 0" class="text-[10px] text-gray-500 text-center">
-                  💡 Sugerido <strong class="text-emerald-700">S/ {{ wizMontoSugerido }}</strong> (cierre del último turno)
-                </p>
-              </div>
-
-              <!-- Pre-flight check -->
-              <div v-if="wizPreflight.run" class="bg-blue-50 border border-blue-200 rounded-xl p-2 mb-3">
-                <p class="text-[10px] font-bold text-blue-700 mb-1">🔍 Verificando todo...</p>
-                <ul class="text-[10px] text-blue-900 space-y-0.5">
-                  <li>{{ wizPreflight.mos ? '✓' : '⏳' }} Conexión a MOS</li>
-                  <li>{{ wizPreflight.impresora ? '✓' : '⏳' }} Impresora {{ wizPreflight.impresoraOk ? 'lista' : '' }}</li>
-                  <li>{{ wizPreflight.catalogo ? '✓' : '⏳' }} Catálogo cargado</li>
-                </ul>
-              </div>
-
-              <!-- Botón abrir turno — monto 0 SÍ es válido (caja vacía) -->
-              <button @click="iniciarTurno"
-                      :disabled="(!configWizard.vendedor || !configWizard.estacion || procesandoCaja || (configWizard.esCajero && (configWizard.monto == null || configWizard.monto === '' || configWizard.monto < 0)))"
-                      :class="['w-full py-3 rounded-2xl font-black text-base shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 text-white',
-                               configWizard.esCajero ? 'bg-gradient-to-br from-emerald-500 to-emerald-700'
-                               : 'bg-gradient-to-br from-blue-500 to-blue-700']">
-                <svg v-if="procesandoCaja" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                <span>{{ procesandoCaja ? 'Abriendo turno...' : (configWizard.esCajero ? '🎉 ABRIR CAJA' : '🛍 ENTRAR') }}</span>
-              </button>
-
-              <!-- Progress bar real -->
-              <div v-if="procesandoCaja && wizProgreso.activo" class="mt-3 space-y-1.5">
-                <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                  <div class="bg-emerald-500 h-full transition-all duration-300" :style="{ width: wizProgreso.pct + '%' }"></div>
-                </div>
-                <ul class="text-[10px] text-gray-600 space-y-0.5">
-                  <li v-for="(p, i) in wizProgreso.pasos" :key="i" :class="p.done ? 'text-emerald-600 font-bold' : ''">
-                    {{ p.done ? '✓' : (i === wizProgreso.actualIdx ? '⏳' : '○') }} {{ p.label }}
-                  </li>
-                </ul>
-              </div>
+              <ul class="text-[10px] text-gray-600 space-y-0.5">
+                <li v-for="(p, i) in wizProgreso.pasos" :key="i" :class="p.done ? 'text-emerald-600 font-bold' : ''">
+                  {{ p.done ? '✓' : (i === wizProgreso.actualIdx ? '⏳' : '○') }} {{ p.label }}
+                </li>
+              </ul>
             </div>
           </div>
         </div>
@@ -8016,6 +8035,9 @@
               localStorage.removeItem('mosexpress_config');
           }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
+          // [v2.8.9] Reanudar el pulso de presencia si se restauró una sesión activa
+          // (reload de la PWA con turno ya iniciado). Se detiene al cerrar sesión.
+          if (config.value.completado && config.value.vendedor) { try { _wizIniciarHeartbeat(); } catch(_){} }
 
           // [v2.5.51] Si la PWA perdió localStorage (no hay config completada)
           // pero el dispositivo tiene caja ABIERTA en backend, ofrecer retomar
@@ -10244,6 +10266,8 @@
 
         const detenerPollingWizard = () => {
             if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
+            // [v2.8.9] El polling de presencia vive ligado al wizard también.
+            if (typeof _wizDetenerPollingPresencia === 'function') _wizDetenerPollingPresencia();
         };
 
         const verificarCajeroEnZonaWizard = async (zona, silent = false) => {
@@ -10299,7 +10323,12 @@
         const wizUltimoTurno = ref(null); // fast-track: ultimo turno hoy
         const wizMensajeJefe = ref(''); // mensaje opcional del jefe
         const wizClima = ref({ texto: '' });
-        const wizCajerosActivosPorZona = ref({}); // { zonaId: { vendedor, idCaja } }
+        const wizCajerosActivosPorZona = ref({}); // { zonaId: { vendedor, idCaja, desde } }
+        const wizPresenciaPorZona = ref({});      // { zonaId: { zona_nombre, cajero:{nombre,id_caja,desde}|null, vendedores:[{id_personal,nombre,estacion,desde}] } }
+        let _wizPresenciaTimer = null;            // refresco de presencia mientras el wizard está abierto
+        let _wizHeartbeatTimer = null;            // pulso registrar_presencia mientras el turno está activo
+        const wizZonaExpandida = ref(null);       // zona_id con el panel +Cajero (monto) desplegado inline
+        const wizZonaShake = ref(null);           // zona_id que hace shake (intento de 2º cajero)
         const wizImpresorasStatus = ref({}); // { printerId: { state, name, reason } }
         const wizMontoSugerido = ref(0);
         const wizProgreso = ref({ activo: false, pct: 0, pasos: [], actualIdx: 0 });
@@ -10347,30 +10376,65 @@
             return '🌙 Buenas noches';
         });
         const wizTitulo = computed(() => {
-            const titulos = ['', 'Inicia tu turno', '¿Dónde trabajas?', 'Tu estación', 'Casi listo'];
+            // [v2.8.9] 3 pasos: ¿Quién? · Tienda viva · Estación
+            const titulos = ['', 'Inicia tu turno', 'Elige tu tienda', 'Tu caja'];
             return titulos[wizStep.value] || 'Iniciar';
         });
 
-        // ── Zonas con metadata (cajero activo, estaciones, pendientes) ──
+        // ── Helper: "hace Xh Ym" desde un ISO ──
+        const _wizHaceTexto = (iso) => {
+            if (!iso) return '';
+            const ms = Date.now() - new Date(iso).getTime();
+            if (isNaN(ms) || ms < 0) return '';
+            const horas = Math.floor(ms / 3600000);
+            const mins  = Math.floor((ms % 3600000) / 60000);
+            return horas > 0 ? `hace ${horas}h ${mins}m` : `hace ${mins}m`;
+        };
+        const _wizIniciales = (nombre) => {
+            const partes = String(nombre || '?').trim().split(/\s+/);
+            const a = (partes[0] || '?')[0] || '?';
+            const b = partes.length > 1 ? (partes[partes.length - 1][0] || '') : '';
+            return (a + b).toUpperCase();
+        };
+
+        // ── Zonas como TIENDAS VIVAS (cajero corona + vendedores) ──
+        // Fuente preferida: presencia_por_zona (cajero server-side + vendedores
+        // heartbeat). Fallback: wizCajerosActivosPorZona (GAS cajeros_activos_todos).
+        // NUNCA expone id_caja en el login (confunde/alarma al operador).
         const wizZonasInfo = computed(() => {
             return zonasUnicas.value.map(z => {
                 const ests = (db.value.ZONAS_CONFIG || []).filter(x => x.Zona_ID === z);
-                const cajero = wizCajerosActivosPorZona.value[z];
-                let hace = '';
-                if (cajero?.desde) {
-                    const ms = Date.now() - new Date(cajero.desde).getTime();
-                    const horas = Math.floor(ms / 3600000);
-                    const mins  = Math.floor((ms % 3600000) / 60000);
-                    hace = horas > 0 ? `hace ${horas}h ${mins}m` : `hace ${mins}m`;
+                const pres = wizPresenciaPorZona.value[z];
+                // Cajero: 1º de presencia (server-side), 2º del cache GAS.
+                let cajeroNombre = '', cajeroDesde = '';
+                if (pres && pres.cajero) {
+                    cajeroNombre = pres.cajero.nombre || '';
+                    cajeroDesde  = _wizHaceTexto(pres.cajero.desde);
+                } else {
+                    const cg = wizCajerosActivosPorZona.value[z];
+                    if (cg) { cajeroNombre = cg.vendedor || cg.nombre || ''; cajeroDesde = _wizHaceTexto(cg.desde); }
                 }
+                const cajeroActivo = !!cajeroNombre;
+                const vendedores = (pres && Array.isArray(pres.vendedores) ? pres.vendedores : []).map(v => ({
+                    nombre: v.nombre || '?',
+                    estacion: v.estacion || '',
+                    color: _wizColorParaUser(v.nombre),
+                    iniciales: _wizIniciales(v.nombre),
+                    desde: _wizHaceTexto(v.desde)
+                }));
+                const dentro = (cajeroActivo ? 1 : 0) + vendedores.length;
                 return {
                     zona: z,
+                    zonaNombre: (pres && pres.zona_nombre) || z,
                     cantEstaciones: ests.length,
-                    cajeroActivo: !!cajero,
-                    cajeroNombre: cajero?.vendedor || '',
-                    cajeroIdCaja: cajero?.idCaja || '',
-                    cajeroDesde: hace,
-                    ventasPendientes: 0
+                    cajeroActivo,
+                    cajeroNombre,
+                    cajeroColor: cajeroActivo ? _wizColorParaUser(cajeroNombre) : '',
+                    cajeroIniciales: cajeroActivo ? _wizIniciales(cajeroNombre) : '',
+                    cajeroDesde,
+                    vendedores,
+                    dentro,                       // total de personas en la tienda
+                    estadoChip: dentro > 0 ? `· ${dentro} dentro` : '· libre'
                 };
             });
         });
@@ -10409,24 +10473,86 @@
             } catch(e) {}
         };
 
+        // ── [v2.8.9] Presencia EN VIVO por zona (cajero corona + vendedores) ──
+        // DIRECTO a Supabase (patrón _ventasZonaDirecto). El cajero viene server-side
+        // (me.cajas ABIERTA), los vendedores del heartbeat. Si falla, el computed cae
+        // de forma transparente al cache GAS de cajeros — el login NUNCA se bloquea.
+        const _wizCargarPresencia = async () => {
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            try {
+                const token = await _mintTokenSB();
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/presencia_por_zona`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (!res.ok) return;
+                const d = await res.json();
+                if (d && typeof d === 'object') wizPresenciaPorZona.value = d;
+            } catch (e) { /* silencioso: el computed usa fallback GAS */ }
+        };
+        const _wizIniciarPollingPresencia = () => {
+            _wizCargarPresencia();
+            if (_wizPresenciaTimer) clearInterval(_wizPresenciaTimer);
+            if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                _wizPresenciaTimer = setInterval(_wizCargarPresencia, 4000);
+            }
+        };
+        const _wizDetenerPollingPresencia = () => {
+            if (_wizPresenciaTimer) { clearInterval(_wizPresenciaTimer); _wizPresenciaTimer = null; }
+        };
+
+        // ── [v2.8.9] Pulso de presencia (heartbeat). Lo llama iniciarTurno al
+        // entrar y cada ~60s mientras el turno esté activo. fire-and-forget. ──
+        const _wizRegistrarPresencia = async () => {
+            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            const cw = config.value;
+            if (!cw || !cw.completado || !cw.zona) return;
+            // id_personal es obligatorio para el pulso; si no lo tenemos, usar el
+            // nombre normalizado como identidad estable (la RPC dedupea por esta key).
+            const idp = String(cw.idPersonal || '').trim() || ('NOID:' + String(cw.vendedor || '').trim().toLowerCase());
+            try {
+                const token = await _mintTokenSB();
+                await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_presencia`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {
+                        id_personal: idp,
+                        nombre:   cw.vendedor || '',
+                        zona:     cw.zona || '',
+                        estacion: cw.estacion?.Estacion_Nombre || '',
+                        rol:      cw.esCajero ? 'cajero' : 'vendedor'
+                    }})
+                });
+            } catch (e) { /* fire-and-forget */ }
+        };
+        const _wizIniciarHeartbeat = () => {
+            _wizRegistrarPresencia();
+            if (_wizHeartbeatTimer) clearInterval(_wizHeartbeatTimer);
+            _wizHeartbeatTimer = setInterval(_wizRegistrarPresencia, 60000);
+        };
+        const _wizDetenerHeartbeat = () => {
+            if (_wizHeartbeatTimer) { clearInterval(_wizHeartbeatTimer); _wizHeartbeatTimer = null; }
+        };
+
         // ── Métodos de navegación ──
+        // [v2.8.9] Flujo rediseñado (4→3 pasos): 1 ¿Quién? · 2 Zona viva (elige
+        // rol+monto inline aquí) · 3 Estación → iniciarTurno. El antiguo paso 4
+        // (rol+monto) quedó FUSIONADO en la card-tienda del paso 2.
         const wizNextStep = async (target) => {
             if (target === 2 && !configWizard.value.vendedor?.trim()) return;
             wizBeep('next');
-            // Al pasar al paso 2 → cargar cajeros activos en bulk
-            if (target === 2) _wizCargarCajerosActivos();
-            // Atajo: si solo hay una zona, saltear directamente al paso 3
-            if (target === 2 && zonasUnicas.value.length === 1) {
-                await seleccionarZonaWizard(zonasUnicas.value[0]);
-                _wizCargarImpresorasZona();
-                wizStep.value = 3;
-                return;
-            }
+            // Al pasar al paso 2 → cargar cajeros activos (cache GAS, fallback) +
+            // presencia en vivo (Supabase directo) con polling mientras se elige.
+            if (target === 2) { _wizCargarCajerosActivos(); _wizIniciarPollingPresencia(); }
+            // Con 1 sola zona NO saltamos pasos: la tienda viva (paso 2) ya es la
+            // única tienda y ahí el operador elige rol (+Cajero/+Vendedor). Mostrarla
+            // tal cual mantiene la "tienda viva" coherente y evita asumir rol.
             wizStep.value = target;
         };
         const wizPrevStep = () => {
             wizBeep('tap');
-            if (wizStep.value > 1) wizStep.value -= 1;
+            if (wizStep.value > 1) { wizZonaExpandida.value = null; wizStep.value -= 1; }
         };
 
         const wizSelectUser = (u) => {
@@ -10435,23 +10561,68 @@
             // [v2.7.47 FIX] Propagar rol + idPersonal para SeguridadSystem
             configWizard.value.rol        = String(u.rol || 'VENDEDOR').toUpperCase();
             configWizard.value.idPersonal = u.idPersonal || u.ID_Personal || '';
-            // si solo hay 1 zona, autoavanzar
-            if (zonasUnicas.value.length === 1) {
-                seleccionarZonaWizard(zonasUnicas.value[0]);
-                wizStep.value = 3;
-            } else {
-                wizStep.value = 2;
-            }
+            // Cargar presencia/cajeros para la zona viva.
+            _wizCargarCajerosActivos(); _wizIniciarPollingPresencia();
+            wizStep.value = 2;
         };
 
         const wizOnNombreInput = () => {
             // intenta sugerir avatar color en vivo
         };
 
-        const wizSelectZona = async (zInfo) => {
+        // ── [v2.8.9] Zona viva: toggle del panel +Cajero (monto inline) ──
+        const wizZonaToggleCajero = async (zInfo) => {
+            // Regla 1-cajero (visual): si ya hay cajero, +Cajero está bloqueado →
+            // shake + beep error. El backend igual rechaza (defensa real).
+            if (zInfo.cajeroActivo) {
+                wizBeep('error');
+                wizZonaShake.value = zInfo.zona;
+                try { navigator.vibrate && navigator.vibrate([12, 40, 12]); } catch(_){}
+                setTimeout(() => { if (wizZonaShake.value === zInfo.zona) wizZonaShake.value = null; }, 460);
+                return;
+            }
             wizBeep('tap');
+            try { navigator.vibrate && navigator.vibrate(8); } catch(_){}
+            // Seleccionar zona (carga impresoras, verifica cajero en bg) y abrir panel monto.
+            // OJO: seleccionarZonaWizard() llama detenerPollingWizard() (mata el polling
+            // de presencia). Como nos quedamos en la tienda viva, lo reanudamos para que
+            // las caritas no queden congeladas.
             await seleccionarZonaWizard(zInfo.zona);
-            // Cargar estado impresoras de la zona
+            _wizIniciarPollingPresencia();
+            _wizCargarImpresorasZona();
+            configWizard.value.esCajero = true;
+            _wizCalcularMontoSugerido();
+            wizZonaExpandida.value = (wizZonaExpandida.value === zInfo.zona) ? null : zInfo.zona;
+            if (wizZonaExpandida.value !== zInfo.zona) configWizard.value.esCajero = false;
+        };
+
+        // ── [v2.8.9] Zona viva: +Cajero confirmado (con monto) → estación ──
+        const wizZonaConfirmCajero = async (zInfo) => {
+            // Guard defensivo: nunca dejar abrir 2º cajero (espeja backend).
+            if (zInfo.cajeroActivo || wizardCajeroOcupado.value) {
+                wizBeep('error');
+                wizZonaShake.value = zInfo.zona;
+                setTimeout(() => { if (wizZonaShake.value === zInfo.zona) wizZonaShake.value = null; }, 460);
+                return;
+            }
+            const m = configWizard.value.monto;
+            if (m == null || m === '' || Number(m) < 0) { wizBeep('error'); return; }
+            wizBeep('next');
+            try { navigator.vibrate && navigator.vibrate(10); } catch(_){}
+            configWizard.value.esCajero = true;
+            await seleccionarZonaWizard(zInfo.zona);
+            configWizard.value.esCajero = true;      // seleccionarZonaWizard lo resetea; reafirmar
+            configWizard.value.monto = m;
+            _wizCargarImpresorasZona();
+            wizStep.value = 3;
+        };
+
+        // ── [v2.8.9] Zona viva: +Vendedor (sin monto) → estación directo ──
+        const wizZonaAddVendedor = async (zInfo) => {
+            wizBeep('next');
+            try { navigator.vibrate && navigator.vibrate(8); } catch(_){}
+            await seleccionarZonaWizard(zInfo.zona);  // deja esCajero=false, monto=0
+            configWizard.value.esCajero = false;
             _wizCargarImpresorasZona();
             wizStep.value = 3;
         };
@@ -10473,12 +10644,14 @@
                 agregarToast && agregarToast('⚠ Estación inválida', 'Datos del servidor incompletos. Reintenta descarga del catálogo.', 'error');
                 return;
             }
-            wizBeep('tap');
+            wizBeep('next');
+            try { navigator.vibrate && navigator.vibrate(8); } catch(_){}
             configWizard.value.estacion = est;
-            // pasar a paso 4 + lanzar pre-flight + monto sugerido
-            _wizCalcularMontoSugerido();
+            // [v2.8.9] El rol+monto ya se eligió en la card-tienda (paso 2). La
+            // estación es el último paso → abrir turno directo. iniciarTurno tiene
+            // su propio guard de 1-cajero + progreso visual.
             _wizPreflightRun();
-            wizStep.value = 4;
+            iniciarTurno();
         };
 
         const wizSelectRol = (esCajero) => {
@@ -10507,9 +10680,15 @@
                 configWizard.value.esCajero = !!u.esCajero;
                 configWizard.value.monto = u.esCajero ? (u.monto || 0) : 0;
                 seleccionarZonaWizard(u.zona).then(() => {
+                    // seleccionarZonaWizard resetea esCajero/monto → reafirmar
+                    configWizard.value.esCajero = !!u.esCajero;
+                    configWizard.value.monto = u.esCajero ? (u.monto || 0) : 0;
+                    configWizard.value.estacion = est;
                     _wizCargarImpresorasZona();
-                    _wizCalcularMontoSugerido();
-                    wizStep.value = 4;
+                    // [v2.8.9] Fast-track: zona+estación+rol+monto ya conocidos →
+                    // abrir turno directo. iniciarTurno reverifica el cajero (guard).
+                    _wizPreflightRun();
+                    iniciarTurno();
                 });
             }
         };
@@ -10693,10 +10872,9 @@
         const wizTutorial = ref({
             visible: false, idx: 0,
             pasos: [
-                { emoji: '👤', texto: 'Tipea tu nombre o toca una de las caritas si ya entraste antes — la app recuerda los últimos 5 usuarios.' },
-                { emoji: '📍', texto: 'Cada zona te muestra si ya hay un cajero activo. Si lo hay y querés ir como vendedor, igual puedes entrar.' },
-                { emoji: '🖨', texto: 'En el paso 3 ves el estado de la impresora EN VIVO (🟢 lista · 🔴 apagada · 🟡 verificando). Elige tranquilo.' },
-                { emoji: '💵', texto: 'Si abres como cajero, puedes dictar el monto inicial con el botón 🎤 — sin teclado.' }
+                { emoji: '👤', texto: 'Toca tu carita si ya entraste antes, o tipea tu nombre. La app recuerda los últimos 5 usuarios.' },
+                { emoji: '🏪', texto: 'Cada tienda muestra quién está dentro: el 👑 cajero destacado y los vendedores. Toca "+ Vendedor" para sumarte. Solo puede haber 1 cajero por tienda.' },
+                { emoji: '🖨', texto: 'Elige tu caja: el puntito te dice si la impresora está 🟢 lista o 🔴 apagada. Al tocarla, ¡tu turno arranca!' }
             ]
         });
         const wizTutorialCheckShow = () => {
@@ -11407,6 +11585,11 @@
                     }
                 }, 30000);
             }
+            // [v2.8.9] Pulso de presencia: registrar entrada + heartbeat cada 60s
+            // (alimenta la "tienda viva" del login de los demás dispositivos).
+            wizZonaExpandida.value = null;
+            try { _wizIniciarHeartbeat(); } catch(_){}
+
             // Sincronizar catálogo (silencioso)
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 sincronizarCatalogoBase();
@@ -11675,6 +11858,7 @@
                  config.value.esCajero = false;
                  localStorage.removeItem('mosexpress_config');
                  localStorage.removeItem('mosexpress_session_date');
+                 try { _wizDetenerHeartbeat(); } catch(_){}
                  configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
                  cajeroWizardInfo.value = null;
                  wizardCajeroOcupado.value = false;
@@ -14356,6 +14540,7 @@
              localStorage.removeItem('mosexpress_caja_activa');
              localStorage.removeItem('mosexpress_caja_payload');
              localStorage.removeItem('mosexpress_session_start');
+             try { _wizDetenerHeartbeat(); } catch(_){}
              configWizard.value = { vendedor: '', zona: null, estacion: null, esCajero: false, monto: 0 };
              cajaAbierta.value = false;
              // [v40.3] Detener polling cobros asignados al cerrar caja
@@ -17001,7 +17186,9 @@
           wizStep, wizUltimosUsers, wizUltimoTurno, wizMensajeJefe, wizClima,
           wizCajerosActivosPorZona, wizImpresorasStatus, wizMontoSugerido, wizProgreso, wizPreflight,
           wizSaludo, wizTitulo, wizZonasInfo, wizEstacionesInfo,
-          wizNextStep, wizPrevStep, wizSelectUser, wizOnNombreInput, wizSelectZona, wizSelectEstacion,
+          wizNextStep, wizPrevStep, wizSelectUser, wizOnNombreInput, wizSelectEstacion,
+          // [v2.8.9] Zona viva (rediseño login)
+          wizZonaExpandida, wizZonaShake, wizZonaToggleCajero, wizZonaConfirmCajero, wizZonaAddVendedor,
           wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
           wizTutorial, wizTutorialNext, wizTutorialClose,
           // [v2.5.40] Chip impresora live + cambio impresora
