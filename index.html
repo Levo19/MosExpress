@@ -1350,6 +1350,19 @@
   // window._ME_VERIF_PREVUE_OK siguen funcionando para el post-Vue legado.
   (function _meVerifDispositivoPreVueLegacy() {
     var MOS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+    // [v2.8.24] Config Supabase para auth DIRECTO de dispositivos (igual que WH ~5166).
+    // Misma URL + anon key PÚBLICAS que ME ya usa para datos (SUPABASE_URL/SUPABASE_ANON_KEY
+    // en el script Vue ~5998, get_flags/ventas directas). Al pasarlas a DeviceAuth.init, el
+    // módulo (v1.0.22) habilita el path DIRECTO: mos.verificar_dispositivo por REST anon
+    // (id_dispositivo snake, app:'mosExpress'), instantáneo, sin el cold-start de MOS GAS.
+    // Doble-check (directo-bloqueo → confirma GAS, hoja=fuente de verdad) + fallback a GAS
+    // (RPC falla → GAS) intactos en el módulo. Probado: device ea76596d (mosExpress) → ACTIVO.
+    var SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
+    var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+    // Flag DIRECTO por default ON en ME (la config Supabase ya está presente). El módulo
+    // igual exige _sbBase()+sbAnon antes de intentar el directo; sin red Supabase cae a GAS.
+    // Para forzar GAS: quita sbUrl/sbAnon del init (el flag '1' solo no basta sin config).
+    try { if (localStorage.getItem('mos_device_auth_directo') == null) localStorage.setItem('mos_device_auth_directo', '1'); } catch(_){}
     // [v2.7.71] Exponer globalmente para que módulos compartidos (ExtensorHorario,
     // SeguridadSystem) puedan usarlo sin tener que pasarlo en config.
     window.MOS_GAS_URL = MOS_URL;
@@ -1369,6 +1382,8 @@
     // doble-check post-Vue (_verificarDispositivoRed → ya neutralizado).
     DeviceAuth.init({
       mosGasUrl: MOS_URL,
+      sbUrl: SB_URL,
+      sbAnon: SB_ANON,
       app: 'mosExpress',
       isMaster: false,  // ME acepta admin o master in-situ
       storageKeys: {
