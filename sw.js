@@ -55,7 +55,7 @@ self.addEventListener('notificationclick', event => {
   })());
 });
 
-const VERSION = '2.8.19';
+const VERSION = '2.8.20';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
