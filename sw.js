@@ -58,7 +58,7 @@ self.addEventListener('notificationclick', event => {
 // v2.8.24 — auth de dispositivos DIRECTO a Supabase (mos.verificar_dispositivo,
 //           REST anon, app:'mosExpress') reusando la config Supabase que ME ya
 //           tiene. Igual que WH. Doble-check + fallback a GAS intactos en device-auth.js v1.0.22.
-const VERSION = '2.8.24';
+const VERSION = '2.8.25';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
