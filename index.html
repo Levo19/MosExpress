@@ -2666,6 +2666,24 @@
     </div>
     <style>
       @keyframes meHorPulse { 0%,100%{transform:scale(1);opacity:.85} 50%{transform:scale(1.1);opacity:1} }
+      /* [v2.8.30] UX moderna de guías (réplica WH): lista que crece con animación,
+         glow + count-up + flotante "+1" al re-escanear, candado abierto/cerrado pulsante */
+      @keyframes gSlideInItem { from{opacity:0;transform:translateY(-10px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+      .g-slide-in { animation: gSlideInItem .24s ease-out both; }
+      @keyframes gRowGlow { 0%{box-shadow:0 0 0 0 rgba(245,158,11,.55);background:rgba(245,158,11,.10)} 60%{box-shadow:0 0 0 6px rgba(245,158,11,0)} 100%{box-shadow:0 0 0 0 rgba(245,158,11,0);background:transparent} }
+      .g-row-glow { animation: gRowGlow .9s ease-out both; }
+      @keyframes gQtyCount { 0%{transform:scale(1.5);color:#fbbf24} 100%{transform:scale(1);color:inherit} }
+      .g-qty-count { animation: gQtyCount .4s ease-out both; display:inline-block; }
+      @keyframes gPlusFloat { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-26px) scale(1.4)} }
+      .g-plus-float { position:absolute; right:14px; top:8px; color:#fbbf24; font-weight:900; font-size:15px; pointer-events:none; animation: gPlusFloat .85s ease-out both; }
+      /* Candado de estado guía (ABIERTA = ámbar pulsante / CERRADA = verde sólido) — patrón WH */
+      .g-estado { display:inline-flex; align-items:center; gap:5px; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:3px 9px; border-radius:20px; }
+      .g-estado-abierta { background:rgba(245,158,11,.16); color:#fbbf24; border:1px solid rgba(245,158,11,.4); }
+      .g-estado-cerrada { background:rgba(34,197,94,.12); color:#86efac; border:1px solid rgba(34,197,94,.3); }
+      .g-estado-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; display:inline-block; }
+      .g-estado-abierta .g-estado-dot { background:#f59e0b; animation: gEstadoPulse 1.6s ease-in-out infinite; }
+      .g-estado-cerrada .g-estado-dot { background:#22c55e; }
+      @keyframes gEstadoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.7);opacity:1} 55%{box-shadow:0 0 0 5px rgba(245,158,11,0);opacity:.7} }
     </style>
 
     <div v-if="mostrarModalSesionAnterior && !config.completado" class="absolute inset-0 z-[55] bg-gray-950 flex flex-col items-center justify-center p-6">
@@ -5690,18 +5708,24 @@
                 </div>
                 <!-- Escaneo/búsqueda -->
                 <div class="flex gap-2">
-                    <input v-model="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-amber-500 text-lg tracking-widest">
+                    <input v-model="guiaBusq" data-ctx-input="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-amber-500 text-lg tracking-widest">
                     <button @click="guiaBuscarItem" class="bg-amber-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
                     <button @click="toggleCamaraGuia" class="w-11 rounded-xl flex items-center justify-center transition-colors" :class="camaraGuiaAbierta ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     </button>
                 </div>
-                <div v-show="camaraGuiaAbierta" class="rounded-xl overflow-hidden"><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
+                <div v-show="camaraGuiaAbierta" class="rounded-xl overflow-hidden"><div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
                 <!-- Lista items -->
                 <div class="flex-1 space-y-2 overflow-y-auto">
+                    <!-- [v2.8.30] Contador en vivo (réplica WH) -->
+                    <div v-if="guiaItems.length" class="flex items-center justify-between px-1 pb-1 sticky top-0 z-10">
+                        <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}</span>
+                        <span class="text-[11px] font-black text-gray-400">{{ guiaTotalUnidades }} unid.</span>
+                    </div>
                     <div v-for="(item, idx) in guiaItems" :key="idx"
-                         class="bg-gray-800 rounded-xl px-3 py-2.5 transition-all"
-                         :class="guiaSubtipo === 'SALIDA_DEVOLUCION_WH' && item.estadoDev && item.estadoDev !== 'BUEN_ESTADO' ? 'ring-2 ring-rose-500/40 bg-gradient-to-br from-gray-800 to-rose-950/30' : ''">
+                         :data-guia-row="item.cod_barras"
+                         class="bg-gray-800 rounded-xl px-3 py-2.5 transition-all relative"
+                         :class="[guiaSubtipo === 'SALIDA_DEVOLUCION_WH' && item.estadoDev && item.estadoDev !== 'BUEN_ESTADO' ? 'ring-2 ring-rose-500/40 bg-gradient-to-br from-gray-800 to-rose-950/30' : '', item.cod_barras === guiaFreshCb ? 'g-slide-in' : '']">
                         <div class="flex items-center gap-3">
                             <div class="flex-1 min-w-0">
                                 <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
@@ -5712,7 +5736,7 @@
                                 <!-- [v2.7.9] Buffer _cantidadStr para preservar lo tipeado durante re-renders Vue.
                                      Antes: :value + @change · cualquier polling re-renderizaba y reseteaba el input al item.cantidad (1) antes del blur. El cajero tecleaba 5.5 → re-render → input vuelve a 1.
                                      Ahora: @input guarda string crudo en _cantidadStr, @blur parsea a Number y limpia. Vue re-render lee _cantidadStr (string en progreso) → no pierde -->
-                                <input :data-guia-input="item.cod_barras"
+                                <input :data-guia-input="item.cod_barras" data-guia-qty
                                        :value="item._cantidadStr != null ? item._cantidadStr : item.cantidad"
                                        @focus="$event.target.select(); item._cantidadStr = String(item.cantidad)"
                                        @input="item._cantidadStr = $event.target.value"
@@ -5782,11 +5806,10 @@
                     </div>
                     <svg class="w-5 h-5 text-emerald-400 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </button>
-                <!-- Mismo destino, sin escáner (fallback: cámara dañada / QR ilegible) -->
-                <button @click="seleccionarSubtipoGuia('ENTRADA_ALMACEN')" class="w-full bg-gray-800/70 hover:bg-gray-700 rounded-2xl px-4 py-3 flex items-center gap-3 text-left active:scale-95 transition-all border border-gray-700/70">
-                    <div class="w-9 h-9 bg-emerald-500/15 rounded-lg flex items-center justify-center shrink-0"><svg class="w-5 h-5 text-emerald-400/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
-                    <div class="flex-1 min-w-0"><p class="text-gray-200 font-bold text-sm">…o ingresarla a mano</p><p class="text-gray-500 text-xs mt-0.5">Sin escáner (si la cámara o el QR fallan)</p></div>
-                    <svg class="w-4 h-4 text-gray-600 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                <!-- Fallback claramente subordinado: SOLO si la cámara/QR fallan -->
+                <button @click="seleccionarSubtipoGuia('ENTRADA_ALMACEN')" class="w-full flex items-center justify-center gap-2 text-gray-400 hover:text-gray-200 text-xs font-bold py-2 active:scale-95 transition-colors">
+                    <svg class="w-4 h-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    ¿Cámara o QR dañados? Ingresar la guía a mano
                 </button>
 
                 <p class="text-gray-500/80 text-[11px] uppercase tracking-widest font-black mb-1 mt-4">Sin guía de almacén</p>
@@ -5823,15 +5846,22 @@
                     Despacho de almacén · Registra los productos recibidos según la guía física
                 </div>
                 <div class="flex gap-2">
-                    <input v-model="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-lg tracking-widest">
+                    <input v-model="guiaBusq" data-ctx-input="guiaBusq" @keyup.enter="guiaBuscarItem" type="text" placeholder="Código de barras..." class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-lg tracking-widest">
                     <button @click="guiaBuscarItem" class="bg-emerald-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
                     <button @click="toggleCamaraGuia" class="w-11 rounded-xl flex items-center justify-center" :class="camaraGuiaAbierta ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     </button>
                 </div>
-                <div v-show="camaraGuiaAbierta && guiaTab==='entrada'" class="rounded-xl overflow-hidden"><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
+                <div v-show="camaraGuiaAbierta && guiaTab==='entrada'" class="rounded-xl overflow-hidden"><div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
                 <div class="flex-1 space-y-2 overflow-y-auto">
-                    <div v-for="(item, idx) in guiaItems" :key="idx" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
+                    <!-- [v2.8.30] Contador en vivo (réplica WH) -->
+                    <div v-if="guiaItems.length" class="flex items-center justify-between px-1 pb-1 sticky top-0 z-10">
+                        <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}</span>
+                        <span class="text-[11px] font-black text-gray-400">{{ guiaTotalUnidades }} unid.</span>
+                    </div>
+                    <div v-for="(item, idx) in guiaItems" :key="idx" :data-guia-row="item.cod_barras"
+                         class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5 relative transition-all"
+                         :class="item.cod_barras === guiaFreshCb ? 'g-slide-in' : ''">
                         <div class="flex-1 min-w-0">
                             <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
                             <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p>
@@ -5839,7 +5869,7 @@
                         <div class="flex items-center gap-1.5">
                             <button @click="item._cantidadStr = null; item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
                             <!-- [v2.7.9] Buffer _cantidadStr — preserva tipeo durante re-renders Vue -->
-                            <input :data-guia-input="item.cod_barras"
+                            <input :data-guia-input="item.cod_barras" data-guia-qty
                                    :value="item._cantidadStr != null ? item._cantidadStr : item.cantidad"
                                    @focus="$event.target.select(); item._cantidadStr = String(item.cantidad)"
                                    @input="item._cantidadStr = $event.target.value"
@@ -5870,11 +5900,14 @@
                     <button @click="expandirGuia(g)" class="w-full flex items-center gap-3 p-3 text-left">
                         <div class="w-2 h-10 rounded-full shrink-0" :class="g.tipo.startsWith('SALIDA') ? 'bg-red-500' : 'bg-emerald-500'"></div>
                         <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 flex-wrap">
                                 <span class="text-[10px] font-black px-2 py-0.5 rounded uppercase"
                                     :class="g.tipo==='SALIDA_JEFA' ? 'bg-amber-900/50 text-amber-300' : g.tipo==='SALIDA_MOVIMIENTO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='SALIDA_VENTAS' ? 'bg-gray-700 text-gray-400' : g.tipo==='ENTRADA_TRASLADO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='ENTRADA_ALMACEN' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-purple-900/50 text-purple-300'">
                                     {{ g.tipo.replace('_',' ') }}
                                 </span>
+                                <!-- [v2.8.30] Candado de estado ABIERTA/CERRADA (réplica WH) -->
+                                <span v-if="esGuiaCerrada(g)" class="g-estado g-estado-cerrada" title="Guía cerrada"><span class="g-estado-dot"></span>🔒 Cerrada</span>
+                                <span v-else-if="esGuiaAbierta(g)" class="g-estado g-estado-abierta" title="Guía abierta"><span class="g-estado-dot"></span>🔓 Abierta</span>
                                 <span v-if="g.zona_destino" class="text-gray-500 text-xs">→ {{ g.zona_destino }}</span>
                             </div>
                             <p class="text-gray-400 text-xs mt-0.5">{{ g.id_guia }} · {{ g.vendedor }}</p>
@@ -5891,10 +5924,18 @@
                             <span class="text-gray-300">{{ getNombrePres(it.cod_barras) }}</span>
                             <span class="font-black" :class="g.tipo.startsWith('SALIDA') ? 'text-red-400' : 'text-emerald-400'">{{ g.tipo.startsWith('SALIDA') ? '-' : '+' }}{{ fmtCantGuia(it.cantidad) }}</span>
                         </div>
-                        <button @click="imprimirGuia(g)" class="mt-3 w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                            Imprimir 80mm
-                        </button>
+                        <div class="mt-3 flex gap-2">
+                            <button @click="imprimirGuia(g)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                                Imprimir 80mm
+                            </button>
+                            <!-- [v2.8.30] Reabrir guía cerrada (requiere clave admin) → me.reabrir_guia_zona (+30 min) -->
+                            <button v-if="esGuiaCerrada(g)" @click="reabrirGuia(g)" :disabled="reabriendoGuiaId === g.id_guia"
+                                    class="flex-1 bg-amber-600/80 hover:bg-amber-500 disabled:bg-amber-900/40 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 018 0m-9 4h10a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2v-5a2 2 0 012-2z"></path></svg>
+                                {{ reabriendoGuiaId === g.id_guia ? 'Reabriendo...' : '🔓 Reabrir' }}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -5941,7 +5982,7 @@
         <!-- PASO A: escanear / teclear el idGuiaWH -->
         <div v-if="rwPaso === 'guia'" class="flex-1 overflow-y-auto p-4 space-y-4">
             <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl px-4 py-3 text-xs text-emerald-300 font-bold">
-                Paso 1 de 2 · Apunta la cámara al <b>QR del ticket</b> de la guía del almacén. También puedes teclear el código (G…).
+                Paso 1 de 2 · Apunta la cámara al <b>QR del ticket</b> de la guía del almacén para abrirla. También puedes teclear el código (G…). Luego escanearás los productos uno por uno.
             </div>
             <!-- CTA primaria: abrir la cámara para leer el QR del ticket WH -->
             <button v-if="!rwCamara" @click="rwToggleCamara"
@@ -5951,7 +5992,7 @@
             </button>
             <p v-if="!rwCamara" class="text-gray-500 text-[11px] text-center font-bold">— o ingresa el código a mano —</p>
             <div class="flex gap-2">
-                <input v-model="rwIdGuia" @keyup.enter="rwCargarGuia" type="text" placeholder="Código de la guía (G...)"
+                <input v-model="rwIdGuia" data-ctx-input="rwIdGuia" @keyup.enter="rwCargarGuia" type="text" placeholder="Código de la guía (G...)"
                        class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-lg tracking-widest">
                 <button @click="rwCargarGuia" :disabled="rwCargando" class="bg-emerald-500 disabled:bg-emerald-900/40 text-white font-black px-4 rounded-xl active:scale-95 text-lg">→</button>
                 <button @click="rwToggleCamara" class="w-11 rounded-xl flex items-center justify-center transition-colors" :class="rwCamara ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
@@ -5968,16 +6009,25 @@
                 <div v-if="rwGuia && rwGuia.verificada" class="bg-amber-900/40 border border-amber-600/50 rounded-lg px-3 py-2 text-[11px] text-amber-200 font-bold">
                     ⚠ Esta guía ya fue recibida antes. Si "Cerrar ingreso" no se reenviará (idempotente).
                 </div>
+                <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-lg px-3 py-2 text-[11px] text-emerald-300 font-bold text-center">
+                    Paso 2 de 2 · Escanea los productos <b>uno tras otro</b>. La cámara queda abierta y la lista crece sola.
+                </div>
                 <div class="flex gap-2">
-                    <input v-model="rwBusq" @keyup.enter="rwEscanearItem" type="text" placeholder="Escanear producto..."
+                    <input v-model="rwBusq" data-ctx-input="rwBusq" @keyup.enter="rwEscanearItem" type="text" placeholder="Escanear producto..."
                            class="flex-1 bg-gray-700 text-white font-mono px-4 py-2.5 rounded-xl border border-gray-600 outline-none focus:border-emerald-400 text-sm tracking-widest">
                     <button @click="rwEscanearItem" class="bg-emerald-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
                     <button @click="rwToggleCamara" class="w-11 rounded-xl flex items-center justify-center" :class="rwCamara ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     </button>
                 </div>
-                <div v-show="rwCamara" class="rounded-xl overflow-hidden"><div id="reader-recibir-wh" class="bg-black w-full"></div></div>
-                <p class="text-emerald-300 text-xs font-bold text-center">{{ rwEscaneadosArr.length }} producto(s) contado(s) · {{ rwTotalEscaneado }} unidades</p>
+                <div v-show="rwCamara" class="rounded-xl overflow-hidden">
+                    <div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5">
+                        <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · apunta producto tras producto
+                    </div>
+                    <div id="reader-recibir-wh" class="bg-black w-full"></div>
+                    <button @click="rwToggleCamara" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button>
+                </div>
+                <p class="text-emerald-300 text-sm font-black text-center">{{ rwEscaneadosArr.length }} producto(s) · {{ rwTotalEscaneado }} unidades contadas</p>
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
                 <p v-if="!rwEscaneadosArr.length" class="text-gray-600 text-center py-10 text-sm">Escanea o teclea un código para empezar a contar.</p>
@@ -5997,7 +6047,7 @@
             <button @click="rwCerrarIngreso" :disabled="!rwEscaneadosArr.length || rwCargando"
                     class="w-full py-5 rounded-none font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 disabled:bg-emerald-900/40 text-white active:scale-95 shrink-0">
                 <svg v-if="rwCargando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                ✓ Cerrar ingreso ({{ rwEscaneadosArr.length }})
+                ✓ Finalizar y registrar ({{ rwEscaneadosArr.length }})
             </button>
         </div>
 
@@ -6042,7 +6092,7 @@
         <!-- Barra de escaneo -->
         <div class="p-3 bg-gray-800 border-b border-gray-700 shrink-0">
             <div class="flex gap-2">
-                <input v-model="auditBusq" @keyup.enter="auditEscanear(null)" type="text" inputmode="none"
+                <input v-model="auditBusq" data-ctx-input="auditBusq" @keyup.enter="auditEscanear(null)" type="text" inputmode="none"
                        placeholder="Escanear código de barras..."
                        class="flex-1 bg-gray-700 text-white font-mono px-4 py-2.5 rounded-xl border border-gray-600 outline-none focus:border-purple-400 text-sm tracking-widest">
                 <button @click="toggleCamaraAudit" class="w-11 h-11 rounded-xl flex items-center justify-center transition-colors" :class="camaraAuditAbierta ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'">
@@ -6061,6 +6111,7 @@
             </div>
             <!-- Visor de cámara -->
             <div v-show="camaraAuditAbierta" class="mt-2 rounded-xl overflow-hidden">
+                <div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div>
                 <div id="reader-audit" class="bg-black w-full"></div>
                 <button @click="toggleCamaraAudit" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button>
             </div>
@@ -7281,6 +7332,7 @@
         const guiaTipo = ref('SALIDA');
         const guiaZonaDestino = ref('');
         const guiaItems = ref([]);
+        const guiaFreshCb = ref(null); // [v2.8.30] cod_barras recién agregado → dispara slide-in (se limpia al instante)
         const guiaBusq = ref('');
         const guiaObs = ref('');
         const guiaObsModal = ref(false);
@@ -7289,6 +7341,7 @@
         const guiaHistorialCargando = ref(false);
         const guiaDetallando = ref(null); // guía expandida en historial
         const guiaDetalle = ref([]); // items del guiaDetallando
+        const reabriendoGuiaId = ref(null); // [v2.8.30] id de la guía que se está reabriendo (lock UI)
         const guiaCamara = ref(false);
         let html5QrGuia = null;
         // Cajero activo en zona (para bloquear ventas sin cajero)
@@ -7325,6 +7378,105 @@
         let html5QrAudit = null;
         const camaraGuiaAbierta = ref(false);
         let html5QrGuiaScanner = null;
+
+        // ── Escaneo de cámara CONTINUO (no cierra tras 1) ──────────────────────────
+        // Html5Qrcode entrega el MISMO frame varias veces por segundo mientras el QR
+        // sigue en cuadro. Sin guarda, un solo producto se contaría N veces y/o la
+        // cámara se cerraría. Esta guarda permite:
+        //   • repetir el mismo código sólo tras `gap` ms (debounce del frame),
+        //   • o re-escanearlo de inmediato si el operario lo retira y lo vuelve a poner
+        //     (cualquier código distinto en el medio "limpia" el último).
+        // Devuelve true si el escaneo debe procesarse, false si es eco del mismo frame.
+        const _camScanGuard = {};   // { reader: { last:'', t:0 } }
+        const _aceptarScanContinuo = (reader, txt, gap = 1200) => {
+            const s = _camScanGuard[reader] || (_camScanGuard[reader] = { last: '', t: 0 });
+            const now = Date.now();
+            // Mismo texto dentro de la ventana → eco del frame, ignorar.
+            if (txt === s.last && (now - s.t) < gap) { s.t = now; return false; }
+            s.last = txt; s.t = now;
+            return true;
+        };
+        const _resetScanGuard = (reader) => { _camScanGuard[reader] = { last: '', t: 0 }; };
+
+        // ════════════════════════════════════════════════════════════════════════════
+        // [v2.8.30] RUTEO DEL SCAN POR CONTEXTO + AUTOCIERRE DE FLUJO DE GUÍA (5 min)
+        // ════════════════════════════════════════════════════════════════════════════
+        // BUG money/operación que arregla: cuando el operario está en un flujo de GUÍA y
+        // un scanner físico (teclado USB) dispara dígitos+Enter sin que el input de la
+        // guía tenga foco (toast roba foco, salvapantallas, etc.), el código caía en el
+        // buscador del POS y el producto se agregaba al CARRITO DE VENTA en vez de a la
+        // guía. Regla deseada: si hay un flujo de guía ABIERTO, el scan va a la guía; si
+        // no, va a la venta. Tras 5 min de inactividad en un flujo de guía, se cierra TODO
+        // el flujo y se vuelve a VENTAS (POS), donde el scan agrega a venta por defecto.
+        //
+        // _scanContextActivo() devuelve el handler correcto según el overlay abierto.
+        const _scanContextActivo = () => {
+            // Recibir guía de almacén: paso 'escaneo' rutea a producto; paso 'guia' al QR de la guía.
+            if (modoRecibirWH.value) {
+                if (rwPaso.value === 'escaneo') return { ctx: 'recibir-wh', input: 'rwBusq', run: rwEscanearItem };
+                return { ctx: 'recibir-wh-guia', input: 'rwIdGuia', run: rwCargarGuia };
+            }
+            // Auditoría de stock.
+            if (modoAuditoria.value) return { ctx: 'auditoria', input: 'auditBusq', run: () => auditEscanear(null) };
+            // Guías salida/entrada: solo cuando estás en el FORM (escaneando items), no en el selector ni el historial.
+            if (modoGuias.value && guiaFlujo.value === 'form' && (guiaTab.value === 'salida' || guiaTab.value === 'entrada')) {
+                return { ctx: 'guia', input: 'guiaBusq', run: guiaBuscarItem };
+            }
+            // Sin flujo de guía abierto → VENTA (POS).
+            return { ctx: 'venta', input: 'bBuscador', run: procesarEscaneoOBusqueda };
+        };
+        // ¿Estamos dentro de un flujo de guía/recepción/auditoría? (≠ venta)
+        const _enFlujoGuia = () => {
+            const c = _scanContextActivo().ctx;
+            return c !== 'venta';
+        };
+
+        // Despachador central de un código escaneado por TECLADO/HARDWARE (no cámara).
+        // Inyecta el código en el ref del contexto activo y dispara su handler. Garantiza
+        // que el scan NO se cruce: guía→guía, venta→venta. Reinicia el reloj de inactividad.
+        const _despacharScanContexto = (codigo) => {
+            const cod = String(codigo || '').trim();
+            if (!cod) return;
+            const ctx = _scanContextActivo();
+            _tocarActividadGuia(); // cualquier scan reinicia el reloj de 5 min de la guía
+            if (ctx.ctx === 'venta') {
+                currentModule.value = 'POS';
+                bBuscador.value = cod;
+                _lastWasFastInput = true; // vino de scanner → match estricto
+                nextTick(() => { try { procesarEscaneoOBusqueda(); } catch(_){} });
+                return;
+            }
+            // Flujo de guía: setear el ref correcto y correr su handler.
+            if (ctx.input === 'guiaBusq')      guiaBusq.value = cod;
+            else if (ctx.input === 'rwBusq')   rwBusq.value = cod;
+            else if (ctx.input === 'rwIdGuia') rwIdGuia.value = cod;
+            else if (ctx.input === 'auditBusq') auditBusq.value = cod;
+            nextTick(() => { try { ctx.run(); } catch(_){} });
+        };
+
+        // ── Reloj de inactividad del flujo de guía (5 min → cerrar todo y volver a ventas) ──
+        const GUIA_INACTIVIDAD_MS = 5 * 60 * 1000;
+        let _guiaInactivTimer = null;
+        const _cerrarTodoFlujoGuia = (porInactividad) => {
+            try {
+                if (modoGuias.value)      { try { cerrarGuias(); } catch(_){} }
+                if (modoRecibirWH.value)  { try { cerrarRecibirWH(); } catch(_){} }
+                if (modoAuditoria.value)  { try { cerrarAuditoria(); } catch(_){} }
+            } catch(_){}
+            currentModule.value = 'POS'; // todos los caminos vuelven a VENTAS — ahí el scan es de venta
+            if (porInactividad) {
+                try { agregarToast('Guía cerrada por inactividad', 'Volviste a Ventas. El escaneo ahora suma a la venta.', 'info', 5000); } catch(_){}
+                nextTick(() => { try { if (scannerInput.value) scannerInput.value.focus({ preventScroll: true }); } catch(_){} });
+            }
+        };
+        const _detenerInactividadGuia = () => { if (_guiaInactivTimer) { clearTimeout(_guiaInactivTimer); _guiaInactivTimer = null; } };
+        const _tocarActividadGuia = () => {
+            _detenerInactividadGuia();
+            if (!_enFlujoGuia()) return; // solo cuenta cuando hay un flujo de guía abierto
+            _guiaInactivTimer = setTimeout(() => {
+                if (_enFlujoGuia()) _cerrarTodoFlujoGuia(true);
+            }, GUIA_INACTIVIDAD_MS);
+        };
 
         // --- RECIBIR GUÍA DE ALMACÉN (WH→ME por escaneo) — BUILD 1 ---
         const modoRecibirWH = ref(false);
@@ -7710,6 +7862,14 @@
            }
            // Persistir carrito para sobrevivir refreshes accidentales
            try { localStorage.setItem('mosexpress_carrito', JSON.stringify(newVal)); } catch(e) {}
+        }, { deep: true });
+
+        // [v2.8.30] Reloj de inactividad del flujo de guía: cualquier cambio en los items
+        // o en el estado del flujo reinicia el countdown de 5 min. Al cerrarse el flujo
+        // (todos los modos en false / fuera del form), el timer se detiene.
+        watch([modoGuias, modoRecibirWH, modoAuditoria, guiaFlujo, guiaTab, guiaItems, rwEscaneadosArr, auditItems, rwPaso], () => {
+            if (_enFlujoGuia()) _tocarActividadGuia();
+            else _detenerInactividadGuia();
         }, { deep: true });
 
         let _intervalFocus = null;
@@ -9359,6 +9519,44 @@
             } catch(e) {}
         };
 
+        // [v2.8.30] Doble bip ascendente — +1 al re-escanear el MISMO producto en una guía (réplica WH beepDouble)
+        const playBeepDouble = () => {
+            try { if ('vibrate' in navigator) navigator.vibrate(12); } catch(e) {}
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = _audioCtx(); if (!ctx) return;
+                [
+                    { t: 0.00, f: 1500, v: 0.8,  d: 0.07 },
+                    { t: 0.10, f: 2100, v: 0.85, d: 0.07 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'square'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // [v2.8.30] Feedback sensorial al sumar a la guía (réplica WH _sensorialAutoSum):
+        // glow en la fila + count-up del número + "+1" flotante. cb = cod_barras de la fila.
+        const _sensorialGuiaAutoSum = (cb) => {
+            requestAnimationFrame(() => {
+                try {
+                    const row = document.querySelector(`[data-guia-row="${CSS.escape(String(cb || ''))}"]`);
+                    if (!row) return;
+                    row.classList.remove('g-row-glow'); void row.offsetWidth; row.classList.add('g-row-glow');
+                    const qtyEl = row.querySelector('[data-guia-qty]');
+                    if (qtyEl) { qtyEl.classList.remove('g-qty-count'); void qtyEl.offsetWidth; qtyEl.classList.add('g-qty-count'); }
+                    const f = document.createElement('span'); f.className = 'g-plus-float'; f.textContent = '+1';
+                    row.appendChild(f);
+                    setTimeout(() => { try { f.remove(); } catch(_){} }, 860);
+                    setTimeout(() => { try { row.classList.remove('g-row-glow'); } catch(_){} }, 950);
+                } catch(_){}
+            });
+        };
+
         // [v2.5.42] Sonido cashRing — beep corto y agradable cuando aparece
         // un ticket nuevo en la lista. Más sutil que el de cobro asignado.
         const playCashRing = () => {
@@ -9758,20 +9956,11 @@
                 const codigo = _idleScanBuffer;
                 _idleScanBuffer = '';
                 if (_idleScanTimer) { clearTimeout(_idleScanTimer); _idleScanTimer = null; }
-                // Ocultar salvapantallas rápido + ir a POS + setear código
-                ocultarSalvapantalla({ forceFocus: true });
-                currentModule.value = 'POS';
-                bBuscador.value = codigo;
-                nextTick(() => {
-                    if (scannerInput.value) {
-                        scannerInput.value.value = codigo;
-                        try { scannerInput.value.focus({ preventScroll: true }); } catch(_){}
-                    }
-                    // Disparar el handler de Enter (mismo que cuando escribes manual)
-                    if (typeof procesarEscaneoOBusqueda === 'function') {
-                        procesarEscaneoOBusqueda();
-                    }
-                });
+                // [v2.8.30] Ocultar salvapantallas + RUTEAR POR CONTEXTO (no forzar POS a ciegas).
+                // Si había un flujo de guía abierto debajo del salvapantallas, el código va a la
+                // GUÍA, no al carrito de venta. Sin flujo de guía → va a venta.
+                ocultarSalvapantalla({ forceFocus: !_enFlujoGuia() });
+                _despacharScanContexto(codigo);
                 return;
             }
             // Otra tecla no-dígito → resetear buffer
@@ -9781,6 +9970,56 @@
             }
         };
         window.addEventListener('keydown', _onIdleKeydown);
+
+        // ════════════════════════════════════════════════════════════════════════════
+        // [v2.8.30] CAPTOR GLOBAL DEL SCANNER FÍSICO EN FLUJO DE GUÍA (anti-cruce con venta)
+        // ════════════════════════════════════════════════════════════════════════════
+        // Cuando hay un flujo de guía/recepción/auditoría ABIERTO y el scanner USB dispara
+        // una ráfaga de dígitos+Enter, pero el FOCO se perdió (un toast/botón/blur lo robó),
+        // el Enter caería en el buscador del POS y el producto entraría al CARRITO DE VENTA.
+        // Este captor detecta la ráfaga rápida (paso scanner) y la rutea a la GUÍA por
+        // contexto. Es CONSERVADOR: NO actúa si el foco YA está en el input correcto del
+        // contexto (deja que el @keyup.enter normal trabaje), ni si el foco está en un
+        // <input>/<textarea> distinto donde el operario está escribiendo cantidades/notas.
+        let _hwGuiaBuffer = '';
+        let _hwGuiaT0 = 0;
+        let _hwGuiaTimer = null;
+        const _CTX_INPUT_DOM = { guiaBusq: 'guiaBusq', rwBusq: 'rwBusq', rwIdGuia: 'rwIdGuia', auditBusq: 'auditBusq' };
+        const _onHwGuiaKeydown = (e) => {
+            if (idleScreen.value.visible) return;     // el salvapantallas tiene su propio captor
+            if (!_enFlujoGuia()) { _hwGuiaBuffer = ''; return; }  // solo dentro de un flujo de guía
+            const ctx = _scanContextActivo();
+            const ae = document.activeElement;
+            const tag = ae && ae.tagName ? ae.tagName.toUpperCase() : '';
+            // Si el foco está en el input CORRECTO del contexto, deja que el handler normal trabaje.
+            if (ae && ae.matches && ae.matches('input,textarea')) {
+                if (ae.getAttribute && ae.getAttribute('data-ctx-input') === _CTX_INPUT_DOM[ctx.input]) { _hwGuiaBuffer = ''; return; }
+                // Foco en OTRO campo editable (cantidad, nota, etc.) → no interferir con lo que teclea el operario.
+                return;
+            }
+            const now = Date.now();
+            if (/^[0-9A-Za-z]$/.test(e.key)) {
+                if (!_hwGuiaBuffer) _hwGuiaT0 = now;
+                _hwGuiaBuffer += e.key;
+                if (_hwGuiaTimer) clearTimeout(_hwGuiaTimer);
+                _hwGuiaTimer = setTimeout(() => { _hwGuiaBuffer = ''; }, 400); // >400ms entre teclas = humano, no scanner
+                return;
+            }
+            if (e.key === 'Enter' && _hwGuiaBuffer.length >= 4) {
+                const elapsed = now - _hwGuiaT0;
+                const cod = _hwGuiaBuffer;
+                _hwGuiaBuffer = '';
+                if (_hwGuiaTimer) { clearTimeout(_hwGuiaTimer); _hwGuiaTimer = null; }
+                // Ráfaga scanner-paced (≈≤30ms/char) y foco fuera del input correcto → ruteo por contexto.
+                if (elapsed < (cod.length * 35)) {
+                    e.preventDefault();
+                    _despacharScanContexto(cod);
+                }
+                return;
+            }
+            if (e.key !== 'Enter') { _hwGuiaBuffer = ''; if (_hwGuiaTimer) { clearTimeout(_hwGuiaTimer); _hwGuiaTimer = null; } }
+        };
+        window.addEventListener('keydown', _onHwGuiaKeydown, true); // capture: antes que los @keyup de los inputs
 
         // ════════════════════════════════════════════════════════════════════
         // [Atajos PC · pro-mode] Autodetecta PC (mouse fino + hover) → habilita atajos de teclado.
@@ -14966,14 +15205,16 @@
             camaraAbierta.value = !camaraAbierta.value;
             if(camaraAbierta.value) {
                 setTimeout(() => {
+                    _resetScanGuard('reader');
                     html5QrcodeScanner = new Html5Qrcode("reader");
                     html5QrcodeScanner.start(
                         { facingMode: "environment" },
                         { fps: 10, qrbox: { width: 250, height: 150 } },
                         (txt) => {
-                            const now = Date.now();
-                            if (now - _lastPosCamScan < 1500) return;
-                            _lastPosCamScan = now;
+                            // CONTINUO: la cámara queda abierta para seguir cobrando.
+                            // Mismo código = eco del frame (debounce). Un código distinto
+                            // entra de inmediato, así se cobran productos en ráfaga.
+                            if (!_aceptarScanContinuo('reader', txt)) return;
                             bBuscador.value = txt;
                             _lastWasFastInput = true; // cámara = scanner → match estricto
                             procesarEscaneoOBusqueda();
@@ -16953,6 +17194,12 @@
 
         // Computed: ¿está completo el flujo de devolución?
         // Todos los items con estado seleccionado + foto si no es BUEN_ESTADO + nota si es OTRO.
+        // [v2.8.30] Total de unidades en la guía en curso (contador en vivo, réplica WH)
+        const guiaTotalUnidades = computed(() => {
+            const t = guiaItems.value.reduce((s, it) => s + (parseFloat(it.cantidad) || 0), 0);
+            return Number.isInteger(t) ? String(t) : parseFloat(t.toFixed(3)).toString();
+        });
+
         const puedeConfirmarDevolucion = computed(() => {
             if (guiaSubtipo.value !== 'SALIDA_DEVOLUCION_WH') return true;
             if (!guiaItems.value.length) return false;
@@ -16968,15 +17215,18 @@
             camaraGuiaAbierta.value = !camaraGuiaAbierta.value;
             if (camaraGuiaAbierta.value) {
                 setTimeout(() => {
+                    _resetScanGuard('reader-guia');
                     html5QrGuiaScanner = new Html5Qrcode("reader-guia");
                     html5QrGuiaScanner.start(
                         { facingMode: "environment" },
                         { fps: 10, qrbox: { width: 250, height: 150 } },
                         (txt) => {
-                            camaraGuiaAbierta.value = false;
-                            if (html5QrGuiaScanner) { html5QrGuiaScanner.stop().then(() => { try { html5QrGuiaScanner.clear(); } catch(e) {} html5QrGuiaScanner = null; }).catch(() => { html5QrGuiaScanner = null; }); }
+                            // CONTINUO: la cámara NO se cierra; cada producto suma y el
+                            // operario sigue escaneando hasta cerrar a mano. Guarda anti
+                            // doble-conteo del mismo frame.
+                            if (!_aceptarScanContinuo('reader-guia', txt)) return;
                             guiaBusq.value = txt;
-                            guiaBuscarItem();
+                            guiaBuscarItem();   // ya da beep OK/ERROR por lectura
                         },
                         () => {}
                     ).catch(() => {
@@ -17064,12 +17314,14 @@
             rwCamara.value = !rwCamara.value;
             if (rwCamara.value) {
                 setTimeout(() => {
+                    _resetScanGuard('reader-recibir-wh');
                     html5QrRecibirWH = new Html5Qrcode("reader-recibir-wh");
                     html5QrRecibirWH.start(
                         { facingMode: "environment" },
                         { fps: 10, qrbox: { width: 250, height: 150 } },
                         (txt) => {
-                            // en paso 'guia' la cámara cierra al leer; en 'escaneo' sigue contando.
+                            // PASO 'guia' = un solo escaneo (lee el QR de la guía y cierra).
+                            // PASO 'escaneo' = CONTINUO (cuenta producto por producto sin cerrar).
                             if (rwPaso.value === 'guia') {
                                 rwCamara.value = false;
                                 if (html5QrRecibirWH) { html5QrRecibirWH.stop().then(() => { try { html5QrRecibirWH.clear(); } catch(e) {} html5QrRecibirWH = null; }).catch(() => { html5QrRecibirWH = null; }); }
@@ -17077,8 +17329,10 @@
                                 rwIdGuia.value = _rwExtraerIdGuia(txt);
                                 rwCargarGuia();
                             } else {
+                                // Guarda anti doble-conteo del mismo frame.
+                                if (!_aceptarScanContinuo('reader-recibir-wh', txt)) return;
                                 rwBusq.value = txt;
-                                rwEscanearItem();
+                                rwEscanearItem();   // ya da beep OK por lectura
                             }
                         },
                         () => {}
@@ -17232,15 +17486,23 @@
             if (idx >= 0) {
                 if (esGranel) {
                     focusGranelInput();
+                    playBeepOK();
                 } else {
                     guiaItems.value[idx].cantidad++;
+                    // [v2.8.30] +1 al mismo producto → bip doble + glow/count-up/"+1" flotante (réplica WH)
+                    playBeepDouble();
+                    _sensorialGuiaAutoSum(q);
                 }
             } else {
                 const stockActual = stockMap.value[q + '_' + guiaZona.value] ?? null;
                 guiaItems.value.push({ cod_barras: q, nombre, cantidad: 1, stockActual, unidadMedida });
                 if (esGranel) focusGranelInput();
+                // producto NUEVO en la lista → bip simple + slide-in (clase g-slide-in vía guiaFreshCb)
+                guiaFreshCb.value = q;
+                setTimeout(() => { if (guiaFreshCb.value === q) guiaFreshCb.value = null; }, 400);
+                playBeepOK();
             }
-            playBeepOK();
+            _tocarActividadGuia(); // reinicia el reloj de inactividad de 5 min
             guiaBusq.value = '';
         };
 
@@ -17435,6 +17697,53 @@
             } catch(e) {}
         };
 
+        // ════════════════════════════════════════════════════════════════════════════
+        // [v2.8.30] CANDADO DE GUÍAS — estado ABIERTA/CERRADA + reabrir con clave admin
+        // ════════════════════════════════════════════════════════════════════════════
+        // El backend ya tiene: cron me-autocierre-inactividad (autolock 30 min de inactividad,
+        // config mos.ME_AUTOCIERRE_MIN) + RPC me.reabrir_guia_zona (reabre + toca ultima_actividad
+        // → +30 min). listarGuias (GAS) ya devuelve g.estado leído de me.guias_cabecera vía
+        // me.zona_guias_listar. Aquí cableamos el FRONTEND: mostrar candado + botón reabrir.
+        const _normEstadoGuia = (g) => String(g && g.estado || '').trim().toUpperCase();
+        const esGuiaCerrada = (g) => _normEstadoGuia(g) === 'CERRADA';
+        // ABIERTA solo si el estado lo dice explícitamente (las locales optimistas usan 'CONFIRMADO' → sin candado)
+        const esGuiaAbierta = (g) => _normEstadoGuia(g) === 'ABIERTA';
+
+        // Reabre una guía CERRADA: pide clave admin (online MOS + fallback offline) y llama
+        // me.reabrir_guia_zona directo a Supabase. Patrón optimista: parchea el estado local a
+        // ABIERTA ANTES del refresh (si no, el próximo listarGuias la repintaría CERRADA).
+        const reabrirGuia = (guia) => {
+            if (!guia || !guia.id_guia) return;
+            if (!esGuiaCerrada(guia)) { agregarToast('Guía ya abierta', 'No requiere reabrir'); return; }
+            pedirPin(async (resultado) => {
+                if (!resultado || !resultado.autorizado) return;
+                reabriendoGuiaId.value = guia.id_guia;
+                try {
+                    const token = await _mintTokenSB();
+                    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/reabrir_guia_zona`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: { idGuia: String(guia.id_guia), usuario: String(resultado.validadoPor || config.value.vendedor || '') } })
+                    });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const d = await res.json();
+                    if (!d || !d.ok) throw new Error((d && d.error) || 'RPC rechazó');
+                    // Parche optimista local ANTES del refresh (evita repintado a CERRADA)
+                    const gi = guiaHistorial.value.findIndex(x => x.id_guia === guia.id_guia);
+                    if (gi >= 0) guiaHistorial.value[gi] = { ...guiaHistorial.value[gi], estado: 'ABIERTA' };
+                    try { lsSet('mosexpress_guias_' + guiaZona.value, JSON.stringify(guiaHistorial.value)); } catch(_){}
+                    try { playVentaOK?.(); } catch(_){}
+                    agregarToast('🔓 Guía reabierta', guia.id_guia + ' · +30 min de actividad', 'success', 4000);
+                    // Refresca del backend tras un beat (la verdad ya está parcheada localmente)
+                    setTimeout(() => { if (modoGuias.value) listarGuiasHistorial(); }, 2500);
+                } catch (e) {
+                    agregarToast('No se pudo reabrir', String(e.message || e), 'warning', 6000);
+                } finally {
+                    reabriendoGuiaId.value = null;
+                }
+            }, { accion: 'REABRIR_GUIA', refDocumento: String(guia.id_guia) });
+        };
+
         const imprimirGuia = async (guia) => {
             if (!config.value.estacion?.PrintNode_ID) { agregarToast('Error', 'Sin impresora configurada'); return; }
             let items = guiaDetalle.value;
@@ -17585,14 +17894,15 @@
             camaraAuditAbierta.value = !camaraAuditAbierta.value;
             if (camaraAuditAbierta.value) {
                 setTimeout(() => {
+                    _resetScanGuard('reader-audit');
                     html5QrAudit = new Html5Qrcode("reader-audit");
                     html5QrAudit.start(
                         { facingMode: "environment" },
                         { fps: 10, qrbox: { width: 250, height: 150 } },
                         (txt) => {
-                            camaraAuditAbierta.value = false;
-                            if (html5QrAudit) { html5QrAudit.stop().then(() => { try { html5QrAudit.clear(); } catch(e) {} html5QrAudit = null; }).catch(() => { html5QrAudit = null; }); }
-                            auditEscanear(txt);
+                            // CONTINUO: cuenta producto tras producto sin cerrar la cámara.
+                            if (!_aceptarScanContinuo('reader-audit', txt)) return;
+                            auditEscanear(txt);   // ya da beep OK/ERROR y avisa duplicados
                         },
                         () => {}
                     ).catch(() => {
@@ -17771,6 +18081,8 @@
           guiaHistorial, guiaHistorialCargando, guiaDetallando, guiaDetalle, camaraGuiaAbierta,
           abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
           guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
+          // [v2.8.30] UX moderna + candado de guías
+          guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, reabrirGuia, reabriendoGuiaId,
           // [BUILD 1] Recibir guía de almacén (WH→ME por escaneo)
           modoRecibirWH, rwPaso, rwIdGuia, rwGuia, rwEscaneadosArr, rwResultado, rwBusq, rwCargando, rwCamara, rwTotalEscaneado,
           abrirRecibirWH, cerrarRecibirWH, rwToggleCamara, rwCargarGuia, rwEscanearItem, rwCerrarIngreso,
