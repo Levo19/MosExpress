@@ -5769,19 +5769,27 @@
         <div v-if="guiaTab === 'entrada'" class="flex-1 overflow-y-auto">
             <!-- Paso 1: elegir tipo de entrada -->
             <div v-if="guiaFlujo === 'tipo'" class="p-4 space-y-3">
-                <p class="text-gray-400 text-xs uppercase tracking-wider font-bold mb-4">¿De dónde viene la mercadería?</p>
-                <!-- Recibir guía de almacén POR ESCANEO (WH→ME) — el flujo del dueño -->
+                <p class="text-gray-400 text-xs uppercase tracking-wider font-bold mb-2">¿De dónde viene la mercadería?</p>
+
+                <!-- ── MERCADERÍA DEL ALMACÉN (llegó con guía) ───────────────── -->
+                <p class="text-emerald-400/80 text-[11px] uppercase tracking-widest font-black mb-1">Llegó del almacén (con guía)</p>
+                <!-- Recibir guía de almacén POR ESCANEO (WH→ME) — el flujo del dueño · RECOMENDADO -->
                 <button @click="abrirRecibirWH()" class="w-full bg-gradient-to-r from-emerald-900/50 to-teal-900/40 hover:from-emerald-800/60 hover:to-teal-800/50 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-emerald-500/40 shadow-lg shadow-emerald-900/20">
                     <div class="w-12 h-12 bg-emerald-500/30 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg></div>
-                    <div><p class="text-white font-black">Recibir guía de almacén</p><p class="text-emerald-300/80 text-xs mt-0.5">Escanea el código de la guía y cuenta producto por producto</p></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2"><p class="text-white font-black">Recibir guía de almacén</p><span class="text-[9px] font-black bg-emerald-500 text-white px-1.5 py-0.5 rounded uppercase tracking-wider">Recomendado</span></div>
+                        <p class="text-emerald-300/80 text-xs mt-0.5">1) Escanea el QR de la guía con la cámara &nbsp;·&nbsp; 2) Cuenta producto por producto</p>
+                    </div>
                     <svg class="w-5 h-5 text-emerald-400 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </button>
-                <!-- Despacho de almacén (registro manual legado) -->
-                <button @click="seleccionarSubtipoGuia('ENTRADA_ALMACEN')" class="w-full bg-gray-800 hover:bg-gray-700 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-gray-700">
-                    <div class="w-12 h-12 bg-emerald-500/20 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg></div>
-                    <div><p class="text-white font-black">Registro manual</p><p class="text-gray-400 text-xs mt-0.5">Ingreso sin escanear la guía (legado)</p></div>
-                    <svg class="w-5 h-5 text-gray-500 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                <!-- Mismo destino, sin escáner (fallback: cámara dañada / QR ilegible) -->
+                <button @click="seleccionarSubtipoGuia('ENTRADA_ALMACEN')" class="w-full bg-gray-800/70 hover:bg-gray-700 rounded-2xl px-4 py-3 flex items-center gap-3 text-left active:scale-95 transition-all border border-gray-700/70">
+                    <div class="w-9 h-9 bg-emerald-500/15 rounded-lg flex items-center justify-center shrink-0"><svg class="w-5 h-5 text-emerald-400/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></div>
+                    <div class="flex-1 min-w-0"><p class="text-gray-200 font-bold text-sm">…o ingresarla a mano</p><p class="text-gray-500 text-xs mt-0.5">Sin escáner (si la cámara o el QR fallan)</p></div>
+                    <svg class="w-4 h-4 text-gray-600 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </button>
+
+                <p class="text-gray-500/80 text-[11px] uppercase tracking-widest font-black mb-1 mt-4">Sin guía de almacén</p>
                 <!-- Traslado interno (informativo) -->
                 <div class="w-full bg-gray-800 rounded-2xl p-4 border border-gray-700">
                     <div class="flex items-center gap-4">
@@ -5933,8 +5941,15 @@
         <!-- PASO A: escanear / teclear el idGuiaWH -->
         <div v-if="rwPaso === 'guia'" class="flex-1 overflow-y-auto p-4 space-y-4">
             <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl px-4 py-3 text-xs text-emerald-300 font-bold">
-                Escanea el QR / código impreso en la guía del almacén, o tecléalo.
+                Paso 1 de 2 · Apunta la cámara al <b>QR del ticket</b> de la guía del almacén. También puedes teclear el código (G…).
             </div>
+            <!-- CTA primaria: abrir la cámara para leer el QR del ticket WH -->
+            <button v-if="!rwCamara" @click="rwToggleCamara"
+                    class="w-full py-4 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 text-white active:scale-95 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                Escanear QR de la guía
+            </button>
+            <p v-if="!rwCamara" class="text-gray-500 text-[11px] text-center font-bold">— o ingresa el código a mano —</p>
             <div class="flex gap-2">
                 <input v-model="rwIdGuia" @keyup.enter="rwCargarGuia" type="text" placeholder="Código de la guía (G...)"
                        class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-lg tracking-widest">
@@ -16994,6 +17009,40 @@
             return await res.json();
         };
 
+        // Extrae el idGuia de lo que devuelve el escáner/teclado.
+        // El ticket SALIDA_ZONA de WH imprime un QR cuyo contenido es una URL:
+        //   https://<host>/reporte.html?tipo=guia&id=G1781445112212
+        // pero el operario también puede teclear el idGuia plano ("G1781445112212")
+        // o, eventualmente, escanear un QR con JSON ({"id":"G..."} / {"idGuia":"G..."}).
+        // Esta función normaliza los 3 casos a un idGuia limpio.
+        const _rwExtraerIdGuia = (raw) => {
+            let s = String(raw == null ? '' : raw).trim();
+            if (!s) return '';
+            // 1) JSON con id / idGuia / idGuiaWH
+            if (s[0] === '{' || s[0] === '[') {
+                try {
+                    const o = JSON.parse(s);
+                    const cand = o && (o.idGuia || o.idGuiaWH || o.id || o.guia);
+                    if (cand) return String(cand).trim();
+                } catch (_e) { /* no era JSON válido, sigue */ }
+            }
+            // 2) URL (o cualquier texto con querystring) → parámetro id / idGuia
+            if (/[?&](id|idGuia|idGuiaWH)=/i.test(s)) {
+                const m = s.match(/[?&](?:id|idGuia|idGuiaWH)=([^&#\s]+)/i);
+                if (m && m[1]) { try { return decodeURIComponent(m[1]).trim(); } catch (_e) { return m[1].trim(); } }
+            }
+            // 3) URL sin querystring pero con el idGuia en el path (.../G123456)
+            if (/^https?:\/\//i.test(s)) {
+                const seg = s.split(/[?#]/)[0].split('/').filter(Boolean).pop() || '';
+                const mp = seg.match(/G\d{6,}/i);
+                if (mp) return mp[0];
+            }
+            // 4) Texto plano: si trae un patrón tipo guía embebido, úsalo; si no, el texto tal cual.
+            const mg = s.match(/\bG\d{6,}\b/i);
+            if (mg) return mg[0];
+            return s;
+        };
+
         const abrirRecibirWH = () => {
             // hereda guiaZona (ya seteado por abrirGuias). Resetea el flujo.
             modoRecibirWH.value = true;
@@ -17024,7 +17073,8 @@
                             if (rwPaso.value === 'guia') {
                                 rwCamara.value = false;
                                 if (html5QrRecibirWH) { html5QrRecibirWH.stop().then(() => { try { html5QrRecibirWH.clear(); } catch(e) {} html5QrRecibirWH = null; }).catch(() => { html5QrRecibirWH = null; }); }
-                                rwIdGuia.value = txt;
+                                // El QR del ticket WH es una URL (...&id=G...). Extraemos el idGuia.
+                                rwIdGuia.value = _rwExtraerIdGuia(txt);
                                 rwCargarGuia();
                             } else {
                                 rwBusq.value = txt;
@@ -17044,7 +17094,9 @@
         };
 
         const rwCargarGuia = async () => {
-            const id = String(rwIdGuia.value || '').trim();
+            // Normaliza por si pegaron una URL/JSON en el input o vino del escáner.
+            const id = _rwExtraerIdGuia(rwIdGuia.value);
+            if (id && id !== String(rwIdGuia.value || '').trim()) rwIdGuia.value = id;
             if (!id) return;
             rwCargando.value = true;
             try {
