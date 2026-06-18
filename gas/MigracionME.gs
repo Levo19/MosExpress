@@ -325,10 +325,13 @@ function migrarME(opts){
     'ventas_fantasma','auditorias','caja_alertas_efectivo','pickups_pendientes_envio','stock_zonas','radio_config'];
   var tablas=opts.soloTabla?[opts.soloTabla]:_ORDEN;
   var resumen={};
+  var _off=_meSyncOffSet();   // [cutover] respetar también en el backfill manual (no pisar lo directo)
 
   for(var ti=0; ti<tablas.length; ti++){
     var tabla=tablas[ti], cfg=_ME_SPECS[tabla];
     if(!cfg){ resumen[tabla]={error:'spec desconocida'}; continue; }
+    // [cutover stock-directo] no re-subir desde la Hoja una tabla que gobierna Supabase (salvo soloTabla explícito).
+    if(_off[tabla] && !opts.soloTabla){ resumen[tabla]={saltado:'sync OFF (ME_SYNC_OFF_TABLAS)'}; continue; }
     try{
       // hoja inexistente (ej. VENTAS_FANTASMA antes del 1er rechazo) → saltar limpio
       if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(cfg.sheet)){ resumen[tabla]={saltado:'hoja no existe: '+cfg.sheet}; continue; }
@@ -488,10 +491,111 @@ function _meDirtyRemove(spec, quitar){
   }catch(e){}
 }
 
+// [cutover stock-directo] Tablas excluidas del sync Hoja→Supabase. Script Property ME_SYNC_OFF_TABLAS
+// = lista separada por comas (ej. "stock_zonas,guias_cabecera,guias_detalle"). Una vez que la ESCRITURA
+// directa está ON, esas tablas las gobierna Supabase → re-upsertear la Hoja encima las PISARÍA con un valor
+// viejo (la Hoja ya no es la fuente de verdad de esas tablas). Default vacío → sync idéntico a hoy.
+// Revertir: borrar la Property (y poner ME_ESCRITURA_STOCK_DIRECTA OFF).
+function _meSyncOffSet(){
+  try{
+    var raw=String(PropertiesService.getScriptProperties().getProperty('ME_SYNC_OFF_TABLAS')||'');
+    var set={}; raw.split(',').forEach(function(t){ var k=t.trim().toLowerCase(); if(k) set[k]=1; });
+    return set;
+  }catch(e){ return {}; }
+}
+
+// [cutover] Setter de ME_SYNC_OFF_TABLAS desde un array/lista (idempotente, normaliza a minúsculas+únicos).
+function _meSyncOffSetTablas(tablas){
+  var set={};
+  (tablas||[]).forEach(function(t){ var k=String(t||'').trim().toLowerCase(); if(k) set[k]=1; });
+  var csv=Object.keys(set).join(',');
+  PropertiesService.getScriptProperties().setProperty('ME_SYNC_OFF_TABLAS', csv);
+  return csv;
+}
+
+// ============================================================
+// ACTIVACIÓN DE UN CLIC — "stock 100% Supabase" para MosExpress.
+// El dueño abre el editor de Apps Script, selecciona activarMESupabase y le da ▶.
+// Hace DOS cosas (idempotentes — correrla 2x no rompe nada):
+//   1) ME_SYNC_OFF_TABLAS = 'stock_zonas,guias_cabecera,guias_detalle'
+//      → el sync Hoja→Supabase deja de PISAR esas tablas (ya las gobierna Supabase).
+//   2) ME_ESCRITURA_STOCK_DIRECTA = '1'
+//      → el cierre de caja descuenta el SALDO por RPC atómica (kardex me.stock_movimientos),
+//        ya no por read-modify-write en la Hoja.
+// NO toca Supabase (el flip de v_aplicar_stock lo maneja el dueño aparte).
+// Devuelve + loggea el estado de cada flag para que el dueño VEA que quedó activo.
+// ============================================================
+var _ME_TABLAS_SYNC_OFF = ['stock_zonas','guias_cabecera','guias_detalle'];
+
+function activarMESupabase(){
+  var p = PropertiesService.getScriptProperties();
+  var csv = _meSyncOffSetTablas(_ME_TABLAS_SYNC_OFF);   // (1) apaga sync de las tablas de stock
+  p.setProperty('ME_ESCRITURA_STOCK_DIRECTA', '1');     // (2) escritura directa de stock ON
+
+  var estado = {
+    ok: true,
+    accion: 'ACTIVADO — stock 100% Supabase',
+    ME_SYNC_OFF_TABLAS: p.getProperty('ME_SYNC_OFF_TABLAS') || '(vacío)',
+    ME_ESCRITURA_STOCK_DIRECTA: p.getProperty('ME_ESCRITURA_STOCK_DIRECTA') || '(vacío)',
+    sync_off_ok: (csv === _ME_TABLAS_SYNC_OFF.join(',')),
+    escritura_directa_ok: (String(p.getProperty('ME_ESCRITURA_STOCK_DIRECTA')) === '1'),
+    nota: 'El descuento de stock por venta ahora va por RPC atómica a Supabase. Si una RPC falla, ' +
+          'queda en la cola ME_DESCUENTO_PENDIENTE para reintento idempotente (no se pierde, no duplica). ' +
+          'Para revertir todo: correr revertirMESupabase.'
+  };
+  var msg = '✅ activarMESupabase — stock 100% Supabase ACTIVO\n' +
+            '   ME_SYNC_OFF_TABLAS         = ' + estado.ME_SYNC_OFF_TABLAS + (estado.sync_off_ok ? '  ✓' : '  ✗ REVISAR') + '\n' +
+            '   ME_ESCRITURA_STOCK_DIRECTA = ' + estado.ME_ESCRITURA_STOCK_DIRECTA + (estado.escritura_directa_ok ? '  ✓' : '  ✗ REVISAR') + '\n' +
+            (estado.sync_off_ok && estado.escritura_directa_ok
+              ? '   → Ambos flags quedaron correctos. ME ya opera stock contra Supabase.'
+              : '   → ⚠ Algún flag NO quedó como se esperaba — revisar arriba.');
+  Logger.log(msg);
+  estado._resumen = msg;
+  return estado;
+}
+
+function revertirMESupabase(){
+  var p = PropertiesService.getScriptProperties();
+  p.setProperty('ME_SYNC_OFF_TABLAS', '');              // reactiva el sync Hoja→Supabase de todas las tablas
+  p.setProperty('ME_ESCRITURA_STOCK_DIRECTA', '0');     // vuelve al read-modify-write de la Hoja
+
+  var estado = {
+    ok: true,
+    accion: 'REVERTIDO — vuelta al modelo Hoja',
+    ME_SYNC_OFF_TABLAS: p.getProperty('ME_SYNC_OFF_TABLAS') || '(vacío)',
+    ME_ESCRITURA_STOCK_DIRECTA: p.getProperty('ME_ESCRITURA_STOCK_DIRECTA') || '(vacío)',
+    sync_off_ok: (String(p.getProperty('ME_SYNC_OFF_TABLAS') || '') === ''),
+    escritura_directa_off_ok: (String(p.getProperty('ME_ESCRITURA_STOCK_DIRECTA')) === '0'),
+    nota: 'Stock vuelve a la Hoja (read-modify-write) y el sync Hoja→Supabase reanuda en todas las tablas. ' +
+          'Reversible sin redeploy. Para reactivar: correr activarMESupabase.'
+  };
+  var msg = '↩ revertirMESupabase — vuelta al modelo Hoja\n' +
+            '   ME_SYNC_OFF_TABLAS         = "' + estado.ME_SYNC_OFF_TABLAS + '"' + (estado.sync_off_ok ? '  ✓ (vacío = sync activo)' : '  ✗ REVISAR') + '\n' +
+            '   ME_ESCRITURA_STOCK_DIRECTA = ' + estado.ME_ESCRITURA_STOCK_DIRECTA + (estado.escritura_directa_off_ok ? '  ✓ (OFF)' : '  ✗ REVISAR');
+  Logger.log(msg);
+  estado._resumen = msg;
+  return estado;
+}
+
+// Diagnóstico de solo lectura: muestra el estado actual de los flags sin cambiar nada.
+function estadoMESupabase(){
+  var p = PropertiesService.getScriptProperties();
+  var out = {
+    ME_SYNC_OFF_TABLAS: p.getProperty('ME_SYNC_OFF_TABLAS') || '(vacío)',
+    ME_ESCRITURA_STOCK_DIRECTA: p.getProperty('ME_ESCRITURA_STOCK_DIRECTA') || '(vacío)',
+    activo: (String(p.getProperty('ME_ESCRITURA_STOCK_DIRECTA')) === '1')
+  };
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
 function _syncMEImpl(full){
   var resumen={};
+  var _off=_meSyncOffSet();
   Object.keys(_ME_SPECS).forEach(function(tabla){
     var cfg=_ME_SPECS[tabla];
+    // [cutover stock-directo] tabla excluida del sync (la gobierna Supabase) → NO re-upsertear desde la Hoja.
+    if(_off[tabla]){ resumen[tabla]={skipped:'sync OFF (ME_SYNC_OFF_TABLAS)'}; return; }
     // [correlativo Supabase] si Postgres es el minter, NO re-sincronizar el contador desde Sheets
     // (lo revertiría a un valor viejo → duplicado/hueco SUNAT). El espejo Sheets lo mantiene el write-back.
     if(tabla==='correlativos' && _fuenteCorrelativo()==='supabase'){ resumen[tabla]={skipped:'minter=supabase'}; return; }

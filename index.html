@@ -5770,10 +5770,16 @@
             <!-- Paso 1: elegir tipo de entrada -->
             <div v-if="guiaFlujo === 'tipo'" class="p-4 space-y-3">
                 <p class="text-gray-400 text-xs uppercase tracking-wider font-bold mb-4">¿De dónde viene la mercadería?</p>
-                <!-- Despacho de almacén -->
+                <!-- Recibir guía de almacén POR ESCANEO (WH→ME) — el flujo del dueño -->
+                <button @click="abrirRecibirWH()" class="w-full bg-gradient-to-r from-emerald-900/50 to-teal-900/40 hover:from-emerald-800/60 hover:to-teal-800/50 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-emerald-500/40 shadow-lg shadow-emerald-900/20">
+                    <div class="w-12 h-12 bg-emerald-500/30 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg></div>
+                    <div><p class="text-white font-black">Recibir guía de almacén</p><p class="text-emerald-300/80 text-xs mt-0.5">Escanea el código de la guía y cuenta producto por producto</p></div>
+                    <svg class="w-5 h-5 text-emerald-400 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </button>
+                <!-- Despacho de almacén (registro manual legado) -->
                 <button @click="seleccionarSubtipoGuia('ENTRADA_ALMACEN')" class="w-full bg-gray-800 hover:bg-gray-700 rounded-2xl p-4 flex items-center gap-4 text-left active:scale-95 transition-all border border-gray-700">
                     <div class="w-12 h-12 bg-emerald-500/20 rounded-xl flex items-center justify-center shrink-0"><svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg></div>
-                    <div><p class="text-white font-black">Despacho de almacén</p><p class="text-gray-400 text-xs mt-0.5">Mercadería oficial del almacén central</p></div>
+                    <div><p class="text-white font-black">Registro manual</p><p class="text-gray-400 text-xs mt-0.5">Ingreso sin escanear la guía (legado)</p></div>
                     <svg class="w-5 h-5 text-gray-500 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </button>
                 <!-- Traslado interno (informativo) -->
@@ -5910,6 +5916,95 @@
                 <span v-else class="text-xs text-gray-600">Sin observación</span>
                 <button @click="guiaObsModal = false" class="text-xs font-black bg-amber-500 text-white px-3 py-1.5 rounded-lg active:scale-95">Listo ✓</button>
             </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL FULLSCREEN: RECIBIR GUÍA DE ALMACÉN (WH→ME por escaneo) ===== -->
+    <div v-if="modoRecibirWH" class="fixed inset-0 bg-gray-900 z-[71] flex flex-col overflow-hidden">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-4 py-3 bg-emerald-600 shrink-0">
+            <div>
+                <p class="text-white font-black text-base uppercase tracking-widest leading-none">Recibir guía · {{ guiaZona }}</p>
+                <p class="text-emerald-100 text-xs mt-0.5">{{ rwGuia ? ('Guía ' + rwGuia.idGuiaWH) : 'Escanea el código de la guía de almacén' }}</p>
+            </div>
+            <button @click="cerrarRecibirWH" class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
+        </div>
+
+        <!-- PASO A: escanear / teclear el idGuiaWH -->
+        <div v-if="rwPaso === 'guia'" class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl px-4 py-3 text-xs text-emerald-300 font-bold">
+                Escanea el QR / código impreso en la guía del almacén, o tecléalo.
+            </div>
+            <div class="flex gap-2">
+                <input v-model="rwIdGuia" @keyup.enter="rwCargarGuia" type="text" placeholder="Código de la guía (G...)"
+                       class="flex-1 bg-gray-800 text-white font-mono px-4 py-3 rounded-xl border border-gray-700 outline-none focus:border-emerald-500 text-lg tracking-widest">
+                <button @click="rwCargarGuia" :disabled="rwCargando" class="bg-emerald-500 disabled:bg-emerald-900/40 text-white font-black px-4 rounded-xl active:scale-95 text-lg">→</button>
+                <button @click="rwToggleCamara" class="w-11 rounded-xl flex items-center justify-center transition-colors" :class="rwCamara ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </button>
+            </div>
+            <div v-show="rwCamara" class="rounded-xl overflow-hidden"><div id="reader-recibir-wh" class="bg-black w-full"></div><button @click="rwToggleCamara" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
+            <div v-if="rwCargando" class="flex justify-center py-8"><svg class="animate-spin w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg></div>
+        </div>
+
+        <!-- PASO B: escanear producto por producto (NO se muestra la cantidad esperada) -->
+        <div v-if="rwPaso === 'escaneo'" class="flex-1 flex flex-col overflow-hidden">
+            <div class="p-3 bg-gray-800 border-b border-gray-700 shrink-0 space-y-2">
+                <div v-if="rwGuia && rwGuia.verificada" class="bg-amber-900/40 border border-amber-600/50 rounded-lg px-3 py-2 text-[11px] text-amber-200 font-bold">
+                    ⚠ Esta guía ya fue recibida antes. Si "Cerrar ingreso" no se reenviará (idempotente).
+                </div>
+                <div class="flex gap-2">
+                    <input v-model="rwBusq" @keyup.enter="rwEscanearItem" type="text" placeholder="Escanear producto..."
+                           class="flex-1 bg-gray-700 text-white font-mono px-4 py-2.5 rounded-xl border border-gray-600 outline-none focus:border-emerald-400 text-sm tracking-widest">
+                    <button @click="rwEscanearItem" class="bg-emerald-500 text-white font-black px-4 rounded-xl active:scale-95 text-lg">+</button>
+                    <button @click="rwToggleCamara" class="w-11 rounded-xl flex items-center justify-center" :class="rwCamara ? 'bg-red-500 text-white' : 'bg-gray-700 text-gray-300'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+                <div v-show="rwCamara" class="rounded-xl overflow-hidden"><div id="reader-recibir-wh" class="bg-black w-full"></div></div>
+                <p class="text-emerald-300 text-xs font-bold text-center">{{ rwEscaneadosArr.length }} producto(s) contado(s) · {{ rwTotalEscaneado }} unidades</p>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 space-y-2">
+                <p v-if="!rwEscaneadosArr.length" class="text-gray-600 text-center py-10 text-sm">Escanea o teclea un código para empezar a contar.</p>
+                <div v-for="(item, idx) in rwEscaneadosArr" :key="item.codBarra" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white font-bold text-sm truncate">{{ item.descripcion }}</p>
+                        <p class="text-gray-500 text-xs font-mono">{{ item.codBarra }}</p>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <button @click="item.cantidad = Math.max(0, item.cantidad - 1)" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
+                        <input v-model.number="item.cantidad" type="number" min="0" step="1" class="text-white font-black text-sm w-14 text-center bg-gray-700 border border-gray-600 rounded-lg outline-none focus:border-emerald-500 py-1" inputmode="numeric">
+                        <button @click="item.cantidad++" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">+</button>
+                        <button @click="rwEscaneadosArr.splice(idx,1)" class="w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify-center">✕</button>
+                    </div>
+                </div>
+            </div>
+            <button @click="rwCerrarIngreso" :disabled="!rwEscaneadosArr.length || rwCargando"
+                    class="w-full py-5 rounded-none font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 disabled:bg-emerald-900/40 text-white active:scale-95 shrink-0">
+                <svg v-if="rwCargando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                ✓ Cerrar ingreso ({{ rwEscaneadosArr.length }})
+            </button>
+        </div>
+
+        <!-- PASO C: resultado (completo / incompleto) -->
+        <div v-if="rwPaso === 'resultado' && rwResultado" class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div class="rounded-2xl p-5 text-center" :class="rwResultado.estado === 'COMPLETO' ? 'bg-emerald-900/40 border border-emerald-500/50' : 'bg-amber-900/40 border border-amber-500/50'">
+                <p class="text-4xl mb-2">{{ rwResultado.estado === 'COMPLETO' ? '✅' : '⚠️' }}</p>
+                <p class="text-white font-black text-lg">{{ rwResultado.estado === 'COMPLETO' ? 'Ingreso completo' : 'Ingreso con diferencias' }}</p>
+                <p class="text-gray-300 text-xs mt-1">El admin verá las diferencias en MOS.</p>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-center">
+                <div class="bg-gray-800 rounded-xl py-3"><p class="text-gray-400 text-[10px] uppercase font-bold">Enviado</p><p class="text-white font-black text-lg">{{ rwResultado.total_enviado }}</p></div>
+                <div class="bg-gray-800 rounded-xl py-3"><p class="text-gray-400 text-[10px] uppercase font-bold">Contado</p><p class="text-white font-black text-lg">{{ rwResultado.total_escaneado }}</p></div>
+                <div class="bg-gray-800 rounded-xl py-3"><p class="text-gray-400 text-[10px] uppercase font-bold">Líneas dif.</p><p class="font-black text-lg" :class="rwResultado.lineas_dif > 0 ? 'text-amber-400' : 'text-emerald-400'">{{ rwResultado.lineas_dif }}</p></div>
+            </div>
+            <div class="space-y-1.5">
+                <div v-for="d in (rwResultado.detalle || [])" :key="d.codBarra" class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2 text-xs">
+                    <span class="text-gray-300 truncate flex-1">{{ d.descripcion }}</span>
+                    <span class="font-black ml-2" :class="d.estado === 'OK' ? 'text-emerald-400' : d.estado === 'FALTA' ? 'text-rose-400' : 'text-sky-400'">{{ d.estado }}{{ d.dif !== 0 ? (' ' + (d.dif > 0 ? '−'+d.dif : '+'+(-d.dif))) : '' }}</span>
+                </div>
+            </div>
+            <button @click="cerrarRecibirWH" class="w-full py-4 rounded-2xl font-black text-base uppercase tracking-wider bg-emerald-500 text-white active:scale-95">Listo ✓</button>
         </div>
     </div>
 
@@ -7215,6 +7310,18 @@
         let html5QrAudit = null;
         const camaraGuiaAbierta = ref(false);
         let html5QrGuiaScanner = null;
+
+        // --- RECIBIR GUÍA DE ALMACÉN (WH→ME por escaneo) — BUILD 1 ---
+        const modoRecibirWH = ref(false);
+        const rwPaso = ref('guia');        // 'guia' | 'escaneo' | 'resultado'
+        const rwIdGuia = ref('');          // idGuiaWH tecleado/escaneado
+        const rwGuia = ref(null);          // cabecera+detalle precargado de recibir_guia_wh
+        const rwEscaneadosArr = ref([]);   // [{codBarra, descripcion, cantidad}]
+        const rwResultado = ref(null);     // verificación devuelta por recibir_guia_wh_cerrar
+        const rwBusq = ref('');
+        const rwCargando = ref(false);
+        const rwCamara = ref(false);
+        let html5QrRecibirWH = null;
 
         // --- TECLADO VIRTUAL ---
         const mostrarTeclado = ref(false);
@@ -16868,6 +16975,138 @@
             }
         };
 
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        // BUILD 1 · RECIBIR GUÍA DE ALMACÉN (WH→ME por escaneo). Llama RPCs directo a Supabase (profile 'me')
+        // con el token de dispositivo (claim app='mosExpress', aceptado por me._claim_zona_ok).
+        // ⚠ El SALDO de zona aún NO se aplica (gate INERTE en la RPC: registra kardex + verificación). El admin
+        //   ve las discrepancias en MOS. El dueño desbloquea el saldo (v_aplicar_stock) tras validar.
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        const _rwRpc = async (fn, body) => {
+            const token = await _mintTokenSB();
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+                method: 'POST',
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {})
+            });
+            if (!res.ok) throw new Error('RPC ' + fn + ' HTTP ' + res.status);
+            return await res.json();
+        };
+
+        const abrirRecibirWH = () => {
+            // hereda guiaZona (ya seteado por abrirGuias). Resetea el flujo.
+            modoRecibirWH.value = true;
+            rwPaso.value = 'guia';
+            rwIdGuia.value = '';
+            rwGuia.value = null;
+            rwEscaneadosArr.value = [];
+            rwResultado.value = null;
+            rwBusq.value = '';
+            rwCargando.value = false;
+        };
+
+        const cerrarRecibirWH = () => {
+            if (rwCamara.value) rwToggleCamara();
+            modoRecibirWH.value = false;
+        };
+
+        const rwToggleCamara = () => {
+            rwCamara.value = !rwCamara.value;
+            if (rwCamara.value) {
+                setTimeout(() => {
+                    html5QrRecibirWH = new Html5Qrcode("reader-recibir-wh");
+                    html5QrRecibirWH.start(
+                        { facingMode: "environment" },
+                        { fps: 10, qrbox: { width: 250, height: 150 } },
+                        (txt) => {
+                            // en paso 'guia' la cámara cierra al leer; en 'escaneo' sigue contando.
+                            if (rwPaso.value === 'guia') {
+                                rwCamara.value = false;
+                                if (html5QrRecibirWH) { html5QrRecibirWH.stop().then(() => { try { html5QrRecibirWH.clear(); } catch(e) {} html5QrRecibirWH = null; }).catch(() => { html5QrRecibirWH = null; }); }
+                                rwIdGuia.value = txt;
+                                rwCargarGuia();
+                            } else {
+                                rwBusq.value = txt;
+                                rwEscanearItem();
+                            }
+                        },
+                        () => {}
+                    ).catch(() => {
+                        agregarToast('Cámara', 'Permiso denegado o no disponible');
+                        rwCamara.value = false;
+                        if (html5QrRecibirWH) { try { html5QrRecibirWH.clear(); } catch(e) {} html5QrRecibirWH = null; }
+                    });
+                }, 200);
+            } else {
+                if (html5QrRecibirWH) { html5QrRecibirWH.stop().then(() => { try { html5QrRecibirWH.clear(); } catch(e) {} html5QrRecibirWH = null; }).catch(() => { html5QrRecibirWH = null; }); }
+            }
+        };
+
+        const rwCargarGuia = async () => {
+            const id = String(rwIdGuia.value || '').trim();
+            if (!id) return;
+            rwCargando.value = true;
+            try {
+                const d = await _rwRpc('recibir_guia_wh', { idGuiaWH: id, zona: guiaZona.value || '' });
+                if (!d || !d.ok) { playBeepError(); agregarToast('Guía no encontrada', (d && d.error) || 'No se pudo leer la guía'); return; }
+                rwGuia.value = d.data;
+                rwEscaneadosArr.value = [];
+                rwPaso.value = 'escaneo';
+                playBeepOK();
+                if (d.data.verificada) agregarToast('Ya recibida', 'Esta guía ya fue contada antes (idempotente).', 'warning');
+            } catch (e) {
+                playBeepError();
+                agregarToast('Error', 'No se pudo leer la guía: ' + (e.message || e));
+            } finally { rwCargando.value = false; }
+        };
+
+        // Resuelve un código escaneado a {codBarra, descripcion} usando el detalle de la guía y, si no está,
+        // el catálogo local. El operario cuenta a ciegas: NO mostramos la cantidad esperada.
+        const rwEscanearItem = () => {
+            const q = String(rwBusq.value || '').trim();
+            if (!q) return;
+            // descripción: 1) de la guía precargada, 2) del catálogo, 3) el propio código.
+            let desc = null;
+            const enGuia = (rwGuia.value && rwGuia.value.detalle || []).find(l => String(l.codBarra) === q);
+            if (enGuia) desc = enGuia.descripcion;
+            if (!desc) {
+                const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
+                if (pres) { const base = db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base); desc = (base ? base.Nombre : pres.SKU_Base) + ' · ' + pres.Empaque; }
+            }
+            if (!desc) desc = q;
+            const idx = rwEscaneadosArr.value.findIndex(i => i.codBarra === q);
+            if (idx >= 0) rwEscaneadosArr.value[idx].cantidad++;
+            else rwEscaneadosArr.value.push({ codBarra: q, descripcion: desc, cantidad: 1 });
+            playBeepOK();
+            rwBusq.value = '';
+        };
+
+        const rwTotalEscaneado = computed(() => rwEscaneadosArr.value.reduce((a, i) => a + (Number(i.cantidad) || 0), 0));
+
+        const rwCerrarIngreso = async () => {
+            const escaneados = rwEscaneadosArr.value
+                .map(i => ({ codBarra: i.codBarra, cantidad: Number(i.cantidad) || 0 }))
+                .filter(i => i.cantidad > 0);
+            if (!escaneados.length || !rwGuia.value) return;
+            rwCargando.value = true;
+            try {
+                const d = await _rwRpc('recibir_guia_wh_cerrar', {
+                    idGuiaWH: rwGuia.value.idGuiaWH,
+                    zona: guiaZona.value || rwGuia.value.zonaWH || '',
+                    escaneados,
+                    usuario: config.value.vendedor || ''
+                });
+                if (!d || !d.ok) { playBeepError(); agregarToast('Error', (d && d.error) || 'No se pudo cerrar el ingreso'); return; }
+                rwResultado.value = d.data;
+                rwPaso.value = 'resultado';
+                if (rwCamara.value) rwToggleCamara();
+                try { if (d.data.estado === 'COMPLETO') playBeepOK(); else if (navigator.vibrate) navigator.vibrate(60); } catch(_){}
+                agregarToast(d.dedup ? 'Ya estaba recibida' : 'Ingreso registrado ✓', d.data.estado === 'COMPLETO' ? 'Completo' : 'Con diferencias (el admin las verá en MOS)');
+            } catch (e) {
+                playBeepError();
+                agregarToast('Error', 'No se pudo cerrar el ingreso: ' + (e.message || e));
+            } finally { rwCargando.value = false; }
+        };
+
         // Carga los registros de auditoría de hoy para este usuario desde localStorage
         const _cargarAuditHoy = () => {
             if (!config.value.vendedor) return;
@@ -17478,6 +17717,9 @@
           guiaHistorial, guiaHistorialCargando, guiaDetallando, guiaDetalle, camaraGuiaAbierta,
           abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
           guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
+          // [BUILD 1] Recibir guía de almacén (WH→ME por escaneo)
+          modoRecibirWH, rwPaso, rwIdGuia, rwGuia, rwEscaneadosArr, rwResultado, rwBusq, rwCargando, rwCamara, rwTotalEscaneado,
+          abrirRecibirWH, cerrarRecibirWH, rwToggleCamara, rwCargarGuia, rwEscanearItem, rwCerrarIngreso,
           // [v2.7.6] Devolución al almacén (two-party witness)
           devEstadosZona, setDevEstado, capturarFotoDev, puedeConfirmarDevolucion,
           auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente, auditCargando, auditConfirmados,

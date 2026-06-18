@@ -3,6 +3,172 @@
 // Guías de stock por zona, auditorías físicas y traslados.
 // ============================================================
 
+// ════════════════════════════════════════════════════════════════════════
+// CUTOVER NÚCLEO DE STOCK → SUPABASE (escritura directa) — gate + helpers.
+// ────────────────────────────────────────────────────────────────────────
+// Flag Script Property ME_ESCRITURA_STOCK_DIRECTA: '1'/'true'/'on' → ON.
+//   OFF (default) → comportamiento IDÉNTICO a hoy (read-modify-write en la Hoja).
+//   ON            → la mutación de SALDO va por RPC ATÓMICA a me.stock_zonas + kardex.
+//                   La Hoja se sigue escribiendo (fuente de respaldo / lo que lee el sync HASTA
+//                   que se apague ME_SYNC_OFF_TABLAS); si la RPC FALLA, la Hoja es el fallback.
+// Idempotencia: descuento de venta por id_caja (clave de kardex); ajuste por localId; guía por idGuia+cod.
+// Revertir: poner el flag OFF (vuelve a la Hoja) — sin redeploy si solo cambia la Property.
+// ════════════════════════════════════════════════════════════════════════
+function _meStockDirecto() {
+  try {
+    var v = String(PropertiesService.getScriptProperties().getProperty('ME_ESCRITURA_STOCK_DIRECTA') || '').toLowerCase();
+    return v === '1' || v === 'true' || v === 'on' || v === 'si';
+  } catch (e) { return false; }
+}
+
+// Descuento de stock por cierre de caja (venta) — RPC atómica idempotente por id_caja.
+// totalesPorCod = { codBarras: cantidad, ... }. Devuelve {ok, ...} de la RPC o {ok:false} si falló.
+function _meDescontarVentaDirecto(idCaja, zona, vendedor, totalesPorCod) {
+  var items = Object.keys(totalesPorCod || {}).map(function (cb) {
+    return { codBarra: String(cb), cantidad: parseFloat(totalesPorCod[cb]) || 0 };
+  }).filter(function (it) { return it.codBarra && it.cantidad > 0; });
+  if (!items.length) return { ok: true, vacio: true };
+  try {
+    var r = _sbRpc('me', 'zona_descontar_venta', {
+      idCaja: String(idCaja), zona: String(zona), usuario: String(vendedor || ''),
+      origen: 'GAS', items: items
+    });
+    if (!r.ok || !(r.data && r.data.ok)) {
+      Logger.log('[stock-directo venta] FALLÓ caja=' + idCaja + ' HTTP ' + r.code + ' ' + (r.error || JSON.stringify(r.data || {})));
+      return { ok: false, error: r.error || (r.data && r.data.error) || 'rpc' };
+    }
+    return r.data;
+  } catch (e) {
+    Logger.log('[stock-directo venta] EXCEPCIÓN caja=' + idCaja + ': ' + e.message);
+    return { ok: false, error: String(e.message) };
+  }
+}
+
+// Ajuste set-absoluto (auditoría) — RPC me.zona_ajustar_stock (set + log + kardex AJUSTE). Idempotente por localId.
+function _meAjustarStockDirecto(zona, codBarras, nuevo, usuario, localId) {
+  try {
+    var r = _sbRpc('me', 'zona_ajustar_stock', {
+      zona: String(zona), codBarra: String(codBarras), nuevo: nuevo,
+      usuario: String(usuario || ''), origen: 'GAS', localId: localId ? String(localId) : null
+    });
+    if (!r.ok || !(r.data && r.data.ok)) {
+      Logger.log('[stock-directo ajuste] FALLÓ ' + codBarras + '@' + zona + ' HTTP ' + r.code + ' ' + (r.error || JSON.stringify(r.data || {})));
+      return { ok: false, error: r.error || (r.data && r.data.error) || 'rpc' };
+    }
+    return r.data;
+  } catch (e) {
+    Logger.log('[stock-directo ajuste] EXCEPCIÓN ' + codBarras + ': ' + e.message);
+    return { ok: false, error: String(e.message) };
+  }
+}
+
+// Guía manual (SALIDA_JEFA/MOVIMIENTO/ENTRADA_*) — RPC me.zona_registrar_guia (delta firmado + kardex). Idemp por idGuia+cod.
+function _meRegistrarGuiaDirecto(idGuia, zona, tipo, items, usuario, idGuiaEntrada, zonaDestino) {
+  var its = (items || []).map(function (it) {
+    return { codBarra: String(it.cod_barras), cantidad: parseFloat(it.cantidad) || 0 };
+  }).filter(function (it) { return it.codBarra && it.cantidad > 0; });
+  if (!its.length) return { ok: true, vacio: true };
+  try {
+    var r = _sbRpc('me', 'zona_registrar_guia', {
+      idGuia: String(idGuia), zona: String(zona), tipo: String(tipo), items: its,
+      usuario: String(usuario || ''), origen: 'GAS',
+      idGuiaEntrada: idGuiaEntrada ? String(idGuiaEntrada) : null,
+      zonaDestino: zonaDestino ? String(zonaDestino) : null
+    });
+    if (!r.ok || !(r.data && r.data.ok)) {
+      Logger.log('[stock-directo guia] FALLÓ ' + idGuia + ' HTTP ' + r.code + ' ' + (r.error || JSON.stringify(r.data || {})));
+      return { ok: false, error: r.error || (r.data && r.data.error) || 'rpc' };
+    }
+    return r.data;
+  } catch (e) {
+    Logger.log('[stock-directo guia] EXCEPCIÓN ' + idGuia + ': ' + e.message);
+    return { ok: false, error: String(e.message) };
+  }
+}
+
+// ── Cola de DESCUENTOS de venta que la RPC directa NO pudo aplicar ─────────
+// Money-safety: cuando ME_ESCRITURA_STOCK_DIRECTA está ON pero la RPC
+// me.zona_descontar_venta FALLA, el saldo de Supabase queda SIN descontar.
+// Mientras el sync Hoja→Supabase siga vivo, el fallback a la Hoja se reconcilia
+// solo (≤15min). PERO una vez que ME_SYNC_OFF_TABLAS incluye stock_zonas, la Hoja
+// ya no es la fuente de verdad de stock → un fallo de RPC se perdería en silencio
+// (eso causó 59 desync en WH). Por eso persistimos el payload en una hoja de cola
+// para REINTENTO IDEMPOTENTE. La RPC dedupea por refId 'VENTA-CAJA:<idCaja>:<codBarra>'
+// en el kardex → reintentar NUNCA duplica el descuento (aunque el fallback a la Hoja
+// ya lo haya escrito mientras el sync estaba vivo). NUNCA lanza excepción (best-effort).
+// Cols: idCaja | zona | usuario | payload(JSON {totales}) | intentos | ultimoIntento | ultimoError | estado
+function _getColaDescuentoPendiente() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('ME_DESCUENTO_PENDIENTE');
+  if (!sheet) {
+    sheet = ss.insertSheet('ME_DESCUENTO_PENDIENTE');
+    sheet.appendRow(['idCaja','zona','usuario','payload','intentos','ultimoIntento','ultimoError','estado']);
+    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+    sheet.getRange(1, 1, sheet.getMaxRows(), 1).setNumberFormat('@STRING@');  // idCaja como texto
+  }
+  return sheet;
+}
+
+// Persiste (o actualiza) el descuento de UNA caja que la RPC no pudo aplicar.
+// Idempotente por idCaja: si ya está en cola PENDIENTE, solo incrementa intentos
+// y refresca el error (el payload es el mismo conjunto de totales de la caja).
+function _persistirDescuentoPendiente(idCaja, zona, usuario, totales, error) {
+  try {
+    var sheet = _getColaDescuentoPendiente();
+    var data  = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(idCaja) && String(data[i][7]) === 'PENDIENTE') {
+        sheet.getRange(i + 1, 5).setValue((parseInt(data[i][4]) || 0) + 1);
+        sheet.getRange(i + 1, 6).setValue(new Date());
+        sheet.getRange(i + 1, 7).setValue(String(error || '').slice(0, 500));
+        return;
+      }
+    }
+    sheet.appendRow([
+      String(idCaja), String(zona || ''), String(usuario || ''),
+      JSON.stringify({ totales: totales || {} }),
+      1, new Date(), String(error || '').slice(0, 500), 'PENDIENTE'
+    ]);
+    Logger.log('[stock-directo] descuento PERSISTIDO en cola · caja=' + idCaja);
+  } catch (e) {
+    Logger.log('[stock-directo] falló persistencia cola descuento caja=' + idCaja + ': ' + e.message);
+  }
+}
+
+// Trigger / manual: reintenta los descuentos PENDIENTES vía la MISMA RPC idempotente.
+// Se rinde tras 10 intentos (marca ABANDONADO) para no spammear. 100% lectura/escritura
+// de la cola; no toca la Hoja STOCK_ZONAS (la RPC gobierna el saldo en Supabase).
+function reintentarDescuentosPendientes() {
+  var sheet = _getColaDescuentoPendiente();
+  if (sheet.getLastRow() < 2) return { ok: true, mensaje: 'Cola vacía' };
+  var data = sheet.getDataRange().getValues();
+  var reaplicados = 0, intentados = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][7] || '') !== 'PENDIENTE') continue;
+    var intentos = parseInt(data[i][4]) || 0;
+    if (intentos >= 10) { sheet.getRange(i + 1, 8).setValue('ABANDONADO'); continue; }
+    var idCaja = String(data[i][0]), zona = String(data[i][1]), usuario = String(data[i][2]);
+    var totales; try { totales = (JSON.parse(data[i][3]) || {}).totales || {}; } catch (_){ continue; }
+    intentados++;
+    var r = _meDescontarVentaDirecto(idCaja, zona, usuario, totales);
+    sheet.getRange(i + 1, 5).setValue(intentos + 1);
+    sheet.getRange(i + 1, 6).setValue(new Date());
+    if (r && r.ok) { sheet.getRange(i + 1, 8).setValue('APLICADO'); reaplicados++; }
+    else { sheet.getRange(i + 1, 7).setValue(String((r && r.error) || 'rpc').slice(0, 500)); }
+  }
+  Logger.log('[stock-directo] reintento descuentos · intentados=' + intentados + ' reaplicados=' + reaplicados);
+  return { ok: true, intentados: intentados, reaplicados: reaplicados };
+}
+
+// Ejecutar 1 vez desde el editor para reintento automático cada 10 min.
+function setupDescuentoRetryTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if (t.getHandlerFunction() === 'reintentarDescuentosPendientes') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('reintentarDescuentosPendientes').timeBased().everyMinutes(10).create();
+  return { ok: true, mensaje: 'Trigger 10min reintentarDescuentosPendientes creado' };
+}
+
 // Auto-genera una guía SALIDA_VENTAS al cerrar caja y descuenta STOCK_ZONAS
 // Optimizada: lee STOCK_ZONAS una sola vez, hace updates en memoria,
 // y escribe el GUIAS_DETALLE + STOCK_ZONAS modificado en batch.
@@ -63,35 +229,58 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
   sheetGD.getRange(startRow, 2, detalleRows.length, 1).setNumberFormat('@STRING@');
   sheetGD.getRange(startRow, 1, detalleRows.length, 3).setValues(detalleRows);
 
-  // 5. Stock — leer una sola vez, modificar en memoria, escribir cambios en batch
-  var stockData = sheetStock.getDataRange().getValues();
-  var stockHdr  = stockData[0];
-  var stockMap  = {}; // "cod|zona" → indice de fila (0-based desde header)
-  for (var s = 1; s < stockData.length; s++) {
-    var key = String(stockData[s][0]) + '|' + String(stockData[s][1]);
-    stockMap[key] = s;
-  }
-
-  var nuevasFilas = [];
-  cods.forEach(function(cod) {
-    var key = String(cod) + '|' + String(zona);
-    var idx = stockMap[key];
-    if (idx !== undefined) {
-      stockData[idx][2] = (parseFloat(stockData[idx][2]) || 0) - totales[cod];
-    } else {
-      nuevasFilas.push([String(cod), String(zona), -totales[cod]]);
+  // 5. Stock — DESCUENTO.
+  //    [cutover] Si la escritura directa está ON, el descuento del SALDO va por RPC ATÓMICA a
+  //    me.stock_zonas (idempotente por id_caja → re-cerrar la misma caja NO re-descuenta) + kardex.
+  //    En ese caso NO tocamos el cantidad de la Hoja (evita el DOBLE CONTEO confirmado: el sync, mientras
+  //    siga vivo, re-upsertearía la Hoja → y la Hoja ya estaría descontada por RMW = resta dos veces).
+  //    Si la RPC FALLA → fallback al read-modify-write de la Hoja (comportamiento de hoy).
+  var stockDirectoOK = false;
+  if (_meStockDirecto()) {
+    var rDir = _meDescontarVentaDirecto(cajaId, zona, vendedor, totales);
+    stockDirectoOK = !!(rDir && rDir.ok);
+    if (!stockDirectoOK) {
+      // Money-safety: la RPC falló. NO lanzamos excepción (el cierre/venta ya está
+      // persistido y NO debe romperse). NO swallow silencioso (eso causó 59 desync en WH).
+      // Persistimos el descuento en cola para REINTENTO IDEMPOTENTE (refId por caja+cod en
+      // el kardex). Abajo el fallback a la Hoja sigue (cubre el caso sync-aún-vivo); la cola
+      // es la red de seguridad para cuando ME_SYNC_OFF_TABLAS ya apagó el sync de stock_zonas.
+      Logger.log('generarGuiaSalidaVentas: RPC directo falló — encolando descuento + fallback a la Hoja para caja ' + cajaId);
+      try { _persistirDescuentoPendiente(cajaId, zona, vendedor, totales, (rDir && rDir.error) || 'rpc'); } catch(ePD) { Logger.log('Encolar descuento pendiente: ' + ePD.message); }
     }
-  });
-
-  // Re-escribir solo las filas modificadas (saltando header)
-  if (stockData.length > 1) {
-    sheetStock.getRange(2, 1, stockData.length - 1, stockHdr.length).setValues(stockData.slice(1));
   }
-  // Append filas nuevas si hay
-  if (nuevasFilas.length > 0) {
-    var newStart = sheetStock.getLastRow() + 1;
-    sheetStock.getRange(newStart, 1, nuevasFilas.length, 1).setNumberFormat('@STRING@');
-    sheetStock.getRange(newStart, 1, nuevasFilas.length, 3).setValues(nuevasFilas);
+
+  if (!stockDirectoOK) {
+    // ── Fallback / modo legacy: read-modify-write en la Hoja (fuente de verdad cuando directo OFF/falla) ──
+    var stockData = sheetStock.getDataRange().getValues();
+    var stockHdr  = stockData[0];
+    var stockMap  = {}; // "cod|zona" → indice de fila (0-based desde header)
+    for (var s = 1; s < stockData.length; s++) {
+      var key = String(stockData[s][0]) + '|' + String(stockData[s][1]);
+      stockMap[key] = s;
+    }
+
+    var nuevasFilas = [];
+    cods.forEach(function(cod) {
+      var key = String(cod) + '|' + String(zona);
+      var idx = stockMap[key];
+      if (idx !== undefined) {
+        stockData[idx][2] = (parseFloat(stockData[idx][2]) || 0) - totales[cod];
+      } else {
+        nuevasFilas.push([String(cod), String(zona), -totales[cod]]);
+      }
+    });
+
+    // Re-escribir solo las filas modificadas (saltando header)
+    if (stockData.length > 1) {
+      sheetStock.getRange(2, 1, stockData.length - 1, stockHdr.length).setValues(stockData.slice(1));
+    }
+    // Append filas nuevas si hay
+    if (nuevasFilas.length > 0) {
+      var newStart = sheetStock.getLastRow() + 1;
+      sheetStock.getRange(newStart, 1, nuevasFilas.length, 1).setNumberFormat('@STRING@');
+      sheetStock.getRange(newStart, 1, nuevasFilas.length, 3).setValues(nuevasFilas);
+    }
   }
 
   // 6. Enviar pickup a WH (no bloquea — si falla solo loggea)
@@ -889,20 +1078,34 @@ function registrarGuia(data) {
   sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo,
     data.observacion || '', zonaDestino, 'CONFIRMADO']);
 
+  // SALIDA_MOVIMIENTO → genera ENTRADA_TRASLADO automática en zona destino (id reservado arriba para la RPC)
+  var idGuiaEntrada = (tipo === 'SALIDA_MOVIMIENTO' && zonaDestino) ? ("G-TRA-" + (new Date().getTime() + 1)) : null;
+
+  // [cutover] directo ON → la mutación del SALDO (origen + destino del traslado) va por RPC atómica
+  //   me.zona_registrar_guia (delta firmado por tipo + kardex, idempotente por idGuia+cod). NO tocamos
+  //   el cantidad de la Hoja (evita doble conteo con el sync). Si falla → fallback al RMW de la Hoja.
+  var guiaDirectoOK = false;
+  if (_meStockDirecto()) {
+    var rG = _meRegistrarGuiaDirecto(idGuia, data.zona, tipo, data.items, data.vendedor, idGuiaEntrada, zonaDestino);
+    guiaDirectoOK = !!(rG && rG.ok);
+    if (!guiaDirectoOK) Logger.log('registrarGuia: RPC directo falló — fallback Hoja para guía ' + idGuia);
+  }
+
   var stockResult = [];
   (data.items || []).forEach(function(item) {
     var cb = String(item.cod_barras);
     var nextDet = sheetDet.getLastRow() + 1;
     sheetDet.getRange(nextDet, 2).setNumberFormat('@STRING@');
     sheetDet.getRange(nextDet, 1, 1, 3).setValues([[idGuia, cb, item.cantidad]]);
-    var nuevaCant = actualizarStockFila(sheetStock, cb, data.zona, signo * item.cantidad);
-    stockResult.push({ cod_barras: cb, cantidad: nuevaCant });
+    if (!guiaDirectoOK) {
+      var nuevaCant = actualizarStockFila(sheetStock, cb, data.zona, signo * item.cantidad);
+      stockResult.push({ cod_barras: cb, cantidad: nuevaCant });
+    } else {
+      stockResult.push({ cod_barras: cb });   // saldo lo lleva Supabase (lectura directa lo refleja)
+    }
   });
 
-  // SALIDA_MOVIMIENTO → genera ENTRADA_TRASLADO automática en zona destino
-  var idGuiaEntrada = null;
-  if (tipo === 'SALIDA_MOVIMIENTO' && zonaDestino) {
-    idGuiaEntrada = "G-TRA-" + (new Date().getTime() + 1);
+  if (idGuiaEntrada) {
     sheetCab.appendRow([idGuiaEntrada, new Date(), data.vendedor, zonaDestino, 'ENTRADA_TRASLADO',
       'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia, data.zona, 'CONFIRMADO']);
     (data.items || []).forEach(function(item) {
@@ -910,7 +1113,7 @@ function registrarGuia(data) {
       var nextDetE = sheetDet.getLastRow() + 1;
       sheetDet.getRange(nextDetE, 2).setNumberFormat('@STRING@');
       sheetDet.getRange(nextDetE, 1, 1, 3).setValues([[idGuiaEntrada, cb, item.cantidad]]);
-      actualizarStockFila(sheetStock, cb, zonaDestino, item.cantidad);
+      if (!guiaDirectoOK) actualizarStockFila(sheetStock, cb, zonaDestino, item.cantidad);
     });
   }
 
@@ -1040,8 +1243,19 @@ function registrarAuditoria(data) {
       auditIndex[key] = nextAuditRow; // evitar duplicado si el mismo item llega dos veces en el batch
     }
 
-    // Stock: establecer cantidad DIRECTAMENTE al valor real auditado
-    _actualizarStockAuditoria(sheetStock, cb, data.zona, cantReal, usuario, ahoraStr);
+    // Stock: establecer cantidad DIRECTAMENTE al valor real auditado (SET absoluto).
+    //   [cutover] directo ON → me.zona_ajustar_stock (set + log + kardex AJUSTE), idempotente por localId
+    //   (localId estable por auditoría+código → re-enviar la misma auditoría no re-ancla raro). Si falla → Hoja.
+    var auditDirectoOK = false;
+    if (_meStockDirecto()) {
+      var localAj = idAudit + ':' + cb;   // estable por auditoría+código
+      var rAj = _meAjustarStockDirecto(data.zona, cb, cantReal, usuario, localAj);
+      auditDirectoOK = !!(rAj && rAj.ok);
+      if (!auditDirectoOK) Logger.log('registrarAuditoria: RPC ajuste directo falló — fallback Hoja para ' + cb + '@' + data.zona);
+    }
+    if (!auditDirectoOK) {
+      _actualizarStockAuditoria(sheetStock, cb, data.zona, cantReal, usuario, ahoraStr);
+    }
   });
 
   return ContentService.createTextOutput(JSON.stringify({
