@@ -8085,6 +8085,12 @@
           setInterval(() => cargarEtiqsPendientes().catch(() => {}), 120000);
 
           _intervalFocus = setInterval(() => {
+            // [v2.8.31] ⚠ ANTI-CRUCE scan↔venta: NO robar foco al scanner de VENTA mientras
+            // hay un flujo de GUÍA/recepción/auditoría abierto (overlay sobre POS, currentModule
+            // sigue en 'POS'). Si lo robáramos, un scan destinado a la guía caería en el carrito
+            // de venta (dinero/inventario). El captor global _onHwGuiaKeydown es la red de respaldo,
+            // pero no debemos crearle el problema cada 1.5s.
+            if (_enFlujoGuia()) return;
             if(config.value.completado && currentModule.value === 'POS' && !modalPago.value && !camaraAbierta.value && !popover.value.visible && scannerInput.value) {
                 // No robar foco si el usuario está editando un input de gramos del carrito
                 // (productos a granel) — sino el cajero no puede tipear el peso.
@@ -9994,8 +10000,13 @@
             // Si el foco está en el input CORRECTO del contexto, deja que el handler normal trabaje.
             if (ae && ae.matches && ae.matches('input,textarea')) {
                 if (ae.getAttribute && ae.getAttribute('data-ctx-input') === _CTX_INPUT_DOM[ctx.input]) { _hwGuiaBuffer = ''; return; }
-                // Foco en OTRO campo editable (cantidad, nota, etc.) → no interferir con lo que teclea el operario.
-                return;
+                // [v2.8.31] ⚠ Si el foco quedó en el SCANNER DE VENTA mientras hay un flujo de guía
+                // abierto (foco mal dirigido: tap accidental, refoco residual), NO dejar que el scan
+                // caiga en el carrito de venta — el captor lo rutea a la guía por contexto (más abajo).
+                // Cualquier OTRO campo editable (cantidad, nota, peso de granel) sí es tecleo legítimo
+                // del operario → no interferir.
+                if (ae !== scannerInput.value) return;
+                // (cae al buffer de ráfaga: solo se ruteará si es velocidad de scanner, ver abajo)
             }
             const now = Date.now();
             if (/^[0-9A-Za-z]$/.test(e.key)) {
@@ -10013,6 +10024,15 @@
                 // Ráfaga scanner-paced (≈≤30ms/char) y foco fuera del input correcto → ruteo por contexto.
                 if (elapsed < (cod.length * 35)) {
                     e.preventDefault();
+                    // [v2.8.31] Si el foco estaba en el SCANNER DE VENTA, los dígitos ya entraron a
+                    // bBuscador (v-model) y el @keyup.enter de ese input dispararía procesarEscaneoOBusqueda
+                    // DESPUÉS (preventDefault de keydown NO cancela el keyup). Limpiamos el buscador para
+                    // que ese keyup haga no-op (procesarEscaneoOBusqueda corta con `if (!code) return`),
+                    // evitando que el MISMO scan se procese DOBLE (guía + venta).
+                    if (document.activeElement === scannerInput.value) {
+                        bBuscador.value = '';
+                        scanningPending.value = false;
+                    }
                     _despacharScanContexto(cod);
                 }
                 return;
