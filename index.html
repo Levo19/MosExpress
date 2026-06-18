@@ -7862,6 +7862,14 @@
            }
            // Persistir carrito para sobrevivir refreshes accidentales
            try { localStorage.setItem('mosexpress_carrito', JSON.stringify(newVal)); } catch(e) {}
+           // Si el carrito quedó vacío y había un refresco de catálogo diferido por venta en curso,
+           // intentarlo ahora (money-safe: el carrito ya no tiene items y no se toca el POS).
+           try {
+              if (_catVerPendiente && Array.isArray(newVal) && newVal.length === 0
+                  && typeof _chequearVersionCatalogo === 'function') {
+                 _chequearVersionCatalogo();
+              }
+           } catch(_){}
         }, { deep: true });
 
         // [v2.8.30] Reloj de inactividad del flujo de guía: cualquier cambio en los items
@@ -8130,6 +8138,12 @@
               if (navigator.onLine && window._SWCheck) window._SWCheck();
           }, 5 * 60 * 1000); // Chequear cada 5 min
 
+          // Auto-refresco del catálogo: poller de versión del maestro de productos (money-safe).
+          // Solo corre con la app visible; difiere si hay venta en curso. Primer chequeo a los 10s
+          // (da margen a que cargue el catálogo y a la 1ra autorización del dispositivo).
+          _arrancarPollerCatalogo();
+          setTimeout(() => { _chequearVersionCatalogo(); }, 10 * 1000);
+
           // Bloqueo remoto del usuario — polling cada 30s + check inicial al cargar
           setTimeout(_checkBloqueoUsuario, 4000);
           _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 30 * 1000);
@@ -8205,6 +8219,7 @@
           if (_intervalBloqueoPoll) { clearInterval(_intervalBloqueoPoll); _intervalBloqueoPoll = null; }
           if (_intervalBloqueoCountdown) { clearInterval(_intervalBloqueoCountdown); _intervalBloqueoCountdown = null; }
           if (_intervalGps) { clearInterval(_intervalGps); _intervalGps = null; }
+          _detenerPollerCatalogo();
           _audioRemotoDetener();
           _intervalVendedorCajeroCheck = null;
           if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
@@ -9007,6 +9022,9 @@
                     _syncImpresorasFromProyectoMOS();
                     _cargarConfigMos();
                     _sincronizarAdminCache();
+                    // Refrescar el baseline de versión del catálogo (poller). Fire-and-forget:
+                    // si falla la lectura de versión, el catálogo igual quedó actualizado.
+                    _refrescarBaselineCatalogo();
                 } else {
                     throw new Error("Formato inválido");
                 }
@@ -9030,6 +9048,87 @@
                 agregarToast("Error", `Catálogo: ${detalle}` + (tieneZonas ? '' : ' · pulsa Reintentar'), 'error');
             }
             procesandoCatalogo.value = false;
+        };
+
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        // AUTO-REFRESCO DEL CATÁLOGO — poller de versión (MONEY-SAFE)
+        //
+        // Tras cada descarga del catálogo guardamos la `version` baseline (memoria + localStorage).
+        // Cada ~50s con la app VISIBLE (+ al volver foco / visibilitychange→visible) consultamos
+        // mos.catalogo_version(); si cambió, re-descargamos el catálogo (sincronizarCatalogoBase),
+        // que actualiza db.value + caché IDB. NO es un reload: el carrito/POS NO se tocan.
+        //
+        // CRÍTICO (punto de venta): si hay una venta a medio armar (carrito con items, modal de
+        //   pago abierto o venta procesándose) DIFERIMOS el refresh — _ventaEnCurso(). El refresh
+        //   reemplaza datos de catálogo en memoria, nunca interrumpe ni reinicia la venta.
+        // EFICIENTE: solo corre con document.visibilityState==='visible'; en background no llama red.
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        let _catVer = (() => { try { return localStorage.getItem('mosexpress_cat_version') || null; } catch(_) { return null; } })();
+        let _catVerPollTimer = null;
+        let _catVerChecking = false;
+        let _catVerPendiente = false; // hay un cambio detectado pero diferido por venta en curso
+
+        // Refresca el baseline leyendo la versión actual del maestro. No lanza.
+        const _refrescarBaselineCatalogo = async () => {
+            try {
+                const v = await _catalogoVersionRemota();
+                _catVer = v;
+                _catVerPendiente = false;
+                try { localStorage.setItem('mosexpress_cat_version', String(v)); } catch(_){}
+            } catch (e) { /* silencioso — no rompemos el flujo de catálogo por esto */ }
+        };
+
+        // ¿Hay una venta a medio armar? (no interrumpir / diferir refresh)
+        const _ventaEnCurso = () => {
+            try {
+                return (Array.isArray(carrito.value) && carrito.value.length > 0)
+                    || !!modalPago.value
+                    || !!procesando.value;
+            } catch(_) { return false; }
+        };
+
+        // Chequea la versión remota; si cambió, re-descarga el catálogo (difiriendo si hay venta).
+        const _chequearVersionCatalogo = async () => {
+            if (_catVerChecking) return;
+            if (offlineMode.value || !navigator.onLine) return;
+            if (!dbCargada.value) return;                 // aún no hubo 1ra carga
+            if (procesandoCatalogo.value || procesandoGuia.value) return; // ya hay sync/guía en curso
+            if (document.visibilityState !== 'visible') return; // solo con la app visible
+            _catVerChecking = true;
+            try {
+                const remota = await _catalogoVersionRemota();
+                if (_catVer == null) {
+                    // No teníamos baseline (1ra carga vino de caché IDB sin versión): adoptar sin refrescar.
+                    _catVer = remota;
+                    try { localStorage.setItem('mosexpress_cat_version', String(remota)); } catch(_){}
+                    return;
+                }
+                if (String(remota) === String(_catVer)) { _catVerPendiente = false; return; } // sin cambios
+                // Hubo cambio en el maestro de productos/equivalencias.
+                if (_ventaEnCurso()) {
+                    // Diferir: NUNCA tocar el catálogo en medio de una venta. Se reintenta al cerrar
+                    // la venta (próximo ciclo del poller, o el watcher de carrito vacío).
+                    _catVerPendiente = true;
+                    return;
+                }
+                _catVerPendiente = false;
+                // sincronizarCatalogoBase re-descarga y, al terminar, _refrescarBaselineCatalogo
+                // actualiza _catVer a la versión nueva.
+                await sincronizarCatalogoBase();
+                agregarToast('Catálogo actualizado', 'Se sincronizaron cambios de productos.', 'info', 3000);
+            } catch (e) {
+                // Error de red/token → reintenta el próximo ciclo. Silencioso (no spamear toasts).
+                console.warn('[catVer] chequeo falló', e?.message || e);
+            } finally { _catVerChecking = false; }
+        };
+
+        const _arrancarPollerCatalogo = () => {
+            if (_catVerPollTimer) return;
+            // ~50s con la app visible. El propio _chequearVersionCatalogo hace early-return en background.
+            _catVerPollTimer = setInterval(() => { _chequearVersionCatalogo(); }, 50 * 1000);
+        };
+        const _detenerPollerCatalogo = () => {
+            if (_catVerPollTimer) { clearInterval(_catVerPollTimer); _catVerPollTimer = null; }
         };
 
         const sincronizarDatos = async () => {
@@ -9777,8 +9876,14 @@
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && config.value.completado) {
                 _activarWakeLock();
+                // Al volver a primer plano, chequear si el catálogo cambió mientras estuvo en
+                // background (el poller no corre oculto). Money-safe: _chequearVersionCatalogo
+                // difiere si hay venta en curso.
+                _chequearVersionCatalogo();
             }
         });
+        // Volver foco a la ventana (sin pasar por hidden, p.ej. cambio de pestaña a misma app)
+        window.addEventListener('focus', () => { _chequearVersionCatalogo(); });
 
         // ── Detector de inactividad ──────────────────────────
         const _resetIdleTimer = () => {
@@ -14945,6 +15050,33 @@
             _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 300);
             return d.token;
         };
+
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        // POLLER DE VERSIÓN DEL CATÁLOGO (auto-refresco cuando cambia el maestro de productos en MOS)
+        // mos.catalogo_version() devuelve {ok, version:<bigint>, updated_at}. El backend incrementa
+        // `version` SOLO cuando cambia mos.productos / mos.equivalencias (trigger). El token de
+        // dispositivo ME (role 'authenticated', claim app='mosExpress') puede leerlo: la RPC tiene
+        // grant a authenticated y NO gatea por app (sin mos._claim_ok). Por eso pegamos con
+        // Content-Profile: 'mos' directo a PostgREST (sin pasar por GAS).
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        const _catalogoVersionRemota = async () => {
+            const token = await _mintTokenSB();
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 8000);
+            try {
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/catalogo_version`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {} }),
+                    signal: ctrl.signal
+                });
+                if (!res.ok) throw new Error('catalogo_version HTTP ' + res.status);
+                const d = await res.json();
+                if (!d || d.ok !== true || d.version == null) throw new Error('catalogo_version: respuesta inesperada');
+                return String(d.version); // bigint → string (evita precisión float)
+            } finally { clearTimeout(tid); }
+        };
+
         // Lee ventas de hoy de la estación DIRECTO de Supabase (PWA→PostgREST). Autoriza el token de dispositivo
         // ME; pasa los prefijos de la estación (el dispositivo rota libre entre zonas, igual que el path GAS).
         const _ventasZonaDirecto = async (prefijos, desde) => {
