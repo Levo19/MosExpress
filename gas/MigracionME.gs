@@ -1258,3 +1258,142 @@ function limpiarVentasSinIdME(){
   var res={ok:true, borradas:aBorrar.length, filas:aBorrar, nota:'corre compararVentasHoyZonaME para confirmar PARIDAD EXACTA'};
   Logger.log(JSON.stringify(res,null,2)); return res;
 }
+
+// ============================================================
+// BACKFILL DE GUÍAS hoja→Supabase (hueco sync-OFF → @214)
+// ------------------------------------------------------------
+// Desde que ME_SYNC_OFF_TABLAS apagó el sync de guias_cabecera/guias_detalle y
+// hasta el deploy @214 (que cableó la escritura DIRECTA de metadata de guías a
+// Supabase), las guías creadas quedaron SOLO en la Hoja (GUIAS_CABECERA/_DETALLE)
+// y NO en me.guias_cabecera/_detalle. Como las lecturas (listarGuias/detalleGuia/
+// trasladosEntrantes) ya salen de Supabase, esas guías son INVISIBLES. Esta función
+// las re-graba usando la MISMA RPC idempotente que usa el flujo en vivo:
+//   me.zona_guia_registrar_meta  (vía _sbRpc, service_role)
+//
+// SEGURIDAD / MONEY:
+//   - La RPC SOLO escribe cabecera+detalle (cantidad_aplicada=cantidad). NO toca
+//     me.stock_zonas ni el kardex → re-grabar metadata NO re-aplica saldo (sin
+//     doble conteo). El saldo de esas guías ya está en Supabase (lo aplicó la RPC
+//     de stock zona_registrar_guia/zona_descontar_venta en su momento, o el sync
+//     de stock que sigue vivo). Aquí solo recuperamos la metadata visible.
+//   - IDEMPOTENTE: la RPC dedupea por id_guia (PK de cabecera) + (id_guia, linea/
+//     cod_barras) en detalle → re-correr esta función NO duplica nada.
+//   - NO cambia flags, NO apaga nada, NO toca stock.
+//
+// Layout de hojas (idéntico a listarGuias ~1122 / detalleGuia ~1168):
+//   GUIAS_CABECERA: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
+//   GUIAS_DETALLE:  ID_Guia | Cod_Barras | Cantidad
+//
+// USO (desde el editor de Apps Script, igual que activarMESupabase):
+//   1) Abrir el proyecto GAS de MosExpress en el editor.
+//   2) En el desplegable de funciones elegir  backfillGuiasASupabase  y darle ▶ Ejecutar.
+//      (Corre con el rango por DEFAULT: últimos 4 días — cubre con margen la ventana
+//       sync-OFF → @214.) Ver el resultado en Registro de ejecución (Ver → Registros).
+//   3) Es SEGURO re-correrla las veces que haga falta (idempotente, no duplica).
+//   Para un rango distinto (avanzado): backfillGuiasRango(7)  → últimos 7 días.
+//
+// @param {number} [desdeMs]  Epoch ms. Solo se backfillean guías con fecha >= desdeMs.
+//                            Default: ahora − 4 días.
+// @returns {Object} {ok, desdeISO, enRango, yaEnSupabase, escritas, errores, detalleErrores}
+function backfillGuiasASupabase(desdeMs){
+  var DEFAULT_DIAS = 4;
+  var desde = (desdeMs != null && !isNaN(parseInt(desdeMs, 10)))
+    ? parseInt(desdeMs, 10)
+    : (Date.now() - DEFAULT_DIAS * 86400000);
+  var desdeISO = Utilities.formatDate(new Date(desde), 'America/Lima', "yyyy-MM-dd'T'HH:mm:ssXXX");
+  var T0 = Date.now();
+  var TIME_BUDGET = 5 * 60 * 1000;   // < 6 min límite GAS
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var shCab = ss.getSheetByName('GUIAS_CABECERA');
+  var shDet = ss.getSheetByName('GUIAS_DETALLE');
+  if (!shCab) return { ok:false, error:'GUIAS_CABECERA no encontrada' };
+  if (!shDet) return { ok:false, error:'GUIAS_DETALLE no encontrada' };
+
+  // ── 1) Indexar el detalle por id_guia (una sola lectura) ──
+  var detData = shDet.getDataRange().getValues();   // [ID_Guia, Cod_Barras, Cantidad]
+  var itemsPorGuia = {};
+  for (var d = 1; d < detData.length; d++) {
+    var dg = String(detData[d][0] || '').trim();
+    if (!dg) continue;
+    var cb = String(detData[d][1] || '').trim();
+    var cant = parseFloat(detData[d][2]) || 0;
+    if (!cb || cant <= 0) continue;
+    (itemsPorGuia[dg] = itemsPorGuia[dg] || []).push({ codBarra: cb, cantidad: cant });
+  }
+
+  // ── 2) Recorrer cabeceras dentro del rango ──
+  var cabData = shCab.getDataRange().getValues();   // [ID_Guia, Fecha, Vendedor, Zona_ID, Tipo, Observacion, Zona_Destino, Estado]
+  var enRango = 0, escritas = 0, errores = 0, sinItems = 0;
+  var detalleErrores = [];
+  var idsRango = [];
+  var corto = false;
+
+  for (var i = 1; i < cabData.length; i++) {
+    var idGuia = String(cabData[i][0] || '').trim();
+    if (!idGuia) continue;
+    var fechaCell = cabData[i][1];
+    var fechaDate = (fechaCell instanceof Date) ? fechaCell : new Date(fechaCell);
+    if (isNaN(fechaDate.getTime())) continue;          // fecha ilegible → omitir
+    if (fechaDate.getTime() < desde) continue;         // fuera de rango
+
+    enRango++;
+    idsRango.push(idGuia);
+
+    // límite de tiempo GAS: reporta lo hecho y termina limpio (re-correr sigue siendo idempotente).
+    if (Date.now() - T0 > TIME_BUDGET) { corto = true; break; }
+
+    try {
+      var its = itemsPorGuia[idGuia] || [];
+      if (!its.length) { sinItems++; }   // cabecera sin detalle (raro) → igual grabamos cabecera
+
+      var r = _sbRpc('me', 'zona_guia_registrar_meta', {
+        idGuia:      idGuia,
+        zona:        String(cabData[i][3] || ''),                          // Zona_ID
+        tipo:        String(cabData[i][4] || ''),                          // Tipo
+        fecha:       _meDate(fechaCell),                                   // ISO Lima (mismo conversor del backfill)
+        vendedor:    cabData[i][2] != null ? String(cabData[i][2]) : null, // Vendedor
+        observacion: cabData[i][5] != null ? String(cabData[i][5]) : null, // Observacion
+        zonaDestino: cabData[i][6] ? String(cabData[i][6]) : null,         // Zona_Destino
+        estado:      cabData[i][7] ? String(cabData[i][7]) : 'CONFIRMADO', // Estado
+        items:       its
+      });
+
+      if (r && r.ok && r.data && r.data.ok) {
+        escritas++;
+      } else {
+        errores++;
+        detalleErrores.push({ idGuia: idGuia, http: (r && r.code) || null,
+          error: (r && (r.error || (r.data && r.data.error))) || 'rpc' });
+      }
+    } catch (e) {
+      errores++;
+      detalleErrores.push({ idGuia: idGuia, error: String(e && e.message || e) });
+    }
+  }
+
+  var resumen = {
+    ok: errores === 0 && !corto,
+    desdeISO: desdeISO,
+    enRango: enRango,
+    escritas: escritas,
+    errores: errores,
+    sinDetalle: sinItems,
+    incompleto: corto,
+    nota: corto ? 'Cortado por límite de tiempo GAS — re-correr backfillGuiasASupabase (idempotente, no duplica) para terminar.'
+                : 'Idempotente (dedupe por id_guia) · NO toca stock · re-correr es seguro.',
+    detalleErrores: detalleErrores.slice(0, 50)
+  };
+  Logger.log('[backfillGuias] rango desde ' + desdeISO + ' (Lima) → enRango=' + enRango +
+             ' escritas=' + escritas + ' errores=' + errores + ' sinDetalle=' + sinItems +
+             (corto ? ' [INCOMPLETO: re-correr]' : ''));
+  Logger.log(JSON.stringify(resumen, null, 2));
+  return resumen;
+}
+
+// Wrapper de conveniencia: backfillea las guías de los últimos `dias` días.
+// Ej.: backfillGuiasRango(7) cubre una semana. Sin argumento usa 4 días (igual que el default).
+function backfillGuiasRango(dias){
+  var d = (dias != null && !isNaN(parseInt(dias, 10))) ? parseInt(dias, 10) : 4;
+  return backfillGuiasASupabase(Date.now() - d * 86400000);
+}

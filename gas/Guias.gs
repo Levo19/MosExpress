@@ -86,6 +86,37 @@ function _meRegistrarGuiaDirecto(idGuia, zona, tipo, items, usuario, idGuiaEntra
   }
 }
 
+// Metadata de guía (cabecera+detalle) en Supabase — RPC me.zona_guia_registrar_meta.
+// IMPORTANTE money-safety: esta RPC NO toca me.stock_zonas ni kardex (solo escribe cabecera/detalle).
+// El SALDO ya lo aplican las RPCs de stock (zona_descontar_venta / zona_registrar_guia) en el mismo flujo,
+// así que grabar la metadata NO re-aplica stock → SIN doble conteo. Idempotente por idGuia (reaplicar
+// el mismo idGuia NO duplica cabecera ni detalle). NUNCA lanza excepción (best-effort).
+//   items = [{cod_barras|codBarra, cantidad}, ...]
+function _meRegistrarGuiaMetaDirecto(meta) {
+  try {
+    var its = (meta.items || []).map(function (it) {
+      return { codBarra: String(it.codBarra || it.cod_barras || ''), cantidad: parseFloat(it.cantidad) || 0 };
+    }).filter(function (it) { return it.codBarra && it.cantidad > 0; });
+    var r = _sbRpc('me', 'zona_guia_registrar_meta', {
+      idGuia: String(meta.idGuia), zona: String(meta.zona), tipo: String(meta.tipo),
+      fecha: meta.fecha != null ? String(meta.fecha) : null,
+      vendedor: meta.vendedor ? String(meta.vendedor) : null,
+      observacion: meta.observacion != null ? String(meta.observacion) : null,
+      zonaDestino: meta.zonaDestino ? String(meta.zonaDestino) : null,
+      estado: meta.estado ? String(meta.estado) : 'CONFIRMADO',
+      items: its
+    });
+    if (!r.ok || !(r.data && r.data.ok)) {
+      Logger.log('[guia-meta] FALLÓ ' + meta.idGuia + ' HTTP ' + r.code + ' ' + (r.error || JSON.stringify(r.data || {})));
+      return { ok: false, error: r.error || (r.data && r.data.error) || 'rpc' };
+    }
+    return r.data;
+  } catch (e) {
+    Logger.log('[guia-meta] EXCEPCIÓN ' + (meta && meta.idGuia) + ': ' + e.message);
+    return { ok: false, error: String(e.message) };
+  }
+}
+
 // ── Cola de DESCUENTOS de venta que la RPC directa NO pudo aplicar ─────────
 // Money-safety: cuando ME_ESCRITURA_STOCK_DIRECTA está ON pero la RPC
 // me.zona_descontar_venta FALLA, el saldo de Supabase queda SIN descontar.
@@ -167,6 +198,101 @@ function setupDescuentoRetryTrigger() {
   });
   ScriptApp.newTrigger('reintentarDescuentosPendientes').timeBased().everyMinutes(10).create();
   return { ok: true, mensaje: 'Trigger 10min reintentarDescuentosPendientes creado' };
+}
+
+// ── Cola de MUTACIONES de stock-zona (guías manuales + ajustes de auditoría) ──
+// que la RPC directa NO pudo aplicar — análoga a ME_DESCUENTO_PENDIENTE.
+// Money-safety: con ME_SYNC_OFF_TABLAS apagando stock_zonas/guias_*, el fallback a la
+// Hoja YA NO se propaga a Supabase → un fallo de RPC en registrarGuia/registrarAuditoria
+// se perdería en silencio (drift). Persistimos el payload EXACTO de la RPC para REINTENTO
+// IDEMPOTENTE por la MISMA clave determinista que usa la RPC en su kardex:
+//   - guia   → me.zona_registrar_guia, dedup por idGuia+codBarra → reintentar NO duplica.
+//   - ajuste → me.zona_ajustar_stock, idempotente por localId → reintentar re-ancla al MISMO valor (SET absoluto, no delta).
+// NUNCA lanza excepción (best-effort). NUNCA toca la Hoja STOCK_ZONAS (la RPC gobierna el saldo).
+// Cols: tipo('guia'|'ajuste') | clave(dedup) | payload(JSON args RPC) | intentos | ultimoIntento | ultimoError | estado
+function _getColaStockPendiente() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('ME_STOCK_PENDIENTE');
+  if (!sheet) {
+    sheet = ss.insertSheet('ME_STOCK_PENDIENTE');
+    sheet.appendRow(['tipo','clave','payload','intentos','ultimoIntento','ultimoError','estado']);
+    sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+    sheet.getRange(1, 2, sheet.getMaxRows(), 1).setNumberFormat('@STRING@');  // clave como texto
+  }
+  return sheet;
+}
+
+// Persiste (o actualiza) UNA mutación que la RPC no pudo aplicar.
+// Idempotente por (tipo, clave): si ya está PENDIENTE, solo refresca intentos/error/payload
+// (el payload se reemplaza por el más reciente — mismo conjunto de items de esa operación).
+function _persistirStockPendiente(tipo, clave, payload, error) {
+  try {
+    var sheet = _getColaStockPendiente();
+    var data  = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(tipo) && String(data[i][1]) === String(clave) && String(data[i][6]) === 'PENDIENTE') {
+        sheet.getRange(i + 1, 3).setValue(JSON.stringify(payload || {}));
+        sheet.getRange(i + 1, 4).setValue((parseInt(data[i][3]) || 0) + 1);
+        sheet.getRange(i + 1, 5).setValue(new Date());
+        sheet.getRange(i + 1, 6).setValue(String(error || '').slice(0, 500));
+        return;
+      }
+    }
+    var nextRow = sheet.getLastRow() + 1;
+    sheet.getRange(nextRow, 2).setNumberFormat('@STRING@');
+    sheet.appendRow([
+      String(tipo), String(clave), JSON.stringify(payload || {}),
+      1, new Date(), String(error || '').slice(0, 500), 'PENDIENTE'
+    ]);
+    Logger.log('[stock-directo] mutación ' + tipo + ' PERSISTIDA en cola · clave=' + clave);
+  } catch (e) {
+    Logger.log('[stock-directo] falló persistencia cola stock ' + tipo + ' clave=' + clave + ': ' + e.message);
+  }
+}
+
+// Trigger / manual: reintenta las mutaciones PENDIENTES vía la MISMA RPC idempotente.
+// Reusa los helpers directos (_meRegistrarGuiaDirecto / _meAjustarStockDirecto) que ya
+// arman/loggean el payload — NO duplica lógica. Se rinde tras 10 intentos (ABANDONADO).
+function reintentarStockPendiente() {
+  var sheet = _getColaStockPendiente();
+  if (sheet.getLastRow() < 2) return { ok: true, mensaje: 'Cola vacía' };
+  var data = sheet.getDataRange().getValues();
+  var reaplicados = 0, intentados = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][6] || '') !== 'PENDIENTE') continue;
+    var intentos = parseInt(data[i][3]) || 0;
+    if (intentos >= 10) { sheet.getRange(i + 1, 7).setValue('ABANDONADO'); continue; }
+    var tipo = String(data[i][0]);
+    var p; try { p = JSON.parse(data[i][2]) || {}; } catch (_){ continue; }
+    intentados++;
+    var r = null;
+    if (tipo === 'guia') {
+      r = _meRegistrarGuiaDirecto(p.idGuia, p.zona, p.tipo, p.items, p.usuario, p.idGuiaEntrada, p.zonaDestino);
+    } else if (tipo === 'ajuste') {
+      r = _meAjustarStockDirecto(p.zona, p.codBarra, p.nuevo, p.usuario, p.localId);
+    } else if (tipo === 'guia_meta') {
+      // METADATA ONLY (cabecera/detalle Supabase). Idempotente por idGuia → reintentar NO duplica ni toca stock.
+      r = _meRegistrarGuiaMetaDirecto({
+        idGuia: p.idGuia, zona: p.zona, tipo: p.tipo, vendedor: p.vendedor || p.usuario,
+        observacion: p.observacion, zonaDestino: p.zonaDestino, items: p.items
+      });
+    } else { continue; }
+    sheet.getRange(i + 1, 4).setValue(intentos + 1);
+    sheet.getRange(i + 1, 5).setValue(new Date());
+    if (r && r.ok) { sheet.getRange(i + 1, 7).setValue('APLICADO'); reaplicados++; }
+    else { sheet.getRange(i + 1, 6).setValue(String((r && r.error) || 'rpc').slice(0, 500)); }
+  }
+  Logger.log('[stock-directo] reintento mutaciones · intentados=' + intentados + ' reaplicados=' + reaplicados);
+  return { ok: true, intentados: intentados, reaplicados: reaplicados };
+}
+
+// Ejecutar 1 vez desde el editor para reintento automático cada 10 min.
+function setupStockRetryTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if (t.getHandlerFunction() === 'reintentarStockPendiente') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('reintentarStockPendiente').timeBased().everyMinutes(10).create();
+  return { ok: true, mensaje: 'Trigger 10min reintentarStockPendiente creado' };
 }
 
 // Auto-genera una guía SALIDA_VENTAS al cerrar caja y descuenta STOCK_ZONAS
@@ -280,6 +406,25 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
       var newStart = sheetStock.getLastRow() + 1;
       sheetStock.getRange(newStart, 1, nuevasFilas.length, 1).setNumberFormat('@STRING@');
       sheetStock.getRange(newStart, 1, nuevasFilas.length, 3).setValues(nuevasFilas);
+    }
+  }
+
+  // 5b. METADATA de la guía → Supabase (cabecera+detalle). SOLO si la escritura directa está ON.
+  //    El stock ya lo aplicó zona_descontar_venta arriba → esto es METADATA ONLY (no re-aplica saldo,
+  //    SIN doble conteo). La Hoja queda como espejo de seguridad (appendRow de arriba intacto).
+  //    Idempotente por idGuia. Si falla → la cola ME_STOCK_PENDIENTE ('guia_meta') reintenta; NUNCA rompe el cierre.
+  if (_meStockDirecto()) {
+    var metaItemsV = cods.map(function(cod){ return { codBarra: String(cod), cantidad: totales[cod] }; });
+    var rMetaV = _meRegistrarGuiaMetaDirecto({
+      idGuia: idGuia, zona: zona, tipo: 'SALIDA_VENTAS', vendedor: vendedor,
+      observacion: 'Auto cierre de caja · ' + cajaId, items: metaItemsV
+    });
+    if (!rMetaV || !rMetaV.ok) {
+      Logger.log('generarGuiaSalidaVentas: meta Supabase falló — encolando para guía ' + idGuia);
+      try { _persistirStockPendiente('guia_meta', idGuia, {
+        idGuia: idGuia, zona: zona, tipo: 'SALIDA_VENTAS', vendedor: vendedor,
+        observacion: 'Auto cierre de caja · ' + cajaId, items: metaItemsV
+      }, (rMetaV && rMetaV.error) || 'rpc'); } catch(eMV) { Logger.log('Encolar guia_meta venta: ' + eMV.message); }
     }
   }
 
@@ -976,6 +1121,23 @@ function diagnosticarSalidaVentas() {
 
 function listarGuias(zona) {
   if (!zona) return generarRespuestaError("zona requerida");
+  // [cutover guías ME] FUENTE_DATOS=supabase & key 'guias' no apagada → lee de me.guias_cabecera
+  // (RPC me.zona_guias_listar). Las guías nuevas se escriben directo a Supabase (sync de guias_* apagado);
+  // la Hoja queda como espejo de respaldo. Mismo gate/cache/fallback que getStockZonas. SHAPE idéntico a la Hoja.
+  if (_fuenteDatos('guias') === 'supabase') {
+    try {
+      var cache = CacheService.getScriptCache();
+      var ckey = ('SB_GUIAS_LIST_' + zona).slice(0, 240);
+      var hit = cache.get(ckey);
+      if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
+      var r = _sbRpc('me', 'zona_guias_listar', { zona: String(zona) });
+      if (r.ok && r.data && r.data.ok && Array.isArray(r.data.guias)) {
+        var json = JSON.stringify({ status: 'success', guias: r.data.guias });
+        try { cache.put(ckey, json, _FLIP_CACHE_SEG); } catch (eC) {}
+        return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (e) { /* cae a la Hoja */ }
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("GUIAS_CABECERA");
   if (!sheet) {
@@ -1005,6 +1167,21 @@ function listarGuias(zona) {
 
 function detalleGuia(idGuia) {
   if (!idGuia) return generarRespuestaError("id_guia requerido");
+  // [cutover guías ME] supabase → me.guias_detalle (RPC me.zona_guia_detalle). SHAPE [{cod_barras,cantidad}].
+  if (_fuenteDatos('guias') === 'supabase') {
+    try {
+      var cache = CacheService.getScriptCache();
+      var ckey = ('SB_GUIAS_DET_' + idGuia).slice(0, 240);
+      var hit = cache.get(ckey);
+      if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
+      var r = _sbRpc('me', 'zona_guia_detalle', { idGuia: String(idGuia) });
+      if (r.ok && r.data && r.data.ok && Array.isArray(r.data.items)) {
+        var json = JSON.stringify({ status: 'success', items: r.data.items });
+        try { cache.put(ckey, json, _FLIP_CACHE_SEG); } catch (eC) {}
+        return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (e) { /* cae a la Hoja */ }
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("GUIAS_DETALLE");
   if (!sheet) return generarRespuestaError("GUIAS_DETALLE no encontrada");
@@ -1021,6 +1198,22 @@ function detalleGuia(idGuia) {
 
 function trasladosEntrantes(zona, desde) {
   if (!zona) return generarRespuestaError("zona requerida");
+  // [cutover guías ME] supabase → me.guias_cabecera tipo ENTRADA_TRASLADO (RPC me.zona_traslados_entrantes).
+  // 'desde' es epoch ms (como hoy). SHAPE [{id_guia,fecha,origen,observacion}].
+  if (_fuenteDatos('guias') === 'supabase') {
+    try {
+      var cache = CacheService.getScriptCache();
+      var ckey = ('SB_GUIAS_TRAS_' + zona + '_' + (desde || '')).slice(0, 240);
+      var hit = cache.get(ckey);
+      if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
+      var r = _sbRpc('me', 'zona_traslados_entrantes', { zona: String(zona), desde: (desde != null ? String(desde) : null) });
+      if (r.ok && r.data && r.data.ok && Array.isArray(r.data.traslados)) {
+        var json = JSON.stringify({ status: 'success', traslados: r.data.traslados });
+        try { cache.put(ckey, json, _FLIP_CACHE_SEG); } catch (eC) {}
+        return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (e) { /* cae a la Hoja */ }
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("GUIAS_CABECERA");
   if (!sheet) {
@@ -1047,6 +1240,25 @@ function trasladosEntrantes(zona, desde) {
 }
 
 function getStockZonas() {
+  // [cutover stock ME] FUENTE_DATOS = supabase → lee el saldo operativo desde
+  // me.stock_zonas (RPC me.zona_stock), porque la Hoja STOCK_ZONAS quedó CONGELADA
+  // (ME_SYNC_OFF_TABLAS apagó su sync; las escrituras de stock van directo a Supabase).
+  // Mismo gate/patrón que estado_cajas/ventas_hoy_zona; ante CUALQUIER fallo cae a la Hoja.
+  // SHAPE idéntico al de la Hoja: { status:'success', stock:[{Cod_Barras, Zona_ID, Cantidad}, ...] }.
+  if (_fuenteDatos('stock_zonas') === 'supabase') {
+    try {
+      var cache = CacheService.getScriptCache();
+      var hit = cache.get('SB_STOCK_ZONAS');
+      if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
+      var r = _sbRpc('me', 'zona_stock', {});
+      if (r.ok && r.data && r.data.ok && Array.isArray(r.data.stock)) {
+        var json = JSON.stringify({ status: 'success', stock: r.data.stock });
+        try { cache.put('SB_STOCK_ZONAS', json, _FLIP_CACHE_SEG); } catch (eC) {}  // >100KB → no cachea, sin romper
+        return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (e) { /* cae a la Hoja */ }
+  }
+  // Sheets: default y fallback
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("STOCK_ZONAS");
   if (!sheet) {
@@ -1088,7 +1300,19 @@ function registrarGuia(data) {
   if (_meStockDirecto()) {
     var rG = _meRegistrarGuiaDirecto(idGuia, data.zona, tipo, data.items, data.vendedor, idGuiaEntrada, zonaDestino);
     guiaDirectoOK = !!(rG && rG.ok);
-    if (!guiaDirectoOK) Logger.log('registrarGuia: RPC directo falló — fallback Hoja para guía ' + idGuia);
+    if (!guiaDirectoOK) {
+      // Money-safety: con el sync de stock_zonas/guias_* apagado, el fallback a la Hoja (abajo)
+      // YA NO se propaga a Supabase → drift silencioso. Encolamos para REINTENTO IDEMPOTENTE
+      // (la RPC dedupea por idGuia+codBarra en su kardex → reintentar NUNCA duplica el movimiento).
+      // NO lanzamos excepción: la guía YA quedó persistida (cabecera+detalle) y no debe romperse.
+      Logger.log('registrarGuia: RPC directo falló — encolando + fallback Hoja para guía ' + idGuia);
+      try {
+        _persistirStockPendiente('guia', idGuia, {
+          idGuia: idGuia, zona: data.zona, tipo: tipo, items: data.items,
+          usuario: data.vendedor, idGuiaEntrada: idGuiaEntrada, zonaDestino: zonaDestino
+        }, (rG && rG.error) || 'rpc');
+      } catch (ePG) { Logger.log('Encolar guía pendiente: ' + ePG.message); }
+    }
   }
 
   var stockResult = [];
@@ -1115,6 +1339,41 @@ function registrarGuia(data) {
       sheetDet.getRange(nextDetE, 1, 1, 3).setValues([[idGuiaEntrada, cb, item.cantidad]]);
       if (!guiaDirectoOK) actualizarStockFila(sheetStock, cb, zonaDestino, item.cantidad);
     });
+  }
+
+  // METADATA → Supabase (cabecera+detalle de la guía + la ENTRADA_TRASLADO espejo si aplica).
+  //   SOLO si la escritura directa está ON. El saldo ya lo aplicó me.zona_registrar_guia arriba →
+  //   esto es METADATA ONLY (no re-aplica stock, SIN doble conteo). La Hoja queda como espejo (appendRow intacto).
+  //   Idempotente por idGuia. Si falla → cola ME_STOCK_PENDIENTE ('guia_meta'); NUNCA rompe la operación.
+  if (_meStockDirecto()) {
+    var metaItems = (data.items || []).map(function(it){ return { codBarra: String(it.cod_barras), cantidad: parseFloat(it.cantidad) || 0 }; });
+    var rMeta = _meRegistrarGuiaMetaDirecto({
+      idGuia: idGuia, zona: data.zona, tipo: tipo, vendedor: data.vendedor,
+      observacion: data.observacion || '', zonaDestino: zonaDestino, items: metaItems
+    });
+    if (!rMeta || !rMeta.ok) {
+      Logger.log('registrarGuia: meta Supabase falló — encolando para guía ' + idGuia);
+      try { _persistirStockPendiente('guia_meta', idGuia, {
+        idGuia: idGuia, zona: data.zona, tipo: tipo, vendedor: data.vendedor,
+        observacion: data.observacion || '', zonaDestino: zonaDestino, items: metaItems
+      }, (rMeta && rMeta.error) || 'rpc'); } catch(eM) { Logger.log('Encolar guia_meta: ' + eM.message); }
+    }
+    // ENTRADA_TRASLADO espejo (zona destino) → su propia metadata, para que zona_traslados_entrantes la vea.
+    if (idGuiaEntrada) {
+      var rMetaE = _meRegistrarGuiaMetaDirecto({
+        idGuia: idGuiaEntrada, zona: zonaDestino, tipo: 'ENTRADA_TRASLADO', vendedor: data.vendedor,
+        observacion: 'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia,
+        zonaDestino: data.zona, items: metaItems
+      });
+      if (!rMetaE || !rMetaE.ok) {
+        Logger.log('registrarGuia: meta entrada-espejo falló — encolando para ' + idGuiaEntrada);
+        try { _persistirStockPendiente('guia_meta', idGuiaEntrada, {
+          idGuia: idGuiaEntrada, zona: zonaDestino, tipo: 'ENTRADA_TRASLADO', vendedor: data.vendedor,
+          observacion: 'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia,
+          zonaDestino: data.zona, items: metaItems
+        }, (rMetaE && rMetaE.error) || 'rpc'); } catch(eME) { Logger.log('Encolar guia_meta entrada: ' + eME.message); }
+      }
+    }
   }
 
   return ContentService.createTextOutput(JSON.stringify({
@@ -1251,7 +1510,17 @@ function registrarAuditoria(data) {
       var localAj = idAudit + ':' + cb;   // estable por auditoría+código
       var rAj = _meAjustarStockDirecto(data.zona, cb, cantReal, usuario, localAj);
       auditDirectoOK = !!(rAj && rAj.ok);
-      if (!auditDirectoOK) Logger.log('registrarAuditoria: RPC ajuste directo falló — fallback Hoja para ' + cb + '@' + data.zona);
+      if (!auditDirectoOK) {
+        // Money-safety: sync de stock_zonas apagado → el fallback a la Hoja ya no llega a
+        // Supabase. Encolamos el ajuste (SET absoluto) para REINTENTO IDEMPOTENTE: la RPC dedupea
+        // por localId → reintentar re-ancla al MISMO valor auditado, nunca duplica ni acumula.
+        Logger.log('registrarAuditoria: RPC ajuste directo falló — encolando + fallback Hoja para ' + cb + '@' + data.zona);
+        try {
+          _persistirStockPendiente('ajuste', localAj, {
+            zona: data.zona, codBarra: cb, nuevo: cantReal, usuario: usuario, localId: localAj
+          }, (rAj && rAj.error) || 'rpc');
+        } catch (ePA) { Logger.log('Encolar ajuste pendiente: ' + ePA.message); }
+      }
     }
     if (!auditDirectoOK) {
       _actualizarStockAuditoria(sheetStock, cb, data.zona, cantReal, usuario, ahoraStr);

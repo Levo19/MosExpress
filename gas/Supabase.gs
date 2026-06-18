@@ -171,9 +171,15 @@ function _sbRpc(schema, fn, args) {
   var cfg = _sbCfg_();
   var headers = { 'apikey': cfg.key, 'Authorization': 'Bearer ' + cfg.key, 'Content-Type': 'application/json' };
   if (schema && schema !== 'public') headers['Content-Profile'] = schema;
+  // Las RPC me.zona_* reciben UN solo parámetro `p jsonb` (convención del módulo de zona, igual que
+  // MOS _sbRpcMOS(fn,{p})). PostgREST mapea las keys del body a parámetros CON NOMBRE; para estas
+  // funciones el payload DEBE ir envuelto en {p:{...}} o devuelve PGRST202 (función no encontrada).
+  // Las demás RPC me.* (estado_cajas, creditos_pendientes, ventas_hoy_zona, siguiente_correlativo...)
+  // usan parámetros escalares con nombre → se mandan tal cual.
+  var body = (schema === 'me' && String(fn).indexOf('zona_') === 0) ? { p: (args || {}) } : (args || {});
   var res = UrlFetchApp.fetch(cfg.url + '/rest/v1/rpc/' + fn, {
     method: 'post', headers: headers, muteHttpExceptions: true,
-    payload: JSON.stringify(args || {})
+    payload: JSON.stringify(body)
   });
   var code = res.getResponseCode(), text = res.getContentText();
   if (code >= 400) return { ok: false, code: code, error: text };

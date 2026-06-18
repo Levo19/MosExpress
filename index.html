@@ -16978,15 +16978,17 @@
         // ─────────────────────────────────────────────────────────────────────────────────────────
         // BUILD 1 · RECIBIR GUÍA DE ALMACÉN (WH→ME por escaneo). Llama RPCs directo a Supabase (profile 'me')
         // con el token de dispositivo (claim app='mosExpress', aceptado por me._claim_zona_ok).
-        // ⚠ El SALDO de zona aún NO se aplica (gate INERTE en la RPC: registra kardex + verificación). El admin
-        //   ve las discrepancias en MOS. El dueño desbloquea el saldo (v_aplicar_stock) tras validar.
+        // El SALDO de zona SÍ se aplica (v_aplicar_stock=true desde el go-live 2026-06-17), idempotente por
+        //   verificación (id sintético WH:<idGuiaWH>). El admin ve las discrepancias en MOS.
+        // ⚠ Las RPC recibir_guia_wh / recibir_guia_wh_cerrar reciben UN solo parámetro `p jsonb` → el body DEBE
+        //   ir envuelto en {p:{...}} o PostgREST devuelve PGRST202 (función no encontrada). [fix bug recepción]
         // ─────────────────────────────────────────────────────────────────────────────────────────
         const _rwRpc = async (fn, body) => {
             const token = await _mintTokenSB();
             const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
                 method: 'POST',
                 headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                body: JSON.stringify(body || {})
+                body: JSON.stringify({ p: (body || {}) })
             });
             if (!res.ok) throw new Error('RPC ' + fn + ' HTTP ' + res.status);
             return await res.json();

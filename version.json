@@ -1,1 +1,1 @@
-{ "version": "2.8.26", "build": "20260617-BUILD1: Recibir guia de almacen WH->ME por escaneo (Tools->Guias->Entrada). RPCs me.recibir_guia_wh + me.recibir_guia_wh_cerrar (profile me, gate mosExpress). Saldo de zona INERTE (gate OFF, el dueno lo activa). El admin ve discrepancias en MOS." }
+{ "version": "2.8.27", "build": "20260617-FIX: recepcion WH->ME por escaneo arreglada (bug PGRST202: el body iba sin envolver en {p}, ahora _rwRpc manda {p:{...}}). Saldo de zona SE APLICA (v_aplicar_stock=true, idempotente por verificacion). El admin ve discrepancias en MOS." }
