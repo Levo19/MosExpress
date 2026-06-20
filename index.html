@@ -9159,7 +9159,8 @@
             channel:   null,   // canal de postgres_changes
             starting:  false,  // guard anti-reentrada del arranque
             libPromise:null,   // promesa de import del cliente (1 sola vez)
-            listeners: false   // listeners visible/focus/online ya cableados
+            listeners: false,  // listeners visible/focus/online ya cableados
+            gen:       0       // [anti-orphan] generación: _detener la incrementa → un arranque en vuelo se aborta tras sus awaits
         };
 
         const _rtImportarLib = () => {
@@ -9177,13 +9178,14 @@
             if (_RT_CAT.starting || _RT_CAT.channel) return;   // singleton + anti-reentrada
             if (offlineMode.value || !navigator.onLine) return;
             _RT_CAT.starting = true;
+            const _gen = _RT_CAT.gen;   // [anti-orphan] si un logout/unmount (detener) ocurre durante los awaits, gen cambia → abortamos
             try {
                 const RealtimeClient = await _rtImportarLib();
                 if (!RealtimeClient) return;                    // lib no cargó → poller fallback
-                if (_RT_CAT.channel) return;                    // otra llamada creó el canal mientras importábamos
+                if (_RT_CAT.channel || _gen !== _RT_CAT.gen) return;   // otra llamada creó el canal, o un logout cerró durante el import
                 const token = await _mintTokenSB().catch(() => null);  // JWT authenticated (mismo que las RPC)
                 if (!token) return;                             // sin token no hay canal; el poller cubre
-                if (_RT_CAT.channel) return;                    // re-check tras el await del token
+                if (_RT_CAT.channel || _gen !== _RT_CAT.gen) return;   // re-check tras el await del token (logout/otra apertura)
 
                 // URL WebSocket explícita (wss://<ref>.supabase.co/realtime/v1). apikey (anon, público)
                 // va en params; el access_token (JWT authenticated) lo aplica setAuth → viaja en el phx_join.
@@ -9245,6 +9247,7 @@
         };
 
         const _detenerRealtimeCatalogo = () => {
+            _RT_CAT.gen++;   // [anti-orphan] invalida cualquier arranque en vuelo (post-await abortará en vez de abrir un canal huérfano)
             try { if (_RT_CAT.channel && _RT_CAT.client && _RT_CAT.client.removeChannel) _RT_CAT.client.removeChannel(_RT_CAT.channel); } catch(_) {}
             try { if (_RT_CAT.client && _RT_CAT.client.disconnect) _RT_CAT.client.disconnect(); } catch(_) {}
             _RT_CAT.channel = null;
