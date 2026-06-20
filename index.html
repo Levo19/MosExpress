@@ -8144,6 +8144,11 @@
           _arrancarPollerCatalogo();
           setTimeout(() => { _chequearVersionCatalogo(); }, 10 * 1000);
 
+          // Realtime: propagación ~0s del catálogo/precios. ADITIVO — el poller de ~50s sigue de
+          // red de seguridad si el WS/CDN falla. Arranque defensivo a los 12s (tras 1ra carga +
+          // 1er mint de token). Money-safe: el callback delega en _chequearVersionCatalogo.
+          setTimeout(() => { try { _iniciarRealtimeCatalogo(); } catch(_) {} }, 12 * 1000);
+
           // Bloqueo remoto del usuario — polling cada 30s + check inicial al cargar
           setTimeout(_checkBloqueoUsuario, 4000);
           _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 30 * 1000);
@@ -8220,6 +8225,7 @@
           if (_intervalBloqueoCountdown) { clearInterval(_intervalBloqueoCountdown); _intervalBloqueoCountdown = null; }
           if (_intervalGps) { clearInterval(_intervalGps); _intervalGps = null; }
           _detenerPollerCatalogo();
+          _detenerRealtimeCatalogo();
           _audioRemotoDetener();
           _intervalVendedorCajeroCheck = null;
           if (_wizardPollingTimer) { clearInterval(_wizardPollingTimer); _wizardPollingTimer = null; }
@@ -9129,6 +9135,120 @@
         };
         const _detenerPollerCatalogo = () => {
             if (_catVerPollTimer) { clearInterval(_catVerPollTimer); _catVerPollTimer = null; }
+        };
+
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        // SUPABASE REALTIME — propagación ~0s del catálogo/precios (ADITIVO al poller de ~50s)
+        //
+        // Suscripción WebSocket a mos.catalogo_meta (UPDATE). Cuando MOS cambia productos/
+        // equivalencias/precios/promos, el backend incrementa catalogo_meta.version → recibimos el
+        // evento al instante y disparamos EXACTAMENTE el mismo flujo money-safe del poller
+        // (_chequearVersionCatalogo): compara vs baseline, DIFIERE si hay venta en curso, y solo
+        // entonces re-descarga el catálogo. NUNCA interrumpe una venta ni reinicia el POS.
+        //
+        // CARGA DEFENSIVA: cliente oficial @supabase/realtime-js v2 por ESM CDN, import dinámico en
+        // try/catch. Si el CDN/WS falla, la app NO se rompe y el poller de ~50s sigue de FALLBACK.
+        //   • Singleton + guard anti-reentrada: NUNCA abre dos conexiones/canales.
+        //   • access_token = el MISMO JWT de dispositivo ME (_mintTokenSB, role authenticated) que ME
+        //     usa para las RPC con profile 'mos'. Al rotar se re-aplica con setAuth().
+        //   • Re-setAuth/re-suscribe on visible/focus/online (Safari pausa WS en background).
+        //   • Cierre limpio en logout (_detenerRealtimeCatalogo).
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        const _RT_CAT = {
+            client:    null,   // RealtimeClient
+            channel:   null,   // canal de postgres_changes
+            starting:  false,  // guard anti-reentrada del arranque
+            libPromise:null,   // promesa de import del cliente (1 sola vez)
+            listeners: false   // listeners visible/focus/online ya cableados
+        };
+
+        const _rtImportarLib = () => {
+            if (_RT_CAT.libPromise) return _RT_CAT.libPromise;
+            // ESM por CDN. +esm fuerza el bundle ESM de jsDelivr. Si falla → null (poller fallback).
+            _RT_CAT.libPromise = import('https://cdn.jsdelivr.net/npm/@supabase/realtime-js@2/+esm')
+                .then(mod => (mod && (mod.RealtimeClient || (mod.default && mod.default.RealtimeClient))) || null)
+                .catch(err => { try { console.warn('[Realtime] import falló (poller sigue):', err); } catch(_) {} return null; });
+            return _RT_CAT.libPromise;
+        };
+
+        const _iniciarRealtimeCatalogo = async () => {
+            // Guards: una sola conexión, solo con red (sin red no hay WS; el poller cubrirá).
+            if (typeof window === 'undefined') return;
+            if (_RT_CAT.starting || _RT_CAT.channel) return;   // singleton + anti-reentrada
+            if (offlineMode.value || !navigator.onLine) return;
+            _RT_CAT.starting = true;
+            try {
+                const RealtimeClient = await _rtImportarLib();
+                if (!RealtimeClient) return;                    // lib no cargó → poller fallback
+                if (_RT_CAT.channel) return;                    // otra llamada creó el canal mientras importábamos
+                const token = await _mintTokenSB().catch(() => null);  // JWT authenticated (mismo que las RPC)
+                if (!token) return;                             // sin token no hay canal; el poller cubre
+                if (_RT_CAT.channel) return;                    // re-check tras el await del token
+
+                // URL WebSocket explícita (wss://<ref>.supabase.co/realtime/v1). apikey (anon, público)
+                // va en params; el access_token (JWT authenticated) lo aplica setAuth → viaja en el phx_join.
+                const wsUrl = SUPABASE_URL.replace(/^http/i, 'ws') + '/realtime/v1';
+                const client = new RealtimeClient(wsUrl, { params: { apikey: SUPABASE_ANON_KEY } });
+                try { client.setAuth(token); } catch(_) {}
+                _RT_CAT.client = client;
+
+                const channel = client.channel('me-catalogo-meta');
+                channel.on('postgres_changes',
+                    { event: 'UPDATE', schema: 'mos', table: 'catalogo_meta' },
+                    (payload) => {
+                        // No leemos la versión del payload directamente: delegamos en
+                        // _chequearVersionCatalogo, que consulta la versión, compara vs baseline,
+                        // DIFIERE si hay venta en curso y re-descarga money-safe. Mismo flujo del poller.
+                        try { _chequearVersionCatalogo(); } catch(_) {}
+                    }
+                );
+                channel.subscribe((status) => {
+                    try { console.log('[Realtime] canal catalogo_meta:', status); } catch(_) {}
+                    // Al (re)suscribir, resync por si perdimos un UPDATE mientras el WS dormía.
+                    // Money-safe: pasa por el mismo núcleo que el poller (no re-descarga si no subió).
+                    if (status === 'SUBSCRIBED') {
+                        try { _chequearVersionCatalogo(); } catch(_) {}
+                    }
+                });
+                _RT_CAT.channel = channel;
+                _rtCablearListeners();
+            } catch (err) {
+                try { console.warn('[Realtime] arranque falló (poller sigue):', err); } catch(_) {}
+            } finally {
+                _RT_CAT.starting = false;
+            }
+        };
+
+        // Re-aplica el token (rotación) al cliente realtime. Fire-and-forget.
+        const _rtRefrescarToken = async () => {
+            if (!_RT_CAT.client) return;
+            try {
+                const token = await _mintTokenSB().catch(() => null);
+                if (token && _RT_CAT.client && _RT_CAT.client.setAuth) _RT_CAT.client.setAuth(token);
+            } catch(_) {}
+        };
+
+        const _rtCablearListeners = () => {
+            if (_RT_CAT.listeners || typeof window === 'undefined') return;
+            _RT_CAT.listeners = true;
+            // Volver a primer plano / recuperar foco / reconectar: re-asegurar canal + token frescos.
+            const reasegurar = () => {
+                if (offlineMode.value || !navigator.onLine) return;
+                if (!_RT_CAT.channel) { _iniciarRealtimeCatalogo(); return; }  // canal cerrado/caído → re-abrir
+                _rtRefrescarToken();                                           // canal vivo → solo refrescar token
+            };
+            try {
+                document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reasegurar(); });
+                window.addEventListener('focus',  reasegurar);
+                window.addEventListener('online', reasegurar);
+            } catch(_) {}
+        };
+
+        const _detenerRealtimeCatalogo = () => {
+            try { if (_RT_CAT.channel && _RT_CAT.client && _RT_CAT.client.removeChannel) _RT_CAT.client.removeChannel(_RT_CAT.channel); } catch(_) {}
+            try { if (_RT_CAT.client && _RT_CAT.client.disconnect) _RT_CAT.client.disconnect(); } catch(_) {}
+            _RT_CAT.channel = null;
+            _RT_CAT.client  = null;
         };
 
         const sincronizarDatos = async () => {
