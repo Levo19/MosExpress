@@ -21,6 +21,86 @@ function _meStockDirecto() {
   } catch (e) { return false; }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// LECTURA del cierre desde Supabase (delete-safe del Sheet).
+// ────────────────────────────────────────────────────────────────────────
+// Gate Script Property ME_LECTURA_CIERRE_DIRECTA:
+//   '1'/'true'/'on' (DEFAULT ON) → el cierre y la guía SALIDA_VENTAS leen los
+//        datos de la caja (ventas/efectivo/POR_COBRAR/totales por cod/guía existente)
+//        desde me.cierre_datos_caja (RPC LECTURA). El Sheet ya NO se lee.
+//   '0'/'off'/'no'  → comportamiento legacy: lee del Sheet (rollback instantáneo).
+// Ante CUALQUIER fallo de la RPC → fallback automático al Sheet (si existe). Si el
+// Sheet ya no existe y la RPC falla, se loggea y se sigue (no rompe el cierre/venta).
+// MONEY-SAFETY: es 100% LECTURA — el descuento sigue por zona_descontar_venta
+// (idempotente por id_caja) y el cierre por _dualWriteCajaME/Sheet. NO doble-cuenta.
+// ════════════════════════════════════════════════════════════════════════
+function _meLecturaCierreDirecta() {
+  try {
+    var v = String(PropertiesService.getScriptProperties().getProperty('ME_LECTURA_CIERRE_DIRECTA') || '1').toLowerCase();
+    return v === '1' || v === 'true' || v === 'on' || v === 'si';
+  } catch (e) { return true; }  // default ON: el resto de ME ya lee directo (ME_LECTURA_DIRECTA=1)
+}
+
+// Lee de me.cierre_datos_caja todo lo que el cierre/guía necesitan de la caja.
+// Devuelve el objeto data de la RPC ({ok:true, ...}) o null si falla / gate OFF.
+// SHAPE: { ok, id_caja, vendedor, estacion, zona, estado, monto_inicial, monto_final,
+//   printnode_id, fecha_apertura, fecha_cierre, efectivo_ventas, ingresos_efe,
+//   egresos_efe, ids_por_cobrar:[], totales_por_cod:{cod:cant}, guia_salida_existe }
+function _meCierreDatosCaja(idCaja) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var idc = String(idCaja || '').trim();
+  if (!idc) return null;
+  try {
+    var r = _sbRpc('me', 'cierre_datos_caja', { p_id_caja: idc });
+    if (r && r.ok && r.data && r.data.ok) return r.data;
+    Logger.log('[cierre-lectura] RPC falló caja=' + idc + ' HTTP ' + (r && r.code) + ' ' + ((r && (r.error || (r.data && r.data.error))) || ''));
+    return null;
+  } catch (e) {
+    Logger.log('[cierre-lectura] EXCEPCIÓN caja=' + idc + ': ' + (e && e.message));
+    return null;
+  }
+}
+
+// [delete-safe 166] Lee de me.venta_estado_lectura el estado puntual de UNA venta
+// (forma_pago / id_caja / obs) para cobrar/creditar/anular sin tocar la hoja
+// VENTAS_CABECERA. Gate = mismo _meLecturaCierreDirecta. Devuelve el data {ok,...}
+// de la RPC, o null si gate OFF / RPC falla → el caller cae al Sheet (fallback).
+// SHAPE: { ok, id_venta, forma_pago, id_caja, obs }
+function _meVentaEstado(idVenta) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var idv = String(idVenta || '').trim();
+  if (!idv) return null;
+  try {
+    var r = _sbRpc('me', 'venta_estado_lectura', { p_id_venta: idv });
+    if (r && r.ok && r.data && r.data.ok) return r.data;
+    Logger.log('[venta-estado-lectura] RPC falló venta=' + idv + ' HTTP ' + (r && r.code) + ' ' + ((r && (r.error || (r.data && r.data.error))) || ''));
+    return null;
+  } catch (e) {
+    Logger.log('[venta-estado-lectura] EXCEPCIÓN venta=' + idv + ': ' + (e && e.message));
+    return null;
+  }
+}
+
+// [delete-safe 166] Busca la caja ABIERTA de un dispositivo (printnode_id=deviceId)
+// desde me.cajas, sin recorrer la hoja CAJAS. Gate = _meLecturaCierreDirecta.
+// Devuelve el data {ok, encontrada, ...} de la RPC, o null si gate OFF / RPC falla.
+// SHAPE: { ok, encontrada, id_caja, vendedor, estacion, zona, monto_inicial,
+//   estado, printnode_id, fecha_apertura, zombis:[ids] }
+function _meCajaAbiertaPorDevice(deviceId) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var dev = String(deviceId || '').trim();
+  if (!dev) return null;
+  try {
+    var r = _sbRpc('me', 'caja_abierta_por_device', { p_device: dev });
+    if (r && r.ok && r.data && r.data.ok) return r.data;
+    Logger.log('[caja-device-lectura] RPC falló device=' + dev + ' HTTP ' + (r && r.code) + ' ' + ((r && (r.error || (r.data && r.data.error))) || ''));
+    return null;
+  } catch (e) {
+    Logger.log('[caja-device-lectura] EXCEPCIÓN device=' + dev + ': ' + (e && e.message));
+    return null;
+  }
+}
+
 // Descuento de stock por cierre de caja (venta) — RPC atómica idempotente por id_caja.
 // totalesPorCod = { codBarras: cantidad, ... }. Devuelve {ok, ...} de la RPC o {ok:false} si falló.
 function _meDescontarVentaDirecto(idCaja, zona, vendedor, totalesPorCod) {
@@ -44,12 +124,15 @@ function _meDescontarVentaDirecto(idCaja, zona, vendedor, totalesPorCod) {
   }
 }
 
-// Ajuste set-absoluto (auditoría) — RPC me.zona_ajustar_stock (set + log + kardex AJUSTE). Idempotente por localId.
-function _meAjustarStockDirecto(zona, codBarras, nuevo, usuario, localId) {
+// Ajuste set-absoluto — RPC me.zona_ajustar_stock (set + log + kardex). Idempotente por localId.
+//   origen='AUDITORIA' → la RPC etiqueta el movimiento del kardex como AUDITORIA y RE-ANCLA el saldo
+//   (nuevoAbsoluto) al valor contado (fix 🔴#1). Cualquier otro origen → AJUSTE. El código va TAL CUAL
+//   (sin upper) para no crear filas fantasma con códigos alfanuméricos (fix 🔴#2).
+function _meAjustarStockDirecto(zona, codBarras, nuevo, usuario, localId, origen) {
   try {
     var r = _sbRpc('me', 'zona_ajustar_stock', {
       zona: String(zona), codBarra: String(codBarras), nuevo: nuevo,
-      usuario: String(usuario || ''), origen: 'GAS', localId: localId ? String(localId) : null
+      usuario: String(usuario || ''), origen: String(origen || 'GAS'), localId: localId ? String(localId) : null
     });
     if (!r.ok || !(r.data && r.data.ok)) {
       Logger.log('[stock-directo ajuste] FALLÓ ' + codBarras + '@' + zona + ' HTTP ' + r.code + ' ' + (r.error || JSON.stringify(r.data || {})));
@@ -114,6 +197,165 @@ function _meRegistrarGuiaMetaDirecto(meta) {
   } catch (e) {
     Logger.log('[guia-meta] EXCEPCIÓN ' + (meta && meta.idGuia) + ': ' + e.message);
     return { ok: false, error: String(e.message) };
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// REPOSICIÓN DE STOCK AL ANULAR UNA VENTA CUYA CAJA YA CERRÓ.
+// ────────────────────────────────────────────────────────────────────────
+// PROBLEMA: el descuento de stock por venta ocurre UNA sola vez, al CIERRE de
+// caja (generarGuiaSalidaVentas), sumando las cantidades de las ventas NO
+// anuladas por Cod_Barras. Si una venta se anula DESPUÉS del cierre, su stock
+// ya fue descontado y NUNCA se repone → faltante fantasma permanente.
+//   · Anular ANTES del cierre → el cierre la filtra (FormaPago='ANULADO'),
+//     nunca se descontó → NO hay que reponer.
+//   · Anular DESPUÉS del cierre (ya existe guía SALIDA_VENTAS de su caja) →
+//     hay que SUMAR de vuelta el stock de esa venta.
+//
+// DETECCIÓN de "caja ya cerrada": existe una guía Tipo='SALIDA_VENTAS' cuya
+// Observacion contiene el ID_Caja de la venta (mismo criterio con que
+// generarGuiaSalidaVentas evita duplicar). De esa guía tomamos la ZONA exacta
+// con la que se descontó (col Zona_ID), no la inferimos.
+//
+// VÍA: me.zona_registrar_guia con tipo='ENTRADA' (signo +1 = SUMA) e
+// idGuia='ANUL:<idVenta>' → kardex refId 'GUIA:ANUL:<idVenta>:<cod>', ÚNICO e
+// IDEMPOTENTE (uq_me_kardex_ref). Anular 2 veces la misma venta NO repone 2x.
+// Cantidades = suma por Cod_Barras de VENTAS_DETALLE de esa venta (mismas
+// unidades de zona que usó el descuento del cierre).
+//
+// MONEY-SAFETY: gated por ME_ESCRITURA_STOCK_DIRECTA (OFF → no-op, igual que
+// hoy: con la Hoja como verdad y el sync vivo, el cierre re-descuenta sin la
+// venta anulada en el próximo recálculo... pero ese recálculo NO existe tras
+// el cierre — por eso la reposición SOLO aplica cuando la escritura directa
+// está ON, que es el modo donde el saldo NO se re-deriva). Best-effort: si la
+// RPC falla, se encola en ME_STOCK_PENDIENTE (tipo 'guia') → reintento
+// idempotente por el trigger existente. NUNCA lanza (no rompe la anulación).
+// ════════════════════════════════════════════════════════════════════════
+
+// [delete-safe] Lee de me.venta_reposicion_datos TODO lo que la reposición de UNA venta
+// anulada necesita (id_caja, caja_cerrada, zona del descuento, totales por cod) SIN tocar
+// el Sheet. Devuelve el objeto data de la RPC ({ok:true, ...}) o null si gate OFF / falla.
+// SHAPE: { ok, id_venta, id_caja, caja_cerrada:bool, zona, totales_por_cod:{cod:cant}, forma_pago }
+function _meVentaReposicionDatos(idVenta) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var idv = String(idVenta || '').trim();
+  if (!idv) return null;
+  try {
+    var r = _sbRpc('me', 'venta_reposicion_datos', { p_id_venta: idv });
+    if (r && r.ok && r.data && r.data.ok) return r.data;
+    Logger.log('[reposicion-lectura] RPC falló venta=' + idv + ' HTTP ' + (r && r.code) + ' ' + ((r && (r.error || (r.data && r.data.error))) || ''));
+    return null;
+  } catch (e) {
+    Logger.log('[reposicion-lectura] EXCEPCIÓN venta=' + idv + ': ' + (e && e.message));
+    return null;
+  }
+}
+
+// ¿La caja de esta venta YA está cerrada? (existe guía SALIDA_VENTAS suya).
+// Devuelve { cerrada:bool, zona:string } — zona = Zona_ID de la guía SALIDA_VENTAS.
+// [delete-safe] Fallback Sheet. La fuente primaria (Supabase) la usa _reponerStockVentaAnulada.
+function _meCajaVentaYaCerrada(ss, idCaja) {
+  var out = { cerrada: false, zona: '' };
+  var idc = String(idCaja || '').trim();
+  if (!idc) return out;
+  var sheetGC = ss.getSheetByName('GUIAS_CABECERA');
+  if (!sheetGC) return out;
+  // GUIAS_CABECERA: 0 ID_Guia | 1 Fecha | 2 Vendedor | 3 Zona_ID | 4 Tipo | 5 Observacion | 6 Zona_Destino | 7 Estado
+  var gc = sheetGC.getDataRange().getValues();
+  for (var g = 1; g < gc.length; g++) {
+    if (String(gc[g][4]) === 'SALIDA_VENTAS' &&
+        String(gc[g][5] || '').indexOf(idc) >= 0) {
+      out.cerrada = true;
+      out.zona = String(gc[g][3] || '').trim();   // zona exacta del descuento
+      return out;
+    }
+  }
+  return out;
+}
+
+// Repone (SUMA) el stock de zona de UNA venta anulada, SOLO si su caja ya cerró.
+// Idempotente (idGuia 'ANUL:<idVenta>' → kardex único) + best-effort (encola si falla).
+// Llamar tras marcar la venta ANULADO. NUNCA lanza. No-op si stock-directo OFF o caja no cerrada.
+//
+// [delete-safe] FUENTE PRIMARIA: me.venta_reposicion_datos (id_caja + caja_cerrada + zona del
+// descuento + totales por cod, todo de me.ventas/ventas_detalle/guias_cabecera). Así una anulación
+// TARDÍA (post-cierre) repone stock aunque el Sheet ya no exista. Si la RPC no está disponible
+// (gate OFF / falla) → FALLBACK al Sheet (comportamiento legacy). El cálculo es idéntico en ambos
+// caminos (cod_barras col6 || sku col1; caja cerrada = guía SALIDA_VENTAS con obs⊇idCaja; zona = su Zona_ID).
+function _reponerStockVentaAnulada(ss, idVenta, usuario) {
+  try {
+    if (!_meStockDirecto()) return { ok: true, skip: 'stock-directo OFF' };
+    var idv = String(idVenta || '').trim();
+    if (!idv) return { ok: false, error: 'sin idVenta' };
+
+    var idCaja = '', zona = '', totales = {};
+
+    // ── FUENTE PRIMARIA: Supabase (delete-safe) ──
+    var sb = _meVentaReposicionDatos(idv);
+    if (sb) {
+      idCaja = String(sb.id_caja || '').trim();
+      if (!idCaja) return { ok: false, error: 'venta sin ID_Caja: ' + idv };
+      // ¿La caja ya cerró? Si NO → el cierre todavía filtrará esta venta (nunca se descontó) → NO reponer.
+      if (sb.caja_cerrada !== true) return { ok: true, skip: 'caja aún abierta — el cierre filtrará la venta', idCaja: idCaja };
+      zona = String(sb.zona || '').trim();
+      if (!zona) return { ok: false, error: 'guía SALIDA_VENTAS sin zona para caja ' + idCaja };
+      var tpc = sb.totales_por_cod || {};
+      Object.keys(tpc).forEach(function (cod) {
+        var q = parseFloat(tpc[cod]) || 0;
+        if (cod && q > 0) totales[String(cod)] = q;
+      });
+    } else {
+      // ── FALLBACK: Sheet (gate OFF o RPC falló) ──
+      var sheetVC = ss.getSheetByName('VENTAS_CABECERA');
+      var sheetVD = ss.getSheetByName('VENTAS_DETALLE');
+      if (!sheetVC || !sheetVD) return { ok: false, error: 'faltan hojas VC/VD (RPC no disponible)' };
+
+      // 1) ID_Caja de la venta. VENTAS_CABECERA: ... 10 ID_Caja (igual que generarGuiaSalidaVentas).
+      var vc = sheetVC.getDataRange().getValues();
+      for (var i = vc.length - 1; i > 0; i--) {
+        if (String(vc[i][0]) === idv) { idCaja = String(vc[i][10] || '').trim(); break; }
+      }
+      if (!idCaja) return { ok: false, error: 'venta sin ID_Caja: ' + idv };
+
+      // 2) ¿La caja ya cerró? Si NO → el cierre todavía filtrará esta venta (nunca se descontó) → NO reponer.
+      var est = _meCajaVentaYaCerrada(ss, idCaja);
+      if (!est.cerrada) return { ok: true, skip: 'caja aún abierta — el cierre filtrará la venta', idCaja: idCaja };
+      zona = est.zona;
+      if (!zona) return { ok: false, error: 'guía SALIDA_VENTAS sin zona para caja ' + idCaja };
+
+      // 3) Sumar cantidades por Cod_Barras (idéntico al descuento del cierre: Cod_Barras = col 6, fallback SKU col 1).
+      var vd = sheetVD.getDataRange().getValues();
+      for (var j = 1; j < vd.length; j++) {
+        if (String(vd[j][0]) !== idv) continue;
+        var cod = String(vd[j][6] || vd[j][1]).trim();
+        if (!cod) continue;
+        totales[cod] = (totales[cod] || 0) + (parseFloat(vd[j][3]) || 0);
+      }
+    }
+
+    var cods = Object.keys(totales).filter(function (c) { return totales[c] > 0; });
+    if (!cods.length) return { ok: true, vacio: true, idCaja: idCaja };
+
+    // 4) ENTRADA idempotente (suma). idGuia='ANUL:<idVenta>' → refId 'GUIA:ANUL:<idVenta>:<cod>' único.
+    var idGuiaAnul = 'ANUL:' + idv;
+    var items = cods.map(function (cod) { return { cod_barras: String(cod), cantidad: totales[cod] }; });
+    var r = _meRegistrarGuiaDirecto(idGuiaAnul, zona, 'ENTRADA', items, String(usuario || ''), null, null);
+    if (!r || !r.ok) {
+      // Money-safety: encolar para reintento IDEMPOTENTE (mismo idGuia → kardex no doblará). Reusa
+      // el trigger reintentarStockPendiente (tipo 'guia' → _meRegistrarGuiaDirecto). NUNCA rompe la anulación.
+      Logger.log('[reposicion-anulada] RPC falló — encolando ' + idGuiaAnul + ': ' + ((r && r.error) || 'rpc'));
+      try {
+        _persistirStockPendiente('guia', idGuiaAnul, {
+          idGuia: idGuiaAnul, zona: zona, tipo: 'ENTRADA', items: items, usuario: String(usuario || '')
+        }, (r && r.error) || 'rpc');
+      } catch (eP) { Logger.log('[reposicion-anulada] encolar falló: ' + eP.message); }
+      return { ok: false, error: (r && r.error) || 'rpc', encolado: true, idGuia: idGuiaAnul };
+    }
+    Logger.log('[reposicion-anulada] OK ' + idGuiaAnul + ' zona=' + zona + ' cods=' + cods.length);
+    return { ok: true, idGuia: idGuiaAnul, zona: zona, cods: cods.length };
+  } catch (e) {
+    Logger.log('[reposicion-anulada] EXCEPCIÓN venta=' + idVenta + ': ' + (e && e.message));
+    return { ok: false, error: String(e && e.message) };
   }
 }
 
@@ -269,7 +511,7 @@ function reintentarStockPendiente() {
     if (tipo === 'guia') {
       r = _meRegistrarGuiaDirecto(p.idGuia, p.zona, p.tipo, p.items, p.usuario, p.idGuiaEntrada, p.zonaDestino);
     } else if (tipo === 'ajuste') {
-      r = _meAjustarStockDirecto(p.zona, p.codBarra, p.nuevo, p.usuario, p.localId);
+      r = _meAjustarStockDirecto(p.zona, p.codBarra, p.nuevo, p.usuario, p.localId, p.origen);
     } else if (tipo === 'guia_meta') {
       // METADATA ONLY (cabecera/detalle Supabase). Idempotente por idGuia → reintentar NO duplica ni toca stock.
       r = _meRegistrarGuiaMetaDirecto({
@@ -302,58 +544,91 @@ function setupStockRetryTrigger() {
 // esta caja antes de generar — evita duplicación incluso si la idempotencia
 // de procesarCierreCaja falla por algún motivo.
 function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
+  // [delete-safe] Las hojas son OPCIONALES: si la lectura directa está ON, los
+  // datos del cierre (anti-dup + totales por cod) vienen de me.cierre_datos_caja
+  // y las hojas solo se usan como espejo de respaldo (best-effort). Si el Sheet
+  // ya no existe, el flujo NO se rompe.
   var sheetVC    = ss.getSheetByName("VENTAS_CABECERA");
   var sheetVD    = ss.getSheetByName("VENTAS_DETALLE");
   var sheetGC    = ss.getSheetByName("GUIAS_CABECERA");
   var sheetGD    = ss.getSheetByName("GUIAS_DETALLE");
   var sheetStock = ss.getSheetByName("STOCK_ZONAS");
-  if (!sheetVC || !sheetVD || !sheetGC || !sheetGD || !sheetStock) return;
 
-  // 0. DEFENSA: ¿ya existe guía SALIDA_VENTAS para esta caja? Si sí, abortar.
-  // Identificamos la guía por: Tipo='SALIDA_VENTAS' + Observacion contiene cajaId
-  var gcData = sheetGC.getDataRange().getValues();
-  for (var g = 1; g < gcData.length; g++) {
-    if (String(gcData[g][4]) === 'SALIDA_VENTAS' &&
-        String(gcData[g][5] || '').indexOf(String(cajaId)) >= 0) {
-      Logger.log('generarGuiaSalidaVentas: ya existe guía para caja ' + cajaId + ' (id=' + gcData[g][0] + ') — saltando.');
+  var totales = {};   // { cod_barras: cantidad }  (ventas VIVAS de la caja)
+  var fuente  = '';
+
+  // ── FUENTE PRIMARIA: Supabase (me.cierre_datos_caja) ──
+  // Trae guia_salida_existe (anti-dup), totales_por_cod (descuento) sin tocar el Sheet.
+  var sb = _meCierreDatosCaja(cajaId);
+  if (sb) {
+    fuente = 'supabase';
+    // 0. DEFENSA anti-duplicado (misma semántica que el Sheet: guía SALIDA_VENTAS
+    //    cuya observación contiene el id_caja).
+    if (sb.guia_salida_existe === true) {
+      Logger.log('generarGuiaSalidaVentas: ya existe guía SALIDA_VENTAS para caja ' + cajaId + ' (Supabase) — saltando.');
       return;
     }
-  }
-
-  // 1. IDs de ventas no anuladas de esta caja
-  var ventas = sheetVC.getDataRange().getValues();
-  var idsVentaSet = {};
-  for (var i = 1; i < ventas.length; i++) {
-    if (String(ventas[i][10]) === String(cajaId) && String(ventas[i][8]) !== 'ANULADO') {
-      idsVentaSet[String(ventas[i][0])] = true;
+    // 1+2. Totales por cod_barras de ventas VIVAS (excluye ANULADO%). Ya agregado en la RPC.
+    var tpc = sb.totales_por_cod || {};
+    Object.keys(tpc).forEach(function (cod) {
+      var q = parseFloat(tpc[cod]) || 0;
+      if (cod && q > 0) totales[String(cod)] = q;
+    });
+  } else if (sheetVC && sheetVD && sheetGC) {
+    // ── FALLBACK: Sheet (gate OFF o RPC falló) ──
+    fuente = 'sheet';
+    // 0. DEFENSA: ¿ya existe guía SALIDA_VENTAS para esta caja? Si sí, abortar.
+    var gcData = sheetGC.getDataRange().getValues();
+    for (var g = 1; g < gcData.length; g++) {
+      if (String(gcData[g][4]) === 'SALIDA_VENTAS' &&
+          String(gcData[g][5] || '').indexOf(String(cajaId)) >= 0) {
+        Logger.log('generarGuiaSalidaVentas: ya existe guía para caja ' + cajaId + ' (id=' + gcData[g][0] + ') — saltando.');
+        return;
+      }
     }
-  }
-  var idsVenta = Object.keys(idsVentaSet);
-  if (!idsVenta.length) return;
-
-  // 2. Sumar cantidades por Cod_Barras
-  var detalle = sheetVD.getDataRange().getValues();
-  var totales = {};
-  for (var j = 1; j < detalle.length; j++) {
-    if (!idsVentaSet[String(detalle[j][0])]) continue;
-    var cod = String(detalle[j][6] || detalle[j][1]).trim();
-    if (!cod) continue;
-    totales[cod] = (totales[cod] || 0) + (parseFloat(detalle[j][3]) || 0);
+    // 1. IDs de ventas VIVAS de esta caja (NO anuladas NI convertidas).
+    //    money-safety: excluimos TODA FormaPago que empiece con 'ANULADO' — cubre
+    //    'ANULADO' (anulación normal) y 'ANULADO_CONVERSION' (NV→CPE). Una NV convertida
+    //    NO debe descontarse aquí: su físico lo descuenta el CPE nuevo en SU cierre.
+    var ventas = sheetVC.getDataRange().getValues();
+    var idsVentaSet = {};
+    for (var i = 1; i < ventas.length; i++) {
+      if (String(ventas[i][10]) === String(cajaId) && !/^ANULADO/.test(String(ventas[i][8]))) {
+        idsVentaSet[String(ventas[i][0])] = true;
+      }
+    }
+    if (!Object.keys(idsVentaSet).length) return;
+    // 2. Sumar cantidades por Cod_Barras
+    var detalle = sheetVD.getDataRange().getValues();
+    for (var j = 1; j < detalle.length; j++) {
+      if (!idsVentaSet[String(detalle[j][0])]) continue;
+      var cod = String(detalle[j][6] || detalle[j][1]).trim();
+      if (!cod) continue;
+      totales[cod] = (totales[cod] || 0) + (parseFloat(detalle[j][3]) || 0);
+    }
+  } else {
+    // Ni Supabase ni Sheet disponibles → no hay forma de computar; loggear y salir sin romper.
+    Logger.log('generarGuiaSalidaVentas: sin fuente de datos (RPC falló y Sheet ausente) para caja ' + cajaId + ' — abortando sin error.');
+    return;
   }
 
   var cods = Object.keys(totales);
   if (!cods.length) return;
+  Logger.log('generarGuiaSalidaVentas: caja ' + cajaId + ' fuente=' + fuente + ' cods=' + cods.length);
 
-  // 3. Registrar cabecera de guía
+  // 3+4. Cabecera + detalle de guía → SHEET (best-effort, espejo de respaldo).
+  //    Si el Sheet ya no existe, igual generamos idGuia (para el descuento + la meta a Supabase).
   var idGuia = "G-VENTAS-" + new Date().getTime();
-  sheetGC.appendRow([idGuia, new Date(), vendedor, zona, 'SALIDA_VENTAS',
-    'Auto cierre de caja · ' + cajaId, '', 'CONFIRMADO']);
-
-  // 4. Detalle de guía — batch append en una sola escritura
-  var detalleRows = cods.map(function(cod) { return [idGuia, String(cod), totales[cod]]; });
-  var startRow = sheetGD.getLastRow() + 1;
-  sheetGD.getRange(startRow, 2, detalleRows.length, 1).setNumberFormat('@STRING@');
-  sheetGD.getRange(startRow, 1, detalleRows.length, 3).setValues(detalleRows);
+  if (sheetGC && sheetGD) {
+    try {
+      sheetGC.appendRow([idGuia, new Date(), vendedor, zona, 'SALIDA_VENTAS',
+        'Auto cierre de caja · ' + cajaId, '', 'CONFIRMADO']);
+      var detalleRows = cods.map(function(cod) { return [idGuia, String(cod), totales[cod]]; });
+      var startRow = sheetGD.getLastRow() + 1;
+      sheetGD.getRange(startRow, 2, detalleRows.length, 1).setNumberFormat('@STRING@');
+      sheetGD.getRange(startRow, 1, detalleRows.length, 3).setValues(detalleRows);
+    } catch (eSheet) { Logger.log('generarGuiaSalidaVentas: escritura espejo a Sheet falló (no bloquea): ' + eSheet.message); }
+  }
 
   // 5. Stock — DESCUENTO.
   //    [cutover] Si la escritura directa está ON, el descuento del SALDO va por RPC ATÓMICA a
@@ -376,8 +651,10 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
     }
   }
 
-  if (!stockDirectoOK) {
+  if (!stockDirectoOK && sheetStock) {
     // ── Fallback / modo legacy: read-modify-write en la Hoja (fuente de verdad cuando directo OFF/falla) ──
+    // Guardado por sheetStock: si el Sheet ya no existe (delete-safe) y la RPC ya falló,
+    // el descuento quedó en cola (ME_DESCUENTO_PENDIENTE) para reintento idempotente.
     var stockData = sheetStock.getDataRange().getValues();
     var stockHdr  = stockData[0];
     var stockMap  = {}; // "cod|zona" → indice de fila (0-based desde header)
@@ -734,33 +1011,54 @@ function setupPickupRetryTrigger() {
 }
 
 // ── Hook anulación: avisar a WH que descuente del pickup ───────
-// Llamado desde anularVentaIndividual. Lee VENTAS_DETALLE de la venta y
-// notifica a WH. No bloquea — solo loggea si falla.
+// Llamado desde anularVentaIndividual. Notifica a WH para que descuente del pickup origen.
+// No bloquea — solo loggea si falla.
+// [delete-safe] FUENTE PRIMARIA: me.venta_reposicion_datos (id_caja + totales_por_cod de la
+// venta, sumados por Cod_Barras||SKU). Así el aviso a WH funciona aunque el Sheet ya no exista.
+// FALLBACK Sheet cuando la RPC no está disponible (gate OFF / falla).
+// FIX: el path Sheet leía mal las columnas de VENTAS_DETALLE (col1=SKU como código, col2=Nombre
+// como cantidad → cantidad casi siempre NaN→0 → no-op silencioso). Layout REAL (0-idx):
+// 0 ID_Venta | 1 SKU | 2 Nombre | 3 Cantidad | 4 Precio | 5 Subtotal | 6 Cod_Barras | ...
+// Ahora usa col 6 (Cod_Barras, fallback col 1 SKU) y col 3 (Cantidad), idéntico al descuento del cierre.
 function notificarAnulacionPickupAWH(idVenta) {
   if (!idVenta) return;
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var shVC = ss.getSheetByName('VENTAS_CABECERA');
-    var shVD = ss.getSheetByName('VENTAS_DETALLE');
-    if (!shVC || !shVD) return;
-    var vcData = shVC.getDataRange().getValues();
     var idCaja = '';
-    for (var v = 1; v < vcData.length; v++) {
-      if (String(vcData[v][0]) === String(idVenta)) { idCaja = String(vcData[v][10] || ''); break; }
-    }
-    if (!idCaja) { Logger.log('notificarAnulacionPickup: caja no encontrada para ' + idVenta); return; }
-
-    // Acumular cantidades por código
-    var vdData = shVD.getDataRange().getValues();
     var porCod = {};
-    for (var d = 1; d < vdData.length; d++) {
-      if (String(vdData[d][0]) !== String(idVenta)) continue;
-      // VENTAS_DETALLE estructura — col 1=Cod_Barras, col 2=Cantidad (ajusta si difiere)
-      var cod = String(vdData[d][1] || '').trim();
-      var qty = parseFloat(vdData[d][2]) || 0;
-      if (!cod || qty <= 0) continue;
-      porCod[cod] = (porCod[cod] || 0) + qty;
+
+    // ── FUENTE PRIMARIA: Supabase (delete-safe) ──
+    var sb = _meVentaReposicionDatos(idVenta);
+    if (sb) {
+      idCaja = String(sb.id_caja || '').trim();
+      if (!idCaja) { Logger.log('notificarAnulacionPickup: caja no encontrada (Supabase) para ' + idVenta); return; }
+      var tpc = sb.totales_por_cod || {};
+      Object.keys(tpc).forEach(function (cod) {
+        var q = parseFloat(tpc[cod]) || 0;
+        if (cod && q > 0) porCod[String(cod)] = q;
+      });
+    } else {
+      // ── FALLBACK: Sheet ──
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var shVC = ss.getSheetByName('VENTAS_CABECERA');
+      var shVD = ss.getSheetByName('VENTAS_DETALLE');
+      if (!shVC || !shVD) return;
+      var vcData = shVC.getDataRange().getValues();
+      for (var v = 1; v < vcData.length; v++) {
+        if (String(vcData[v][0]) === String(idVenta)) { idCaja = String(vcData[v][10] || ''); break; }
+      }
+      if (!idCaja) { Logger.log('notificarAnulacionPickup: caja no encontrada para ' + idVenta); return; }
+
+      // Acumular cantidades por código (Cod_Barras col 6, fallback SKU col 1; Cantidad col 3).
+      var vdData = shVD.getDataRange().getValues();
+      for (var d = 1; d < vdData.length; d++) {
+        if (String(vdData[d][0]) !== String(idVenta)) continue;
+        var cod = String(vdData[d][6] || vdData[d][1] || '').trim();
+        var qty = parseFloat(vdData[d][3]) || 0;
+        if (!cod || qty <= 0) continue;
+        porCod[cod] = (porCod[cod] || 0) + qty;
+      }
     }
+
     var itemsAnulados = Object.keys(porCod).map(function(c){
       return { codigoBarra: c, cantidad: porCod[c] };
     });
@@ -1275,9 +1573,16 @@ function registrarGuia(data) {
   var sheetCab   = ss.getSheetByName("GUIAS_CABECERA");
   var sheetDet   = ss.getSheetByName("GUIAS_DETALLE");
   var sheetStock = ss.getSheetByName("STOCK_ZONAS");
-  if (!sheetCab)   return generarRespuestaError("Pestaña GUIAS_CABECERA no encontrada.");
-  if (!sheetDet)   return generarRespuestaError("Pestaña GUIAS_DETALLE no encontrada.");
-  if (!sheetStock) return generarRespuestaError("Pestaña STOCK_ZONAS no encontrada.");
+  // [delete-safe] Con escritura de stock directa ON, la persistencia REAL (saldo + cabecera + detalle)
+  // va por me.zona_registrar_guia / _meRegistrarGuiaMetaDirecto (Supabase, fuente de verdad). Las hojas
+  // son SOLO espejo de respaldo → su ausencia NO debe romper la operación. Sin directo (legacy) las hojas
+  // siguen siendo obligatorias (la RPC no aplica el saldo).
+  var _stockDir = _meStockDirecto();
+  if (!_stockDir) {
+    if (!sheetCab)   return generarRespuestaError("Pestaña GUIAS_CABECERA no encontrada.");
+    if (!sheetDet)   return generarRespuestaError("Pestaña GUIAS_DETALLE no encontrada.");
+    if (!sheetStock) return generarRespuestaError("Pestaña STOCK_ZONAS no encontrada.");
+  }
 
   // Tipos: SALIDA_JEFA | SALIDA_MOVIMIENTO | SALIDA_VENTAS
   //        ENTRADA_ALMACEN | ENTRADA_TRASLADO | ENTRADA_LIBRE
@@ -1287,8 +1592,12 @@ function registrarGuia(data) {
   var zonaDestino = String(data.zona_destino || '');
 
   var idGuia = "G-" + new Date().getTime();
-  sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo,
-    data.observacion || '', zonaDestino, 'CONFIRMADO']);
+  if (sheetCab) {
+    try {
+      sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo,
+        data.observacion || '', zonaDestino, 'CONFIRMADO']);
+    } catch (eCab) { Logger.log('[registrarGuia] Sheet cabecera write: ' + eCab.message); }
+  }
 
   // SALIDA_MOVIMIENTO → genera ENTRADA_TRASLADO automática en zona destino (id reservado arriba para la RPC)
   var idGuiaEntrada = (tipo === 'SALIDA_MOVIMIENTO' && zonaDestino) ? ("G-TRA-" + (new Date().getTime() + 1)) : null;
@@ -1318,10 +1627,14 @@ function registrarGuia(data) {
   var stockResult = [];
   (data.items || []).forEach(function(item) {
     var cb = String(item.cod_barras);
-    var nextDet = sheetDet.getLastRow() + 1;
-    sheetDet.getRange(nextDet, 2).setNumberFormat('@STRING@');
-    sheetDet.getRange(nextDet, 1, 1, 3).setValues([[idGuia, cb, item.cantidad]]);
-    if (!guiaDirectoOK) {
+    if (sheetDet) {  // [delete-safe] espejo de respaldo; ausente → la guía igual quedó en Supabase
+      try {
+        var nextDet = sheetDet.getLastRow() + 1;
+        sheetDet.getRange(nextDet, 2).setNumberFormat('@STRING@');
+        sheetDet.getRange(nextDet, 1, 1, 3).setValues([[idGuia, cb, item.cantidad]]);
+      } catch (eDet) { Logger.log('[registrarGuia] Sheet detalle write: ' + eDet.message); }
+    }
+    if (!guiaDirectoOK && sheetStock) {
       var nuevaCant = actualizarStockFila(sheetStock, cb, data.zona, signo * item.cantidad);
       stockResult.push({ cod_barras: cb, cantidad: nuevaCant });
     } else {
@@ -1330,14 +1643,22 @@ function registrarGuia(data) {
   });
 
   if (idGuiaEntrada) {
-    sheetCab.appendRow([idGuiaEntrada, new Date(), data.vendedor, zonaDestino, 'ENTRADA_TRASLADO',
-      'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia, data.zona, 'CONFIRMADO']);
+    if (sheetCab) {
+      try {
+        sheetCab.appendRow([idGuiaEntrada, new Date(), data.vendedor, zonaDestino, 'ENTRADA_TRASLADO',
+          'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia, data.zona, 'CONFIRMADO']);
+      } catch (eCabE) { Logger.log('[registrarGuia] Sheet cabecera entrada write: ' + eCabE.message); }
+    }
     (data.items || []).forEach(function(item) {
       var cb = String(item.cod_barras);
-      var nextDetE = sheetDet.getLastRow() + 1;
-      sheetDet.getRange(nextDetE, 2).setNumberFormat('@STRING@');
-      sheetDet.getRange(nextDetE, 1, 1, 3).setValues([[idGuiaEntrada, cb, item.cantidad]]);
-      if (!guiaDirectoOK) actualizarStockFila(sheetStock, cb, zonaDestino, item.cantidad);
+      if (sheetDet) {
+        try {
+          var nextDetE = sheetDet.getLastRow() + 1;
+          sheetDet.getRange(nextDetE, 2).setNumberFormat('@STRING@');
+          sheetDet.getRange(nextDetE, 1, 1, 3).setValues([[idGuiaEntrada, cb, item.cantidad]]);
+        } catch (eDetE) { Logger.log('[registrarGuia] Sheet detalle entrada write: ' + eDetE.message); }
+      }
+      if (!guiaDirectoOK && sheetStock) actualizarStockFila(sheetStock, cb, zonaDestino, item.cantidad);
     });
   }
 
@@ -1478,12 +1799,45 @@ function registrarAuditoria(data) {
   }
 
   // Columnas AUDITORIAS: ID_Auditoria(1) | Fecha(2) | Vendedor(3) | Zona_ID(4) | Cod_Barras(5) | Cant_Sistema(6) | Cant_Real(7) | Diferencia(8)
+  var auditoriasParaSupa = [];   // [fix 🔴#4] espejo idempotente a me.auditorias del camino directo
   (data.items || []).forEach(function(item) {
     var cb      = String(item.cod_barras);
-    var cantSis = parseFloat(item.cantSistema) || 0;
     var cantReal = parseFloat(item.cantReal) || 0;
-    var diff    = cantReal - cantSis;
-    var key     = usuario + '|' + data.zona + '|' + cb;
+    // [fix 🟠#3] cantSistema del payload es CACHE del front; lo usamos como semilla, pero si el ajuste
+    //   directo corre, lo REEMPLAZAMOS por el stockAntes REAL que devuelve la RPC (verdad de me.stock_zonas).
+    var cantSis = parseFloat(item.cantSistema) || 0;
+
+    // Stock: establecer cantidad DIRECTAMENTE al valor real auditado (SET absoluto).
+    //   [cutover] directo ON → me.zona_ajustar_stock (set + log + kardex AUDITORIA re-anclado), idempotente por
+    //   localId (estable por auditoría+código → re-enviar la misma auditoría no re-ancla raro). Si falla → Hoja.
+    var auditDirectoOK = false;
+    if (_meStockDirecto()) {
+      var localAj = idAudit + ':' + cb;   // estable por auditoría+código
+      var rAj = _meAjustarStockDirecto(data.zona, cb, cantReal, usuario, localAj, 'AUDITORIA');
+      auditDirectoOK = !!(rAj && rAj.ok);
+      // [fix 🟠#3] usar el stockAntes REAL de la RPC para la diferencia (no el cache del front).
+      //   En dedup la RPC no devuelve stockAntes → conservamos cantSis del payload (la fila ya existe igual).
+      if (auditDirectoOK && rAj.data && rAj.data.stockAntes != null) {
+        cantSis = parseFloat(rAj.data.stockAntes) || 0;
+      }
+      if (!auditDirectoOK) {
+        // Money-safety: sync de stock_zonas apagado → el fallback a la Hoja ya no llega a
+        // Supabase. Encolamos el ajuste (SET absoluto) para REINTENTO IDEMPOTENTE: la RPC dedupea
+        // por localId → reintentar re-ancla al MISMO valor auditado, nunca duplica ni acumula.
+        Logger.log('registrarAuditoria: RPC ajuste directo falló — encolando + fallback Hoja para ' + cb + '@' + data.zona);
+        try {
+          _persistirStockPendiente('ajuste', localAj, {
+            zona: data.zona, codBarra: cb, nuevo: cantReal, usuario: usuario, localId: localAj, origen: 'AUDITORIA'
+          }, (rAj && rAj.error) || 'rpc');
+        } catch (ePA) { Logger.log('Encolar ajuste pendiente: ' + ePA.message); }
+      }
+    }
+    if (!auditDirectoOK) {
+      _actualizarStockAuditoria(sheetStock, cb, data.zona, cantReal, usuario, ahoraStr);
+    }
+
+    var diff = cantReal - cantSis;
+    var key  = usuario + '|' + data.zona + '|' + cb;
 
     if (auditIndex[key]) {
       // ── Ya existe fila hoy → ACTUALIZAR (no duplicar) ──
@@ -1502,30 +1856,22 @@ function registrarAuditoria(data) {
       auditIndex[key] = nextAuditRow; // evitar duplicado si el mismo item llega dos veces en el batch
     }
 
-    // Stock: establecer cantidad DIRECTAMENTE al valor real auditado (SET absoluto).
-    //   [cutover] directo ON → me.zona_ajustar_stock (set + log + kardex AJUSTE), idempotente por localId
-    //   (localId estable por auditoría+código → re-enviar la misma auditoría no re-ancla raro). Si falla → Hoja.
-    var auditDirectoOK = false;
-    if (_meStockDirecto()) {
-      var localAj = idAudit + ':' + cb;   // estable por auditoría+código
-      var rAj = _meAjustarStockDirecto(data.zona, cb, cantReal, usuario, localAj);
-      auditDirectoOK = !!(rAj && rAj.ok);
-      if (!auditDirectoOK) {
-        // Money-safety: sync de stock_zonas apagado → el fallback a la Hoja ya no llega a
-        // Supabase. Encolamos el ajuste (SET absoluto) para REINTENTO IDEMPOTENTE: la RPC dedupea
-        // por localId → reintentar re-ancla al MISMO valor auditado, nunca duplica ni acumula.
-        Logger.log('registrarAuditoria: RPC ajuste directo falló — encolando + fallback Hoja para ' + cb + '@' + data.zona);
-        try {
-          _persistirStockPendiente('ajuste', localAj, {
-            zona: data.zona, codBarra: cb, nuevo: cantReal, usuario: usuario, localId: localAj
-          }, (rAj && rAj.error) || 'rpc');
-        } catch (ePA) { Logger.log('Encolar ajuste pendiente: ' + ePA.message); }
-      }
-    }
-    if (!auditDirectoOK) {
-      _actualizarStockAuditoria(sheetStock, cb, data.zona, cantReal, usuario, ahoraStr);
-    }
+    // [fix 🔴#4] espejo directo a me.auditorias (no depende del sync de la Hoja). Usa cantSis REAL.
+    auditoriasParaSupa.push({
+      id_auditoria: idAudit, fecha: ahoraStr, vendedor: usuario, zona_id: String(data.zona),
+      cod_barras: cb, cant_sistema: cantSis, cant_real: cantReal, diferencia: diff
+    });
   });
+
+  // [fix 🔴#4] upsert idempotente a me.auditorias (PK id_auditoria,cod_barras). Best-effort: no rompe el flujo.
+  //   Solo cuando el camino directo está activo (mismo gate que el ajuste de stock); si falla, el sync de la
+  //   Hoja sigue siendo respaldo. Re-aplicar la MISMA auditoría no duplica (on conflict por la PK).
+  if (_meStockDirecto() && auditoriasParaSupa.length) {
+    try {
+      var rAud = _sbUpsert('me.auditorias', auditoriasParaSupa, 'id_auditoria,cod_barras', false);
+      if (!rAud || !rAud.ok) Logger.log('[auditoria-directo] upsert me.auditorias falló: ' + ((rAud && rAud.error) || '?'));
+    } catch (eAud) { Logger.log('[auditoria-directo] EXCEPCIÓN me.auditorias: ' + eAud.message); }
+  }
 
   return ContentService.createTextOutput(JSON.stringify({
     status: 'success', idAuditoria: idAudit

@@ -6146,7 +6146,7 @@
                     <input v-model.number="item.cantReal"
                            type="number" min="0" step="1"
                            :ref="el => { if(el) auditInputRefs[idx] = el }"
-                           @input="item.estado = 'pendiente'"
+                           @input="item.estado = 'pendiente'; if (parseFloat(item.cantReal) !== 0) item.ceroConfirmado = false"
                            @blur="autoGuardarItem(item)"
                            @keyup.enter="$event.target.blur()"
                            class="w-14 font-black text-xl text-center rounded-lg border-2 outline-none py-0.5 bg-transparent focus:ring-2 ring-white/20"
@@ -18195,6 +18195,26 @@
         // No re-guarda si ya fue guardado — el @input del input resetea a 'pendiente' si el usuario edita.
         const autoGuardarItem = async (item) => {
             if (item.estado === 'guardando' || item.estado === 'guardado') return;
+            // [fix 🟡#5] NO clavar 0 silencioso. Si el casillero está vacío/NaN, no se guarda nada
+            //   (queda pendiente, sin tocar el stock). Para registrar un 0 REAL (producto agotado) se
+            //   exige confirmación explícita: el primer blur en 0 avisa; el segundo blur lo confirma.
+            const raw = item.cantReal;
+            const vacio = (raw === '' || raw === null || raw === undefined ||
+                           (typeof raw === 'number' && isNaN(raw)) ||
+                           (typeof raw === 'string' && raw.trim() === ''));
+            if (vacio) {
+                item.estado = 'pendiente';
+                item.ceroConfirmado = false;   // re-armar el guard de 0 si vuelven a editar
+                agregarToast('Sin contar', 'Escribe la cantidad contada de "' + (item.nombre || item.cod_barras) + '" antes de guardar.', 'warning');
+                return;
+            }
+            const contado = parseFloat(raw);
+            if (contado === 0 && !item.ceroConfirmado) {
+                item.estado = 'pendiente';
+                item.ceroConfirmado = true;
+                agregarToast('Confirmar 0', 'Vas a registrar stock 0 (agotado) de "' + (item.nombre || item.cod_barras) + '". Toca de nuevo el casillero para confirmar.', 'warning');
+                return;
+            }
             item.estado = 'guardando';
             _guardarAuditHoy(); // persiste localmente de inmediato
             try {
@@ -18202,14 +18222,14 @@
                     tipoEvento: 'REGISTRAR_AUDITORIA',
                     vendedor: config.value.vendedor,
                     zona: auditZona.value,
-                    items: [{ cod_barras: String(item.cod_barras), cantSistema: item.cantSistema, cantReal: parseFloat(item.cantReal) || 0 }]
+                    items: [{ cod_barras: String(item.cod_barras), cantSistema: item.cantSistema, cantReal: contado }]
                 };
                 const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                 const d = await r.json();
                 if (d.status === 'success') {
                     item.estado = 'guardado';
                     // Actualizar stock local con la cantidad final
-                    const cantFinal = parseFloat(item.cantReal) || 0;
+                    const cantFinal = contado;
                     const si = stockZonas.value.findIndex(row => String(row.Cod_Barras) === item.cod_barras && row.Zona_ID === auditZona.value);
                     if (si >= 0) stockZonas.value[si].Cantidad = cantFinal;
                     else stockZonas.value.push({ Cod_Barras: item.cod_barras, Zona_ID: auditZona.value, Cantidad: cantFinal });
