@@ -5930,7 +5930,7 @@
                                 Imprimir 80mm
                             </button>
                             <!-- [v2.8.30] Reabrir guía cerrada (requiere clave admin) → me.reabrir_guia_zona (+30 min) -->
-                            <button v-if="esGuiaCerrada(g)" @click="reabrirGuia(g)" :disabled="reabriendoGuiaId === g.id_guia"
+                            <button v-if="esGuiaReabrible(g)" @click="reabrirGuia(g)" :disabled="reabriendoGuiaId === g.id_guia"
                                     class="flex-1 bg-amber-600/80 hover:bg-amber-500 disabled:bg-amber-900/40 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 018 0m-9 4h10a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2v-5a2 2 0 012-2z"></path></svg>
                                 {{ reabriendoGuiaId === g.id_guia ? 'Reabriendo...' : '🔓 Reabrir' }}
@@ -17987,9 +17987,16 @@
         // → +30 min). listarGuias (GAS) ya devuelve g.estado leído de me.guias_cabecera vía
         // me.zona_guias_listar. Aquí cableamos el FRONTEND: mostrar candado + botón reabrir.
         const _normEstadoGuia = (g) => String(g && g.estado || '').trim().toUpperCase();
-        const esGuiaCerrada = (g) => _normEstadoGuia(g) === 'CERRADA';
-        // ABIERTA solo si el estado lo dice explícitamente (las locales optimistas usan 'CONFIRMADO' → sin candado)
+        // Guía local optimista en vuelo (id 'G-LOCAL-…') aún sin reconciliar con el backend → sin candado.
+        const _esGuiaLocalEnVuelo = (g) => String(g && g.id_guia || '').startsWith('G-LOCAL-');
+        // [SQL 205] Modelo nuevo: ABIERTA → aplica stock AL CERRAR. CERRADA → ya aplicado, reabrible.
+        //   CONFIRMADO (legacy/SALIDA_VENTAS) → stock YA aplicado al crear/por ticket → NO editable = "cerrada".
+        //   Tras la migración 205 las manuales viejas pasan a CERRADA; quedan en CONFIRMADO solo las SALIDA_VENTAS
+        //   (su stock va por caja, no por cierre). Ambas se muestran como cerradas/no editables. Solo ABIERTA es editable.
+        const esGuiaCerrada = (g) => { if (_esGuiaLocalEnVuelo(g)) return false; const e = _normEstadoGuia(g); return e === 'CERRADA' || e === 'CONFIRMADO'; };
         const esGuiaAbierta = (g) => _normEstadoGuia(g) === 'ABIERTA';
+        // Reabrir SOLO aplica al modelo nuevo (CERRADA). Las CONFIRMADO (legacy/ventas) no se reabren desde el front.
+        const esGuiaReabrible = (g) => _normEstadoGuia(g) === 'CERRADA';
 
         // Reabre una guía CERRADA: pide clave admin (online MOS + fallback offline) y llama
         // me.reabrir_guia_zona directo a Supabase. Patrón optimista: parchea el estado local a
@@ -18416,7 +18423,7 @@
           abrirGuias, cerrarGuias, seleccionarSubtipoGuia, toggleCamaraGuia,
           guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
           // [v2.8.30] UX moderna + candado de guías
-          guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, reabrirGuia, reabriendoGuiaId,
+          guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, esGuiaReabrible, reabrirGuia, reabriendoGuiaId,
           cerrarGuia, cerrandoGuiaId,
           // [BUILD 1] Recibir guía de almacén (WH→ME por escaneo)
           modoRecibirWH, rwPaso, rwIdGuia, rwGuia, rwEscaneadosArr, rwResultado, rwBusq, rwCargando, rwCamara, rwTotalEscaneado,
