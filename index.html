@@ -2742,22 +2742,28 @@
       @keyframes posCelebraGlow { 0%{box-shadow:inset 0 0 0 0 rgba(16,185,129,0)} 30%{box-shadow:inset 0 0 90px 0 rgba(16,185,129,.5)} 100%{box-shadow:inset 0 0 0 0 rgba(16,185,129,0)} }
       .pos-celebra-glow { animation: posCelebraGlow 1.35s ease-out both; }
 
-      /* [v2.8.42] Movimiento ambiental dentro de la pantalla de espera — vida/fluidez */
-      /* Flotación del ícono (capa aparte de la respiración y del shake → sin conflicto de transform) */
-      @keyframes posFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
-      .pos-float { animation: posFloat 4.2s ease-in-out infinite; }
-      /* Orbes de luz que derivan suave (verde + dorado) */
+      /* [v2.8.43] Movimiento NOTORIO dentro de la pantalla de espera */
+      /* Flotación + leve giro del ícono (capa aparte del shake y de la respiración → sin conflicto) */
+      @keyframes posFloat { 0%,100%{transform:translateY(0) rotate(-2.5deg)} 50%{transform:translateY(-16px) rotate(2.5deg)} }
+      .pos-float { animation: posFloat 3.4s ease-in-out infinite; }
+      /* Anillo cónico que GIRA alrededor del ícono (verde→dorado) — el efecto estrella */
+      @keyframes posSpin { to { transform: rotate(360deg); } }
+      .pos-ring { position:absolute; inset:-15px; border-radius:9999px; background:conic-gradient(from 0deg, rgba(16,185,129,0) 0deg, rgba(16,185,129,0) 70deg, rgba(251,191,36,.95) 190deg, rgba(5,150,105,1) 320deg, rgba(16,185,129,0) 360deg); animation: posSpin 2.4s linear infinite; -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); mask:radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); }
+      /* Puntos que rebotan (verde/dorado) */
+      @keyframes posBounce { 0%,100%{transform:translateY(0); opacity:.35} 50%{transform:translateY(-9px); opacity:1} }
+      .pos-dot { width:9px; height:9px; border-radius:9999px; display:inline-block; animation: posBounce 1s ease-in-out infinite; }
+      /* Orbes de luz que derivan — más grandes, más contraste, más recorrido */
       .pos-orbs { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
-      .pos-orb  { position:absolute; border-radius:9999px; filter:blur(34px); opacity:.5; will-change:transform; }
-      .pos-orb-a { width:160px; height:160px; background:rgba(16,185,129,.5);  top:6%;   left:-34px; animation: posDriftA  9s ease-in-out infinite; }
-      .pos-orb-b { width:130px; height:130px; background:rgba(251,191,36,.55); bottom:10%; right:-26px; animation: posDriftB 11s ease-in-out infinite; }
-      .pos-orb-c { width:96px;  height:96px;  background:rgba(52,211,153,.42); top:42%;  left:60%;   animation: posDriftC 13s ease-in-out infinite; }
-      @keyframes posDriftA { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(42px,32px) scale(1.12)} }
-      @keyframes posDriftB { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-38px,-26px) scale(1.1)} }
-      @keyframes posDriftC { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(24px,-30px) scale(1.15)} }
+      .pos-orb  { position:absolute; border-radius:9999px; filter:blur(30px); opacity:.6; will-change:transform; }
+      .pos-orb-a { width:190px; height:190px; background:rgba(5,150,105,.6);   top:2%;    left:-40px; animation: posDriftA  8s ease-in-out infinite; }
+      .pos-orb-b { width:160px; height:160px; background:rgba(245,158,11,.6);  bottom:6%; right:-34px; animation: posDriftB 10s ease-in-out infinite; }
+      .pos-orb-c { width:120px; height:120px; background:rgba(255,255,255,.65); top:44%;  left:62%;   animation: posDriftC 12s ease-in-out infinite; }
+      @keyframes posDriftA { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(70px,46px) scale(1.18)} }
+      @keyframes posDriftB { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-60px,-40px) scale(1.15)} }
+      @keyframes posDriftC { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(40px,-46px) scale(1.2)} }
       /* Barrido de brillo en el CTA */
       .pos-cta { position:relative; overflow:hidden; }
-      .pos-cta::after { content:''; position:absolute; top:0; left:-60%; width:45%; height:100%; background:linear-gradient(100deg, transparent, rgba(255,255,255,.5), transparent); transform:skewX(-20deg); animation: posShine 3.2s ease-in-out infinite; pointer-events:none; }
+      .pos-cta::after { content:''; position:absolute; top:0; left:-60%; width:45%; height:100%; background:linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform:skewX(-20deg); animation: posShine 2.8s ease-in-out infinite; pointer-events:none; }
       @keyframes posShine { 0%{left:-60%} 55%{left:135%} 100%{left:135%} }
 
       @media (prefers-reduced-motion: reduce) {
@@ -2765,7 +2771,7 @@
         .g-search-hit, .g-undo-banner, .g-shake, .g-estado-abierta .g-estado-dot,
         .pos-espera-in, .pos-breathe, .pos-halo, .pos-shimmer, .pos-tab-nudge,
         .pos-celebra, .pos-celebra-glow, .pos-float, .pos-orb,
-        .pos-orb-a, .pos-orb-b, .pos-orb-c { animation: none !important; }
+        .pos-orb-a, .pos-orb-b, .pos-orb-c, .pos-ring, .pos-dot { animation: none !important; }
         .pos-cta::after { animation: none !important; display: none !important; }
         .g-hold-fill { transition: none !important; }
       }
@@ -3534,6 +3540,7 @@
                 <div class="relative z-10 flex flex-col items-center w-full">
                     <div class="relative mb-6" data-pos-espera-icon>
                         <div class="pos-float relative">
+                            <div class="pos-ring"></div>
                             <div class="absolute inset-0 rounded-full bg-emerald-300/55 pos-halo"></div>
                             <div class="absolute inset-0 rounded-full bg-amber-300/55 pos-halo" style="animation-delay:.9s"></div>
                             <div class="relative bg-white rounded-[2rem] w-24 h-24 flex items-center justify-center shadow-xl shadow-emerald-300/50 pos-breathe">
@@ -3543,6 +3550,11 @@
                     </div>
                     <h2 class="text-2xl font-black text-emerald-900 tracking-tight">Tu caja está cerrada</h2>
                     <p class="mt-2 text-emerald-700 font-bold max-w-xs text-sm leading-relaxed">Ábrela para empezar tu turno y registrar ventas.</p>
+                    <div class="mt-4 flex gap-1.5">
+                        <span class="pos-dot" style="background:#059669"></span>
+                        <span class="pos-dot" style="background:#f59e0b; animation-delay:.16s"></span>
+                        <span class="pos-dot" style="background:#059669; animation-delay:.32s"></span>
+                    </div>
                     <button @click="cambiarModulo('CAJA')" class="pos-cta mt-7 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-8 py-4 rounded-2xl shadow-lg shadow-emerald-500/40 active:scale-95 transition-all flex items-center gap-2">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8"/></svg>
                         Abrir mi caja
@@ -3560,6 +3572,7 @@
                     <!-- Ícono con halos verde+dorado + flotación + respiración (no pulso de alarma) -->
                     <div class="relative mb-6" data-pos-espera-icon>
                         <div class="pos-float relative">
+                            <div class="pos-ring"></div>
                             <div class="absolute inset-0 rounded-full bg-emerald-300/60 pos-halo"></div>
                             <div class="absolute inset-0 rounded-full bg-amber-300/60 pos-halo" style="animation-delay:.9s"></div>
                             <div class="relative bg-white rounded-[2rem] w-24 h-24 flex items-center justify-center shadow-xl shadow-emerald-300/50 pos-breathe">
@@ -3573,6 +3586,11 @@
                     <div class="mt-4 flex items-center gap-2 text-[11px] font-bold">
                         <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 pos-halo"></span>
                         <span class="pos-shimmer">Comprobando cada 30 segundos…</span>
+                    </div>
+                    <div class="mt-3 flex gap-1.5">
+                        <span class="pos-dot" style="background:#059669"></span>
+                        <span class="pos-dot" style="background:#f59e0b; animation-delay:.16s"></span>
+                        <span class="pos-dot" style="background:#059669; animation-delay:.32s"></span>
                     </div>
                     <button @click="avisarReintentar()"
                             class="pos-cta mt-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-8 py-4 rounded-2xl shadow-lg shadow-emerald-500/40 active:scale-95 transition-all text-base flex items-center gap-2">
