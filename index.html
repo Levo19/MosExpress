@@ -2348,6 +2348,93 @@
   })();
   </script>
 
+  <!-- [v2.8.45] CSS de guías (g-*) + POS-en-espera (pos-*) MOVIDO aquí, FUERA de #app.
+       Vue 3 elimina los <style> que viven dentro del template (#app) al renderizar →
+       el bloque que estaba adentro nunca se aplicaba (keyframes inexistentes en runtime,
+       animaciones muertas). Aquí, antes de #app, es CSS normal y siempre activo. -->
+  <style>
+      /* ── Guías (réplica WH): lista animada, glow, candado de estado, hold-to-confirm ── */
+      @keyframes gSlideInItem { from{opacity:0;transform:translateY(-10px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+      .g-slide-in { animation: gSlideInItem .24s ease-out both; }
+      @keyframes gRowGlow { 0%{box-shadow:0 0 0 0 rgba(245,158,11,.55);background:rgba(245,158,11,.10)} 60%{box-shadow:0 0 0 6px rgba(245,158,11,0)} 100%{box-shadow:0 0 0 0 rgba(245,158,11,0);background:transparent} }
+      .g-row-glow { animation: gRowGlow .9s ease-out both; }
+      @keyframes gQtyCount { 0%{transform:scale(1.5);color:#fbbf24} 100%{transform:scale(1);color:inherit} }
+      .g-qty-count { animation: gQtyCount .4s ease-out both; display:inline-block; }
+      @keyframes gPlusFloat { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-26px) scale(1.4)} }
+      .g-plus-float { position:absolute; right:14px; top:8px; color:#fbbf24; font-weight:900; font-size:15px; pointer-events:none; animation: gPlusFloat .85s ease-out both; }
+      .g-estado { display:inline-flex; align-items:center; gap:5px; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:3px 9px; border-radius:20px; }
+      .g-estado-abierta { background:rgba(245,158,11,.16); color:#fbbf24; border:1px solid rgba(245,158,11,.4); }
+      .g-estado-cerrada { background:rgba(34,197,94,.12); color:#86efac; border:1px solid rgba(34,197,94,.3); }
+      .g-estado-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; display:inline-block; }
+      .g-estado-abierta .g-estado-dot { background:#f59e0b; animation: gEstadoPulse 1.6s ease-in-out infinite; }
+      .g-estado-cerrada .g-estado-dot { background:#22c55e; }
+      @keyframes gEstadoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.7);opacity:1} 55%{box-shadow:0 0 0 5px rgba(245,158,11,0);opacity:.7} }
+      .g-hold-btn { position:relative; overflow:hidden; }
+      .g-hold-fill { position:absolute; inset:0; transform-origin:left center; transform:scaleX(0); background:linear-gradient(90deg, rgba(16,185,129,.55), rgba(5,150,105,.85)); pointer-events:none; transition:transform .08s linear; will-change:transform; }
+      .g-hold-btn.holding .g-hold-fill { transition:none; }
+      .g-hold-btn.g-hold-done .g-hold-fill { transform:scaleX(1) !important; background:linear-gradient(90deg,#10b981,#059669); }
+      .g-hold-lbl { position:relative; z-index:1; }
+      @keyframes gShake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-7px)} 30%{transform:translateX(6px)} 45%{transform:translateX(-5px)} 60%{transform:translateX(4px)} 75%{transform:translateX(-2px)} }
+      .g-shake { animation: gShake .45s cubic-bezier(.36,.07,.19,.97) both; }
+      @keyframes gCardCelebra { 0%{box-shadow:0 0 0 0 rgba(16,185,129,.7);} 60%{box-shadow:0 0 0 10px rgba(16,185,129,0);} 100%{box-shadow:0 0 0 0 rgba(16,185,129,0);} }
+      .g-card-celebra { animation: gCardCelebra 1.1s ease-out 2; }
+      .g-day-hdr { display:flex; align-items:center; gap:8px; padding:12px 4px 4px; }
+      .g-day-hdr-txt { font-size:11px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; color:#9ca3af; }
+      .g-day-line { flex:1; height:1px; background:rgba(255,255,255,.08); }
+      .g-day-chip { font-size:10px; font-weight:800; color:#93c5fd; background:rgba(59,130,246,.15); border:1px solid rgba(59,130,246,.3); padding:2px 8px; border-radius:20px; white-space:nowrap; }
+      .g-filtro { font-size:11px; font-weight:800; letter-spacing:.04em; padding:6px 12px; border-radius:20px; white-space:nowrap; transition:all .15s; }
+      .g-filtro-off { background:rgba(255,255,255,.06); color:#9ca3af; }
+      .g-filtro-on  { background:#f59e0b; color:#fff; box-shadow:0 4px 12px rgba(245,158,11,.4); }
+      @keyframes gSearchFlash { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)} 30%{box-shadow:0 0 0 4px rgba(245,158,11,.7)} }
+      .g-search-hit { animation: gSearchFlash 1.4s ease-out 2; }
+      @keyframes gUndoIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+      .g-undo-banner { animation: gUndoIn .2s ease-out both; }
+      @keyframes gUndoBar { from{transform:scaleX(1)} to{transform:scaleX(0)} }
+      .g-undo-bar { transform-origin:left center; animation: gUndoBar 4s linear both; }
+
+      /* ════════ POS "en espera" (sin caja) — verde+dorado, movimiento notorio ════════ */
+      @keyframes posEsperaIn { from{opacity:0; transform:translateY(12px) scale(.98)} to{opacity:1; transform:translateY(0) scale(1)} }
+      .pos-espera-in { animation: posEsperaIn .42s cubic-bezier(.22,1,.36,1) both; }
+      @keyframes posBreathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.045)} }
+      .pos-breathe { animation: posBreathe 3.6s ease-in-out infinite; }
+      @keyframes posHalo { 0%{transform:scale(.92); opacity:.5} 100%{transform:scale(1.65); opacity:0} }
+      .pos-halo { animation: posHalo 2.8s ease-out infinite; }
+      @keyframes posShimmer { 0%{background-position:-200px 0} 100%{background-position:200px 0} }
+      .pos-shimmer { background:linear-gradient(90deg, rgba(5,150,105,.6) 0%, rgba(253,224,71,1) 50%, rgba(5,150,105,.6) 100%); background-size:200px 100%; -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent; animation: posShimmer 1.9s linear infinite; }
+      @keyframes posTabNudge { 0%,100%{transform:translateY(0)} 25%{transform:translateY(-7px)} 55%{transform:translateY(0)} 72%{transform:translateY(-3px)} 88%{transform:translateY(0)} }
+      .pos-tab-nudge { animation: posTabNudge .95s cubic-bezier(.36,.07,.19,.97) both; }
+      @keyframes posCelebraBurst { 0%{opacity:0; transform:scale(.6)} 22%{opacity:1; transform:scale(1.06)} 70%{opacity:1; transform:scale(1)} 100%{opacity:0; transform:scale(1.02)} }
+      .pos-celebra { animation: posCelebraBurst 1.35s cubic-bezier(.22,1,.36,1) both; }
+      @keyframes posCelebraGlow { 0%{box-shadow:inset 0 0 0 0 rgba(16,185,129,0)} 30%{box-shadow:inset 0 0 90px 0 rgba(16,185,129,.5)} 100%{box-shadow:inset 0 0 0 0 rgba(16,185,129,0)} }
+      .pos-celebra-glow { animation: posCelebraGlow 1.35s ease-out both; }
+      @keyframes posFloat { 0%,100%{transform:translateY(0) rotate(-2.5deg)} 50%{transform:translateY(-16px) rotate(2.5deg)} }
+      .pos-float { animation: posFloat 3.4s ease-in-out infinite; }
+      @keyframes posSpin { to { transform: rotate(360deg); } }
+      .pos-ring { position:absolute; inset:-15px; border-radius:9999px; background:conic-gradient(from 0deg, rgba(16,185,129,0) 0deg, rgba(16,185,129,0) 70deg, rgba(251,191,36,.95) 190deg, rgba(5,150,105,1) 320deg, rgba(16,185,129,0) 360deg); animation: posSpin 2.4s linear infinite; -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); mask:radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); }
+      @keyframes posBounce { 0%,100%{transform:translateY(0); opacity:.35} 50%{transform:translateY(-9px); opacity:1} }
+      .pos-dot { width:9px; height:9px; border-radius:9999px; display:inline-block; animation: posBounce 1s ease-in-out infinite; }
+      .pos-orbs { position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
+      .pos-orb  { position:absolute; border-radius:9999px; filter:blur(30px); opacity:.6; will-change:transform; }
+      .pos-orb-a { width:190px; height:190px; background:rgba(5,150,105,.6);   top:2%;    left:-40px; animation: posDriftA  8s ease-in-out infinite; }
+      .pos-orb-b { width:160px; height:160px; background:rgba(245,158,11,.6);  bottom:6%; right:-34px; animation: posDriftB 10s ease-in-out infinite; }
+      .pos-orb-c { width:120px; height:120px; background:rgba(255,255,255,.65); top:44%;  left:62%;   animation: posDriftC 12s ease-in-out infinite; }
+      @keyframes posDriftA { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(70px,46px) scale(1.18)} }
+      @keyframes posDriftB { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-60px,-40px) scale(1.15)} }
+      @keyframes posDriftC { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(40px,-46px) scale(1.2)} }
+      .pos-cta { position:relative; overflow:hidden; }
+      .pos-cta::after { content:''; position:absolute; top:0; left:-60%; width:45%; height:100%; background:linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform:skewX(-20deg); animation: posShine 2.8s ease-in-out infinite; pointer-events:none; }
+      @keyframes posShine { 0%{left:-60%} 55%{left:135%} 100%{left:135%} }
+
+      @media (prefers-reduced-motion: reduce) {
+        /* El dueño pide que el movimiento del POS-en-espera se vea SIEMPRE. Solo apagamos
+           golpes bruscos (shake/nudge) y flashes de guías; lo ambiental sigue vivo. */
+        .g-slide-in, .g-row-glow, .g-qty-count, .g-plus-float, .g-card-celebra,
+        .g-search-hit, .g-undo-banner, .g-shake, .g-estado-abierta .g-estado-dot,
+        .pos-tab-nudge { animation: none !important; }
+        .g-hold-fill { transition: none !important; }
+      }
+  </style>
+
   <div id="app" class="h-full flex flex-col relative" v-cloak>
     
     <!-- [v2.7.80 CLEANUP] FAB flotante 🏷 Etiquetas ELIMINADO.
@@ -2664,6 +2751,9 @@
         <div class="text-[11px] text-slate-400 italic">Vuelve dentro del rango asignado</div>
       </div>
     </div>
+    <!-- [v2.8.45] ⚠ BLOQUE INERTE: Vue ELIMINA los <style> que viven dentro de #app al renderizar
+         (confirmado: 'styles dentro de #app: 0' en runtime). Las reglas ACTIVAS se movieron al
+         <style> que está ANTES de <div id="app">. No editar aquí; editar el de arriba. -->
     <style>
       @keyframes meHorPulse { 0%,100%{transform:scale(1);opacity:.85} 50%{transform:scale(1.1);opacity:1} }
       /* [v2.8.30] UX moderna de guías (réplica WH): lista que crece con animación,
