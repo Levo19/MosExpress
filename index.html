@@ -2767,12 +2767,14 @@
       @keyframes posShine { 0%{left:-60%} 55%{left:135%} 100%{left:135%} }
 
       @media (prefers-reduced-motion: reduce) {
+        /* [v2.8.44] El dueño pide que el movimiento de la pantalla de espera se vea SIEMPRE,
+           aunque el dispositivo tenga "Reducir movimiento" activado. Por eso aquí solo
+           apagamos los GOLPES bruscos (shake/nudge) y los flashes de las guías; todo lo
+           ambiental del POS-en-espera (anillo, flotación, orbes, puntos, halos, shimmer,
+           brillo del CTA, celebración) sigue VIVO a propósito. */
         .g-slide-in, .g-row-glow, .g-qty-count, .g-plus-float, .g-card-celebra,
         .g-search-hit, .g-undo-banner, .g-shake, .g-estado-abierta .g-estado-dot,
-        .pos-espera-in, .pos-breathe, .pos-halo, .pos-shimmer, .pos-tab-nudge,
-        .pos-celebra, .pos-celebra-glow, .pos-float, .pos-orb,
-        .pos-orb-a, .pos-orb-b, .pos-orb-c, .pos-ring, .pos-dot { animation: none !important; }
-        .pos-cta::after { animation: none !important; display: none !important; }
+        .pos-tab-nudge { animation: none !important; }
         .g-hold-fill { transition: none !important; }
       }
     </style>
