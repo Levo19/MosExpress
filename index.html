@@ -2433,6 +2433,37 @@
         .pos-tab-nudge { animation: none !important; }
         .g-hold-fill { transition: none !important; }
       }
+
+      /* ════════ [v2.8.46] NAV inferior — sistema de movimiento (firma + tap + íconos vivos + entrada) ════════ */
+      /* FIRMA: indicador líquido único que se desliza entre tabs y viaja de color */
+      .nav-ind { position:absolute; top:0; height:100%; pointer-events:none; z-index:0;
+                 transition: left .5s cubic-bezier(.34,1.56,.64,1), width .5s cubic-bezier(.34,1.56,.64,1), color .45s ease;
+                 will-change:left,width; }
+      .nav-ind-pill { position:absolute; inset:8px 10px; border-radius:16px; background:currentColor; opacity:.13; }
+      .nav-ind-bar  { position:absolute; top:0; left:50%; transform:translateX(-50%); width:40px; height:3px; border-radius:0 0 6px 6px; background:currentColor; box-shadow:0 0 12px currentColor; }
+      .nav-ind-glow { position:absolute; bottom:5px; left:50%; transform:translateX(-50%); width:56px; height:56px; border-radius:9999px; background:radial-gradient(circle, currentColor 0%, transparent 70%); opacity:.20; }
+      /* TAP: pop de resorte (en el wrapper del ícono) */
+      @keyframes navPop { 0%{transform:scale(.8)} 45%{transform:scale(1.22)} 70%{transform:scale(.94)} 100%{transform:scale(1)} }
+      .nav-pop { animation: navPop .5s cubic-bezier(.34,1.56,.64,1) both; }
+      /* TAP: ripple de color */
+      .nav-ripple { position:absolute; border-radius:9999px; background:currentColor; opacity:.4; transform:scale(0); pointer-events:none; animation: navRipple .6s ease-out forwards; }
+      @keyframes navRipple { to { transform:scale(1); opacity:0; } }
+      /* ÍCONOS VIVOS: personalidad idle del ícono activo (uno a la vez) */
+      @keyframes navIdlePos   { 0%,100%{transform:scale(1.06) rotate(-5deg)} 50%{transform:scale(1.06) rotate(5deg)} }
+      @keyframes navIdleCaja  { 0%,100%{transform:scale(1.06) translateY(0)} 50%{transform:scale(1.06) translateY(-2.5px)} }
+      @keyframes navIdleTools { 0%,100%{transform:scale(1.06) rotate(0)} 25%{transform:scale(1.06) rotate(-20deg)} 55%{transform:scale(1.06) rotate(8deg)} 80%{transform:scale(1.06) rotate(0)} }
+      .nav-idle-pos   { animation: navIdlePos   2.6s ease-in-out infinite; }
+      .nav-idle-caja  { animation: navIdleCaja  2.2s ease-in-out infinite; }
+      .nav-idle-tools { animation: navIdleTools 3.2s ease-in-out infinite; transform-origin:60% 40%; }
+      /* ENTRADA coreografiada (una vez): tabs en cascada + barrido de brillo */
+      @keyframes navTabIn { from{opacity:0; transform:translateY(14px) scale(.85)} to{opacity:1; transform:translateY(0) scale(1)} }
+      .nav-entrada .nav-tab { animation: navTabIn .5s cubic-bezier(.34,1.56,.64,1) both; }
+      .nav-entrada .nav-tab:nth-of-type(1){ animation-delay:.05s }
+      .nav-entrada .nav-tab:nth-of-type(2){ animation-delay:.14s }
+      .nav-entrada .nav-tab:nth-of-type(3){ animation-delay:.23s }
+      @keyframes navSweep { 0%{left:-40%} 100%{left:140%} }
+      .nav-sweep { position:absolute; top:0; bottom:0; width:35%; pointer-events:none; z-index:2;
+                   background:linear-gradient(100deg, transparent, rgba(255,255,255,.7), transparent); transform:skewX(-18deg); animation: navSweep .9s ease-out .2s both; }
   </style>
 
   <div id="app" class="h-full flex flex-col relative" v-cloak>
@@ -4221,51 +4252,62 @@
         <div class="absolute left-1/2 -translate-x-1/2 top-[3px] w-10 h-1 rounded-full bg-white/70"></div>
     </div>
 
-    <!-- BOTTOM NAVIGATION -->
+    <!-- BOTTOM NAVIGATION — [v2.8.46] sistema de movimiento: indicador líquido + tap + íconos vivos + entrada -->
     <nav v-if="config.completado && dispositivoAutorizado === true" v-show="!(modoPro && navColapsado)"
+         data-nav-root
          @mouseleave="programarColapso(1200)" @mouseenter="expandirNav"
-         class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0 transition-transform">
-        <!-- Tab POS (Destaque Central o Izquierdo) -->
-        <button @click="cambiarModulo('POS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'POS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'POS' ? { color: colorModulo } : {}">
-            <div class="relative">
-               <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='POS'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-               <!-- [v2.8.41] dot ámbar: POS en espera (sin caja) — no bloquea, solo avisa -->
+         class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0 transition-transform overflow-hidden"
+         :class="{ 'nav-entrada': navEntrada }">
+
+        <!-- FIRMA: indicador líquido único (se desliza + viaja de color) -->
+        <div class="nav-ind" :style="{ left: navInd.left + 'px', width: navInd.width + 'px', color: colorModulo }">
+            <span class="nav-ind-glow"></span>
+            <span class="nav-ind-pill"></span>
+            <span class="nav-ind-bar"></span>
+        </div>
+        <!-- ENTRADA: barrido de brillo (solo durante la animación de entrada) -->
+        <div v-if="navEntrada" class="nav-sweep"></div>
+
+        <!-- Tab POS -->
+        <button @click="navTap($event, 'POS')" data-navtab="POS"
+                class="nav-tab flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative z-[1]"
+                :class="currentModule === 'POS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'POS' ? { color: colorModulo } : {}">
+            <div class="relative" :class="{ 'nav-pop': currentModule === 'POS' }">
+               <svg class="w-6 h-6 mb-1" :class="{ 'nav-idle-pos': currentModule === 'POS' }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+               <!-- [v2.8.41] dot ámbar: POS en espera (sin caja) -->
                <span v-if="!posDisponible" class="absolute -top-1 -right-2 w-2.5 h-2.5 bg-amber-400 rounded-full border border-white"></span>
             </div>
             POS
-            <div v-if="currentModule === 'POS'" class="absolute -top-[1px] w-12 h-[3px] rounded-b-full" :style="{ background: colorModulo }"></div>
         </button>
-        
+
         <!-- Tab Caja / Mis Ventas -->
-        <button @click="cambiarModulo('CAJA')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'CAJA' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'CAJA' ? { color: colorModulo } : {}">
-            <div class="relative" :class="{ 'pos-tab-nudge': posTabsHint }">
-               <svg class="w-6 h-6 mb-1 transition-transform" :class="{'scale-110': currentModule==='CAJA'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+        <button @click="navTap($event, 'CAJA')" data-navtab="CAJA"
+                class="nav-tab flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative z-[1]"
+                :class="currentModule === 'CAJA' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'CAJA' ? { color: colorModulo } : {}">
+            <div class="relative" :class="{ 'nav-pop': currentModule === 'CAJA', 'pos-tab-nudge': posTabsHint }">
+               <svg class="w-6 h-6 mb-1" :class="{ 'nav-idle-caja': currentModule === 'CAJA' }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
                <span v-if="cajaAbierta" class="absolute -top-1 -right-2 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-white"></span>
                <span v-else class="absolute -top-1 -right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>
             </div>
             {{ config.esCajero ? 'CAJA TURNO' : 'MIS VENTAS' }}
-            <div v-if="currentModule === 'CAJA'" class="absolute -top-[1px] w-12 h-[3px] rounded-b-full" :style="{ background: colorModulo }"></div>
         </button>
-        
+
         <!-- Tab Tools -->
-        <button @click="cambiarModulo('TOOLS')" class="flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative" :class="currentModule === 'TOOLS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'TOOLS' ? { color: colorModulo } : {}">
-            <div class="relative" :class="{ 'pos-tab-nudge': posTabsHint }">
-                <!-- Wrench / tools icon -->
-                <!-- [v2.7.80] Ícono palpitante cuando hay etiqsPendientes — para que el
-                     operador sepa que la alerta vive en TOOLS aunque esté en POS o CAJA. -->
-                <svg class="w-6 h-6 mb-1 transition-transform"
-                     :class="[{'scale-110': currentModule==='TOOLS'},
+        <button @click="navTap($event, 'TOOLS')" data-navtab="TOOLS"
+                class="nav-tab flex-1 max-w-[120px] flex flex-col items-center justify-center py-2 h-full transition-colors relative z-[1]"
+                :class="currentModule === 'TOOLS' ? 'text-posPrimary' : 'text-gray-400 hover:text-gray-600'" :style="currentModule === 'TOOLS' ? { color: colorModulo } : {}">
+            <div class="relative" :class="{ 'nav-pop': currentModule === 'TOOLS', 'pos-tab-nudge': posTabsHint }">
+                <!-- [v2.7.80] Ícono palpitante cuando hay etiqsPendientes (alerta vive en TOOLS aunque estés en POS/CAJA) -->
+                <svg class="w-6 h-6 mb-1"
+                     :class="[ currentModule === 'TOOLS' ? 'nav-idle-tools' : '',
                               etiqsPendientes.length > 0 && currentModule !== 'TOOLS' ? 'text-red-600 animate-tools-alerta' : '']"
                      fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l5.654-4.654m5.657-5.657l-1.418 1.42a2.5 2.5 0 01-3.536 0L8.707 7.293a2.5 2.5 0 010-3.536l1.42-1.418M15.17 11.42a4.5 4.5 0 00-6.364-6.364L11.42 7.67a2.5 2.5 0 013.535 0l.215.215z"></path></svg>
-                <!-- Dot rojo combinado: audit pendiente O etiquetas pendientes -->
                 <span v-if="(auditPendiente && config.completado) || etiqsPendientes.length > 0"
                       class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
-                <!-- Contador específico de etiquetas (solo si hay >0) -->
                 <span v-if="etiqsPendientes.length > 0 && currentModule !== 'TOOLS'"
                       class="absolute -top-2 -right-3 bg-red-600 text-white text-[9px] font-black rounded-full min-w-[16px] h-[16px] px-1 flex items-center justify-center ring-2 ring-white shadow">{{ etiqsPendientes.length > 99 ? '99+' : etiqsPendientes.length }}</span>
             </div>
             TOOLS
-            <div v-if="currentModule === 'TOOLS'" class="absolute -top-[1px] w-12 h-[3px] rounded-b-full" :style="{ background: colorModulo }"></div>
         </button>
     </nav>
 
@@ -10767,6 +10809,59 @@
             try { playBeepSuave?.(); } catch(_){}
             verificarCajeroActivo();
         };
+
+        // ── [v2.8.46] Sistema de movimiento del NAV inferior ───────────────
+        const navInd = ref({ left: 0, width: 0 });      // indicador líquido (firma)
+        const navEntrada = ref(false);                  // entrada coreografiada (una vez)
+        const _navColorMap = { POS: '#10b981', CAJA: '#3b82f6', TOOLS: '#ea580c' };
+        // Posiciona el indicador bajo el tab activo (offsetLeft/Width = inmune a transforms de animación)
+        const _posicionarNavInd = () => {
+            nextTick(() => { try {
+                const nav = document.querySelector('[data-nav-root]');
+                const btn = nav && nav.querySelector('[data-navtab="' + currentModule.value + '"]');
+                if (btn && btn.offsetWidth > 0) navInd.value = { left: btn.offsetLeft, width: btn.offsetWidth };
+            } catch(_){} });
+        };
+        // Ripple de color desde el punto del toque
+        const _navRipple = (ev, mod) => {
+            try {
+                const btn = ev && ev.currentTarget; if (!btn) return;
+                const r = btn.getBoundingClientRect();
+                const size = Math.max(r.width, r.height) * 1.15;
+                const sp = document.createElement('span');
+                sp.className = 'nav-ripple';
+                sp.style.width = sp.style.height = size + 'px';
+                sp.style.left = ((ev.clientX || (r.left + r.width / 2)) - r.left - size / 2) + 'px';
+                sp.style.top  = ((ev.clientY || (r.top + r.height / 2)) - r.top - size / 2) + 'px';
+                sp.style.color = _navColorMap[mod] || '#10b981';
+                btn.appendChild(sp);
+                setTimeout(() => { try { sp.remove(); } catch(_){} }, 650);
+            } catch(_){}
+        };
+        // Tap de tab: háptico + ripple + navegación (cambiarModulo conserva su lógica de POS-sin-caja)
+        const navTap = (ev, mod) => {
+            try { if (navigator.vibrate) navigator.vibrate(14); } catch(_){}
+            _navRipple(ev, mod);
+            cambiarModulo(mod);
+        };
+        // Dispara la entrada coreografiada (cascada + barrido) una sola vez
+        const _dispararNavEntrada = () => {
+            navEntrada.value = false;
+            nextTick(() => {
+                _posicionarNavInd();
+                requestAnimationFrame(() => { navEntrada.value = true; });
+                setTimeout(() => { navEntrada.value = false; _posicionarNavInd(); }, 1200);
+            });
+        };
+        watch(currentModule, () => _posicionarNavInd());
+        watch(navColapsado, (v) => { if (!v) _posicionarNavInd(); });   // al expandir (Modo Pro) reubica
+        watch(() => config.value.completado, (v) => { if (v) _dispararNavEntrada(); });
+        onMounted(() => {
+            _posicionarNavInd();
+            setTimeout(_posicionarNavInd, 450);   // tras asentar layout/fuentes
+            if (config.value && config.value.completado) _dispararNavEntrada();
+            try { window.addEventListener('resize', _posicionarNavInd, { passive: true }); } catch(_){}
+        });
 
         // ── Listeners de actividad ───────────────────────────
         ['touchstart', 'click', 'keydown', 'mousemove', 'scroll'].forEach(ev => {
@@ -19129,6 +19224,7 @@
           abrirAuditoria, cerrarAuditoria, iniciarAuditoria, confirmarAuditoria,
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
           posDisponible, posTabsHint, posCajaAbreCelebra, avisarReintentar,
+          navInd, navEntrada, navTap,
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
           modalPin, pinInput, pinError, confirmarPin, pinValidando, pinPress, pinDel,
