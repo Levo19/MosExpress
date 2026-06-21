@@ -1267,8 +1267,13 @@ function limpiarVentasSinIdME(){
 // Supabase), las guías creadas quedaron SOLO en la Hoja (GUIAS_CABECERA/_DETALLE)
 // y NO en me.guias_cabecera/_detalle. Como las lecturas (listarGuias/detalleGuia/
 // trasladosEntrantes) ya salen de Supabase, esas guías son INVISIBLES. Esta función
-// las re-graba usando la MISMA RPC idempotente que usa el flujo en vivo:
-//   me.zona_guia_registrar_meta  (vía _sbRpc, service_role)
+// las re-graba en UNA SOLA llamada vía la RPC bulk server-side:
+//   me.zona_guias_backfill_bulk({guias:[...]})  (vía _sbRpc, service_role)
+// que internamente itera y reusa me.zona_guia_registrar_meta por guía (misma lógica del flujo en vivo).
+//
+// ⚡ POR QUÉ BULK (1 UrlFetch): la versión anterior hacía UN UrlFetch por guía → agotó la cuota diaria
+//    de GAS ("Service invoked too many times for one day: urlfetch") y tardaba ~5 min. Ahora se arma el
+//    arreglo de TODAS las guías del rango y se manda en una sola petición → 1 UrlFetch total.
 //
 // SEGURIDAD / MONEY:
 //   - La RPC SOLO escribe cabecera+detalle (cantidad_aplicada=cantidad). NO toca
@@ -1301,8 +1306,7 @@ function backfillGuiasASupabase(desdeMs){
     ? parseInt(desdeMs, 10)
     : (Date.now() - DEFAULT_DIAS * 86400000);
   var desdeISO = Utilities.formatDate(new Date(desde), 'America/Lima', "yyyy-MM-dd'T'HH:mm:ssXXX");
-  var T0 = Date.now();
-  var TIME_BUDGET = 5 * 60 * 1000;   // < 6 min límite GAS
+  var T0 = Date.now();   // medición de duración (la bulk corre en 1 UrlFetch, sin riesgo de límite GAS)
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var shCab = ss.getSheetByName('GUIAS_CABECERA');
@@ -1322,12 +1326,10 @@ function backfillGuiasASupabase(desdeMs){
     (itemsPorGuia[dg] = itemsPorGuia[dg] || []).push({ codBarra: cb, cantidad: cant });
   }
 
-  // ── 2) Recorrer cabeceras dentro del rango ──
+  // ── 2) Armar el arreglo de TODAS las guías del rango (sin tocar la red) ──
   var cabData = shCab.getDataRange().getValues();   // [ID_Guia, Fecha, Vendedor, Zona_ID, Tipo, Observacion, Zona_Destino, Estado]
-  var enRango = 0, escritas = 0, errores = 0, sinItems = 0;
-  var detalleErrores = [];
-  var idsRango = [];
-  var corto = false;
+  var enRango = 0, sinItems = 0;
+  var guias = [];
 
   for (var i = 1; i < cabData.length; i++) {
     var idGuia = String(cabData[i][0] || '').trim();
@@ -1338,55 +1340,65 @@ function backfillGuiasASupabase(desdeMs){
     if (fechaDate.getTime() < desde) continue;         // fuera de rango
 
     enRango++;
-    idsRango.push(idGuia);
+    var its = itemsPorGuia[idGuia] || [];
+    if (!its.length) { sinItems++; }   // cabecera sin detalle (raro) → igual grabamos cabecera
 
-    // límite de tiempo GAS: reporta lo hecho y termina limpio (re-correr sigue siendo idempotente).
-    if (Date.now() - T0 > TIME_BUDGET) { corto = true; break; }
+    guias.push({
+      idGuia:      idGuia,
+      zona:        String(cabData[i][3] || ''),                          // Zona_ID
+      tipo:        String(cabData[i][4] || ''),                          // Tipo
+      fecha:       _meDate(fechaCell),                                   // ISO Lima (mismo conversor del backfill)
+      vendedor:    cabData[i][2] != null ? String(cabData[i][2]) : null, // Vendedor
+      observacion: cabData[i][5] != null ? String(cabData[i][5]) : null, // Observacion
+      zonaDestino: cabData[i][6] ? String(cabData[i][6]) : null,         // Zona_Destino
+      estado:      cabData[i][7] ? String(cabData[i][7]) : 'CONFIRMADO', // Estado
+      items:       its
+    });
+  }
 
-    try {
-      var its = itemsPorGuia[idGuia] || [];
-      if (!its.length) { sinItems++; }   // cabecera sin detalle (raro) → igual grabamos cabecera
+  if (!guias.length) {
+    var vacio = { ok:true, desdeISO:desdeISO, enRango:0, escritas:0, errores:0, sinDetalle:0,
+                  nota:'Sin guías en el rango — nada que backfillear.' };
+    Logger.log(JSON.stringify(vacio, null, 2));
+    return vacio;
+  }
 
-      var r = _sbRpc('me', 'zona_guia_registrar_meta', {
-        idGuia:      idGuia,
-        zona:        String(cabData[i][3] || ''),                          // Zona_ID
-        tipo:        String(cabData[i][4] || ''),                          // Tipo
-        fecha:       _meDate(fechaCell),                                   // ISO Lima (mismo conversor del backfill)
-        vendedor:    cabData[i][2] != null ? String(cabData[i][2]) : null, // Vendedor
-        observacion: cabData[i][5] != null ? String(cabData[i][5]) : null, // Observacion
-        zonaDestino: cabData[i][6] ? String(cabData[i][6]) : null,         // Zona_Destino
-        estado:      cabData[i][7] ? String(cabData[i][7]) : 'CONFIRMADO', // Estado
-        items:       its
-      });
-
-      if (r && r.ok && r.data && r.data.ok) {
-        escritas++;
-      } else {
-        errores++;
-        detalleErrores.push({ idGuia: idGuia, http: (r && r.code) || null,
-          error: (r && (r.error || (r.data && r.data.error))) || 'rpc' });
-      }
-    } catch (e) {
-      errores++;
-      detalleErrores.push({ idGuia: idGuia, error: String(e && e.message || e) });
+  // ── 3) UNA SOLA llamada bulk (1 UrlFetch) — antes era 1 por guía (agotaba la cuota diaria) ──
+  //    _sbRpc envuelve en {p:{...}} para las fn me.zona_*. La RPC procesa todo server-side, idempotente.
+  var escritas = 0, errores = 0;
+  var detalleErrores = [];
+  try {
+    var r = _sbRpc('me', 'zona_guias_backfill_bulk', { guias: guias });
+    if (r && r.ok && r.data && r.data.ok) {
+      escritas = parseInt(r.data.escritas, 10) || 0;
+      var errArr = (r.data.errores && r.data.errores.length) ? r.data.errores : [];
+      errores = errArr.length;
+      detalleErrores = errArr.slice(0, 50);
+    } else {
+      errores = guias.length;
+      detalleErrores.push({ http: (r && r.code) || null,
+        error: (r && (r.error || (r.data && r.data.error))) || 'rpc' });
     }
+  } catch (e) {
+    errores = guias.length;
+    detalleErrores.push({ error: String(e && e.message || e) });
   }
 
   var resumen = {
-    ok: errores === 0 && !corto,
+    ok: errores === 0,
     desdeISO: desdeISO,
     enRango: enRango,
     escritas: escritas,
     errores: errores,
     sinDetalle: sinItems,
-    incompleto: corto,
-    nota: corto ? 'Cortado por límite de tiempo GAS — re-correr backfillGuiasASupabase (idempotente, no duplica) para terminar.'
-                : 'Idempotente (dedupe por id_guia) · NO toca stock · re-correr es seguro.',
-    detalleErrores: detalleErrores.slice(0, 50)
+    llamadas: 1,
+    duracion_ms: Date.now() - T0,
+    nota: 'Bulk (1 UrlFetch) · idempotente (dedupe por id_guia) · NO toca stock · re-correr es seguro.',
+    detalleErrores: detalleErrores
   };
-  Logger.log('[backfillGuias] rango desde ' + desdeISO + ' (Lima) → enRango=' + enRango +
+  Logger.log('[backfillGuias] BULK rango desde ' + desdeISO + ' (Lima) → enRango=' + enRango +
              ' escritas=' + escritas + ' errores=' + errores + ' sinDetalle=' + sinItems +
-             (corto ? ' [INCOMPLETO: re-correr]' : ''));
+             ' (1 UrlFetch, ' + (Date.now() - T0) + 'ms)');
   Logger.log(JSON.stringify(resumen, null, 2));
   return resumen;
 }
@@ -1396,4 +1408,137 @@ function backfillGuiasASupabase(desdeMs){
 function backfillGuiasRango(dias){
   var d = (dias != null && !isNaN(parseInt(dias, 10))) ? parseInt(dias, 10) : 4;
   return backfillGuiasASupabase(Date.now() - d * 86400000);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// DESACTIVAR LOS TRIGGERS QUE PISAN SUPABASE — el dueño corre ESTA al final.
+// ────────────────────────────────────────────────────────────────────────
+// Cuando ME ya opera 100% contra Supabase (escritura directa de venta/caja/mov
+// por el frontend + stock por RPC), el sync Hoja→Supabase deja de ser un respaldo
+// y pasa a ser un PELIGRO: re-upsertea rangos viejos de la Hoja ENCIMA de lo que
+// ya escribió Supabase → pisa/duplica el dato fresco.
+//
+// Los ÚNICOS handlers que reescriben tablas me.* desde la Hoja son:
+//   • syncMEReciente  (cada 15 min → _syncMEImpl(false))
+//   • syncMECompleto  (3am diario → _syncMEImpl(true) + reconciliarDiarioME)
+// Esta función borra SOLO esos dos por nombre de handler (deny-list explícita).
+//
+// SE CONSERVAN intactos (no figuran en la deny-list, jamás se tocan):
+//   • Seguridad/push/dispositivos (viven en el GAS de MOS, no en este proyecto)
+//   • Correlativos: _limpiarReservasViejas (limpia reservas vencidas)
+//   • Fiscal CPE: _cronReconciliarCPEs (reconcilia NubeFact)
+//   • Cobros: escalarCobrosVencidos (escalación + push de cobros vencidos)
+//   • Backstop Supabase→Hoja: reconciliarDirectasSheets (espeja directo→Hoja, NO pisa Supabase)
+//   • Colas de reintento idempotentes: reintentarDescuentosPendientes,
+//     reintentarStockPendiente, reintentarPickupsPendientes
+//
+// Idempotente: correrla 2× no rompe nada (si ya no hay esos triggers, elimina 0).
+// Reversible: para reactivar el sync de respaldo, correr instalarTriggersSyncME().
+// Además fija ME_SYNC_OFF_TABLAS por si quedara algún trigger huérfano de una sesión
+// previa (defensa en profundidad: aunque el sync corra, no pisará las tablas de stock/guías).
+// ════════════════════════════════════════════════════════════════════════
+function desactivarTriggersPisanSupabaseME(){
+  // Deny-list: SOLO estos handlers reescriben Supabase desde la Hoja.
+  var PISAN = { 'syncMEReciente': 1, 'syncMECompleto': 1 };
+
+  var eliminados = [], conservados = [];
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    var h = t.getHandlerFunction();
+    if (PISAN[h]) { ScriptApp.deleteTrigger(t); eliminados.push(h); }
+    else { conservados.push(h); }
+  });
+
+  // Defensa en profundidad: aunque alguien reinstale el sync, que NO pise las tablas que gobierna Supabase.
+  var csv = _meSyncOffSetTablas(_ME_TABLAS_SYNC_OFF);
+
+  var estado = {
+    ok: true,
+    accion: 'TRIGGERS QUE PISAN SUPABASE → DESACTIVADOS',
+    eliminados: eliminados,                 // ['syncMEReciente','syncMECompleto'] o menos si ya no estaban
+    conservados: conservados,               // todo lo demás (seguridad/push/correlativo/cobros/recon/colas)
+    ME_SYNC_OFF_TABLAS: PropertiesService.getScriptProperties().getProperty('ME_SYNC_OFF_TABLAS') || '(vacío)',
+    sync_off_ok: (csv === _ME_TABLAS_SYNC_OFF.join(',')),
+    nota: 'El sync Hoja→Supabase quedó apagado. La venta/caja/mov los escribe el frontend directo a Supabase; ' +
+          'el stock va por RPC atómica (si ME_ESCRITURA_STOCK_DIRECTA=1). reconciliarDirectasSheets sigue ' +
+          'espejando Supabase→Hoja como backstop del cierre. Reversible con instalarTriggersSyncME().'
+  };
+  var msg = '🛑 desactivarTriggersPisanSupabaseME\n' +
+            '   eliminados : ' + (eliminados.length ? eliminados.join(', ') : '(ninguno — ya estaban apagados)') + '\n' +
+            '   conservados: ' + (conservados.length ? conservados.join(', ') : '(ninguno)') + '\n' +
+            '   ME_SYNC_OFF_TABLAS = ' + estado.ME_SYNC_OFF_TABLAS + (estado.sync_off_ok ? '  ✓' : '  ✗ REVISAR');
+  Logger.log(msg);
+  estado._resumen = msg;
+  return estado;
+}
+
+// ============================================================
+// LECTURAS OPERATIVAS DIRECTAS (delete-safe del Sheet) — me.cajas / me.ventas
+// ------------------------------------------------------------
+// Helpers que el hot path (procesarVenta) y getCajaActivaZona usan para NO
+// depender del Sheet. Gated por ME_LECTURA_CIERRE_DIRECTA (default ON, mismo
+// gate que el cierre, definido en Guias.gs). Devuelven null si el gate está OFF
+// o la lectura falla → el caller cae automáticamente al Sheet (fallback transparente).
+//
+// MONEY-SAFETY: son 100% LECTURA. La validación "caja ABIERTA en zona" y la dedup
+// por ref_local son las mismas que el Sheet, contra me.cajas/me.ventas (fuente
+// real-time: ventas/cajas tienen escritura directa + dual-write).
+// ============================================================
+
+// ¿Hay una caja ABIERTA en la zona? Devuelve la más reciente, {__vacio:true} si
+// ninguna (leyó OK), o null si gate OFF / falla de lectura.
+function _meCajaActivaZona(zona) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var z = String(zona || '').trim();
+  if (!z) return null;
+  try {
+    var r = _sb('GET', 'me.cajas', {
+      select: 'id_caja,vendedor,estacion,monto_inicial,fecha_apertura,zona_id,estado',
+      filters: { zona_id: 'eq.' + z, estado: 'eq.ABIERTA' },
+      order: 'fecha_apertura.desc', limit: 1, maxRetry: 1
+    });
+    if (r && r.ok && Array.isArray(r.data) && r.data.length) return r.data[0];
+    if (r && r.ok) return { __vacio: true };
+    return null;
+  } catch (e) { Logger.log('[me caja-activa-zona] ' + (e && e.message)); return null; }
+}
+
+// ¿La caja idCaja está ABIERTA (en la zona, si se da)? true/false/null (null=fallback Sheet).
+function _meCajaAbiertaEnZona(idCaja, zona) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var idc = String(idCaja || '').trim(); var z = String(zona || '').trim();
+  if (!idc) return null;
+  try {
+    var f = { id_caja: 'eq.' + idc, estado: 'eq.ABIERTA' };
+    if (z) f.zona_id = 'eq.' + z;
+    var r = _sb('GET', 'me.cajas', { select: 'id_caja,zona_id', filters: f, limit: 1, maxRetry: 1 });
+    if (r && r.ok) return Array.isArray(r.data) && r.data.length > 0;
+    return null;
+  } catch (e) { Logger.log('[me caja-abierta] ' + (e && e.message)); return null; }
+}
+
+// Zona de una caja ABIERTA por id (derivar zona si el front no la manda). '' si OK-pero-no-abierta, null si fallback.
+function _meZonaDeCajaAbierta(idCaja) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var idc = String(idCaja || '').trim();
+  if (!idc) return null;
+  try {
+    var r = _sb('GET', 'me.cajas', { select: 'zona_id,estado', filters: { id_caja: 'eq.' + idc, estado: 'eq.ABIERTA' }, limit: 1, maxRetry: 1 });
+    if (r && r.ok && Array.isArray(r.data) && r.data.length) return String(r.data[0].zona_id || '');
+    if (r && r.ok) return '';
+    return null;
+  } catch (e) { Logger.log('[me zona-de-caja] ' + (e && e.message)); return null; }
+}
+
+// Dedup por ref_local. { id_venta, correlativo } en hit; {__none:true} si leyó OK y 0 filas
+// (autoritativo: NO caer al Sheet); null si gate OFF / falla de lectura (→ fallback Sheet).
+function _meVentaPorRefLocal(refLocal) {
+  if (!_meLecturaCierreDirecta()) return null;
+  var rl = String(refLocal || '').trim();
+  if (!rl) return null;
+  try {
+    var r = _sb('GET', 'me.ventas', { select: 'id_venta,correlativo', filters: { ref_local: 'eq.' + rl }, limit: 1, maxRetry: 1 });
+    if (r && r.ok && Array.isArray(r.data) && r.data.length) return { id_venta: String(r.data[0].id_venta), correlativo: String(r.data[0].correlativo || '') };
+    if (r && r.ok) return { __none: true };
+    return null;
+  } catch (e) { Logger.log('[me venta-por-reflocal] ' + (e && e.message)); return null; }
 }

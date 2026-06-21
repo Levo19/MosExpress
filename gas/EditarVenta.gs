@@ -52,60 +52,67 @@ function _cobrarCreditoConExtraImpl(data) {
   if (!data.cajaReceptora) return generarRespuestaError('cajaReceptora requerida');
   if (!data.metodo)        return generarRespuestaError('metodo requerido');
 
+  var idV = String(data.idVenta);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ventas = ss.getSheetByName('VENTAS_CABECERA');
   var cajas  = ss.getSheetByName('CAJAS');
-  if (!ventas || !cajas) return generarRespuestaError('Hojas requeridas no encontradas');
 
-  // ── Validar que la venta exista y esté pendiente de cobro ──
-  var fv = ventas.getDataRange().getValues();
+  // ── Validar que la venta exista y esté pendiente de cobro ── [delete-safe] Supabase primero.
   var vRow = -1, ventaPrev = null;
-  for (var i = fv.length - 1; i > 0; i--) {  // buscar desde el final
-    if (String(fv[i][0]) === String(data.idVenta)) {
-      vRow = i + 1;
-      ventaPrev = {
-        formaPagoActual: String(fv[i][8] || ''),
-        cliente:         String(fv[i][5] || ''),
-        total:           parseFloat(fv[i][6]) || 0,
-        cajaOriginal:    String(fv[i][10] || '')
-      };
-      break;
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rVc = _sb('GET', 'me.ventas', { select: 'forma_pago,cliente_nombre,total,id_caja', filters: { id_venta: 'eq.' + idV }, limit: 1, maxRetry: 1 });
+      if (rVc && rVc.ok && Array.isArray(rVc.data) && rVc.data.length) {
+        var v0 = rVc.data[0];
+        ventaPrev = { formaPagoActual: String(v0.forma_pago || ''), cliente: String(v0.cliente_nombre || ''), total: parseFloat(v0.total) || 0, cajaOriginal: String(v0.id_caja || '') };
+      }
+    } catch (eVc) { Logger.log('[cobrarCredito] leer venta Supabase: ' + eVc.message); }
+  }
+  if (!ventaPrev && ventas) {
+    var fv = ventas.getDataRange().getValues();
+    for (var i = fv.length - 1; i > 0; i--) {
+      if (String(fv[i][0]) === idV) {
+        vRow = i + 1;
+        ventaPrev = { formaPagoActual: String(fv[i][8] || ''), cliente: String(fv[i][5] || ''), total: parseFloat(fv[i][6]) || 0, cajaOriginal: String(fv[i][10] || '') };
+        break;
+      }
     }
   }
-  if (vRow < 2) return generarRespuestaError('Venta ' + data.idVenta + ' no encontrada');
+  if (!ventaPrev) return generarRespuestaError('Venta ' + idV + ' no encontrada');
 
   var fpActual = ventaPrev.formaPagoActual.toUpperCase();
+  if (fpActual === 'ANULADO') {
+    return generarRespuestaError('La venta está anulada');
+  }
   if (fpActual !== 'CREDITO' && fpActual !== 'POR_COBRAR') {
     return generarRespuestaError(
       'La venta no está pendiente de cobro (estado actual: ' + ventaPrev.formaPagoActual + ')'
     );
   }
-  if (fpActual === 'ANULADO') {
-    return generarRespuestaError('La venta está anulada');
-  }
 
-  // ── Validar caja receptora abierta ──
-  var fc = cajas.getDataRange().getValues();
-  var cajaAbierta = false, cajeroReceptor = '';
-  for (var j = fc.length - 1; j > 0; j--) {
-    if (String(fc[j][0]) === String(data.cajaReceptora)) {
-      if (String(fc[j][5]) === 'ABIERTA') {
-        cajaAbierta = true;
-        cajeroReceptor = String(fc[j][1] || '');
+  // ── Validar caja receptora abierta ── [delete-safe] Supabase primero.
+  var cajaAbierta = false, cajeroReceptor = '', resCaja = false;
+  var abSBc = (typeof _meCajaAbiertaEnZona === 'function') ? _meCajaAbiertaEnZona(String(data.cajaReceptora), '') : null;
+  if (abSBc !== null) {
+    resCaja = true; cajaAbierta = (abSBc === true);
+    if (cajaAbierta) {
+      try { var rCr = _sb('GET', 'me.cajas', { select: 'vendedor', filters: { id_caja: 'eq.' + String(data.cajaReceptora) }, limit: 1, maxRetry: 1 }); if (rCr && rCr.ok && rCr.data && rCr.data.length) cajeroReceptor = String(rCr.data[0].vendedor || ''); } catch(_cr){}
+    }
+  }
+  if (!resCaja) {
+    if (!cajas) return generarRespuestaError('Hojas requeridas no encontradas');
+    var fc = cajas.getDataRange().getValues();
+    for (var j = fc.length - 1; j > 0; j--) {
+      if (String(fc[j][0]) === String(data.cajaReceptora)) {
+        if (String(fc[j][5]) === 'ABIERTA') { cajaAbierta = true; cajeroReceptor = String(fc[j][1] || ''); }
+        break;
       }
-      break;
     }
   }
   if (!cajaAbierta) {
     return generarRespuestaError('Caja receptora ' + data.cajaReceptora + ' no está abierta');
   }
 
-  // ── Crear MOVIMIENTOS_EXTRA con tipo según método ──
-  var extras = ss.getSheetByName('MOVIMIENTOS_EXTRA');
-  if (!extras) {
-    extras = ss.insertSheet('MOVIMIENTOS_EXTRA');
-    extras.appendRow(['ID_Extra','ID_Caja','Timestamp','Tipo','Monto','Concepto','Obs','Registrado_Por']);
-  }
   var actor = _audExtraerActor(data);
   var conceptoExtra = 'Abono deuda';
   var obsExtra = 'Cobro de crédito ticket ' + data.idVenta + ' · cliente ' + (ventaPrev.cliente || '—');
@@ -113,14 +120,12 @@ function _cobrarCreditoConExtraImpl(data) {
 
   var monto = parseFloat(ventaPrev.total) || 0;
   var metodoUpper = String(data.metodo).toUpperCase();
-  // [Lote1-A · fix A1] Sufijo aleatorio en el id: 'EX-'+ms solo COLISIONABA entre
-  // cajas distintas en el mismo milisegundo → como id_extra es la clave de
-  // idempotencia del dual-write, el segundo upsert SOBRESCRIBÍA al primero en
-  // la sombra Supabase (un movimiento desaparecía). Mismo patrón que 'RES-'.
+  // [Lote1-A · fix A1] Sufijo aleatorio en el id (idempotencia del dual-write).
   var _sufijoEx = function() { return Utilities.getUuid().split('-')[0]; };
   var idExtra = 'EX-' + new Date().getTime() + '-' + _sufijoEx();
+  var tsExtraCC = new Date();
 
-  // Caso MIXTO: crear DOS movimientos (uno EFECTIVO + uno VIRTUAL)
+  // 1) Construir los movimientos (DATOS) — sin tocar el Sheet aún.
   var extrasCreados = [];
   if (metodoUpper.indexOf('MIXTO') === 0) {
     var efe = parseFloat(data.montoEfectivo) || 0;
@@ -131,28 +136,33 @@ function _cobrarCreditoConExtraImpl(data) {
         ') no coincide con el total del ticket (' + monto.toFixed(2) + ')'
       );
     }
-    if (efe > 0) {
-      var idE = 'EX-' + new Date().getTime() + '-' + _sufijoEx() + '-E';
-      extras.appendRow([idE, data.cajaReceptora, new Date(), 'INGRESO', efe, conceptoExtra, obsExtra, actor.usuario]);
-      extrasCreados.push({ idExtra: idE, tipo: 'INGRESO', monto: efe });
-    }
-    if (vir > 0) {
-      var idV = 'EX-' + new Date().getTime() + '-' + _sufijoEx() + '-V';
-      extras.appendRow([idV, data.cajaReceptora, new Date(), 'INGRESO_VIRTUAL', vir, conceptoExtra, obsExtra, actor.usuario]);
-      extrasCreados.push({ idExtra: idV, tipo: 'INGRESO_VIRTUAL', monto: vir });
-    }
+    if (efe > 0) extrasCreados.push({ idExtra: 'EX-' + new Date().getTime() + '-' + _sufijoEx() + '-E', tipo: 'INGRESO', monto: efe });
+    if (vir > 0) extrasCreados.push({ idExtra: 'EX-' + new Date().getTime() + '-' + _sufijoEx() + '-V', tipo: 'INGRESO_VIRTUAL', monto: vir });
     idExtra = extrasCreados.map(function(x){ return x.idExtra; }).join('+');
   } else {
     var tipoExtra = metodoUpper === 'EFECTIVO' ? 'INGRESO' : 'INGRESO_VIRTUAL';
-    extras.appendRow([idExtra, data.cajaReceptora, new Date(), tipoExtra, monto, conceptoExtra, obsExtra, actor.usuario]);
     extrasCreados.push({ idExtra: idExtra, tipo: tipoExtra, monto: monto });
   }
-  SpreadsheetApp.flush();
 
-  // ── Actualizar VENTAS_CABECERA: cambiar formaPago al método elegido ──
-  ventas.getRange(vRow, 9).setValue(data.metodo);
+  // 2) [delete-safe] SHEET (best-effort espejo) — la persistencia REAL va por _dualWriteMovExtraME (abajo).
+  var extras = ss.getSheetByName('MOVIMIENTOS_EXTRA');
+  if (extras) {
+    try {
+      extrasCreados.forEach(function(ex){
+        extras.appendRow([ex.idExtra, data.cajaReceptora, tsExtraCC, ex.tipo, ex.monto, conceptoExtra, obsExtra, actor.usuario]);
+      });
+      SpreadsheetApp.flush();
+    } catch (eEX) { Logger.log('[cobrarCredito] Sheet extras write: ' + eEX.message); }
+  }
+
+  // ── Actualizar VENTAS_CABECERA: cambiar formaPago al método elegido (best-effort Sheet) ──
+  if (ventas) {
+    try {
+      if (vRow < 2) { var fvU = ventas.getDataRange().getValues(); for (var kk = fvU.length - 1; kk > 0; kk--) { if (String(fvU[kk][0]) === idV) { vRow = kk + 1; break; } } }
+      if (vRow >= 2) ventas.getRange(vRow, 9).setValue(data.metodo);
+    } catch (eVS) { Logger.log('[cobrarCredito] Sheet venta write: ' + eVS.message); }
+  }
   // Si la caja receptora es distinta, NO sobreescribir ID_Caja original (preserva trazabilidad).
-  // El vínculo entre el cobro y la caja receptora vive en el log + en MOVIMIENTOS_EXTRA.
 
   // [Lote1-A · fix A2] PATCH inmediato del cambio CREDITO→pagado a la sombra.
   // Antes solo llegaba por el dirty-sync (≤15min): con lecturas flipeadas a
@@ -165,7 +175,7 @@ function _cobrarCreditoConExtraImpl(data) {
     extrasCreados.forEach(function(ex) {
       if (typeof _dualWriteMovExtraME === 'function') {
         _dualWriteMovExtraME({
-          ID_Extra: ex.idExtra, ID_Caja: data.cajaReceptora, Timestamp: new Date(),
+          ID_Extra: ex.idExtra, ID_Caja: data.cajaReceptora, Timestamp: tsExtraCC,
           Tipo: ex.tipo, Monto: ex.monto, Concepto: conceptoExtra, Obs: obsExtra,
           Registrado_Por: actor.usuario
         });
@@ -228,28 +238,45 @@ function editarFormaPagoVenta(data) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('VENTAS_CABECERA');
-  if (!sheet) return generarRespuestaError('VENTAS_CABECERA no encontrada');
 
-  var data2 = sheet.getDataRange().getValues();
-  for (var i = data2.length - 1; i > 0; i--) {
-    if (String(data2[i][0]) === String(data.idVenta)) {
-      var formaAnt = String(data2[i][8] || '');
-      sheet.getRange(i + 1, 9).setValue(data.formaPagoNueva);
-      var actor = _audExtraerActor(data);
-      auditarLog('VENTAS_CABECERA', data.idVenta, {
-        usuario: actor.usuario, rol: actor.rol,
-        source: 'ME_EDITAR_FORMA_PAGO',
-        accion: 'editar_forma_pago',
-        cambios: [{ campo:'FormaPago', antes: formaAnt, despues: data.formaPagoNueva }],
-        autorizadoPor: actor.autorizadoPor || null,
-        motivo: data.motivo
-      });
-      return ContentService.createTextOutput(JSON.stringify({
-        status:'success', mensaje:'Forma de pago actualizada'
-      })).setMimeType(ContentService.MimeType.JSON);
+  var formaAnt = '';
+  var encontrada = false;
+
+  // SHEET (best-effort espejo): localizar fila, leer forma anterior, escribir nueva.
+  if (sheet) {
+    var data2 = sheet.getDataRange().getValues();
+    for (var i = data2.length - 1; i > 0; i--) {
+      if (String(data2[i][0]) === String(data.idVenta)) {
+        formaAnt = String(data2[i][8] || '');
+        encontrada = true;
+        try { sheet.getRange(i + 1, 9).setValue(data.formaPagoNueva); } catch (eFS) { Logger.log('[editarFormaPago] Sheet write: ' + eFS.message); }
+        break;
+      }
     }
   }
-  return generarRespuestaError('Venta ' + data.idVenta + ' no encontrada');
+
+  // [delete-safe] PATCH durable a me.ventas (fuente de verdad cuando el Sheet ya no existe).
+  var sbOK = false;
+  try {
+    var rPF = _dualWriteVentaPatchME(String(data.idVenta), { forma_pago: data.formaPagoNueva });
+    sbOK = !!(rPF && rPF.ok);
+    if (sbOK) encontrada = true;  // PATCH por id_venta llegó a Supabase (no-op si la venta no existe allá, pero la lectura es directa)
+  } catch (ePF) { Logger.log('[editarFormaPago] patch Supabase: ' + ePF.message); }
+
+  if (!encontrada && !sbOK) return generarRespuestaError('Venta ' + data.idVenta + ' no encontrada');
+
+  var actor = _audExtraerActor(data);
+  auditarLog('VENTAS_CABECERA', data.idVenta, {
+    usuario: actor.usuario, rol: actor.rol,
+    source: 'ME_EDITAR_FORMA_PAGO',
+    accion: 'editar_forma_pago',
+    cambios: [{ campo:'FormaPago', antes: formaAnt, despues: data.formaPagoNueva }],
+    autorizadoPor: actor.autorizadoPor || null,
+    motivo: data.motivo
+  });
+  return ContentService.createTextOutput(JSON.stringify({
+    status:'success', mensaje:'Forma de pago actualizada'
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================================================
@@ -265,59 +292,87 @@ function editarFormaPagoVenta(data) {
 function editarClienteVenta(data) {
   if (!data.idVenta) return generarRespuestaError('idVenta requerido');
 
+  var idV = String(data.idVenta);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('VENTAS_CABECERA');
-  if (!sheet) return generarRespuestaError('VENTAS_CABECERA no encontrada');
 
-  var fv = sheet.getDataRange().getValues();
-  for (var i = fv.length - 1; i > 0; i--) {
-    if (String(fv[i][0]) === String(data.idVenta)) {
-      var tipoDoc  = String(fv[i][7] || '');
-      var nfEstado = String(fv[i][16] || '');
-      // Bloqueo: CPE emitido NO se puede editar (SUNAT)
-      if (tipoDoc !== 'NOTA_DE_VENTA' && nfEstado === 'EMITIDO') {
-        return generarRespuestaError(
-          'CPE emitido (' + tipoDoc + ') no se puede editar. Solicite la baja del CPE primero.'
-        );
+  // [delete-safe] Leer el estado actual de la venta (tipo_doc, nf_estado, doc/nombre previos):
+  // FUENTE PRIMARIA Supabase; FALLBACK Sheet.
+  var tipoDoc = '', nfEstado = '', docAnt = '', nomAnt = '', filaIdx = -1, encontrada = false;
+  var sbV = null;
+  try {
+    if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+      var rV = _sb('GET', 'me.ventas', { select: 'tipo_doc,nf_estado,cliente_doc,cliente_nombre', filters: { id_venta: 'eq.' + idV }, limit: 1, maxRetry: 1 });
+      if (rV && rV.ok && Array.isArray(rV.data) && rV.data.length) sbV = rV.data[0];
+    }
+  } catch (eRV) { Logger.log('[editarCliente] leer Supabase: ' + eRV.message); }
+
+  if (sbV) {
+    encontrada = true;
+    tipoDoc = String(sbV.tipo_doc || ''); nfEstado = String(sbV.nf_estado || '');
+    docAnt = String(sbV.cliente_doc || ''); nomAnt = String(sbV.cliente_nombre || '');
+  } else if (sheet) {
+    var fv = sheet.getDataRange().getValues();
+    for (var i = fv.length - 1; i > 0; i--) {
+      if (String(fv[i][0]) === idV) {
+        encontrada = true; filaIdx = i;
+        tipoDoc = String(fv[i][7] || ''); nfEstado = String(fv[i][16] || '');
+        docAnt = String(fv[i][4] || ''); nomAnt = String(fv[i][5] || '');
+        break;
       }
-      var docAnt = String(fv[i][4] || '');
-      var nomAnt = String(fv[i][5] || '');
-      var docNew = String(data.clienteDoc || '');
-      var nomNew = String(data.clienteNombre || '');
-      var dirNew = String(data.clienteDireccion || '');
-      // Detectar tipoDocCliente por largo
-      var tipoDocCli = docNew.length === 8 ? 1 : (docNew.length === 11 ? 6 : 0);
-
-      sheet.getRange(i + 1, 5).setValue(docNew);
-      sheet.getRange(i + 1, 6).setValue(nomNew);
-      sheet.getRange(i + 1, 16).setValue(tipoDocCli);
-
-      // Actualizar también en CLIENTES_FRECUENTES si tiene doc nuevo
-      if (docNew && nomNew) {
-        try { verificarYAgregaCliente(docNew, nomNew, tipoDoc, dirNew); } catch(_){}
-      }
-
-      var actor = _audExtraerActor(data);
-      var cambios = [];
-      if (docAnt !== docNew) cambios.push({ campo:'Cliente_Doc',    antes:docAnt, despues:docNew });
-      if (nomAnt !== nomNew) cambios.push({ campo:'Cliente_Nombre', antes:nomAnt, despues:nomNew });
-      if (cambios.length > 0) {
-        auditarLog('VENTAS_CABECERA', data.idVenta, {
-          usuario: actor.usuario, rol: actor.rol,
-          source: 'ME_EDITAR_CLIENTE',
-          accion: 'editar_cliente',
-          cambios: cambios,
-          autorizadoPor: actor.autorizadoPor || null,
-          motivo: data.motivo || ''
-        });
-      }
-      return ContentService.createTextOutput(JSON.stringify({
-        status:'success', mensaje:'Cliente actualizado',
-        cambios: cambios.length
-      })).setMimeType(ContentService.MimeType.JSON);
     }
   }
-  return generarRespuestaError('Venta ' + data.idVenta + ' no encontrada');
+  if (!encontrada) return generarRespuestaError('Venta ' + idV + ' no encontrada');
+
+  // Bloqueo: CPE emitido NO se puede editar (SUNAT)
+  if (tipoDoc !== 'NOTA_DE_VENTA' && nfEstado === 'EMITIDO') {
+    return generarRespuestaError('CPE emitido (' + tipoDoc + ') no se puede editar. Solicite la baja del CPE primero.');
+  }
+
+  var docNew = String(data.clienteDoc || '');
+  var nomNew = String(data.clienteNombre || '');
+  var dirNew = String(data.clienteDireccion || '');
+  var tipoDocCli = docNew.length === 8 ? 1 : (docNew.length === 11 ? 6 : 0);
+
+  // PATCH durable a Supabase.
+  try {
+    _dualWriteVentaPatchME(idV, { cliente_doc: docNew, cliente_nombre: nomNew, tipo_doc_cliente: tipoDocCli });
+  } catch (ePc) { Logger.log('[editarCliente] patch Supabase: ' + ePc.message); }
+
+  // SHEET (best-effort espejo): si tenemos la fila (o la buscamos), escribir.
+  if (sheet) {
+    try {
+      if (filaIdx < 0) {
+        var fv2 = sheet.getDataRange().getValues();
+        for (var k = fv2.length - 1; k > 0; k--) { if (String(fv2[k][0]) === idV) { filaIdx = k; break; } }
+      }
+      if (filaIdx > 0) {
+        sheet.getRange(filaIdx + 1, 5).setValue(docNew);
+        sheet.getRange(filaIdx + 1, 6).setValue(nomNew);
+        sheet.getRange(filaIdx + 1, 16).setValue(tipoDocCli);
+      }
+    } catch (eWS) { Logger.log('[editarCliente] Sheet write: ' + eWS.message); }
+  }
+
+  // Actualizar también en clientes frecuentes (Supabase + Sheet, vía verificarYAgregaCliente).
+  if (docNew && nomNew) {
+    try { verificarYAgregaCliente(docNew, nomNew, tipoDoc, dirNew); } catch(_){}
+  }
+
+  var actor = _audExtraerActor(data);
+  var cambios = [];
+  if (docAnt !== docNew) cambios.push({ campo:'Cliente_Doc',    antes:docAnt, despues:docNew });
+  if (nomAnt !== nomNew) cambios.push({ campo:'Cliente_Nombre', antes:nomAnt, despues:nomNew });
+  if (cambios.length > 0) {
+    auditarLog('VENTAS_CABECERA', idV, {
+      usuario: actor.usuario, rol: actor.rol,
+      source: 'ME_EDITAR_CLIENTE', accion: 'editar_cliente',
+      cambios: cambios, autorizadoPor: actor.autorizadoPor || null, motivo: data.motivo || ''
+    });
+  }
+  return ContentService.createTextOutput(JSON.stringify({
+    status:'success', mensaje:'Cliente actualizado', cambios: cambios.length
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================================================
@@ -354,56 +409,64 @@ function convertirNVaCPE(data) {
     return generarRespuestaError('FACTURA requiere RUC de 11 dígitos');
   }
 
+  var idNV = String(data.idVentaNV);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ventas = ss.getSheetByName('VENTAS_CABECERA');
   var detalles = ss.getSheetByName('VENTAS_DETALLE');
-  if (!ventas || !detalles) return generarRespuestaError('Hojas de ventas no encontradas');
 
-  // Buscar venta original
-  var fv = ventas.getDataRange().getValues();
-  var nvRow = -1, nvData = null;
-  for (var i = fv.length - 1; i > 0; i--) {
-    if (String(fv[i][0]) === String(data.idVentaNV)) {
-      nvRow = i + 1;
-      nvData = {
-        idVenta:     String(fv[i][0]),
-        fecha:       fv[i][1],
-        vendedor:    String(fv[i][2] || ''),
-        estacion:    String(fv[i][3] || ''),
-        total:       parseFloat(fv[i][6]) || 0,
-        tipoDoc:     String(fv[i][7] || ''),
-        formaPago:   String(fv[i][8] || ''),
-        idCaja:      String(fv[i][10] || ''),
-        idDispositivo: String(fv[i][11] || '')
-      };
-      break;
+  // [delete-safe] Leer NV (cabecera + detalle) — FUENTE PRIMARIA Supabase, FALLBACK Sheet.
+  var nvRow = -1, nvData = null, items = [];
+  var usadoSupabaseNV = false;
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rC = _sb('GET', 'me.ventas', { select: 'id_venta,fecha,vendedor,estacion,total,tipo_doc,forma_pago,id_caja,dispositivo_id', filters: { id_venta: 'eq.' + idNV }, limit: 1, maxRetry: 1 });
+      if (rC && rC.ok && Array.isArray(rC.data) && rC.data.length) {
+        var c0 = rC.data[0];
+        nvData = { idVenta: String(c0.id_venta), fecha: c0.fecha, vendedor: String(c0.vendedor || ''), estacion: String(c0.estacion || ''),
+          total: parseFloat(c0.total) || 0, tipoDoc: String(c0.tipo_doc || ''), formaPago: String(c0.forma_pago || ''),
+          idCaja: String(c0.id_caja || ''), idDispositivo: String(c0.dispositivo_id || '') };
+        var rD = _sb('GET', 'me.ventas_detalle', { select: 'sku,nombre,cantidad,precio,subtotal,cod_barras,valor_unitario,tipo_igv,unidad_medida', filters: { id_venta: 'eq.' + idNV }, order: 'linea.asc', limit: 500, maxRetry: 1 });
+        if (rD && rD.ok && Array.isArray(rD.data)) {
+          rD.data.forEach(function(d){
+            items.push({ sku:String(d.sku||''), nombre:String(d.nombre||''), cantidad:parseFloat(d.cantidad)||1,
+              precio:parseFloat(d.precio)||0, subtotal:parseFloat(d.subtotal)||0, codBarras:String(d.cod_barras||''),
+              valor_unitario:parseFloat(d.valor_unitario)||0, tipo_igv:parseInt(d.tipo_igv||1,10), unidad_de_medida:String(d.unidad_medida||'NIU') });
+          });
+        }
+        usadoSupabaseNV = true;
+      }
+    } catch (eNVsb) { Logger.log('[convertirNVaCPE] leer Supabase: ' + eNVsb.message); }
+  }
+
+  if (!usadoSupabaseNV) {
+    if (!ventas || !detalles) return generarRespuestaError('Hojas de ventas no encontradas');
+    var fv = ventas.getDataRange().getValues();
+    for (var i = fv.length - 1; i > 0; i--) {
+      if (String(fv[i][0]) === idNV) {
+        nvRow = i + 1;
+        nvData = { idVenta: String(fv[i][0]), fecha: fv[i][1], vendedor: String(fv[i][2] || ''), estacion: String(fv[i][3] || ''),
+          total: parseFloat(fv[i][6]) || 0, tipoDoc: String(fv[i][7] || ''), formaPago: String(fv[i][8] || ''),
+          idCaja: String(fv[i][10] || ''), idDispositivo: String(fv[i][11] || '') };
+        break;
+      }
+    }
+    if (nvRow < 2) return generarRespuestaError('Venta original ' + idNV + ' no encontrada');
+    var fd = detalles.getDataRange().getValues();
+    for (var j = 1; j < fd.length; j++) {
+      if (String(fd[j][0]) === idNV) {
+        items.push({ sku:String(fd[j][1]||''), nombre:String(fd[j][2]||''), cantidad:parseFloat(fd[j][3])||1,
+          precio:parseFloat(fd[j][4])||0, subtotal:parseFloat(fd[j][5])||0, codBarras:String(fd[j][6]||''),
+          valor_unitario:parseFloat(fd[j][7])||0, tipo_igv:parseInt(fd[j][8]||1,10), unidad_de_medida:String(fd[j][9]||'NIU') });
+      }
     }
   }
-  if (nvRow < 2) return generarRespuestaError('Venta original ' + data.idVentaNV + ' no encontrada');
+
+  if (!nvData) return generarRespuestaError('Venta original ' + idNV + ' no encontrada');
   if (nvData.tipoDoc !== 'NOTA_DE_VENTA') {
     return generarRespuestaError('Solo se pueden convertir NOTA_DE_VENTA. Esta es ' + nvData.tipoDoc);
   }
   if (nvData.formaPago === 'ANULADO_CONVERSION' || nvData.formaPago === 'ANULADO') {
     return generarRespuestaError('La venta original ya fue anulada/convertida');
-  }
-
-  // Cargar items del detalle original
-  var fd = detalles.getDataRange().getValues();
-  var items = [];
-  for (var j = 1; j < fd.length; j++) {
-    if (String(fd[j][0]) === String(data.idVentaNV)) {
-      items.push({
-        sku:              String(fd[j][1] || ''),
-        nombre:           String(fd[j][2] || ''),
-        cantidad:         parseFloat(fd[j][3]) || 1,
-        precio:           parseFloat(fd[j][4]) || 0,
-        subtotal:         parseFloat(fd[j][5]) || 0,
-        codBarras:        String(fd[j][6] || ''),
-        valor_unitario:   parseFloat(fd[j][7]) || 0,
-        tipo_igv:         parseInt(fd[j][8] || 1, 10),
-        unidad_de_medida: String(fd[j][9] || 'NIU')
-      });
-    }
   }
   if (!items.length) return generarRespuestaError('La venta original no tiene items');
 
@@ -429,9 +492,34 @@ function convertirNVaCPE(data) {
   };
 
   var resultado = procesarVenta(newPayload);
-  // Marcar la NV original como anulada por conversión
-  ventas.getRange(nvRow, 9).setValue('ANULADO_CONVERSION');
-  ventas.getRange(nvRow, 15).setValue('Convertido a ' + tipoDocNuevo + ' ' + resultado.correlativo);
+  // Marcar la NV original como anulada por conversión.
+  // [delete-safe] PATCH durable a Supabase (forma_pago + obs); Sheet best-effort.
+  try {
+    _dualWriteVentaPatchME(idNV, { forma_pago: 'ANULADO_CONVERSION', obs: 'Convertido a ' + tipoDocNuevo + ' ' + resultado.correlativo });
+  } catch (eAnu) { Logger.log('[convertirNVaCPE] patch anular Supabase: ' + eAnu.message); }
+  if (ventas) {
+    try {
+      if (nvRow < 2) { var fvA = ventas.getDataRange().getValues(); for (var kk = fvA.length - 1; kk > 0; kk--) { if (String(fvA[kk][0]) === idNV) { nvRow = kk + 1; break; } } }
+      if (nvRow >= 2) {
+        ventas.getRange(nvRow, 9).setValue('ANULADO_CONVERSION');
+        ventas.getRange(nvRow, 15).setValue('Convertido a ' + tipoDocNuevo + ' ' + resultado.correlativo);
+      }
+    } catch (eAnS) { Logger.log('[convertirNVaCPE] Sheet anular write: ' + eAnS.message); }
+  }
+
+  // ── STOCK (money-safety) — NO se reintegra aquí. Ver análisis abajo. ──
+  // El físico de una conversión NV→CPE es EL MISMO (solo cambia el documento), así que
+  // el stock debe decrementarse EXACTAMENTE una vez en total a través del par NV+CPE.
+  //   · Conversión ANTES del cierre de la caja NV: el cierre filtra la NV (FormaPago
+  //     empieza con 'ANULADO' → ahora excluida por /^ANULADO/ en generarGuiaSalidaVentas)
+  //     y descuenta SOLO el CPE → neto −1. Correcto. (Lo arregla el Fix de generarGuiaSalidaVentas.)
+  //   · Conversión DESPUÉS del cierre: la NV YA descontó −1 en su cierre. El CPE hereda
+  //     la MISMA caja (procesarVenta NO reasigna caja cuando esCajero=true, que es el caso
+  //     de toda NV pagada) y esa caja ya tiene su guía SALIDA_VENTAS → el CPE NO genera un
+  //     segundo descuento (dedup por caja). Neto ya = −1. Correcto SIN tocar nada.
+  // ⚠️ Por eso NO llamamos _reponerStockVentaAnulada aquí: reintegrar (+1) sin un segundo
+  //    descuento del CPE dejaría el neto en 0 = stock SOBRECONTADO (la mercadería sí salió).
+  //    Esto difiere del caso de anulación pura (sin CPE de reemplazo), donde sí se repone.
 
   // Logs en ambas filas
   auditarLog('VENTAS_CABECERA', data.idVentaNV, {
@@ -471,55 +559,76 @@ function bajaCPEVenta(data) {
   if (!data.idVenta) return generarRespuestaError('idVenta requerido');
   if (!data.motivo)  return generarRespuestaError('motivo es obligatorio para SUNAT');
 
+  var idV = String(data.idVenta);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('VENTAS_CABECERA');
-  if (!sheet) return generarRespuestaError('VENTAS_CABECERA no encontrada');
 
-  var fv = sheet.getDataRange().getValues();
-  for (var i = fv.length - 1; i > 0; i--) {
-    if (String(fv[i][0]) === String(data.idVenta)) {
-      var tipoDoc  = String(fv[i][7] || '');
-      var nfEstado = String(fv[i][16] || '');
-      var correlativo = String(fv[i][9] || '');
+  // [delete-safe] Leer tipo_doc/nf_estado/correlativo — Supabase primero, Sheet fallback.
+  var tipoDoc = '', nfEstado = '', correlativo = '', filaIdx = -1, encontrada = false, sbV = null;
+  try {
+    if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+      var rV = _sb('GET', 'me.ventas', { select: 'tipo_doc,nf_estado,correlativo', filters: { id_venta: 'eq.' + idV }, limit: 1, maxRetry: 1 });
+      if (rV && rV.ok && Array.isArray(rV.data) && rV.data.length) sbV = rV.data[0];
+    }
+  } catch (eRV) { Logger.log('[bajaCPE] leer Supabase: ' + eRV.message); }
 
-      if (tipoDoc !== 'BOLETA' && tipoDoc !== 'FACTURA') {
-        return generarRespuestaError('Solo se da de baja BOLETA o FACTURA. Esta venta es ' + tipoDoc);
+  if (sbV) {
+    encontrada = true;
+    tipoDoc = String(sbV.tipo_doc || ''); nfEstado = String(sbV.nf_estado || ''); correlativo = String(sbV.correlativo || '');
+  } else if (sheet) {
+    var fv = sheet.getDataRange().getValues();
+    for (var i = fv.length - 1; i > 0; i--) {
+      if (String(fv[i][0]) === idV) {
+        encontrada = true; filaIdx = i;
+        tipoDoc = String(fv[i][7] || ''); nfEstado = String(fv[i][16] || ''); correlativo = String(fv[i][9] || '');
+        break;
       }
-      if (nfEstado !== 'EMITIDO') {
-        return generarRespuestaError('CPE no está EMITIDO en SUNAT (estado: ' + nfEstado + ')');
-      }
-      // partir correlativo "B001-000042" → serie B001, numero 42
-      var partes = correlativo.split('-');
-      if (partes.length < 2) return generarRespuestaError('Correlativo inválido: ' + correlativo);
-      var serie = partes[0];
-      var numero = parseInt(partes[partes.length - 1], 10);
-
-      var resp = bajaCPENubeFact(serie, numero, data.motivo, tipoDoc);
-      var nuevoEstado = resp.ok ? (resp.aceptada ? 'BAJA_ACEPTADA' : 'BAJA_SOLICITADA') : 'BAJA_ERROR';
-      sheet.getRange(i + 1, 17).setValue(nuevoEstado);
-
-      var actor = _audExtraerActor(data);
-      auditarLog('VENTAS_CABECERA', data.idVenta, {
-        usuario: actor.usuario, rol: actor.rol,
-        source: 'ME_BAJA_CPE',
-        accion: 'baja_cpe',
-        cambios: [{ campo:'NF_Estado', antes:nfEstado, despues:nuevoEstado }],
-        autorizadoPor: actor.autorizadoPor || null,
-        ref: { serie: serie, numero: numero, tipoDoc: tipoDoc, respuestaNF: resp },
-        motivo: data.motivo
-      });
-
-      if (!resp.ok) return generarRespuestaError('NubeFact rechazó la baja: ' + (resp.error || 'sin detalle'));
-
-      return ContentService.createTextOutput(JSON.stringify({
-        status: 'success',
-        mensaje: 'Baja del CPE ' + (resp.aceptada ? 'aceptada por SUNAT' : 'solicitada (esperando SUNAT)'),
-        nuevoEstado: nuevoEstado,
-        respuestaNF: resp
-      })).setMimeType(ContentService.MimeType.JSON);
     }
   }
-  return generarRespuestaError('Venta ' + data.idVenta + ' no encontrada');
+  if (!encontrada) return generarRespuestaError('Venta ' + idV + ' no encontrada');
+
+  if (tipoDoc !== 'BOLETA' && tipoDoc !== 'FACTURA') {
+    return generarRespuestaError('Solo se da de baja BOLETA o FACTURA. Esta venta es ' + tipoDoc);
+  }
+  if (nfEstado !== 'EMITIDO') {
+    return generarRespuestaError('CPE no está EMITIDO en SUNAT (estado: ' + nfEstado + ')');
+  }
+  // partir correlativo "B001-000042" → serie B001, numero 42
+  var partes = correlativo.split('-');
+  if (partes.length < 2) return generarRespuestaError('Correlativo inválido: ' + correlativo);
+  var serie = partes[0];
+  var numero = parseInt(partes[partes.length - 1], 10);
+
+  var resp = bajaCPENubeFact(serie, numero, data.motivo, tipoDoc);
+  var nuevoEstado = resp.ok ? (resp.aceptada ? 'BAJA_ACEPTADA' : 'BAJA_SOLICITADA') : 'BAJA_ERROR';
+
+  // PATCH durable a Supabase (nf_estado).
+  try { _dualWriteVentaPatchME(idV, { nf_estado: nuevoEstado }); } catch (ePc) { Logger.log('[bajaCPE] patch Supabase: ' + ePc.message); }
+  // SHEET espejo.
+  if (sheet) {
+    try {
+      if (filaIdx < 0) { var fv2 = sheet.getDataRange().getValues(); for (var k = fv2.length - 1; k > 0; k--) { if (String(fv2[k][0]) === idV) { filaIdx = k; break; } } }
+      if (filaIdx > 0) sheet.getRange(filaIdx + 1, 17).setValue(nuevoEstado);
+    } catch (eWS) { Logger.log('[bajaCPE] Sheet write: ' + eWS.message); }
+  }
+
+  var actor = _audExtraerActor(data);
+  auditarLog('VENTAS_CABECERA', idV, {
+    usuario: actor.usuario, rol: actor.rol,
+    source: 'ME_BAJA_CPE', accion: 'baja_cpe',
+    cambios: [{ campo:'NF_Estado', antes:nfEstado, despues:nuevoEstado }],
+    autorizadoPor: actor.autorizadoPor || null,
+    ref: { serie: serie, numero: numero, tipoDoc: tipoDoc, respuestaNF: resp },
+    motivo: data.motivo
+  });
+
+  if (!resp.ok) return generarRespuestaError('NubeFact rechazó la baja: ' + (resp.error || 'sin detalle'));
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success',
+    mensaje: 'Baja del CPE ' + (resp.aceptada ? 'aceptada por SUNAT' : 'solicitada (esperando SUNAT)'),
+    nuevoEstado: nuevoEstado, respuestaNF: resp
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================================================
@@ -538,40 +647,54 @@ function registrarExtraCajaConLog(data) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var cajas = ss.getSheetByName('CAJAS');
-  if (!cajas) return generarRespuestaError('CAJAS no encontrada');
 
-  // Validar caja abierta
-  var fc = cajas.getDataRange().getValues();
-  var cajaAbierta = false;
-  for (var j = fc.length - 1; j > 0; j--) {
-    if (String(fc[j][0]) === String(data.cajaId)) {
-      if (String(fc[j][5]) === 'ABIERTA') cajaAbierta = true;
-      break;
+  // Validar caja abierta — [delete-safe] FUENTE PRIMARIA Supabase, FALLBACK Sheet.
+  var cajaAbierta = false, resuelto = false;
+  var abSB = (typeof _meCajaAbiertaEnZona === 'function') ? _meCajaAbiertaEnZona(String(data.cajaId), '') : null;  // true|false|null
+  if (abSB !== null) { resuelto = true; cajaAbierta = (abSB === true); }
+  if (!resuelto) {
+    if (!cajas) return generarRespuestaError('CAJAS no encontrada');
+    var fc = cajas.getDataRange().getValues();
+    for (var j = fc.length - 1; j > 0; j--) {
+      if (String(fc[j][0]) === String(data.cajaId)) {
+        if (String(fc[j][5]) === 'ABIERTA') cajaAbierta = true;
+        break;
+      }
     }
   }
   if (!cajaAbierta) {
     return generarRespuestaError('Caja ' + data.cajaId + ' no está abierta. No se permiten extras.');
   }
 
-  var sheet = ss.getSheetByName('MOVIMIENTOS_EXTRA');
-  if (!sheet) {
-    sheet = ss.insertSheet('MOVIMIENTOS_EXTRA');
-    sheet.appendRow(['ID_Extra','ID_Caja','Timestamp','Tipo','Monto','Concepto','Obs','Registrado_Por']);
-  }
   var actor = _audExtraerActor(data);
   // [fix 20x idempotencia cruzada Fase 2] usar el idExtra provisto por el cliente (el MISMO que usó el path
   // directo a Supabase) si vino; si no, generar uno (back-compat). Así, si la escritura directa escribió en
   // me.movimientos_extra pero su respuesta se perdió y caemos a este fallback, el id_extra coincide → el batch
   // upserta (no duplica en Supabase) y la reconciliación ve la fila en Sheets → el cierre NO cuenta doble.
   var id = String(data.idExtra || '').trim() || ('EX-' + new Date().getTime());
-  sheet.appendRow([
-    id, data.cajaId, new Date(),
-    String(data.tipo).toUpperCase(),
-    monto,
-    String(data.concepto),
-    String(data.obs || ''),
-    actor.usuario
-  ]);
+  var tsExtra = new Date();
+  var tipoExtra = String(data.tipo).toUpperCase();
+
+  // [delete-safe] Persistencia REAL en Supabase (upsert por id_extra, idempotente) — el cierre lee de aquí
+  // (me.cierre_datos_caja agrega ingresos/egresos por id_caja). Mapeo via _ME_SPECS.movimientos_extra.
+  try {
+    _dualWriteMovExtraME({
+      ID_Extra: id, ID_Caja: String(data.cajaId || ''), Timestamp: tsExtra, Tipo: tipoExtra,
+      Monto: monto, Concepto: String(data.concepto), Obs: String(data.obs || ''),
+      Registrado_Por: actor.usuario
+    });
+  } catch (eMX) { Logger.log('[registrarExtraCaja] dualWrite Supabase: ' + (eMX && eMX.message)); }
+
+  // SHEET (best-effort espejo).
+  var sheet = ss.getSheetByName('MOVIMIENTOS_EXTRA');
+  if (sheet) {
+    try {
+      sheet.appendRow([
+        id, data.cajaId, tsExtra, tipoExtra, monto,
+        String(data.concepto), String(data.obs || ''), actor.usuario
+      ]);
+    } catch (eMS) { Logger.log('[registrarExtraCaja] Sheet write: ' + eMS.message); }
+  }
 
   auditarLog('MOVIMIENTOS_EXTRA', id, {
     usuario: actor.usuario, rol: actor.rol,

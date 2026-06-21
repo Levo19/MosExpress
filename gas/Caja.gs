@@ -112,12 +112,30 @@ function _autoCerrarCajasViejas(sheetCajas) {
 function getCajaActivaZona(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCajas = ss.getSheetByName('CAJAS');
-  if (!sheetCajas) return { ok: false, error: 'CAJAS no encontrada' };
   var zona = String((data && data.zona) || '').trim();
   if (!zona) return { ok: false, error: 'zona requerida' };
 
-  try { _autoCerrarCajasViejas(sheetCajas); } catch(_) {}
+  // [delete-safe] FUENTE PRIMARIA: Supabase (me.cajas). El Sheet solo de fallback.
+  var sbAct = _meCajaActivaZona(zona);   // {id_caja,...} | {__vacio:true} | null
+  if (sbAct && sbAct.id_caja) {
+    var fa = sbAct.fecha_apertura;
+    return { ok: true, data: {
+      hayCaja:      true,
+      idCaja:       String(sbAct.id_caja),
+      cajero:       String(sbAct.vendedor || ''),
+      estacion:     String(sbAct.estacion || ''),
+      montoInicial: parseFloat(sbAct.monto_inicial) || 0,
+      abiertaTs:    fa ? String(fa) : '',
+      zona:         zona
+    }};
+  }
+  if (sbAct && sbAct.__vacio) {
+    return { ok: true, data: { hayCaja: false, zona: zona } };
+  }
 
+  // ── FALLBACK Sheet ──
+  if (!sheetCajas) return { ok: true, data: { hayCaja: false, zona: zona } };
+  try { _autoCerrarCajasViejas(sheetCajas); } catch(_) {}
   var filas = sheetCajas.getDataRange().getValues();
   // Cols (0-idx): 0 ID_Caja · 1 Vendedor · 2 Estacion · 3 Fecha_Apertura
   //               · 4 Monto_Inicial · 5 Estado · 6 Monto_Final · 7 Fecha_Cierre
@@ -143,30 +161,40 @@ function getCajaActivaZona(data) {
 
 function procesarAperturaCaja(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // [delete-safe] El Sheet es OPCIONAL. La caja se persiste en Supabase (dualWrite, abajo).
   var sheetCajas = ss.getSheetByName("CAJAS");
-  if (!sheetCajas) return generarRespuestaError("Pestaña CAJAS no encontrada.");
 
-  // Auto-cerrar cajas de días anteriores y forzar escritura antes de re-leer
-  var _cajasAutoCerradas = _autoCerrarCajasViejas(sheetCajas);
+  var _cajasAutoCerradas = 0;
+  if (sheetCajas) {
+    // Auto-cerrar cajas de días anteriores y forzar escritura antes de re-leer
+    try { _cajasAutoCerradas = _autoCerrarCajasViejas(sheetCajas); } catch(_ac) {}
+    // Asegurar que la columna 'PrintNode_ID' existe (col 10) — auto-creación idempotente.
+    try {
+      var lastCol = sheetCajas.getLastColumn();
+      var headers = sheetCajas.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
+      var hasPrintNode = headers.some(function(h) { return String(h).trim() === 'PrintNode_ID'; });
+      if (!hasPrintNode) sheetCajas.getRange(1, lastCol + 1).setValue('PrintNode_ID');
+    } catch(e) { /* no-fatal */ }
+  }
 
-  // Asegurar que la columna 'PrintNode_ID' existe (col 10) — auto-creación idempotente
-  // para que warehouseMos pueda leer a qué impresora mandar avisos de preingreso.
-  try {
-    var lastCol = sheetCajas.getLastColumn();
-    var headers = sheetCajas.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
-    var hasPrintNode = headers.some(function(h) { return String(h).trim() === 'PrintNode_ID'; });
-    if (!hasPrintNode) sheetCajas.getRange(1, lastCol + 1).setValue('PrintNode_ID');
-  } catch(e) { /* no-fatal */ }
-
-  // Un solo cajero activo por zona a la vez
+  // Un solo cajero activo por zona a la vez — FUENTE PRIMARIA: Supabase (me.cajas).
   if (data.zona) {
-    var filasActualizadas = sheetCajas.getDataRange().getValues();
-    for (var i = 1; i < filasActualizadas.length; i++) {
-      if (String(filasActualizadas[i][5]) === 'ABIERTA' &&
-          String(filasActualizadas[i][8] || '') === String(data.zona)) {
-        return generarRespuestaError(
-          "Ya hay un turno activo en " + data.zona + " (cajero: " + filasActualizadas[i][1] + "). Cierra ese turno primero."
-        );
+    var sbActAp = _meCajaActivaZona(String(data.zona));   // {id_caja,vendedor,...} | {__vacio:true} | null
+    if (sbActAp && sbActAp.id_caja) {
+      return generarRespuestaError(
+        "Ya hay un turno activo en " + data.zona + " (cajero: " + (sbActAp.vendedor || '') + "). Cierra ese turno primero."
+      );
+    }
+    // Solo si Supabase NO fue concluyente (gate OFF / falla) caemos al Sheet.
+    if ((!sbActAp || (!sbActAp.id_caja && !sbActAp.__vacio)) && sheetCajas) {
+      var filasActualizadas = sheetCajas.getDataRange().getValues();
+      for (var i = 1; i < filasActualizadas.length; i++) {
+        if (String(filasActualizadas[i][5]) === 'ABIERTA' &&
+            String(filasActualizadas[i][8] || '') === String(data.zona)) {
+          return generarRespuestaError(
+            "Ya hay un turno activo en " + data.zona + " (cajero: " + filasActualizadas[i][1] + "). Cierra ese turno primero."
+          );
+        }
       }
     }
   }
@@ -174,13 +202,17 @@ function procesarAperturaCaja(data) {
   var idCaja = "CAJA-" + new Date().getTime();
   var _tz    = Session.getScriptTimeZone();
   var _ahora = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd HH:mm:ss');
-  // Columnas: ID_Caja | Vendedor | Estacion | Fecha_Apertura | Monto_Inicial | Estado | Monto_Final | Fecha_Cierre | Zona_ID | PrintNode_ID
-  sheetCajas.appendRow([
-    idCaja, data.vendedor, data.estacion, _ahora,
-    data.montoInicial || 0, "ABIERTA", "", "", data.zona || '',
-    data.printNodeId || ''   // NUEVA: ID PrintNode de la impresora asignada a esta caja
-  ]);
-  SpreadsheetApp.flush(); // garantiza que appendRow llegue a Sheets antes de retornar el ID al frontend
+  // SHEET (best-effort espejo): Columnas ID_Caja|Vendedor|Estacion|Fecha_Apertura|Monto_Inicial|Estado|Monto_Final|Fecha_Cierre|Zona_ID|PrintNode_ID
+  if (sheetCajas) {
+    try {
+      sheetCajas.appendRow([
+        idCaja, data.vendedor, data.estacion, _ahora,
+        data.montoInicial || 0, "ABIERTA", "", "", data.zona || '',
+        data.printNodeId || ''
+      ]);
+      SpreadsheetApp.flush();
+    } catch (eAp) { Logger.log('[procesarAperturaCaja] appendRow CAJAS (espejo) falló: ' + eAp.message); }
+  }
 
   // [cajas-directo] Espejo a Supabase en tiempo real (best-effort, no rompe la apertura). Upsert por
   // id_caja → inserta la caja recién abierta; el cierre luego actualiza la misma fila. Mapeo = batch.
@@ -266,43 +298,56 @@ function _cerrarCajaAtomicoCore(opts) {
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    // [delete-safe] Las hojas son OPCIONALES. La fuente primaria de los datos del
+    // cierre (caja, efectivo, POR_COBRAR, ingresos/egresos) es me.cierre_datos_caja.
+    // El Sheet solo se usa de FALLBACK (gate OFF / RPC falló) y como espejo de escritura.
     var sheetCajas = ss.getSheetByName('CAJAS');
     var sheetVentas = ss.getSheetByName('VENTAS_CABECERA');
     var sheetExtra = ss.getSheetByName('MOVIMIENTOS_EXTRA');
-    if (!sheetCajas)  return generarRespuestaError('CAJAS no encontrada');
-    if (!sheetVentas) return generarRespuestaError('VENTAS_CABECERA no encontrada');
 
-    // ── 1. Localizar la caja ──
-    var filasCajas = sheetCajas.getDataRange().getValues();
-    var filaCaja = -1;
-    var cajaRow = null;
-    for (var i = 1; i < filasCajas.length; i++) {
-      if (String(filasCajas[i][0]) === idCaja) {
-        filaCaja = i;
-        cajaRow = filasCajas[i];
-        break;
+    // ── 1. Localizar la caja + leer sus datos ──
+    // FUENTE PRIMARIA: Supabase (me.cierre_datos_caja).
+    var sbCaja = _meCierreDatosCaja(idCaja);
+
+    var cajaVendedor, cajaEstacion, cajaZona, montoInicial, printNodeId, estadoActual, montoFinalActual;
+    var filaCaja = -1, cajaRow = null, filasCajas = null;
+
+    if (sbCaja) {
+      cajaVendedor     = String(sbCaja.vendedor || '');
+      cajaEstacion     = String(sbCaja.estacion || '');
+      cajaZona         = String(sbCaja.zona || '');
+      montoInicial     = parseFloat(sbCaja.monto_inicial) || 0;
+      printNodeId      = String(sbCaja.printnode_id || '');
+      estadoActual     = String(sbCaja.estado || '');
+      montoFinalActual = parseFloat(sbCaja.monto_final) || 0;
+    } else {
+      // ── FALLBACK: Sheet ──
+      if (!sheetCajas)  return generarRespuestaError('CAJAS no encontrada');
+      if (!sheetVentas) return generarRespuestaError('VENTAS_CABECERA no encontrada');
+      filasCajas = sheetCajas.getDataRange().getValues();
+      for (var i = 1; i < filasCajas.length; i++) {
+        if (String(filasCajas[i][0]) === idCaja) { filaCaja = i; cajaRow = filasCajas[i]; break; }
       }
+      if (filaCaja < 0) return generarRespuestaError('Caja ' + idCaja + ' no encontrada');
+      cajaVendedor     = String(cajaRow[1] || '');
+      cajaEstacion     = String(cajaRow[2] || '');
+      cajaZona         = String(cajaRow[8] || '');
+      montoInicial     = parseFloat(cajaRow[4]) || 0;
+      printNodeId      = String(cajaRow[9] || '');
+      estadoActual     = String(cajaRow[5] || '');
+      montoFinalActual = parseFloat(cajaRow[6]) || 0;
     }
-    if (filaCaja < 0) return generarRespuestaError('Caja ' + idCaja + ' no encontrada');
-
-    // Leer info de la caja ANTES del check yaCerrada porque puede que
-    // necesitemos regenerar la guía SALIDA_VENTAS si falta (modo reparación).
-    var cajaVendedor = String(cajaRow[1] || '');
-    var cajaEstacion = String(cajaRow[2] || '');
-    var cajaZona     = String(cajaRow[8] || '');
-    var montoInicial = parseFloat(cajaRow[4]) || 0;
-    // [v2.5.8] PrintNode_ID guardado al abrir caja
-    var printNodeId  = String(cajaRow[9] || '');
 
     // Idempotencia + REPARACIÓN: si ya está cerrada (CERRADA o CERRADA_AUTO)
     // pero la guía SALIDA_VENTAS nunca se generó, regenerar ahora.
     // generarGuiaSalidaVentas tiene defensa anti-duplicado internamente.
-    var estadoActual = String(cajaRow[5] || '');
     if (estadoActual === 'CERRADA' || estadoActual === 'CERRADA_AUTO') {
       var guiaRegenerada = false;
       var existeGuia = false;
       if (cajaZona) {
-        try { existeGuia = _existeGuiaSalidaVentasParaCaja(ss, idCaja); } catch(_){}
+        // anti-dup: Supabase (sbCaja.guia_salida_existe) si lo tenemos; si no, Sheet.
+        if (sbCaja) { existeGuia = (sbCaja.guia_salida_existe === true); }
+        else { try { existeGuia = _existeGuiaSalidaVentasParaCaja(ss, idCaja); } catch(_){} }
         if (!existeGuia) {
           try {
             generarGuiaSalidaVentas(ss, idCaja, cajaVendedor, cajaZona);
@@ -336,7 +381,7 @@ function _cerrarCajaAtomicoCore(opts) {
         idCaja: idCaja,
         vendedor: cajaVendedor,
         zona: cajaZona,
-        montoFinal: parseFloat(cajaRow[6]) || 0,
+        montoFinal: montoFinalActual,
         printNodeId: printNodeId
       })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -357,33 +402,35 @@ function _cerrarCajaAtomicoCore(opts) {
     // cierre se anuló). Los cobros asignados ligados a esta caja se cancelan
     // en el paso 8b (CANCELADO_CIERRE_CAJA).
     var idsTarget = Array.isArray(opts.idsAnular) ? opts.idsAnular.map(String) : null;
-    var filasV = sheetVentas.getDataRange().getValues();
     var idsAnulados = [];
     var efectivoVentas = 0;
-    for (var v = 1; v < filasV.length; v++) {
-      var idCajaV = String(filasV[v][10] || '');
-      var idV     = String(filasV[v][0] || '');
-      var formaPago = String(filasV[v][8] || '').toUpperCase();
-      var total = parseFloat(filasV[v][6]) || 0;
+    var ingresosEfe = 0, egresosEfe = 0;
 
-      // Anular POR_COBRAR: usar lista explícita si vino, si no auto-detectar
-      // por caja actual. Importante: nunca tocar CREDITO ya formales (esos son
-      // deuda real aprobada por admin via aprobarComoCredito).
-      var debeAnular = false;
-      if (idsTarget) {
-        if (idsTarget.indexOf(idV) !== -1) debeAnular = true;
-      } else if (idCajaV === idCaja && formaPago === 'POR_COBRAR') {
-        debeAnular = true;
+    if (sbCaja) {
+      // ── FUENTE PRIMARIA Supabase: ids POR_COBRAR + efectivo + ingresos/egresos ya agregados. ──
+      var porCobrar = Array.isArray(sbCaja.ids_por_cobrar) ? sbCaja.ids_por_cobrar.map(String) : [];
+      // Respetar lista explícita si vino (solo anular los POR_COBRAR que estén en idsTarget).
+      idsAnulados = idsTarget ? porCobrar.filter(function(id){ return idsTarget.indexOf(id) !== -1; }) : porCobrar;
+      efectivoVentas = parseFloat(sbCaja.efectivo_ventas) || 0;
+      ingresosEfe    = parseFloat(sbCaja.ingresos_efe) || 0;
+      egresosEfe     = parseFloat(sbCaja.egresos_efe) || 0;
+
+      // Anular en el SHEET (best-effort espejo). El espejo a Supabase de la anulación
+      // va por _dualWriteVentaPatchME más abajo. Si el Sheet no existe → no-op.
+      if (idsAnulados.length && sheetVentas) {
+        try {
+          var fV = sheetVentas.getDataRange().getValues();
+          var setAnul = {}; idsAnulados.forEach(function(id){ setAnul[id] = true; });
+          for (var vv = 1; vv < fV.length; vv++) {
+            var idVS = String(fV[vv][0] || '');
+            if (setAnul[idVS] && String(fV[vv][8] || '').toUpperCase() === 'POR_COBRAR') {
+              sheetVentas.getRange(vv + 1, 9).setValue('ANULADO');
+            }
+          }
+        } catch (eAnS) { Logger.log('[cierre] anular POR_COBRAR en Sheet (espejo) falló: ' + eAnS.message); }
       }
-      if (debeAnular && formaPago === 'POR_COBRAR') {
-        sheetVentas.getRange(v + 1, 9).setValue('ANULADO');        // col 9 = FormaPago
-        // ID_Caja (col 11) se mantiene para audit trail
-        idsAnulados.push(idV);
-        // [v2.7.5] Auditoría INDIVIDUAL por cada venta anulada en cierre.
-        // Antes solo se auditaba la caja entera — quedaban huérfanas las
-        // anulaciones y no había rastro de "este ticket fue anulado porque
-        // cliente no pagó al cierre del turno". Si después llega el cliente
-        // a pagar, esta fila permite saber qué pasó.
+      // Auditoría individual por cada venta anulada (igual que el path Sheet).
+      idsAnulados.forEach(function(idV){
         try {
           if (typeof auditarLog === 'function') {
             auditarLog('VENTAS_CABECERA', idV, {
@@ -392,36 +439,66 @@ function _cerrarCajaAtomicoCore(opts) {
               source:  'ME_ANULAR_EN_CIERRE',
               accion:  'anular_por_cobrar_en_cierre',
               cambios: [{ campo: 'FormaPago', antes: 'POR_COBRAR', despues: 'ANULADO' }],
-              ref:     { idCaja: idCaja, vendedor: cajaVendedor, zona: cajaZona, total: total },
+              ref:     { idCaja: idCaja, vendedor: cajaVendedor, zona: cajaZona },
               motivo:  'Cierre de turno — POR_COBRAR no cobrado',
               ts:      new Date().toISOString()
             });
           }
         } catch(eAv) { Logger.log('[cierre] audit individual anulado falló: ' + eAv.message); }
-        continue;
-      }
+      });
+    } else {
+      // ── FALLBACK Sheet: lógica legacy (lee VENTAS_CABECERA + MOVIMIENTOS_EXTRA) ──
+      var filasV = sheetVentas.getDataRange().getValues();
+      for (var v = 1; v < filasV.length; v++) {
+        var idCajaV = String(filasV[v][10] || '');
+        var idV     = String(filasV[v][0] || '');
+        var formaPago = String(filasV[v][8] || '').toUpperCase();
+        var total = parseFloat(filasV[v][6]) || 0;
 
-      // Si esta venta pertenece a la caja, sumar efectivo (para auto-cálculo)
-      if (idCajaV === idCaja) {
-        if (formaPago === 'EFECTIVO') {
-          efectivoVentas += total;
-        } else if (formaPago.indexOf('MIXTO') === 0) {
-          var m = formaPago.match(/EFE:([\d.]+)/);
-          if (m) efectivoVentas += parseFloat(m[1]) || 0;
+        var debeAnular = false;
+        if (idsTarget) {
+          if (idsTarget.indexOf(idV) !== -1) debeAnular = true;
+        } else if (idCajaV === idCaja && formaPago === 'POR_COBRAR') {
+          debeAnular = true;
+        }
+        if (debeAnular && formaPago === 'POR_COBRAR') {
+          sheetVentas.getRange(v + 1, 9).setValue('ANULADO');        // col 9 = FormaPago
+          idsAnulados.push(idV);
+          try {
+            if (typeof auditarLog === 'function') {
+              auditarLog('VENTAS_CABECERA', idV, {
+                usuario: String((opts.adminAuth && opts.adminAuth.nombre) || cajaVendedor),
+                rol:     String((opts.adminAuth && opts.adminAuth.rol)    || 'CAJERO'),
+                source:  'ME_ANULAR_EN_CIERRE',
+                accion:  'anular_por_cobrar_en_cierre',
+                cambios: [{ campo: 'FormaPago', antes: 'POR_COBRAR', despues: 'ANULADO' }],
+                ref:     { idCaja: idCaja, vendedor: cajaVendedor, zona: cajaZona, total: total },
+                motivo:  'Cierre de turno — POR_COBRAR no cobrado',
+                ts:      new Date().toISOString()
+              });
+            }
+          } catch(eAv) { Logger.log('[cierre] audit individual anulado falló: ' + eAv.message); }
+          continue;
+        }
+        if (idCajaV === idCaja) {
+          if (formaPago === 'EFECTIVO') {
+            efectivoVentas += total;
+          } else if (formaPago.indexOf('MIXTO') === 0) {
+            var m = formaPago.match(/EFE:([\d.]+)/);
+            if (m) efectivoVentas += parseFloat(m[1]) || 0;
+          }
         }
       }
-    }
-
-    // ── 3. Sumar ingresos/egresos extra de la caja ──
-    var ingresosEfe = 0, egresosEfe = 0;
-    if (sheetExtra) {
-      var filasE = sheetExtra.getDataRange().getValues();
-      for (var x = 1; x < filasE.length; x++) {
-        if (String(filasE[x][1] || '') !== idCaja) continue;
-        var tipoE = String(filasE[x][3] || '');
-        var mtoE  = parseFloat(filasE[x][4]) || 0;
-        if      (tipoE === 'INGRESO') ingresosEfe += mtoE;
-        else if (tipoE === 'EGRESO')  egresosEfe  += mtoE;
+      // ── 3. Ingresos/egresos extra de la caja (Sheet) ──
+      if (sheetExtra) {
+        var filasE = sheetExtra.getDataRange().getValues();
+        for (var x = 1; x < filasE.length; x++) {
+          if (String(filasE[x][1] || '') !== idCaja) continue;
+          var tipoE = String(filasE[x][3] || '');
+          var mtoE  = parseFloat(filasE[x][4]) || 0;
+          if      (tipoE === 'INGRESO') ingresosEfe += mtoE;
+          else if (tipoE === 'EGRESO')  egresosEfe  += mtoE;
+        }
       }
     }
 
@@ -440,16 +517,31 @@ function _cerrarCajaAtomicoCore(opts) {
     // ── 5. Escribir CERRADA + montoFinal + fechaCierre ──
     var tz = Session.getScriptTimeZone();
     var fechaCierre = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
-    sheetCajas.getRange(filaCaja + 1, 6).setValue(estadoFinal);
-    sheetCajas.getRange(filaCaja + 1, 7).setValue(montoFinal);
-    sheetCajas.getRange(filaCaja + 1, 8).setValue(fechaCierre);
-    SpreadsheetApp.flush();
+    // Fecha_Apertura: del Sheet (cajaRow) si lo leímos por Sheet; de Supabase si no.
+    var fechaApertura = (cajaRow ? cajaRow[3] : (sbCaja && sbCaja.fecha_apertura ? sbCaja.fecha_apertura : ''));
+    // SHEET (best-effort espejo): si leímos por Supabase necesitamos localizar la fila;
+    // si el Sheet ya no existe, se omite (el estado verdadero va a me.cajas vía dualWrite).
+    if (sheetCajas) {
+      try {
+        if (filaCaja < 0) {
+          var fC = sheetCajas.getDataRange().getValues();
+          for (var fc = 1; fc < fC.length; fc++) { if (String(fC[fc][0]) === idCaja) { filaCaja = fc; break; } }
+        }
+        if (filaCaja >= 0) {
+          sheetCajas.getRange(filaCaja + 1, 6).setValue(estadoFinal);
+          sheetCajas.getRange(filaCaja + 1, 7).setValue(montoFinal);
+          sheetCajas.getRange(filaCaja + 1, 8).setValue(fechaCierre);
+          SpreadsheetApp.flush();
+        }
+      } catch (eCS) { Logger.log('[cierre] escribir CERRADA en Sheet (espejo) falló: ' + eCS.message); }
+    }
 
     // [cajas-directo] Espejo a Supabase en tiempo real (best-effort): upsert por id_caja ACTUALIZA la
     // fila de la apertura con estado/monto_final/fecha_cierre. Fila completa (mapeo = batch).
+    // FUENTE DE VERDAD del estado de caja cuando el Sheet ya no existe (delete-safe).
     try {
       _dualWriteCajaME({
-        ID_Caja: idCaja, Vendedor: cajaVendedor, Estacion: cajaEstacion, Fecha_Apertura: cajaRow[3],
+        ID_Caja: idCaja, Vendedor: cajaVendedor, Estacion: cajaEstacion, Fecha_Apertura: fechaApertura,
         Monto_Inicial: montoInicial, Estado: estadoFinal, Monto_Final: montoFinal, Fecha_cierre: fechaCierre,
         Zona_ID: cajaZona, PrintNode_ID: printNodeId
       });
@@ -457,7 +549,18 @@ function _cerrarCajaAtomicoCore(opts) {
 
     // [anulacion-directo] espejo de las ventas anuladas en el cierre (POR_COBRAR→ANULADO), UNA sola
     // llamada PATCH in.(...) → finanzas no las cuenta en tiempo real, sin esperar el batch.
-    try { if (idsAnulados.length) _dualWriteVentaPatchME(idsAnulados, { forma_pago: 'ANULADO' }); } catch(eDW2) { Logger.log('[dualWrite anulados cierre] ' + (eDW2 && eDW2.message)); }
+    // MONEY-SAFETY (delete-safe): cuando Supabase es la fuente de verdad (sbCaja), el PATCH es la
+    // ÚNICA anulación durable → reintentamos hasta 3x (idempotente: re-PATCH a ANULADO es no-op).
+    if (idsAnulados.length) {
+      var anulOK = false;
+      var maxAnul = sbCaja ? 3 : 1;
+      for (var ia = 0; ia < maxAnul && !anulOK; ia++) {
+        try { var rAn = _dualWriteVentaPatchME(idsAnulados, { forma_pago: 'ANULADO' }); anulOK = !!(rAn && rAn.ok); }
+        catch(eDW2) { Logger.log('[dualWrite anulados cierre] intento ' + (ia+1) + ': ' + (eDW2 && eDW2.message)); }
+        if (!anulOK && ia < maxAnul - 1) { try { Utilities.sleep(500); } catch(_s){} }
+      }
+      if (!anulOK && sbCaja) Logger.log('[cierre] ⚠ anulación POR_COBRAR a Supabase NO confirmada tras ' + maxAnul + ' intentos · ids=' + idsAnulados.join(','));
+    }
 
     // ── 6. Auditoría ──
     try {
@@ -528,6 +631,17 @@ function _cerrarCajaAtomicoCore(opts) {
     // [v2.6.0] La venta original fue ANULADA en el paso 2 (era POR_COBRAR),
     // así que el cobro asignado ya no tiene sentido — se cancela.
     var cobrosLiberados = 0;
+    // [delete-safe] Cuando Supabase es la fuente, cancelamos los cobros ASIGNADO de la caja
+    // DIRECTO en me.creditos_cobro_asignado (PATCH por caja_destino+estado) — durable aunque
+    // el Sheet ya no exista. Idempotente (re-PATCH de ASIGNADO→CANCELADO no afecta los ya cancelados).
+    if (sbCaja) {
+      try {
+        var rCob = _sbUpdate('me.creditos_cobro_asignado',
+          { estado: 'CANCELADO_CIERRE_CAJA', fecha_res: new Date().toISOString() },
+          { caja_destino: 'eq.' + idCaja, estado: 'eq.ASIGNADO' });
+        if (!rCob || !rCob.ok) Logger.log('[cierre] cancelar cobros ASIGNADO en Supabase falló: HTTP ' + (rCob && rCob.code) + ' ' + ((rCob && rCob.error) || ''));
+      } catch(eSC) { Logger.log('[cierre] cancelar cobros ASIGNADO Supabase excepción: ' + eSC.message); }
+    }
     try {
       var hojaCobros = ss.getSheetByName('CREDITOS_COBRO_ASIGNADO');
       if (hojaCobros) {
@@ -630,31 +744,48 @@ function procesarCierreCaja(data) {
 // destruir local — evita dejar la caja huérfana.
 function consultarCaja(idCaja) {
   if (!idCaja) return generarRespuestaError('idCaja requerido');
+
+  // [delete-safe] FUENTE PRIMARIA: me.cajas (Supabase). Fallback: Sheet.
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rC = _sb('GET', 'me.cajas', {
+        select: 'id_caja,vendedor,estacion,estado,monto_inicial,monto_final,zona_id,printnode_id',
+        filters: { id_caja: 'eq.' + String(idCaja) }, limit: 1, maxRetry: 1
+      });
+      if (rC && rC.ok && Array.isArray(rC.data)) {
+        if (rC.data.length) {
+          var k = rC.data[0];
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'success', ok: true, data: {
+              idCaja: String(k.id_caja), Vendedor: String(k.vendedor || ''), Estacion: String(k.estacion || ''),
+              Estado: String(k.estado || ''), montoInicial: parseFloat(k.monto_inicial) || 0,
+              montoFinal: parseFloat(k.monto_final) || 0, zona: String(k.zona_id || ''), PrintNode_ID: String(k.printnode_id || '')
+            }
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        // Leyó OK y no existe → autoritativo: caja no encontrada (NO caer al Sheet).
+        return ContentService.createTextOutput(JSON.stringify({ status: 'success', ok: false, error: 'Caja no encontrada', data: null })).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (e) { /* cae al Sheet */ }
+  }
+
+  // ── FALLBACK Sheet ──
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('CAJAS');
-  if (!sheet) return generarRespuestaError('CAJAS no encontrada');
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: 'success', ok: false, error: 'Caja no encontrada', data: null })).setMimeType(ContentService.MimeType.JSON);
   var d = sheet.getDataRange().getValues();
   for (var i = 1; i < d.length; i++) {
     if (String(d[i][0]) === String(idCaja)) {
       return ContentService.createTextOutput(JSON.stringify({
-        status: 'success',
-        ok: true,
-        data: {
-          idCaja:         String(d[i][0]),
-          Vendedor:       String(d[i][1] || ''),
-          Estacion:       String(d[i][2] || ''),
-          Estado:         String(d[i][5] || ''),
-          montoInicial:   parseFloat(d[i][4]) || 0,
-          montoFinal:     parseFloat(d[i][6]) || 0,
-          zona:           String(d[i][8] || ''),
-          PrintNode_ID:   String(d[i][9] || '')
+        status: 'success', ok: true, data: {
+          idCaja: String(d[i][0]), Vendedor: String(d[i][1] || ''), Estacion: String(d[i][2] || ''),
+          Estado: String(d[i][5] || ''), montoInicial: parseFloat(d[i][4]) || 0,
+          montoFinal: parseFloat(d[i][6]) || 0, zona: String(d[i][8] || ''), PrintNode_ID: String(d[i][9] || '')
         }
       })).setMimeType(ContentService.MimeType.JSON);
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({
-    status: 'success', ok: false, error: 'Caja no encontrada', data: null
-  })).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', ok: false, error: 'Caja no encontrada', data: null })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // Endpoint admin/master — cierre forzado desde MOS. Delega al helper atómico
@@ -677,6 +808,30 @@ function cerrarCajaForzado(data) {
 function cajerosActivosTodos() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CAJAS");
+
+  // [delete-safe] FUENTE PRIMARIA: Supabase (me.estado_cajas → abiertas[]). El auto-cierre legacy se
+  // intenta sobre la Hoja si existe. Sheet fallback completo si la RPC no responde / gate OFF.
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rEC = _sbRpc('me', 'estado_cajas', {});
+      if (rEC && rEC.ok && rEC.data && Array.isArray(rEC.data.abiertas)) {
+        var _cerradasSB = 0;
+        if (sheet) { try { _cerradasSB = _autoCerrarCajasViejas(sheet); } catch(_) {} }
+        var porZonaSB = {};
+        rEC.data.abiertas.forEach(function(c){
+          var z = String(c.zona || '');
+          if (!porZonaSB[z]) porZonaSB[z] = {
+            vendedor: String(c.vendedor || ''), idCaja: String(c.idCaja || ''),
+            desde: c.fechaApertura || ''
+          };
+        });
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'success', porZona: porZonaSB, cajasAutoCerradas: _cerradasSB
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (eEC) { Logger.log('[cajerosActivosTodos] Supabase: ' + eEC.message); }
+  }
+
   if (!sheet) return generarRespuestaError("CAJAS no encontrada");
   var _cerradas = _autoCerrarCajasViejas(sheet);
   var data = sheet.getDataRange().getValues();
@@ -748,6 +903,27 @@ function cajeroActivo(zona) {
   if (!zona) return generarRespuestaError("zona requerida");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CAJAS");
+
+  // [delete-safe] FUENTE PRIMARIA: Supabase (me.cajas vía _meCajaActivaZona). El auto-cierre de cajas
+  // viejas se sigue intentando sobre la Hoja si existe (red de seguridad legacy), pero la respuesta se
+  // resuelve desde Supabase cuando el gate está ON. Sheet fallback completo si la RPC no responde.
+  var sbAct = (typeof _meCajaActivaZona === 'function') ? _meCajaActivaZona(zona) : null;
+  if (sbAct && (sbAct.id_caja || sbAct.__vacio)) {
+    var _cerradasSB = 0;
+    if (sheet) { try { _cerradasSB = _autoCerrarCajasViejas(sheet); } catch(_) {} }
+    if (sbAct.id_caja) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success', activo: true,
+        vendedor: String(sbAct.vendedor || ''), idCaja: String(sbAct.id_caja),
+        desde: sbAct.fecha_apertura ? String(sbAct.fecha_apertura) : '',
+        cajasAutoCerradas: _cerradasSB
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success', activo: false, cajasAutoCerradas: _cerradasSB
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
   if (!sheet) return generarRespuestaError("CAJAS no encontrada");
   // Auto-cerrar cajas viejas antes de consultar (evita falso positivo de "hay cajero activo")
   var _cerradas = _autoCerrarCajasViejas(sheet);
@@ -778,26 +954,63 @@ function retomarCajaPorDeviceId(deviceId) {
   if (!deviceId) return generarRespuestaError("deviceId requerido");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CAJAS");
-  if (!sheet) return generarRespuestaError("CAJAS no encontrada");
-  _autoCerrarCajasViejas(sheet);
-  var data = sheet.getDataRange().getValues();
-  // Columnas CAJAS: 0=ID_Caja, 1=Vendedor, 2=Estacion, 3=Fecha_Apertura,
-  //                 4=Monto_Inicial, 5=Estado, 6=Monto_Final, 7=Fecha_Cierre,
-  //                 8=Zona_ID, 9=PrintNode_ID
+
+  // [delete-safe 166] Buscar la caja ABIERTA del device en Supabase (fuente de verdad).
+  // Si la lectura directa está disponible, NO dependemos de la hoja CAJAS.
   var encontrada = null;
-  for (var i = data.length - 1; i > 0; i--) {
-    if (String(data[i][5]) !== 'ABIERTA') continue;
-    if (String(data[i][9] || '') !== String(deviceId)) continue;
-    encontrada = {
-      idCaja:    String(data[i][0]),
-      vendedor:  String(data[i][1]),
-      estacion:  String(data[i][2]),
-      fechaApertura: data[i][3] instanceof Date ? data[i][3].toISOString() : String(data[i][3]),
-      monto:     parseFloat(data[i][4]) || 0,
-      zona:      String(data[i][8] || ''),
-      printNodeId: String(data[i][9] || '')
-    };
-    break;
+  var sb = (typeof _meCajaAbiertaPorDevice === 'function') ? _meCajaAbiertaPorDevice(deviceId) : null;
+  if (sb && sb.ok) {
+    // Auto-cerrar cajas de días anteriores vía el core (ya Supabase-backed, idempotente).
+    if (sb.zombis && sb.zombis.length) {
+      sb.zombis.forEach(function(idz) {
+        try {
+          _cerrarCajaAtomicoCore({
+            idCaja: String(idz), montoFinal: null, idsAnular: null,
+            esForzado: true, estadoFinal: 'CERRADA_AUTO',
+            adminAuth: { nombre:'auto-sistema', rol:'SISTEMA', via:'AUTO_CIERRE_DIA', idPersonal:'' },
+            motivo: 'Auto-cierre de caja del día anterior (jornada vencida)'
+          });
+        } catch (eZ) { Logger.log('[retoma autocierre] ' + idz + ': ' + eZ.message); }
+      });
+      // Si la caja del device era una zombi, ya cerró → re-consultar para no devolver una ABIERTA fantasma.
+      if (sb.encontrada && sb.zombis.indexOf(String(sb.id_caja)) >= 0) {
+        sb = _meCajaAbiertaPorDevice(deviceId) || sb;
+      }
+    }
+    if (sb.encontrada) {
+      encontrada = {
+        idCaja:    String(sb.id_caja || ''),
+        vendedor:  String(sb.vendedor || ''),
+        estacion:  String(sb.estacion || ''),
+        fechaApertura: sb.fecha_apertura ? String(sb.fecha_apertura) : '',
+        monto:     parseFloat(sb.monto_inicial) || 0,
+        zona:      String(sb.zona || ''),
+        printNodeId: String(sb.printnode_id || deviceId)
+      };
+    }
+  } else if (sheet) {
+    // Fallback Sheet (gate OFF o RPC caída).
+    _autoCerrarCajasViejas(sheet);
+    var data = sheet.getDataRange().getValues();
+    // Columnas CAJAS: 0=ID_Caja, 1=Vendedor, 2=Estacion, 3=Fecha_Apertura,
+    //                 4=Monto_Inicial, 5=Estado, 6=Monto_Final, 7=Fecha_Cierre,
+    //                 8=Zona_ID, 9=PrintNode_ID
+    for (var i = data.length - 1; i > 0; i--) {
+      if (String(data[i][5]) !== 'ABIERTA') continue;
+      if (String(data[i][9] || '') !== String(deviceId)) continue;
+      encontrada = {
+        idCaja:    String(data[i][0]),
+        vendedor:  String(data[i][1]),
+        estacion:  String(data[i][2]),
+        fechaApertura: data[i][3] instanceof Date ? data[i][3].toISOString() : String(data[i][3]),
+        monto:     parseFloat(data[i][4]) || 0,
+        zona:      String(data[i][8] || ''),
+        printNodeId: String(data[i][9] || '')
+      };
+      break;
+    }
+  } else {
+    return generarRespuestaError("CAJAS no encontrada");
   }
   if (!encontrada) {
     return ContentService.createTextOutput(JSON.stringify({
@@ -807,10 +1020,15 @@ function retomarCajaPorDeviceId(deviceId) {
   // [v2.5.52] Verificar que el vendedor sea cajero (los vendedores no tienen
   // caja → no aplica el retomar). El cliente puede confiar en este check para
   // no mostrar el modal si el rol no corresponde.
-  var esCajero = false;
+  // [delete-safe 166] fail-OPEN si PERSONAL_MASTER no está disponible: la caja ya
+  // fue confirmada ABIERTA en Supabase (autoritativo; solo cajeros abren caja), así
+  // que no la bloqueamos por no poder leer la hoja de roles. Solo bloqueamos cuando
+  // la hoja SÍ se leyó y el vendedor no figura como CAJERO.
+  var esCajero = false, pudoVerificarRol = false;
   try {
     var shPers = ss.getSheetByName('PERSONAL_MASTER');
     if (shPers) {
+      pudoVerificarRol = true;
       var fp = shPers.getDataRange().getValues();
       var hdrsP = fp[0].map(function(h){ return String(h || '').trim(); });
       var iNom = hdrsP.indexOf('nombre'); if (iNom < 0) iNom = 1;
@@ -822,8 +1040,8 @@ function retomarCajaPorDeviceId(deviceId) {
         }
       }
     }
-  } catch(eP) { Logger.log('check cajero: ' + eP.message); }
-  if (!esCajero) {
+  } catch(eP) { Logger.log('check cajero: ' + eP.message); pudoVerificarRol = false; }
+  if (pudoVerificarRol && !esCajero) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success', encontrada: false, razon: 'vendedor_no_es_cajero'
     })).setMimeType(ContentService.MimeType.JSON);
@@ -876,25 +1094,55 @@ function confirmarRetomaCaja(data) {
   if (String(data.claveAdmin).length !== 8 || !/^\d{8}$/.test(String(data.claveAdmin))) {
     return generarRespuestaError('claveAdmin debe ser 8 dígitos numéricos');
   }
-  // 1. Buscar la caja ABIERTA del deviceId (reutilizamos helper interno)
+  // 1. Buscar la caja ABIERTA del deviceId — Supabase primero (delete-safe 166), Sheet fallback.
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('CAJAS');
-  if (!sheet) return generarRespuestaError('CAJAS no encontrada');
-  _autoCerrarCajasViejas(sheet);
-  var rows = sheet.getDataRange().getValues();
   var encontrada = null;
-  for (var i = rows.length - 1; i > 0; i--) {
-    if (String(rows[i][5]) !== 'ABIERTA') continue;
-    if (String(rows[i][9] || '') !== String(data.deviceId)) continue;
-    encontrada = {
-      idCaja:    String(rows[i][0]),
-      vendedor:  String(rows[i][1]),
-      estacion:  String(rows[i][2]),
-      monto:     parseFloat(rows[i][4]) || 0,
-      zona:      String(rows[i][8] || ''),
-      printNodeId: String(rows[i][9] || '')
-    };
-    break;
+  var sb = (typeof _meCajaAbiertaPorDevice === 'function') ? _meCajaAbiertaPorDevice(data.deviceId) : null;
+  if (sb && sb.ok) {
+    if (sb.zombis && sb.zombis.length) {
+      sb.zombis.forEach(function(idz) {
+        try {
+          _cerrarCajaAtomicoCore({
+            idCaja: String(idz), montoFinal: null, idsAnular: null,
+            esForzado: true, estadoFinal: 'CERRADA_AUTO',
+            adminAuth: { nombre:'auto-sistema', rol:'SISTEMA', via:'AUTO_CIERRE_DIA', idPersonal:'' },
+            motivo: 'Auto-cierre de caja del día anterior (jornada vencida)'
+          });
+        } catch (eZ) { Logger.log('[confirmarRetoma autocierre] ' + idz + ': ' + eZ.message); }
+      });
+      if (sb.encontrada && sb.zombis.indexOf(String(sb.id_caja)) >= 0) {
+        sb = _meCajaAbiertaPorDevice(data.deviceId) || sb;
+      }
+    }
+    if (sb.encontrada) {
+      encontrada = {
+        idCaja:    String(sb.id_caja || ''),
+        vendedor:  String(sb.vendedor || ''),
+        estacion:  String(sb.estacion || ''),
+        monto:     parseFloat(sb.monto_inicial) || 0,
+        zona:      String(sb.zona || ''),
+        printNodeId: String(sb.printnode_id || data.deviceId)
+      };
+    }
+  } else if (sheet) {
+    _autoCerrarCajasViejas(sheet);
+    var rows = sheet.getDataRange().getValues();
+    for (var i = rows.length - 1; i > 0; i--) {
+      if (String(rows[i][5]) !== 'ABIERTA') continue;
+      if (String(rows[i][9] || '') !== String(data.deviceId)) continue;
+      encontrada = {
+        idCaja:    String(rows[i][0]),
+        vendedor:  String(rows[i][1]),
+        estacion:  String(rows[i][2]),
+        monto:     parseFloat(rows[i][4]) || 0,
+        zona:      String(rows[i][8] || ''),
+        printNodeId: String(rows[i][9] || '')
+      };
+      break;
+    }
+  } else {
+    return generarRespuestaError('CAJAS no encontrada');
   }
   if (!encontrada) return generarRespuestaError('No hay caja ABIERTA para este deviceId');
 
@@ -998,52 +1246,81 @@ function cobrarVentaExistente(data) {
     function() { return generarRespuestaError('Sistema ocupado procesando otro cobro — reintenta en unos segundos'); });
 }
 function _cobrarVentaExistenteImpl(data) {
+  if (!data || !data.idVenta) return generarRespuestaError("idVenta requerido");
+  var idV = String(data.idVenta);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
-  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
 
-  var filas = sheet.getDataRange().getValues();
-  for (var i = filas.length - 1; i > 0; i--) {  // buscar desde el final (más probable)
-    if (String(filas[i][0]) === String(data.idVenta)) {
-      var formaAnt = String(filas[i][8] || '');
-      var cajaAnt  = String(filas[i][10] || '');
-      // OJO: COBRAR_VENTA es un setter GENERAL de FormaPago (cobrar POR_COBRAR,
-      // cambiar moneda de una cobrada, y REVERTIR a POR_COBRAR). NO validar
-      // "pendiente" aquí — rompería confirmarMoneda/revertirCobro. La defensa
-      // contra dobles registros de dinero vive en cobrarCreditoConExtra (que SÍ
-      // crea movimientos) + este lock compartido.
-      // [Lote1-A guard mínimo] ANULADO sí es terminal: no se cobra ni se revierte.
-      if (formaAnt.toUpperCase() === 'ANULADO') {
-        return generarRespuestaError('La venta está ANULADA — no se puede cambiar su forma de pago');
+  // [delete-safe 166] Leer forma_pago + id_caja actuales — Supabase primero
+  // (fuente de verdad, sobrevive al borrado de la hoja), Sheet fallback.
+  var formaAnt = '', cajaAnt = '', filaIdx = -1, encontrada = false;
+  var est = (typeof _meVentaEstado === 'function') ? _meVentaEstado(idV) : null;
+  if (est && est.ok) {
+    formaAnt = String(est.forma_pago || '');
+    cajaAnt  = String(est.id_caja || '');
+    encontrada = true;
+  }
+  if (!encontrada && sheet) {
+    var filas = sheet.getDataRange().getValues();
+    for (var i = filas.length - 1; i > 0; i--) {  // buscar desde el final (más probable)
+      if (String(filas[i][0]) === idV) {
+        formaAnt = String(filas[i][8] || '');
+        cajaAnt  = String(filas[i][10] || '');
+        filaIdx  = i;
+        encontrada = true;
+        break;
       }
-      sheet.getRange(i + 1, 9).setValue(data.metodo);
-      if (data.cajaId) sheet.getRange(i + 1, 11).setValue(String(data.cajaId));
-      // [Lote1-A · M1] PATCH inmediato a la sombra (antes solo dirty-sync ≤15min)
-      try { _dualWriteVentaPatchME(data.idVenta, { forma_pago: String(data.metodo) }); } catch(_dwV){}
-
-      // Log de auditoría
-      try {
-        var actor = _audExtraerActor(data);
-        var cambios = [{ campo:'FormaPago', antes: formaAnt, despues: String(data.metodo) }];
-        if (data.cajaId && data.cajaId !== cajaAnt) {
-          cambios.push({ campo:'ID_Caja', antes: cajaAnt, despues: String(data.cajaId) });
-        }
-        auditarLog('VENTAS_CABECERA', data.idVenta, {
-          usuario: actor.usuario, rol: actor.rol,
-          source: 'ME_COBRAR_VENTA',
-          accion: 'cobrar_venta',
-          cambios: cambios,
-          autorizadoPor: actor.autorizadoPor || null,
-          motivo: data.motivo || ''
-        });
-      } catch(_){}
-
-      return ContentService.createTextOutput(JSON.stringify({
-        status: "success", mensaje: "Venta cobrada correctamente"
-      })).setMimeType(ContentService.MimeType.JSON);
     }
   }
-  return generarRespuestaError("Venta con ID " + data.idVenta + " no encontrada.");
+  if (!encontrada) return generarRespuestaError("Venta con ID " + idV + " no encontrada.");
+
+  // OJO: COBRAR_VENTA es un setter GENERAL de FormaPago (cobrar POR_COBRAR,
+  // cambiar moneda de una cobrada, y REVERTIR a POR_COBRAR). NO validar
+  // "pendiente" aquí — rompería confirmarMoneda/revertirCobro. La defensa
+  // contra dobles registros de dinero vive en cobrarCreditoConExtra (que SÍ
+  // crea movimientos) + este lock compartido.
+  // [Lote1-A guard mínimo] ANULADO sí es terminal: no se cobra ni se revierte.
+  if (formaAnt.toUpperCase() === 'ANULADO') {
+    return generarRespuestaError('La venta está ANULADA — no se puede cambiar su forma de pago');
+  }
+
+  // [delete-safe 166] PATCH durable a Supabase (fuente de verdad). Idempotente:
+  // setear forma_pago/id_caja al mismo valor dos veces no duplica dinero (es un
+  // setter, no un acumulador; los movimientos de caja viven en otro flujo).
+  var patch = { forma_pago: String(data.metodo) };
+  if (data.cajaId) patch.id_caja = String(data.cajaId);
+  try { _dualWriteVentaPatchME(idV, patch); } catch(_dwV){}
+  // SHEET best-effort espejo (no rompe si la hoja ya no existe).
+  if (sheet) {
+    try {
+      if (filaIdx < 0) { var fvC = sheet.getDataRange().getValues(); for (var k = fvC.length - 1; k > 0; k--) { if (String(fvC[k][0]) === idV) { filaIdx = k; break; } } }
+      if (filaIdx > 0) {
+        sheet.getRange(filaIdx + 1, 9).setValue(data.metodo);
+        if (data.cajaId) sheet.getRange(filaIdx + 1, 11).setValue(String(data.cajaId));
+      }
+    } catch (eWS) { Logger.log('[cobrarVenta] Sheet write: ' + eWS.message); }
+  }
+
+  // Log de auditoría
+  try {
+    var actor = _audExtraerActor(data);
+    var cambios = [{ campo:'FormaPago', antes: formaAnt, despues: String(data.metodo) }];
+    if (data.cajaId && data.cajaId !== cajaAnt) {
+      cambios.push({ campo:'ID_Caja', antes: cajaAnt, despues: String(data.cajaId) });
+    }
+    auditarLog('VENTAS_CABECERA', idV, {
+      usuario: actor.usuario, rol: actor.rol,
+      source: 'ME_COBRAR_VENTA',
+      accion: 'cobrar_venta',
+      cambios: cambios,
+      autorizadoPor: actor.autorizadoPor || null,
+      motivo: data.motivo || ''
+    });
+  } catch(_){}
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success", mensaje: "Venta cobrada correctamente"
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function creditarVenta(data) {
@@ -1054,88 +1331,127 @@ function creditarVenta(data) {
 }
 function _creditarVentaImpl(data) {
   if (!data.idVenta) return generarRespuestaError("idVenta requerido");
+  var idV = String(data.idVenta);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
-  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada");
-  var filas = sheet.getDataRange().getValues();
-  for (var i = filas.length - 1; i > 0; i--) {
-    if (String(filas[i][0]) === String(data.idVenta)) {
-      var formaAnt = String(filas[i][8] || '');
-      var obsAnt   = String(filas[i][14] || '');
-      // [Lote1-A guard] ANULADO es terminal
-      if (formaAnt.toUpperCase() === 'ANULADO') {
-        return generarRespuestaError('La venta está ANULADA — no se puede creditar');
+
+  // [delete-safe 166] Leer forma_pago + obs actuales — Supabase primero, Sheet fallback.
+  var formaAnt = '', obsAnt = '', filaIdx = -1, encontrada = false;
+  var est = (typeof _meVentaEstado === 'function') ? _meVentaEstado(idV) : null;
+  if (est && est.ok) {
+    formaAnt = String(est.forma_pago || '');
+    obsAnt   = String(est.obs || '');
+    encontrada = true;
+  }
+  if (!encontrada && sheet) {
+    var filas = sheet.getDataRange().getValues();
+    for (var i = filas.length - 1; i > 0; i--) {
+      if (String(filas[i][0]) === idV) {
+        formaAnt = String(filas[i][8] || '');
+        obsAnt   = String(filas[i][14] || '');
+        filaIdx  = i;
+        encontrada = true;
+        break;
       }
-      sheet.getRange(i + 1, 9).setValue('CREDITO');
-      sheet.getRange(i + 1, 15).setValue(String(data.obs || ''));
-      // [Lote1-A · M1] PATCH inmediato a la sombra (antes solo dirty-sync ≤15min)
-      try { _dualWriteVentaPatchME(data.idVenta, { forma_pago: 'CREDITO' }); } catch(_dwV){}
-
-      try {
-        var actor = _audExtraerActor(data);
-        auditarLog('VENTAS_CABECERA', data.idVenta, {
-          usuario: actor.usuario, rol: actor.rol,
-          source: 'ME_CREDITAR_VENTA',
-          accion: 'convertir_a_credito',
-          cambios: [
-            { campo:'FormaPago', antes: formaAnt, despues:'CREDITO' },
-            { campo:'Obs',       antes: obsAnt,   despues: String(data.obs || '') }
-          ],
-          autorizadoPor: actor.autorizadoPor || null,
-          motivo: data.motivo || data.obs || ''
-        });
-      } catch(_){}
-
-      return ContentService.createTextOutput(JSON.stringify({
-        status: "success", mensaje: "Crédito registrado"
-      })).setMimeType(ContentService.MimeType.JSON);
     }
   }
-  return generarRespuestaError("Venta " + data.idVenta + " no encontrada.");
+  if (!encontrada) return generarRespuestaError("Venta " + idV + " no encontrada.");
+
+  // [Lote1-A guard] ANULADO es terminal
+  if (formaAnt.toUpperCase() === 'ANULADO') {
+    return generarRespuestaError('La venta está ANULADA — no se puede creditar');
+  }
+
+  // [delete-safe 166] PATCH durable a Supabase (fuente de verdad). Idempotente (setter).
+  try { _dualWriteVentaPatchME(idV, { forma_pago: 'CREDITO', obs: String(data.obs || '') }); } catch(_dwV){}
+  // SHEET best-effort espejo.
+  if (sheet) {
+    try {
+      if (filaIdx < 0) { var fvR = sheet.getDataRange().getValues(); for (var k = fvR.length - 1; k > 0; k--) { if (String(fvR[k][0]) === idV) { filaIdx = k; break; } } }
+      if (filaIdx > 0) {
+        sheet.getRange(filaIdx + 1, 9).setValue('CREDITO');
+        sheet.getRange(filaIdx + 1, 15).setValue(String(data.obs || ''));
+      }
+    } catch (eWS) { Logger.log('[creditarVenta] Sheet write: ' + eWS.message); }
+  }
+
+  try {
+    var actor = _audExtraerActor(data);
+    auditarLog('VENTAS_CABECERA', idV, {
+      usuario: actor.usuario, rol: actor.rol,
+      source: 'ME_CREDITAR_VENTA',
+      accion: 'convertir_a_credito',
+      cambios: [
+        { campo:'FormaPago', antes: formaAnt, despues:'CREDITO' },
+        { campo:'Obs',       antes: obsAnt,   despues: String(data.obs || '') }
+      ],
+      autorizadoPor: actor.autorizadoPor || null,
+      motivo: data.motivo || data.obs || ''
+    });
+  } catch(_){}
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success", mensaje: "Crédito registrado"
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function anularVentaIndividual(data) {
   if (!data.ventaId) return generarRespuestaError("No se proporcionó ventaId.");
+  var idV = String(data.ventaId);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
-  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada.");
-  var filas = sheet.getDataRange().getValues();
-  for (var i = filas.length - 1; i > 0; i--) {
-    if (String(filas[i][0]) === String(data.ventaId)) {
-      var formaAnt = String(filas[i][8] || '');
-      // [idempotencia-ALTO] si ya está ANULADO, no re-disparar dual-write ni notificación WH.
-      // _pickupDescontarVentaImpl (WH) NO es idempotente → un replay/id stale restaría 2 veces del pickup.
-      if (formaAnt.toUpperCase() === 'ANULADO') {
-        return ContentService.createTextOutput(JSON.stringify({
-          status: "success", mensaje: "Venta ya estaba anulada", noop: true
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
-      sheet.getRange(i + 1, 9).setValue('ANULADO');
-      // [anulacion-directo] espejo a Supabase en tiempo real (PATCH parcial, best-effort)
-      try { _dualWriteVentaPatchME(data.ventaId, { forma_pago: 'ANULADO' }); } catch(_dw){}
 
-      try {
-        var actor = _audExtraerActor(data);
-        auditarLog('VENTAS_CABECERA', data.ventaId, {
-          usuario: actor.usuario, rol: actor.rol,
-          source: 'ME_ANULAR_VENTA',
-          accion: 'anular_venta_interna',
-          cambios: [{ campo:'FormaPago', antes: formaAnt, despues:'ANULADO' }],
-          autorizadoPor: actor.autorizadoPor || null,
-          motivo: data.motivo || ''
-        });
-      } catch(_){}
-
-      // Avisar a WH que descuente del pickup origen (si existe y no está cerrado).
-      // No bloquea ni rompe la anulación si falla.
-      try { notificarAnulacionPickupAWH(data.ventaId); } catch(_){}
-
-      return ContentService.createTextOutput(JSON.stringify({
-        status: "success", mensaje: "Venta anulada correctamente"
-      })).setMimeType(ContentService.MimeType.JSON);
+  // [delete-safe] Leer forma_pago actual — Supabase primero (idempotencia), Sheet fallback.
+  var formaAnt = '', filaIdx = -1, encontrada = false;
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rV = _sb('GET', 'me.ventas', { select: 'forma_pago', filters: { id_venta: 'eq.' + idV }, limit: 1, maxRetry: 1 });
+      if (rV && rV.ok && Array.isArray(rV.data) && rV.data.length) { formaAnt = String(rV.data[0].forma_pago || ''); encontrada = true; }
+    } catch (eRV) { /* fallback Sheet */ }
+  }
+  if (!encontrada && sheet) {
+    var filas = sheet.getDataRange().getValues();
+    for (var i = filas.length - 1; i > 0; i--) {
+      if (String(filas[i][0]) === idV) { formaAnt = String(filas[i][8] || ''); filaIdx = i; encontrada = true; break; }
     }
   }
-  return generarRespuestaError("Venta con ID " + data.ventaId + " no encontrada.");
+  if (!encontrada) return generarRespuestaError("Venta con ID " + idV + " no encontrada.");
+
+  // [idempotencia-ALTO] si ya está ANULADO, no re-disparar dual-write ni notificación WH.
+  if (formaAnt.toUpperCase().indexOf('ANULADO') === 0) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success", mensaje: "Venta ya estaba anulada", noop: true
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // [anulacion-directo] PATCH durable a Supabase (fuente de verdad).
+  try { _dualWriteVentaPatchME(idV, { forma_pago: 'ANULADO' }); } catch(_dw){}
+  // SHEET best-effort espejo.
+  if (sheet) {
+    try {
+      if (filaIdx < 0) { var fvA = sheet.getDataRange().getValues(); for (var k = fvA.length - 1; k > 0; k--) { if (String(fvA[k][0]) === idV) { filaIdx = k; break; } } }
+      if (filaIdx > 0) sheet.getRange(filaIdx + 1, 9).setValue('ANULADO');
+    } catch (eWS) { Logger.log('[anularVenta] Sheet write: ' + eWS.message); }
+  }
+
+  try {
+    var actor = _audExtraerActor(data);
+    auditarLog('VENTAS_CABECERA', idV, {
+      usuario: actor.usuario, rol: actor.rol,
+      source: 'ME_ANULAR_VENTA', accion: 'anular_venta_interna',
+      cambios: [{ campo:'FormaPago', antes: formaAnt, despues:'ANULADO' }],
+      autorizadoPor: actor.autorizadoPor || null, motivo: data.motivo || ''
+    });
+  } catch(_){}
+
+  // Avisar a WH que descuente del pickup origen (no bloquea).
+  try { notificarAnulacionPickupAWH(idV); } catch(_){}
+  // [reposicion-stock-anulada] reponer si la caja ya cerró (idempotente). Best-effort.
+  try { _reponerStockVentaAnulada(ss, idV, _audExtraerActor(data).usuario); } catch(_rs){}
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success", mensaje: "Venta anulada correctamente"
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // Anula en masa todos los tickets POR_COBRAR no cobrados al cierre del turno
@@ -1143,28 +1459,78 @@ function anulacionMasiva(data) {
   if (!data.ids || !data.ids.length) return generarRespuestaError("No se enviaron IDs a anular.");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_CABECERA");
-  if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada.");
 
-  var filas = sheet.getDataRange().getValues();
-  var anulados = 0;
-  var idsAnulados = [];
-  for (var i = 1; i < filas.length; i++) {
-    if (data.ids.indexOf(String(filas[i][0])) !== -1) {
-      var _antesFP = filas[i][8];
-      // [guard-ALTO] solo anular POR_COBRAR (su propósito documentado). Saltar EFECTIVO/MIXTO/CREDITO
-      // ya cobradas y las ya ANULADO → no descuadra caja ni re-dispara el descuento de pickup en WH.
-      if (String(_antesFP || '').toUpperCase() !== 'POR_COBRAR') continue;
-      sheet.getRange(i + 1, 9).setValue('ANULADO');
-      anulados++;
-      idsAnulados.push(String(filas[i][0]));
-      // [fix C2-gap] auditar (pasa por el chokepoint → marca dirty → re-sync ≤15min, no 3am) + historial
-      try { auditarLog('VENTAS_CABECERA', String(filas[i][0]), { source:'ME_ANULACION_MASIVA', accion:'anular_masivo', cambios:[{campo:'FormaPago', antes:_antesFP, despues:'ANULADO'}] }); } catch(_e){}
+  // [delete-safe] Leer el FormaPago actual de cada id — Supabase primero (fuente de
+  // verdad, sobrevive al borrado de la hoja), Sheet fallback. Solo anulamos las que
+  // están en POR_COBRAR (mismo guard que antes). La hoja YA no es obligatoria.
+  var idsSet = {};
+  data.ids.forEach(function(id){ idsSet[String(id)] = true; });
+  var fpPorId = {};         // { idVenta: formaPagoActualUpper }
+  var leidoDeSupabase = false;
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      // PostgREST: forma_pago en POR_COBRAR + id_venta in.(...) → trae solo las candidatas.
+      var idList = data.ids.map(function(id){ return String(id); });
+      var rB = _sb('GET', 'me.ventas', {
+        select: 'id_venta,forma_pago',
+        filters: { id_venta: 'in.(' + idList.join(',') + ')' },
+        maxRetry: 1
+      });
+      if (rB && rB.ok && Array.isArray(rB.data)) {
+        leidoDeSupabase = true;
+        rB.data.forEach(function(v){ fpPorId[String(v.id_venta)] = String(v.forma_pago || '').toUpperCase(); });
+      }
+    } catch (eB) { Logger.log('[anulacionMasiva] leer Supabase: ' + eB.message); leidoDeSupabase = false; }
+  }
+  // Fallback al Sheet solo si Supabase no respondió (gate OFF / RPC falló).
+  var filas = null, rowPorId = {};
+  if (!leidoDeSupabase) {
+    if (!sheet) return generarRespuestaError("VENTAS_CABECERA no encontrada.");
+    filas = sheet.getDataRange().getValues();
+    for (var i = 1; i < filas.length; i++) {
+      var idF = String(filas[i][0]);
+      if (!idsSet[idF]) continue;
+      fpPorId[idF] = String(filas[i][8] || '').toUpperCase();
+      rowPorId[idF] = i;   // 0-based índice de fila para escribir el espejo después
     }
   }
-  // [anulacion-directo] espejo a Supabase en tiempo real, UNA sola llamada para todas (PATCH in.(...))
+
+  var anulados = 0;
+  var idsAnulados = [];
+  data.ids.forEach(function(idRaw){
+    var idV = String(idRaw);
+    // [guard-ALTO] solo anular POR_COBRAR (su propósito documentado). Saltar EFECTIVO/MIXTO/CREDITO
+    // ya cobradas y las ya ANULADO → no descuadra caja ni re-dispara el descuento de pickup en WH.
+    if (fpPorId[idV] !== 'POR_COBRAR') return;
+    anulados++;
+    idsAnulados.push(idV);
+    // [fix C2-gap] auditar (pasa por el chokepoint → marca dirty → re-sync ≤15min, no 3am) + historial
+    try { auditarLog('VENTAS_CABECERA', idV, { source:'ME_ANULACION_MASIVA', accion:'anular_masivo', cambios:[{campo:'FormaPago', antes:'POR_COBRAR', despues:'ANULADO'}] }); } catch(_e){}
+  });
+
+  // [anulacion-directo] PATCH durable a Supabase (fuente de verdad), UNA sola llamada (PATCH in.(...)).
   try { if (idsAnulados.length) _dualWriteVentaPatchME(idsAnulados, { forma_pago: 'ANULADO' }); } catch(_dw){}
+
+  // SHEET best-effort espejo (no rompe si la hoja ya no existe). Si leímos de Supabase,
+  // localizamos las filas en la hoja ahora (no recorrimos antes); si leímos del Sheet, ya tenemos el índice.
+  if (sheet && idsAnulados.length) {
+    try {
+      if (filas === null) filas = sheet.getDataRange().getValues();
+      var anulSet = {}; idsAnulados.forEach(function(id){ anulSet[id] = true; });
+      for (var s = 1; s < filas.length; s++) {
+        if (anulSet[String(filas[s][0])]) sheet.getRange(s + 1, 9).setValue('ANULADO');
+      }
+    } catch (eWS) { Logger.log('[anulacionMasiva] Sheet write: ' + eWS.message); }
+  }
   // Notificar WH para descontar de pickups origen (no bloquea)
   try { idsAnulados.forEach(function(id){ notificarAnulacionPickupAWH(id); }); } catch(_){}
+  // [reposicion-stock-anulada] Reponer el stock de zona de las ventas cuya caja YA cerró (su descuento
+  // ya ocurrió). El helper salta solo las cuya caja sigue abierta (el cierre las filtra) y es idempotente
+  // por venta (idGuia 'ANUL:<id>'). Best-effort, NUNCA rompe la anulación masiva.
+  try {
+    var _actorAM = _audExtraerActor(data).usuario;
+    idsAnulados.forEach(function(id){ try { _reponerStockVentaAnulada(ss, id, _actorAM); } catch(_e2){} });
+  } catch(_rsm){}
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", anulados: anulados
   })).setMimeType(ContentService.MimeType.JSON);
@@ -1214,6 +1580,34 @@ function registrarExtraCaja(data) {
 
 function getExtrasCaja(cajaId) {
   if (!cajaId) return generarRespuestaError("cajaId requerido");
+
+  // [delete-safe] Supabase primero (me.movimientos_extra es la fuente de verdad,
+  // poblada por _dualWriteMovExtraME). Sheet fallback si el gate está OFF / la RPC falla.
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rE = _sb('GET', 'me.movimientos_extra', {
+        select: 'id_extra,tipo,monto,concepto,obs,registrado_por',
+        filters: { id_caja: 'eq.' + String(cajaId) },
+        order: 'ts.asc',
+        maxRetry: 1
+      });
+      if (rE && rE.ok && Array.isArray(rE.data)) {
+        var resSB = rE.data.map(function(x){
+          return {
+            id:            String(x.id_extra || ''),
+            tipo:          String(x.tipo || 'EGRESO'),
+            monto:         parseFloat(x.monto) || 0,
+            concepto:      String(x.concepto || ''),
+            obs:           String(x.obs || ''),
+            registradoPor: String(x.registrado_por || '')
+          };
+        });
+        return ContentService.createTextOutput(JSON.stringify({ status: "success", extras: resSB }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (eE) { Logger.log('[getExtrasCaja] Supabase: ' + eE.message); }
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("MOVIMIENTOS_EXTRA");
   if (!sheet) {

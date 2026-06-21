@@ -437,6 +437,70 @@ function rechazarCobroAsignado(data) {
 // Devuelve los cobros con estado ASIGNADO para esa caja.
 function getCobrosAsignadosCajero(cajaId) {
   if (!cajaId) return generarRespuestaError('cajaId requerido');
+
+  // [delete-safe] Supabase primero: me.creditos_cobro_asignado (poblada por _dualWriteCobroME /
+  // _dualWriteCobroPatchME) filtrada por caja_destino + estado ASIGNADO. Enriquecemos items del
+  // ticket original desde me.ventas_detalle y el vendedor desde me.ventas. Sheet fallback abajo.
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rSB = _sb('GET', 'me.creditos_cobro_asignado', {
+        select: 'id_cobro,id_venta,caja_destino,vendedor_dest,metodo_sug,admin_asignador,fecha_asig,monto,cliente_nombre,correlativo,fecha_vencimiento,horas_ttl,mensaje_admin',
+        filters: { caja_destino: 'eq.' + String(cajaId), estado: 'eq.ASIGNADO' },
+        order: 'fecha_vencimiento.asc',
+        maxRetry: 1
+      });
+      if (rSB && rSB.ok && Array.isArray(rSB.data)) {
+        var resSB = rSB.data.map(function(r) {
+          var idv = String(r.id_venta || '');
+          var itemsOrig = [], vendOrig = '';
+          try {
+            var rDet = _sb('GET', 'me.ventas_detalle', {
+              select: 'nombre,cantidad,precio,subtotal',
+              filters: { id_venta: 'eq.' + idv }, order: 'linea.asc', limit: 20, maxRetry: 1
+            });
+            if (rDet && rDet.ok && Array.isArray(rDet.data)) {
+              itemsOrig = rDet.data.map(function(d){
+                var cant = parseFloat(d.cantidad) || 0, prec = parseFloat(d.precio) || 0;
+                var sub = parseFloat(d.subtotal) || (cant * prec);
+                return { nombre: String(d.nombre || ''), cantidad: cant, precio: prec, subtotal: sub };
+              });
+            }
+          } catch (_eD) {}
+          try {
+            var rVen = _sb('GET', 'me.ventas', { select: 'vendedor', filters: { id_venta: 'eq.' + idv }, limit: 1, maxRetry: 1 });
+            if (rVen && rVen.ok && rVen.data && rVen.data.length) vendOrig = String(rVen.data[0].vendedor || '');
+          } catch (_eV) {}
+          var fVenc = r.fecha_vencimiento ? String(r.fecha_vencimiento) : '';
+          var fAsig = r.fecha_asig ? String(r.fecha_asig) : '';
+          if (!fVenc && fAsig) {
+            var ttl = parseInt(r.horas_ttl, 10) || 1;
+            fVenc = new Date(new Date(fAsig).getTime() + ttl * 3600000).toISOString();
+          }
+          return {
+            idCobro:          String(r.id_cobro || ''),
+            idVenta:          idv,
+            cajaDestino:      String(r.caja_destino || ''),
+            vendedorDest:     String(r.vendedor_dest || ''),
+            metodoSug:        String(r.metodo_sug || ''),
+            adminAsig:        String(r.admin_asignador || ''),
+            fechaAsig:        fAsig,
+            fechaVencimiento: fVenc,
+            horasTTL:         parseInt(r.horas_ttl, 10) || 1,
+            monto:            parseFloat(r.monto) || 0,
+            cliente:          String(r.cliente_nombre || ''),
+            correlativo:      String(r.correlativo || ''),
+            mensajeAdmin:     String(r.mensaje_admin || ''),
+            itemsOriginal:    itemsOrig,
+            vendedorOriginal: vendOrig
+          };
+        });
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'success', cobros: resSB
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (eSB) { Logger.log('[getCobrosAsignadosCajero] Supabase: ' + (eSB && eSB.message)); }
+  }
+
   var hoja = _getHojaCobrosAsignados();
   var fa = hoja.getDataRange().getValues();
   var result = [];

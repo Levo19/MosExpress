@@ -58,11 +58,11 @@ function _registrarVentaFantasma(data, response) {
 
 function procesarVenta(data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // [delete-safe] El Sheet es OPCIONAL: la venta se persiste en Supabase (dual-write /
+  // escritura directa). Si las pestañas no existen, NO abortamos — la cabecera/detalle
+  // se escriben en Supabase y el espejo a Sheet es best-effort (guardado por existencia).
   var sheetCabecera = ss.getSheetByName("VENTAS_CABECERA");
   var sheetDetalle  = ss.getSheetByName("VENTAS_DETALLE");
-
-  if (!sheetCabecera) throw new Error("Pestaña VENTAS_CABECERA no encontrada.");
-  if (!sheetDetalle)  throw new Error("Pestaña VENTAS_DETALLE no encontrada.");
 
   var auth   = data.auth        || {};
   var pos    = data.pos_config  || {};
@@ -109,54 +109,65 @@ function procesarVenta(data) {
     var zonaV = String(auth.zona || pos.zona || '').trim();
     var cajaIdEnviada = String(pos.cajaId || '').trim();
     var cajaValida = false;
-    // [FIX v2.7.5 vendedor-sin-zona] Si el front NO mandó zona pero SÍ una caja que
-    // está ABIERTA, derivar la zona de esa caja. El vendedor está usando una caja
-    // abierta real; sin esto, zonaV vacío saltaba TODA la validación de abajo y
-    // rechazaba la venta como fantasma (ticket impreso, sin fila en VENTAS_CABECERA).
-    // NO debilita la protección: sigue exigiendo una caja ABIERTA real.
+    // [delete-safe] FUENTE PRIMARIA: Supabase (me.cajas). Sheet solo de FALLBACK.
+    // Igual semántica: derivar zona de la caja si falta, validar caja ABIERTA en zona,
+    // y si la enviada no está abierta buscar la activa de la zona (reasignar pos.cajaId).
+    var usadoSupabase = false;
+
+    // 0) Derivar zona desde la caja enviada si el front no la mandó (Supabase primero).
     if (!zonaV && cajaIdEnviada) {
-      try {
-        var fcvZ = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CAJAS').getDataRange().getValues();
-        for (var z = 1; z < fcvZ.length; z++) {
-          if (String(fcvZ[z][0]) === cajaIdEnviada && String(fcvZ[z][5] || '').toUpperCase() === 'ABIERTA') {
-            zonaV = String(fcvZ[z][8] || '').trim();
-            break;
+      var zDer = _meZonaDeCajaAbierta(cajaIdEnviada);   // string | '' | null
+      if (zDer !== null) { usadoSupabase = true; if (zDer) zonaV = String(zDer).trim(); }
+      else {
+        try {
+          var fcvZ = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CAJAS').getDataRange().getValues();
+          for (var z = 1; z < fcvZ.length; z++) {
+            if (String(fcvZ[z][0]) === cajaIdEnviada && String(fcvZ[z][5] || '').toUpperCase() === 'ABIERTA') {
+              zonaV = String(fcvZ[z][8] || '').trim(); break;
+            }
           }
-        }
-      } catch (eDeriv) { Logger.log('[procesarVenta] derivar zona de caja falló: ' + eDeriv.message); }
+        } catch (eDeriv) { Logger.log('[procesarVenta] derivar zona de caja (Sheet) falló: ' + eDeriv.message); }
+      }
     }
+
     if (zonaV) {
-      try {
-        var ssV = SpreadsheetApp.getActiveSpreadsheet();
-        var shCV = ssV.getSheetByName('CAJAS');
-        if (shCV) {
-          var fcv = shCV.getDataRange().getValues();
-          // Cols CAJAS: 0 ID · 1 Vendedor · 2 Estacion · 3 Fec_Ap · 4 Monto_Ini
-          //             · 5 Estado · 6 Mon_Fin · 7 Fec_Cie · 8 Zona · 9 PNode
-          // 1) Si vino cajaId, verificar que esa caja siga ABIERTA en la zona
-          if (cajaIdEnviada) {
-            for (var iv = 1; iv < fcv.length; iv++) {
-              if (String(fcv[iv][0]) === cajaIdEnviada
-                  && String(fcv[iv][5] || '').toUpperCase() === 'ABIERTA'
-                  && String(fcv[iv][8] || '').trim() === zonaV) {
-                cajaValida = true;
-                break;
+      // 1) ¿La caja enviada sigue ABIERTA en la zona? (Supabase primero)
+      if (cajaIdEnviada) {
+        var ab = _meCajaAbiertaEnZona(cajaIdEnviada, zonaV);   // true|false|null
+        if (ab !== null) { usadoSupabase = true; if (ab === true) cajaValida = true; }
+      }
+      // 2) Si no es válida, buscar la caja activa de la zona (Supabase primero)
+      if (!cajaValida) {
+        var act = _meCajaActivaZona(zonaV);   // {id_caja,...} | {__vacio:true} | null
+        if (act && act.id_caja) { usadoSupabase = true; cajaValida = true; pos.cajaId = String(act.id_caja); }
+        else if (act && act.__vacio) { usadoSupabase = true; /* leyó OK, no hay caja → cajaValida queda false */ }
+      }
+      // 3) FALLBACK Sheet — solo si Supabase NO fue concluyente en ningún paso.
+      if (!cajaValida && !usadoSupabase) {
+        try {
+          var ssV = SpreadsheetApp.getActiveSpreadsheet();
+          var shCV = ssV.getSheetByName('CAJAS');
+          if (shCV) {
+            var fcv = shCV.getDataRange().getValues();
+            // Cols CAJAS: 0 ID · 1 Vendedor · 2 Estacion · 3 Fec_Ap · 4 Monto_Ini · 5 Estado · 6 Mon_Fin · 7 Fec_Cie · 8 Zona · 9 PNode
+            if (cajaIdEnviada) {
+              for (var iv = 1; iv < fcv.length; iv++) {
+                if (String(fcv[iv][0]) === cajaIdEnviada
+                    && String(fcv[iv][5] || '').toUpperCase() === 'ABIERTA'
+                    && String(fcv[iv][8] || '').trim() === zonaV) { cajaValida = true; break; }
+              }
+            }
+            if (!cajaValida) {
+              for (var jv = fcv.length - 1; jv >= 1; jv--) {
+                if (String(fcv[jv][5] || '').toUpperCase() === 'ABIERTA'
+                    && String(fcv[jv][8] || '').trim() === zonaV) {
+                  pos.cajaId = String(fcv[jv][0]); cajaValida = true; break;
+                }
               }
             }
           }
-          // 2) Si la caja enviada NO está abierta (o no vino), buscar la activa de la zona
-          if (!cajaValida) {
-            for (var jv = fcv.length - 1; jv >= 1; jv--) {
-              if (String(fcv[jv][5] || '').toUpperCase() === 'ABIERTA'
-                  && String(fcv[jv][8] || '').trim() === zonaV) {
-                pos.cajaId = String(fcv[jv][0]);  // reasignar a la caja activa actual
-                cajaValida = true;
-                break;
-              }
-            }
-          }
-        }
-      } catch(eCV) { Logger.log('[procesarVenta] check caja activa zona falló: ' + eCV.message); }
+        } catch(eCV) { Logger.log('[procesarVenta] check caja activa zona (Sheet) falló: ' + eCV.message); }
+      }
     }
     if (!cajaValida) {
       Logger.log('[procesarVenta] RECHAZADA NO_CAJA_ACTIVA_EN_ZONA · vendedor=' + auth.vendedor + ' zona=' + zonaV);
@@ -179,24 +190,32 @@ function procesarVenta(data) {
   // mandaba un 2do print job a PrintNode → 2 tickets físicos.
   var refLocal = (data.data_sync && data.data_sync.last_sync) ? String(data.data_sync.last_sync) : '';
   if (refLocal) {
-    // [fix C9] Buscar en TODAS las filas por Ref_Local (col 14), no solo en las últimas 200.
-    // Antes: ventana de 200 → tras un vaciado masivo de cola offline (>200 ventas), un reintento
-    // de una venta ya persistida NO la encontraba → se reprocesaba = venta DUPLICADA + correlativo SUNAT nuevo.
-    // Optimización: leer SOLO la columna Ref_Local (1 col × N filas = liviano, 1 sola lectura);
-    // la fila completa se lee únicamente si hay match.
-    var totalFilas = sheetCabecera.getLastRow();
-    if (totalFilas >= 2) {
-      var refCol = sheetCabecera.getRange(2, 14, totalFilas - 1, 1).getValues();
-      for (var fi = refCol.length - 1; fi >= 0; fi--) {
-        if (String(refCol[fi][0]) === refLocal) {
-          var rowNum  = fi + 2;
-          var rowData = sheetCabecera.getRange(rowNum, 1, 1, 16).getValues()[0];
-          return {
-            idVenta:         String(rowData[0]),
-            correlativo:     String(rowData[9]),
-            printDispatched: false,
-            dedupVenta:      true   // ← frontend ve este flag y NO reimprime
-          };
+    // [delete-safe] DEDUP — FUENTE PRIMARIA: Supabase (me.ventas por ref_local). Autoritativo:
+    // si la lectura fue OK y existe → dedup; si OK y no existe → seguir (NO caer al Sheet).
+    // Solo si la lectura falla (null) caemos al scan del Sheet.
+    var sbDedup = _meVentaPorRefLocal(refLocal);
+    if (sbDedup && sbDedup.id_venta) {
+      return { idVenta: sbDedup.id_venta, correlativo: sbDedup.correlativo, printDispatched: false, dedupVenta: true };
+    }
+    if (!sbDedup || !sbDedup.__none) {
+      // Supabase no concluyente (gate OFF o falla) → FALLBACK scan del Sheet (si existe).
+      // [fix C9] Buscar en TODAS las filas por Ref_Local (col 14). Lee solo esa columna (liviano).
+      if (sheetCabecera) {
+        var totalFilas = sheetCabecera.getLastRow();
+        if (totalFilas >= 2) {
+          var refCol = sheetCabecera.getRange(2, 14, totalFilas - 1, 1).getValues();
+          for (var fi = refCol.length - 1; fi >= 0; fi--) {
+            if (String(refCol[fi][0]) === refLocal) {
+              var rowNum  = fi + 2;
+              var rowData = sheetCabecera.getRange(rowNum, 1, 1, 16).getValues()[0];
+              return {
+                idVenta:         String(rowData[0]),
+                correlativo:     String(rowData[9]),
+                printDispatched: false,
+                dedupVenta:      true   // ← frontend ve este flag y NO reimprime
+              };
+            }
+          }
         }
       }
     }
@@ -236,47 +255,46 @@ function procesarVenta(data) {
   // | Tipo_Doc | FormaPago | Correlativo | ID_Caja | ID_Dispositivo | Estado_Envio
   // | Ref_Local | Obs | Tipo_Doc_Cliente | NF_Estado | NF_Hash | NF_Enlace
   var tipoDocCliente = parseInt((header.cliente && header.cliente.tipo) || 0, 10);
-  sheetCabecera.appendRow([
-    idVenta, fechaActual, auth.vendedor, auth.estacion,
-    (header.cliente && header.cliente.doc)    || '',
-    (header.cliente && header.cliente.nombre) || '',
-    header.total,
-    header.tipoDoc,
-    header.metodo || 'EFECTIVO',
-    correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO",
-    refLocal,
-    String(header.obs || ''),
-    tipoDocCliente,
-    '', '', ''   // NF_Estado, NF_Hash, NF_Enlace — se llenan después si aplica
-  ]);
+  // SHEET (best-effort espejo): si la pestaña no existe, la venta igual queda en Supabase (dual-write abajo).
+  if (sheetCabecera) {
+    try {
+      sheetCabecera.appendRow([
+        idVenta, fechaActual, auth.vendedor, auth.estacion,
+        (header.cliente && header.cliente.doc)    || '',
+        (header.cliente && header.cliente.nombre) || '',
+        header.total,
+        header.tipoDoc,
+        header.metodo || 'EFECTIVO',
+        correlativoFinal, pos.cajaId, auth.deviceId, "COMPLETADO",
+        refLocal,
+        String(header.obs || ''),
+        tipoDocCliente,
+        '', '', ''   // NF_Estado, NF_Hash, NF_Enlace — se llenan después si aplica
+      ]);
+    } catch (eCab) { Logger.log('[procesarVenta] appendRow VENTAS_CABECERA (espejo) falló: ' + eCab.message); }
+  }
 
-  // ── VENTAS_DETALLE (10 columnas) — escritura por lote ────────────────────
-  // ID_Venta | SKU | Nombre | Cantidad | Precio | Subtotal | Cod_Barras
-  // | Valor_Unitario | Tipo_IGV | Unidad_Medida
-  if (items.length > 0) {
-    var detalleRows = items.map(function(item) {
-      var valorUnitario = parseFloat(item.valor_unitario) ||
-                          Math.round(parseFloat(item.precio || 0) / 1.18 * 100) / 100;
-      return [
-        idVenta,
-        item.sku,
-        item.nombre,
-        item.cantidad,
-        item.precio,
-        item.subtotal,
-        String(item.codBarras || ''),
-        Math.round(valorUnitario * 100) / 100,
-        parseInt(item.tipo_igv || 1, 10),
-        String(item.unidad_de_medida || 'NIU')
-      ];
-    });
-    var lastRow = sheetDetalle.getLastRow();
-    var rangeDetalle = sheetDetalle.getRange(lastRow + 1, 1, detalleRows.length, detalleRows[0].length);
-    // Forzar texto en col 7 (Cod_Barras) y col 2 (SKU) antes de escribir
-    // para que Sheets no elimine ceros a la izquierda de códigos numéricos
-    sheetDetalle.getRange(lastRow + 1, 7, detalleRows.length, 1).setNumberFormat('@STRING@');
-    sheetDetalle.getRange(lastRow + 1, 2, detalleRows.length, 1).setNumberFormat('@STRING@');
-    rangeDetalle.setValues(detalleRows);
+  // ── VENTAS_DETALLE (10 columnas) — escritura por lote (best-effort espejo) ─────
+  // ID_Venta | SKU | Nombre | Cantidad | Precio | Subtotal | Cod_Barras | Valor_Unitario | Tipo_IGV | Unidad_Medida
+  if (items.length > 0 && sheetDetalle) {
+    try {
+      var detalleRows = items.map(function(item) {
+        var valorUnitario = parseFloat(item.valor_unitario) ||
+                            Math.round(parseFloat(item.precio || 0) / 1.18 * 100) / 100;
+        return [
+          idVenta, item.sku, item.nombre, item.cantidad, item.precio, item.subtotal,
+          String(item.codBarras || ''),
+          Math.round(valorUnitario * 100) / 100,
+          parseInt(item.tipo_igv || 1, 10),
+          String(item.unidad_de_medida || 'NIU')
+        ];
+      });
+      var lastRow = sheetDetalle.getLastRow();
+      var rangeDetalle = sheetDetalle.getRange(lastRow + 1, 1, detalleRows.length, detalleRows[0].length);
+      sheetDetalle.getRange(lastRow + 1, 7, detalleRows.length, 1).setNumberFormat('@STRING@');
+      sheetDetalle.getRange(lastRow + 1, 2, detalleRows.length, 1).setNumberFormat('@STRING@');
+      rangeDetalle.setValues(detalleRows);
+    } catch (eDet) { Logger.log('[procesarVenta] escribir VENTAS_DETALLE (espejo) falló: ' + eDet.message); }
   }
 
   // ── Registrar cliente frecuente ──────────────────────────────────────────
@@ -342,8 +360,17 @@ function procesarVenta(data) {
       nfHash   = nfResult.hash   || '';
       nfEnlace = nfResult.enlace || '';
     }
-    var nfRow = sheetCabecera.getLastRow();
-    sheetCabecera.getRange(nfRow, 17, 1, 3).setValues([[nfEstado, nfHash, nfEnlace]]);
+    // [delete-safe] NF al Sheet = best-effort espejo. La persistencia REAL del CPE en Supabase
+    // va por el dual-write de abajo (_dualWriteVentaME con NF_*). Guardado por existencia + fila correcta
+    // (buscamos la fila por idVenta en vez de getLastRow para no escribir en la fila equivocada).
+    if (sheetCabecera) {
+      try {
+        var nfRow = -1;
+        var _ids = sheetCabecera.getRange(2, 1, Math.max(0, sheetCabecera.getLastRow() - 1) || 1, 1).getValues();
+        for (var _ri = _ids.length - 1; _ri >= 0; _ri--) { if (String(_ids[_ri][0]) === String(idVenta)) { nfRow = _ri + 2; break; } }
+        if (nfRow > 0) sheetCabecera.getRange(nfRow, 17, 1, 3).setValues([[nfEstado, nfHash, nfEnlace]]);
+      } catch (eNF) { Logger.log('[procesarVenta] escribir NF en Sheet (espejo) falló: ' + eNF.message); }
+    }
     if (!nfResult.ok) Logger.log('NubeFact error venta ' + idVenta + ': ' + (nfResult.error || ''));
   }
   var nfQrString = (nfResult && nfResult.qrString) ? nfResult.qrString : '';
@@ -548,6 +575,35 @@ function ventasHoyZona(prefijosStr, desdeStr) {
 
 function detalleVenta(idVenta) {
   if (!idVenta) return generarRespuestaError("id_venta requerido");
+
+  // [delete-safe] Supabase primero (me.ventas_detalle, poblada por _dualWriteDetalleME).
+  // Sheet fallback si el gate está OFF / la RPC falla.
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var rD = _sb('GET', 'me.ventas_detalle', {
+        select: 'sku,nombre,cantidad,precio,subtotal,linea',
+        filters: { id_venta: 'eq.' + String(idVenta) },
+        order: 'linea.asc',
+        maxRetry: 1
+      });
+      if (rD && rD.ok && Array.isArray(rD.data) && rD.data.length) {
+        var itemsSB = rD.data.map(function(x){
+          return {
+            sku:      String(x.sku || ''),
+            nombre:   String(x.nombre || ''),
+            cantidad: parseFloat(x.cantidad) || 0,
+            precio:   parseFloat(x.precio) || 0,
+            subtotal: parseFloat(x.subtotal) || 0
+          };
+        });
+        return ContentService.createTextOutput(JSON.stringify({
+          status: "success", items: itemsSB
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      // data vacío en Supabase: la venta puede ser pre-directo (solo en Sheets) → cae al Sheet.
+    } catch (eD) { Logger.log('[detalleVenta] Supabase: ' + eD.message); }
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("VENTAS_DETALLE");
   if (!sheet) return generarRespuestaError("VENTAS_DETALLE no encontrada");
@@ -575,9 +631,24 @@ function verificarYAgregaCliente(doc, nombre, tipoDoc, direccion) {
   // [v2.7.2] Forzar String SIEMPRE — los DNIs pueden empezar con 0.
   // Si llega como Number, ya se perdió el 0 antes. Aquí preservamos lo que venga.
   doc = String(doc).trim();
+
+  // [delete-safe] Upsert a me.clientes_frecuentes (PK=documento) — idempotente, best-effort.
+  // Es la persistencia REAL del cliente cuando el Sheet ya no existe; así consultarCliente
+  // (que lee Supabase primero) lo encuentra después. NO pisa dirección/nombre con vacío.
+  try {
+    if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+      var rowCli = { documento: doc, nombre: String(nombre || ''), tipo_doc: String(tipoDoc || '') };
+      var _dir = String(direccion || '').trim();
+      if (_dir) rowCli.direccion = _dir;
+      // Solo incluimos nombre si viene no vacío (el upsert lo sobrescribiría con '' si lo mandáramos vacío).
+      if (!rowCli.nombre) delete rowCli.nombre;
+      _sb('POST', 'me.clientes_frecuentes', { data: [rowCli], upsert: true, onConflict: 'documento', maxRetry: 1 });
+    }
+  } catch (eCliSB) { Logger.log('[cliente upsert Supabase] ' + (eCliSB && eCliSB.message)); }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("CLIENTES_FRECUENTES");
-  if (!sheet) return;
+  if (!sheet) return;   // Sheet ausente → ya persistimos en Supabase arriba (delete-safe)
 
   var rangeAll = sheet.getDataRange().getValues();
   var hdrs   = (rangeAll[0] || []).map(function(h){ return String(h).trim(); });

@@ -352,7 +352,28 @@ function consultarCliente(doc, tipoDocSolicitado) {
     }
   }
 
-  // 1. Buscar en CLIENTES_FRECUENTES local
+  // 1.0 [delete-safe] FUENTE PRIMARIA: me.clientes_frecuentes (Supabase). Si lo encuentra, retorna.
+  //     Si la lectura falla (gate OFF / red) cae al Sheet (1.) y luego al API (2.).
+  if (typeof _meLecturaCierreDirecta === 'function' && _meLecturaCierreDirecta()) {
+    try {
+      var qDigSB = doc.replace(/\D/g, '');
+      var rSB = _sb('GET', 'me.clientes_frecuentes', { select: 'documento,nombre,direccion', filters: { documento: 'eq.' + doc }, limit: 1, maxRetry: 1 });
+      // tolerancia DNI con cero perdido: si no hubo match exacto y el doc tiene 8 dígitos con cero líder, probar sin el cero
+      if (rSB && rSB.ok && (!Array.isArray(rSB.data) || !rSB.data.length) && qDigSB.length === 8 && qDigSB.charAt(0) === '0') {
+        rSB = _sb('GET', 'me.clientes_frecuentes', { select: 'documento,nombre,direccion', filters: { documento: 'eq.' + qDigSB.slice(1) }, limit: 1, maxRetry: 1 });
+      }
+      if (rSB && rSB.ok && Array.isArray(rSB.data) && rSB.data.length) {
+        var cSB = rSB.data[0];
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'success', nombre: String(cSB.nombre || ''), documento: doc,
+          tipo: doc.length === 11 ? 'RUC' : 'DNI', fuente: 'supabase',
+          direccion: String(cSB.direccion || '')
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    } catch (eSBc) { /* cae al Sheet / API */ }
+  }
+
+  // 1. Buscar en CLIENTES_FRECUENTES local (fallback)
   var ss    = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('CLIENTES_FRECUENTES');
   if (sheet) {
