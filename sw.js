@@ -63,7 +63,12 @@ self.addEventListener('notificationclick', event => {
 // v2.8.38 — money-safety: idempotency key estable para guias manuales (idGuiaSnap en confirmarGuia
 //           viaja en el payload; GAS registrarGuia/registrarGuiaAbierta respetan data.idGuia) →
 //           los reintentos de _postGuiaBackground NO crean guias duplicadas → el cierre NO dobla stock.
-const VERSION = '2.8.39';
+// v2.8.40 — revision senior 40x ciclo guias: (1) reset duro del fill del hold-to-confirm tras un
+//           cierre que falla (ya no queda la barra verde fantasma); (2) :key/seq en el banner undo
+//           → la barra de 4s reinicia en borrados consecutivos; (3) intent-map TTL en el merge-guard
+//           → la REAPERTURA optimista deja de ser revertida por un refresh disparado por otra accion
+//           (simetrico con el cierre). Money-safe: el backend cerrar/reabrir sigue idempotente con lock.
+const VERSION = '2.8.40';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',

@@ -6032,7 +6032,7 @@
         </div>
 
         <!-- [v2.8.39] ─── Banner UNDO de borrado de item (4s, réplica WH) ─── -->
-        <div v-if="guiaUndo && guiaFlujo === 'form'"
+        <div v-if="guiaUndo && guiaFlujo === 'form'" :key="guiaUndo.seq"
              class="g-undo-banner absolute bottom-24 left-4 right-20 bg-gray-800 border border-gray-600 rounded-2xl shadow-2xl overflow-hidden z-30">
             <div class="flex items-center gap-3 px-4 py-3">
                 <span class="text-xl shrink-0">🗑️</span>
@@ -17921,7 +17921,9 @@
             try { playWhooshGuia(); } catch(_){}
             try { if (navigator.vibrate) navigator.vibrate([12, 30]); } catch(_){}
             const timer = setTimeout(() => { if (guiaUndo.value && guiaUndo.value.timer === timer) guiaUndo.value = null; }, 4000);
-            guiaUndo.value = { item: { ...item }, idx, timer };
+            // [v2.8.40] seq estable por borrado → :key del banner → la barra de 4s REINICIA su animación
+            //   en borrados consecutivos (sin seq, Vue reusa el nodo y la barra mostraba progreso viejo).
+            guiaUndo.value = { item: { ...item }, idx, timer, seq: (Date.now()) };
         };
         const deshacerQuitarItem = () => {
             const u = guiaUndo.value;
@@ -18155,14 +18157,30 @@
         // (CERRADA gana a ABIERTA gana a sin-estado) para no "reabrir" visualmente una guía
         // que el usuario acaba de cerrar (el backend es idempotente; la verdad converge).
         const _rankEstadoGuia = (e) => ({ 'CERRADA': 3, 'CONFIRMADO': 3, 'ABIERTA': 2 }[_normEstadoGuia({ estado: e })] || 1);
+        // [v2.8.40] Mapa de INTENCIÓN local reciente por id_guia { estado, until }. El rank por sí solo
+        //   es asimétrico: protege CERRAR (CERRADA gana a ABIERTA) pero NO REABRIR (ABIERTA pierde contra
+        //   una CERRADA rezagada del server) → un refresh disparado por OTRA acción (p.ej. la reconciliación
+        //   de una creación en vuelo) podía revertir visualmente la reapertura antes de que el server
+        //   convergiera. La intención fresca (TTL ~4s) gana sobre el estado del server para ESA guía,
+        //   simétricamente para cerrar y reabrir. El backend es idempotente → la verdad converge igual.
+        const _guiaIntent = {};
+        const _marcarIntentGuia = (id, estado) => { if (id) _guiaIntent[id] = { estado, until: Date.now() + 4000 }; };
         const _mergeGuiasHistorial = (serverGuias) => {
             const prev = guiaHistorial.value || [];
             const prevById = {};
             prev.forEach(g => { if (g && g.id_guia) prevById[g.id_guia] = g; });
+            const now = Date.now();
+            // poda barata de intenciones vencidas (evita crecimiento ilimitado en sesiones largas)
+            for (const k in _guiaIntent) { if (_guiaIntent[k].until <= now) delete _guiaIntent[k]; }
             const srv = (serverGuias || []).map(g => {
+                // 1) intención local fresca (cerrar/reabrir) → gana sobre el server para esta guía
+                const intent = _guiaIntent[g.id_guia];
+                if (intent && intent.until > now && _normEstadoGuia({ estado: intent.estado }) !== _normEstadoGuia(g)) {
+                    return { ...g, estado: intent.estado };
+                }
                 const local = prevById[g.id_guia];
-                // si el local tiene un estado más avanzado (cerró/confirmó) y el server aún
-                // refleja el anterior, conservamos el avance local (idempotente en backend).
+                // 2) fallback por rank: si el local tiene un estado más avanzado (cerró/confirmó) y el
+                //    server aún refleja el anterior, conservamos el avance local (idempotente en backend).
                 if (local && _rankEstadoGuia(local.estado) > _rankEstadoGuia(g.estado)) {
                     return { ...g, estado: local.estado };
                 }
@@ -18347,6 +18365,7 @@
                     // Parche optimista local ANTES del refresh (evita repintado a CERRADA)
                     const gi = guiaHistorial.value.findIndex(x => x.id_guia === guia.id_guia);
                     if (gi >= 0) guiaHistorial.value[gi] = { ...guiaHistorial.value[gi], estado: 'ABIERTA' };
+                    _marcarIntentGuia(guia.id_guia, 'ABIERTA');   // [v2.8.40] protege la reapertura del merge hasta converger
                     try { lsSet('mosexpress_guias_' + guiaZona.value, JSON.stringify(guiaHistorial.value)); } catch(_){}
                     try { playVentaOK?.(); } catch(_){}
                     agregarToast('🔓 Guía reabierta', guia.id_guia + ' · +30 min de actividad', 'success', 4000);
@@ -18385,16 +18404,19 @@
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const d = await res.json();
                 if (!d || !d.ok) throw new Error((d && d.error) || 'RPC rechazó');
+                _marcarIntentGuia(guia.id_guia, 'CERRADA');   // [v2.8.40] confirma el cierre frente al merge hasta converger
                 _cgFeedbackExito();   // chime done + haptic + label "¡Cerrada!"
                 agregarToast('🔒 Guía cerrada', guia.id_guia + ' · stock aplicado', 'success', 4000);
                 setTimeout(() => { if (modoGuias.value) listarGuiasHistorial(); }, 2500);
             } catch (e) {
                 // Rollback del optimista.
+                if (_guiaIntent[guia.id_guia]) delete _guiaIntent[guia.id_guia];   // [v2.8.40] descarta intención de cierre fallido
                 const gj = guiaHistorial.value.findIndex(x => x.id_guia === guia.id_guia);
                 if (gj >= 0) guiaHistorial.value[gj] = { ...guiaHistorial.value[gj], estado: estadoPrev };
                 try { lsSet('mosexpress_guias_' + guiaZona.value, JSON.stringify(guiaHistorial.value)); } catch(_){}
                 try { playBeepError?.(); } catch(_){}
                 try { if (navigator.vibrate) navigator.vibrate([60, 80, 60]); } catch(_){}
+                try { _cgResetVisual(); } catch(_){}   // [v2.8.40] limpia el fill verde fantasma del hold tras fallar
                 agregarToast('No se pudo cerrar', String(e.message || e), 'warning', 6000);
             } finally {
                 cerrandoGuiaId.value = null;
@@ -18462,6 +18484,17 @@
                 const lbl = _cgLblEl(); if (lbl) lbl.textContent = '¡Cerrada!';
                 setTimeout(() => { try { btn.classList.remove('g-hold-done'); } catch(_){} }, 1200);
             }
+        };
+        // [v2.8.40] Reset DURO del botón hold (independiente de _cgFired). Tras un cierre que FALLA
+        //   (RPC rechazó), _cgComplete ya puso _cgFired=true → cerrarHoldCancel no limpiaba el fill
+        //   (su guard !_cgFired) → la barra verde quedaba llena fingiendo "cerrando". Esto la devuelve
+        //   a estado limpio para que el usuario pueda reintentar el hold sin un fill fantasma.
+        const _cgResetVisual = () => {
+            _cgFired = false; _cgHap50 = false;
+            if (_cgRAF) { cancelAnimationFrame(_cgRAF); _cgRAF = null; }
+            const btn = _cgEl(); if (btn) { btn.classList.remove('holding'); btn.classList.remove('g-hold-done'); }
+            const fill = _cgFillEl(); if (fill) fill.style.transform = 'scaleX(0)';
+            const lbl = _cgLblEl(); if (lbl) lbl.textContent = '🔒 Cerrar guía';
         };
 
         // Fallback NO-hold (accesibilidad / clic simple): cierra con la misma lógica idempotente.
