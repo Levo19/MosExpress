@@ -17843,6 +17843,10 @@
             const zonaSnap      = guiaZona.value;
             const subtipoSnap   = guiaSubtipo.value;
             const destinoSnap   = guiaZonaDestino.value;
+            // [money-safety] idempotency key estable: se genera UNA vez por confirmación y viaja en el
+            //   payload. Los 3 reintentos de _postGuiaBackground reusan el MISMO idGuia → el GAS no crea
+            //   una guía nueva por reintento (ni en modelo ABIERTA ni legacy) → el cierre NO dobla el stock.
+            const idGuiaSnap    = 'G-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
             const itemsSnap     = guiaItems.value.map(i => ({ cod_barras: i.cod_barras, cantidad: i.cantidad, nombre: i.nombre }));
             // [v2.7.6] Para DEVOLUCION_WH también capturamos estado/foto/nota de cada item
             const itemsDevolucion = guiaItems.value.map(i => ({
@@ -17856,6 +17860,7 @@
             }));
             const payload = {
                 tipoEvento:   'REGISTRAR_GUIA',
+                idGuia:       idGuiaSnap,   // [money-safety] clave idempotente estable (retry-safe)
                 vendedor:     config.value.vendedor,
                 zona:         zonaSnap,
                 tipo:         subtipoSnap,

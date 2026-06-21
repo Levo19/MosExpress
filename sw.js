@@ -60,7 +60,10 @@ self.addEventListener('notificationclick', event => {
 //           tiene. Igual que WH. Doble-check + fallback a GAS intactos en device-auth.js v1.0.22.
 // v2.8.32 — auto-refresco del catalogo: poller de mos.catalogo_version() money-safe
 //           (solo visible, difiere si hay venta en curso, re-descarga sin reload).
-const VERSION = '2.8.37';
+// v2.8.38 — money-safety: idempotency key estable para guias manuales (idGuiaSnap en confirmarGuia
+//           viaja en el payload; GAS registrarGuia/registrarGuiaAbierta respetan data.idGuia) →
+//           los reintentos de _postGuiaBackground NO crean guias duplicadas → el cierre NO dobla stock.
+const VERSION = '2.8.38';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',

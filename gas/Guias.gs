@@ -1668,7 +1668,10 @@ function registrarGuia(data) {
   var signo       = esSalida ? -1 : 1;
   var zonaDestino = String(data.zona_destino || '');
 
-  var idGuia = "G-" + new Date().getTime();
+  // IDEMPOTENCY: respetar el id del cliente si vino (retry de red NO crea guía nueva ni dobla el saldo;
+  //   la RPC zona_registrar_guia dedupea por refId 'GUIA:<idGuia>:<cod>' → reintentar con el MISMO idGuia
+  //   = kardex dedup = no re-suma). Si no vino, generamos (legacy). El front debe mandarlo.
+  var idGuia = String(data.idGuia || data.id_guia || data.localId || data.local_id || '').trim() || ("G-" + new Date().getTime());
   if (sheetCab) {
     try {
       sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo,
@@ -1676,8 +1679,10 @@ function registrarGuia(data) {
     } catch (eCab) { Logger.log('[registrarGuia] Sheet cabecera write: ' + eCab.message); }
   }
 
-  // SALIDA_MOVIMIENTO → genera ENTRADA_TRASLADO automática en zona destino (id reservado arriba para la RPC)
-  var idGuiaEntrada = (tipo === 'SALIDA_MOVIMIENTO' && zonaDestino) ? ("G-TRA-" + (new Date().getTime() + 1)) : null;
+  // SALIDA_MOVIMIENTO → genera ENTRADA_TRASLADO automática en zona destino (id reservado arriba para la RPC).
+  //   Idempotente: derivado del idGuia (estable entre reintentos) → '<idGuia>-IN', no del timestamp.
+  var idGuiaEntrada = (tipo === 'SALIDA_MOVIMIENTO' && zonaDestino)
+    ? (String(data.idGuiaEntrada || '').trim() || (idGuia + "-IN")) : null;
 
   // [cutover] directo ON → la mutación del SALDO (origen + destino del traslado) va por RPC atómica
   //   me.zona_registrar_guia (delta firmado por tipo + kardex, idempotente por idGuia+cod). NO tocamos
