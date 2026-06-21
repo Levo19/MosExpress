@@ -22,6 +22,72 @@ function _meStockDirecto() {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// CUTOVER GUÍAS ME → MODELO WH (nace ABIERTA, aplica stock AL CERRAR) — gate + helpers.
+// ────────────────────────────────────────────────────────────────────────
+// Flag mos.config ME_GUIAS_CICLO_ABIERTA (espejo en Script Property opcional para no pegar a la BD en cada guía):
+//   ON  → las guías MANUALES (ENTRADA_ALMACEN/ENTRADA_LIBRE/SALIDA_MOVIMIENTO/SALIDA_JEFA/SALIDA_DEVOLUCION_WH)
+//         nacen 'ABIERTA' (solo metadata, cantidad_aplicada=0). NO se aplica stock al crear (NO se llama
+//         me.zona_registrar_guia). El stock lo aplica me.cerrar_guia_zona_idempotente AL CERRAR (idempotente,
+//         delta=cantidad−aplicada, con espejo de traslado OUT origen + IN destino).
+//   OFF (DEFAULT) → comportamiento legacy: nacen 'CONFIRMADO' y aplican stock al crear (intacto).
+// SALIDA_VENTAS NUNCA cambia (es automática al cerrar caja, descuenta por ticket vía zona_descontar_venta).
+// REVERSIBLE: poner el flag OFF vuelve al modelo viejo sin redeploy (las guías ABIERTA en vuelo se cierran solas
+//   por el cron / botón; las nuevas nacerán CONFIRMADO de nuevo). Requiere ME_ESCRITURA_STOCK_DIRECTA=ON
+//   (sin escritura directa el modelo ABIERTA no aplica stock en ningún lado → se ignora el flag por seguridad).
+// La Property local ME_GUIAS_CICLO_ABIERTA (1/0) tiene prioridad; si no está, se consulta mos.config (cache 60s).
+// ════════════════════════════════════════════════════════════════════════
+function _meGuiasCicloAbierta() {
+  // Money-safety: el modelo ABIERTA SOLO tiene sentido con escritura directa ON (el cierre aplica a Supabase).
+  if (!_meStockDirecto()) return false;
+  try {
+    var prop = String(PropertiesService.getScriptProperties().getProperty('ME_GUIAS_CICLO_ABIERTA') || '').toLowerCase();
+    if (prop === '1' || prop === 'true' || prop === 'on' || prop === 'si') return true;
+    if (prop === '0' || prop === 'false' || prop === 'off' || prop === 'no') return false;
+  } catch (e) {}
+  // fallback: leer mos.config (cacheado 60s para no pegar a la BD por cada guía)
+  try {
+    var cache = CacheService.getScriptCache();
+    var hit = cache.get('ME_GUIAS_CICLO_ABIERTA');
+    if (hit != null) return hit === '1';
+    var r = _sbSelect('mos.config', { select: 'valor', filters: { clave: 'eq.ME_GUIAS_CICLO_ABIERTA' }, limit: 1 });
+    var on = '0';
+    if (r && r.ok && r.data && r.data.length) {
+      var v = String(r.data[0].valor || '').toLowerCase();
+      on = (v === '1' || v === 'true' || v === 'on' || v === 'si') ? '1' : '0';
+    }
+    try { cache.put('ME_GUIAS_CICLO_ABIERTA', on, 60); } catch (eC) {}
+    return on === '1';
+  } catch (e) { return false; }  // ante cualquier duda → modelo viejo (seguro)
+}
+
+// Tipos de guía MANUAL que entran al ciclo ABIERTA. SALIDA_VENTAS y ENTRADA_TRASLADO (espejo) quedan FUERA.
+function _esGuiaManualCicloAbierta(tipo) {
+  var t = String(tipo || '').toUpperCase();
+  return t === 'ENTRADA_ALMACEN' || t === 'ENTRADA_LIBRE' ||
+         t === 'SALIDA_MOVIMIENTO' || t === 'SALIDA_JEFA' || t === 'SALIDA_DEVOLUCION_WH';
+}
+
+// Cierra una guía de zona vía RPC idempotente (aplica stock UNA vez: OUT origen + IN espejo si traslado).
+//   La RPC me.cerrar_guia_zona (wrapper, param `p`) → me.cerrar_guia_zona_idempotente. Idempotente: recerrar = delta 0.
+//   Devuelve {ok, ...} de la RPC, o {ok:false, error} si falla. NUNCA lanza.
+function _meCerrarGuiaDirecto(idGuia) {
+  var id = String(idGuia || '').trim();
+  if (!id) return { ok: false, error: 'sin idGuia' };
+  try {
+    // cerrar_guia_zona NO empieza con 'zona_' → _sbRpc envía el body tal cual; mandamos {p:{idGuia}} (param `p`).
+    var r = _sbRpc('me', 'cerrar_guia_zona', { p: { idGuia: id } });
+    if (!r.ok || !(r.data && r.data.ok)) {
+      Logger.log('[cerrar-guia] FALLÓ ' + id + ' HTTP ' + r.code + ' ' + (r.error || JSON.stringify(r.data || {})));
+      return { ok: false, error: r.error || (r.data && r.data.error) || 'rpc' };
+    }
+    return r.data;
+  } catch (e) {
+    Logger.log('[cerrar-guia] EXCEPCIÓN ' + id + ': ' + e.message);
+    return { ok: false, error: String(e.message) };
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // LECTURA del cierre desde Supabase (delete-safe del Sheet).
 // ────────────────────────────────────────────────────────────────────────
 // Gate Script Property ME_LECTURA_CIERRE_DIRECTA:
@@ -1569,6 +1635,17 @@ function getStockZonas() {
 }
 
 function registrarGuia(data) {
+  // ════════════════════════════════════════════════════════════════════════
+  // [CUTOVER] MODELO ABIERTA (espejo WH): la guía MANUAL nace 'ABIERTA' (solo metadata,
+  // cantidad_aplicada=0) y NO aplica stock al crear. El stock lo aplica el CIERRE
+  // (me.cerrar_guia_zona_idempotente) UNA vez. Gateado por _meGuiasCicloAbierta()
+  // (= flag mos.config ME_GUIAS_CICLO_ABIERTA && escritura directa ON).
+  // SALIDA_VENTAS y ENTRADA_TRASLADO quedan FUERA (siguen el camino legacy de abajo).
+  // ════════════════════════════════════════════════════════════════════════
+  if (_meGuiasCicloAbierta() && _esGuiaManualCicloAbierta(data.tipo)) {
+    return registrarGuiaAbierta(data);
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheetCab   = ss.getSheetByName("GUIAS_CABECERA");
   var sheetDet   = ss.getSheetByName("GUIAS_DETALLE");
@@ -1699,6 +1776,135 @@ function registrarGuia(data) {
 
   return ContentService.createTextOutput(JSON.stringify({
     status: 'success', idGuia: idGuia, idGuiaEntrada: idGuiaEntrada, stock: stockResult
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// [CUTOVER] registrarGuiaAbierta — crea una guía MANUAL en estado 'ABIERTA' (modelo WH).
+// ────────────────────────────────────────────────────────────────────────
+// · NO toca stock al crear (NO llama me.zona_registrar_guia). Solo escribe metadata
+//   (cabecera+detalle) en Supabase vía me.zona_guia_registrar_meta con estado='ABIERTA'
+//   → la RPC pone cantidad_aplicada=0 (fix D del SQL 204) → el cierre aplicará el total UNA vez.
+// · IDEMPOTENCY KEY: el cliente puede mandar data.idGuia (o data.localId). El server lo RESPETA
+//   (no genera otro idGuia por POST) → reintento de red NO crea guía nueva ni dobla. La RPC meta
+//   es idempotente por idGuia (on conflict (id_guia) do update; detalle se re-escribe igual).
+//   Si el cliente NO manda id, se genera uno DETERMINISTA-por-payload no es posible → generamos
+//   "G-" + timestamp (el front DEBE mandar idGuia para idempotencia real; ver tanda de frontend).
+// · ESPEJO DE TRASLADO: SALIDA_MOVIMIENTO con destino → además se escribe la metadata de la
+//   ENTRADA_TRASLADO espejo (zona destino), estado CONFIRMADO (visibilidad en trasladosEntrantes),
+//   cantidad_aplicada=cantidad → si alguna vez se cerrara, delta 0 (NO re-suma). El IN real al
+//   destino lo aplica el CIERRE del SALIDA_MOVIMIENTO origen (espejo en cerrar_guia_zona_idempotente).
+// · La Hoja se escribe como espejo de respaldo (best-effort, estado ABIERTA) si existe.
+// NUNCA aplica stock aquí. Devuelve {status:'success', idGuia, idGuiaEntrada, estado:'ABIERTA'}.
+// ════════════════════════════════════════════════════════════════════════
+function registrarGuiaAbierta(data) {
+  var tipo        = String(data.tipo || '').toUpperCase();
+  var zonaDestino = String(data.zona_destino || '');
+  // IDEMPOTENCY: respetar el id del cliente si vino; si no, generar (el front debe mandarlo).
+  var idGuia = String(data.idGuia || data.id_guia || data.localId || data.local_id || '').trim() || ("G-" + new Date().getTime());
+  var idGuiaEntrada = (tipo === 'SALIDA_MOVIMIENTO' && zonaDestino)
+    ? (String(data.idGuiaEntrada || '').trim() || (idGuia + "-IN")) : null;
+
+  var items = (data.items || []).map(function (it) {
+    return { codBarra: String(it.cod_barras || it.codBarra || ''), cantidad: parseFloat(it.cantidad) || 0 };
+  }).filter(function (it) { return it.codBarra && it.cantidad > 0; });
+
+  // 1) METADATA ABIERTA en Supabase (fuente de verdad). Idempotente por idGuia.
+  var rMeta = _meRegistrarGuiaMetaDirecto({
+    idGuia: idGuia, zona: data.zona, tipo: tipo, vendedor: data.vendedor,
+    observacion: data.observacion || '', zonaDestino: zonaDestino, estado: 'ABIERTA', items: items
+  });
+  if (!rMeta || !rMeta.ok) {
+    // Money-safety: encolar la metadata para reintento idempotente (NO aplica stock → seguro reintentar).
+    Logger.log('registrarGuiaAbierta: meta ABIERTA falló — encolando para guía ' + idGuia);
+    try { _persistirStockPendiente('guia_meta', idGuia, {
+      idGuia: idGuia, zona: data.zona, tipo: tipo, vendedor: data.vendedor,
+      observacion: data.observacion || '', zonaDestino: zonaDestino, estado: 'ABIERTA', items: items
+    }, (rMeta && rMeta.error) || 'rpc'); } catch (eM) { Logger.log('Encolar guia_meta ABIERTA: ' + eM.message); }
+  }
+
+  // 2) ESPEJO de traslado (solo visibilidad). CONFIRMADO + aplicada=cantidad → nunca re-suma al cerrar.
+  if (idGuiaEntrada) {
+    var rMetaE = _meRegistrarGuiaMetaDirecto({
+      idGuia: idGuiaEntrada, zona: zonaDestino, tipo: 'ENTRADA_TRASLADO', vendedor: data.vendedor,
+      observacion: 'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia,
+      zonaDestino: data.zona, estado: 'CONFIRMADO', items: items
+    });
+    if (!rMetaE || !rMetaE.ok) {
+      Logger.log('registrarGuiaAbierta: meta espejo falló — encolando para ' + idGuiaEntrada);
+      try { _persistirStockPendiente('guia_meta', idGuiaEntrada, {
+        idGuia: idGuiaEntrada, zona: zonaDestino, tipo: 'ENTRADA_TRASLADO', vendedor: data.vendedor,
+        observacion: 'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia,
+        zonaDestino: data.zona, estado: 'CONFIRMADO', items: items
+      }, (rMetaE && rMetaE.error) || 'rpc'); } catch (eME) { Logger.log('Encolar espejo: ' + eME.message); }
+    }
+  }
+
+  // 3) Espejo de respaldo a la Hoja (best-effort, estado ABIERTA). Ausente → no rompe.
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetCab = ss.getSheetByName("GUIAS_CABECERA");
+    var sheetDet = ss.getSheetByName("GUIAS_DETALLE");
+    if (sheetCab) {
+      sheetCab.appendRow([idGuia, new Date(), data.vendedor, data.zona, tipo,
+        data.observacion || '', zonaDestino, 'ABIERTA']);
+      if (idGuiaEntrada) sheetCab.appendRow([idGuiaEntrada, new Date(), data.vendedor, zonaDestino, 'ENTRADA_TRASLADO',
+        'Traslado desde ' + data.zona + ' — Guía origen: ' + idGuia, data.zona, 'CONFIRMADO']);
+    }
+    if (sheetDet) {
+      (data.items || []).forEach(function (item) {
+        var cb = String(item.cod_barras || item.codBarra || '');
+        var nextDet = sheetDet.getLastRow() + 1;
+        sheetDet.getRange(nextDet, 2).setNumberFormat('@STRING@');
+        sheetDet.getRange(nextDet, 1, 1, 3).setValues([[idGuia, cb, item.cantidad]]);
+        if (idGuiaEntrada) {
+          var nextDetE = sheetDet.getLastRow() + 1;
+          sheetDet.getRange(nextDetE, 2).setNumberFormat('@STRING@');
+          sheetDet.getRange(nextDetE, 1, 1, 3).setValues([[idGuiaEntrada, cb, item.cantidad]]);
+        }
+      });
+    }
+  } catch (eSheet) { Logger.log('registrarGuiaAbierta: espejo Hoja falló (no bloquea): ' + eSheet.message); }
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', idGuia: idGuia, idGuiaEntrada: idGuiaEntrada, estado: 'ABIERTA'
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// [CUTOVER] cerrarGuia — CIERRA una guía de zona ABIERTA → aplica stock UNA vez.
+// ────────────────────────────────────────────────────────────────────────
+// Endpoint mínimo para esta tanda (el frontend completo hold-to-confirm es la siguiente).
+// Llama me.cerrar_guia_zona_idempotente (vía wrapper): OUT origen + IN espejo destino si traslado,
+// delta = cantidad − cantidad_aplicada, idempotente (recerrar/retry/doble-tap = delta 0, no dobla).
+// Espeja el estado a la Hoja (best-effort). NUNCA lanza.
+// ════════════════════════════════════════════════════════════════════════
+function cerrarGuia(data) {
+  var idGuia = String((data && (data.idGuia || data.id_guia)) || '').trim();
+  if (!idGuia) return generarRespuestaError("Requiere idGuia para cerrar.");
+
+  var r = _meCerrarGuiaDirecto(idGuia);
+  if (!r || !r.ok) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error', mensaje: 'No se pudo cerrar la guía: ' + ((r && r.error) || 'rpc'), idGuia: idGuia
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Espejo a la Hoja: marcar estado CERRADA (best-effort). Col 8 (índice 7) = Estado.
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetCab = ss.getSheetByName("GUIAS_CABECERA");
+    if (sheetCab) {
+      var gc = sheetCab.getDataRange().getValues();
+      for (var i = 1; i < gc.length; i++) {
+        if (String(gc[i][0]) === idGuia) { sheetCab.getRange(i + 1, 8).setValue('CERRADA'); break; }
+      }
+    }
+  } catch (eS) { Logger.log('cerrarGuia: espejo Hoja estado falló (no bloquea): ' + eS.message); }
+
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success', idGuia: idGuia, estado: 'CERRADA',
+    lineasAplicadas: r.lineasAplicadas, lineasSaltadas: r.lineasSaltadas
   })).setMimeType(ContentService.MimeType.JSON);
 }
 

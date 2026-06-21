@@ -5935,6 +5935,12 @@
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 018 0m-9 4h10a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2v-5a2 2 0 012-2z"></path></svg>
                                 {{ reabriendoGuiaId === g.id_guia ? 'Reabriendo...' : '🔓 Reabrir' }}
                             </button>
+                            <!-- [CUTOVER] Cerrar guía ABIERTA → aplica stock una vez (botón mínimo; hold-to-confirm = siguiente tanda) -->
+                            <button v-if="esGuiaAbierta(g)" @click="cerrarGuia(g)" :disabled="cerrandoGuiaId === g.id_guia"
+                                    class="flex-1 bg-emerald-600/80 hover:bg-emerald-500 disabled:bg-emerald-900/40 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                {{ cerrandoGuiaId === g.id_guia ? 'Cerrando...' : '🔒 Cerrar' }}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -7342,6 +7348,7 @@
         const guiaDetallando = ref(null); // guía expandida en historial
         const guiaDetalle = ref([]); // items del guiaDetallando
         const reabriendoGuiaId = ref(null); // [v2.8.30] id de la guía que se está reabriendo (lock UI)
+        const cerrandoGuiaId = ref(null);   // [CUTOVER] id de la guía que se está cerrando (lock UI)
         const guiaCamara = ref(false);
         let html5QrGuia = null;
         // Cajero activo en zona (para bloquear ventas sin cajero)
@@ -18019,6 +18026,38 @@
             }, { accion: 'REABRIR_GUIA', refDocumento: String(guia.id_guia) });
         };
 
+        // [CUTOVER] Cierra una guía ABIERTA → aplica stock UNA vez (OUT origen + IN espejo si traslado)
+        // vía me.cerrar_guia_zona (wrapper idempotente). Botón mínimo de esta tanda; el hold-to-confirm
+        // + efectos van en la siguiente. Optimista: parchea estado local a CERRADA antes del refresh.
+        // Idempotente en backend → un doble-tap NO dobla el stock.
+        const cerrarGuia = async (guia) => {
+            if (!guia || !guia.id_guia) return;
+            if (!esGuiaAbierta(guia)) { agregarToast('Guía no abierta', 'No requiere cerrar'); return; }
+            if (cerrandoGuiaId.value === guia.id_guia) return;
+            cerrandoGuiaId.value = guia.id_guia;
+            try {
+                const token = await _mintTokenSB();
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/cerrar_guia_zona`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idGuia: String(guia.id_guia) } })
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const d = await res.json();
+                if (!d || !d.ok) throw new Error((d && d.error) || 'RPC rechazó');
+                const gi = guiaHistorial.value.findIndex(x => x.id_guia === guia.id_guia);
+                if (gi >= 0) guiaHistorial.value[gi] = { ...guiaHistorial.value[gi], estado: 'CERRADA' };
+                try { lsSet('mosexpress_guias_' + guiaZona.value, JSON.stringify(guiaHistorial.value)); } catch(_){}
+                try { playVentaOK?.(); } catch(_){}
+                agregarToast('🔒 Guía cerrada', guia.id_guia + ' · stock aplicado', 'success', 4000);
+                setTimeout(() => { if (modoGuias.value) listarGuiasHistorial(); }, 2500);
+            } catch (e) {
+                agregarToast('No se pudo cerrar', String(e.message || e), 'warning', 6000);
+            } finally {
+                cerrandoGuiaId.value = null;
+            }
+        };
+
         const imprimirGuia = async (guia) => {
             if (!config.value.estacion?.PrintNode_ID) { agregarToast('Error', 'Sin impresora configurada'); return; }
             let items = guiaDetalle.value;
@@ -18378,6 +18417,7 @@
           guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
           // [v2.8.30] UX moderna + candado de guías
           guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, reabrirGuia, reabriendoGuiaId,
+          cerrarGuia, cerrandoGuiaId,
           // [BUILD 1] Recibir guía de almacén (WH→ME por escaneo)
           modoRecibirWH, rwPaso, rwIdGuia, rwGuia, rwEscaneadosArr, rwResultado, rwBusq, rwCargando, rwCamara, rwTotalEscaneado,
           abrirRecibirWH, cerrarRecibirWH, rwToggleCamara, rwCargarGuia, rwEscanearItem, rwCerrarIngreso,

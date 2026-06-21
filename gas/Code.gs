@@ -285,6 +285,7 @@ function doPost(e) {
     if (data.tipoEvento === 'CONVERTIR_NV_A_CPE')        return convertirNVaCPE(data);
     if (data.tipoEvento === 'BAJA_CPE')                  return bajaCPEVenta(data);
     if (data.tipoEvento === 'REGISTRAR_GUIA')      return registrarGuia(data);
+    if (data.tipoEvento === 'CERRAR_GUIA')         return cerrarGuia(data);   // [CUTOVER] cierre aplica stock una vez
     if (data.tipoEvento === 'REGISTRAR_AUDITORIA') return registrarAuditoria(data);
     // [v40.3] Cobro asignado de créditos
     if (data.tipoEvento === 'ASIGNAR_COBRO_CAJERO')    return asignarCobroACajero(data);

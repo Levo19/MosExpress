@@ -60,7 +60,7 @@ self.addEventListener('notificationclick', event => {
 //           tiene. Igual que WH. Doble-check + fallback a GAS intactos en device-auth.js v1.0.22.
 // v2.8.32 — auto-refresco del catalogo: poller de mos.catalogo_version() money-safe
 //           (solo visible, difiere si hay venta en curso, re-descarga sin reload).
-const VERSION = '2.8.35';
+const VERSION = '2.8.36';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
