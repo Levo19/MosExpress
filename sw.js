@@ -63,7 +63,7 @@ self.addEventListener('notificationclick', event => {
 // v2.8.38 — money-safety: idempotency key estable para guias manuales (idGuiaSnap en confirmarGuia
 //           viaja en el payload; GAS registrarGuia/registrarGuiaAbierta respetan data.idGuia) →
 //           los reintentos de _postGuiaBackground NO crean guias duplicadas → el cierre NO dobla stock.
-const VERSION = '2.8.38';
+const VERSION = '2.8.39';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',

@@ -2684,6 +2684,47 @@
       .g-estado-abierta .g-estado-dot { background:#f59e0b; animation: gEstadoPulse 1.6s ease-in-out infinite; }
       .g-estado-cerrada .g-estado-dot { background:#22c55e; }
       @keyframes gEstadoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.7);opacity:1} 55%{box-shadow:0 0 0 5px rgba(245,158,11,0);opacity:.7} }
+
+      /* [v2.8.39] Hold-to-confirm del botón Cerrar guía (réplica WH cerrarHold*).
+         Mantén-presionado ~850ms → fill animado + haptic creciente → ¡Cerrada! + chime */
+      .g-hold-btn { position:relative; overflow:hidden; }
+      .g-hold-fill { position:absolute; inset:0; transform-origin:left center; transform:scaleX(0); background:linear-gradient(90deg, rgba(16,185,129,.55), rgba(5,150,105,.85)); pointer-events:none; transition:transform .08s linear; will-change:transform; }
+      .g-hold-btn.holding .g-hold-fill { transition:none; }
+      .g-hold-btn.g-hold-done .g-hold-fill { transform:scaleX(1) !important; background:linear-gradient(90deg,#10b981,#059669); }
+      .g-hold-lbl { position:relative; z-index:1; }
+      @keyframes gShake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-7px)} 30%{transform:translateX(6px)} 45%{transform:translateX(-5px)} 60%{transform:translateX(4px)} 75%{transform:translateX(-2px)} }
+      .g-shake { animation: gShake .45s cubic-bezier(.36,.07,.19,.97) both; }
+
+      /* [v2.8.39] Celebración al crear guía: glow verde envolvente en la card nueva */
+      @keyframes gCardCelebra { 0%{box-shadow:0 0 0 0 rgba(16,185,129,.7);} 60%{box-shadow:0 0 0 10px rgba(16,185,129,0);} 100%{box-shadow:0 0 0 0 rgba(16,185,129,0);} }
+      .g-card-celebra { animation: gCardCelebra 1.1s ease-out 2; }
+
+      /* [v2.8.39] Header de día (Hoy/Ayer/fecha) + chip contador, estilo WH */
+      .g-day-hdr { display:flex; align-items:center; gap:8px; padding:12px 4px 4px; }
+      .g-day-hdr-txt { font-size:11px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; color:#9ca3af; }
+      .g-day-line { flex:1; height:1px; background:rgba(255,255,255,.08); }
+      .g-day-chip { font-size:10px; font-weight:800; color:#93c5fd; background:rgba(59,130,246,.15); border:1px solid rgba(59,130,246,.3); padding:2px 8px; border-radius:20px; white-space:nowrap; }
+
+      /* [v2.8.39] Chips de filtro de historial */
+      .g-filtro { font-size:11px; font-weight:800; letter-spacing:.04em; padding:6px 12px; border-radius:20px; white-space:nowrap; transition:all .15s; }
+      .g-filtro-off { background:rgba(255,255,255,.06); color:#9ca3af; }
+      .g-filtro-on  { background:#f59e0b; color:#fff; box-shadow:0 4px 12px rgba(245,158,11,.4); }
+
+      /* [v2.8.39] Highlight de búsqueda (scroll-to + flash) */
+      @keyframes gSearchFlash { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)} 30%{box-shadow:0 0 0 4px rgba(245,158,11,.7)} }
+      .g-search-hit { animation: gSearchFlash 1.4s ease-out 2; }
+
+      /* [v2.8.39] Banner undo (deshacer borrado de item, 4s) */
+      @keyframes gUndoIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+      .g-undo-banner { animation: gUndoIn .2s ease-out both; }
+      @keyframes gUndoBar { from{transform:scaleX(1)} to{transform:scaleX(0)} }
+      .g-undo-bar { transform-origin:left center; animation: gUndoBar 4s linear both; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .g-slide-in, .g-row-glow, .g-qty-count, .g-plus-float, .g-card-celebra,
+        .g-search-hit, .g-undo-banner, .g-shake, .g-estado-abierta .g-estado-dot { animation: none !important; }
+        .g-hold-fill { transition: none !important; }
+      }
     </style>
 
     <div v-if="mostrarModalSesionAnterior && !config.completado" class="absolute inset-0 z-[55] bg-gray-950 flex flex-col items-center justify-center p-6">
@@ -5781,9 +5822,10 @@
                     </div>
                     <p v-if="!guiaItems.length" class="text-gray-600 text-center py-6 text-sm">Sin productos aún. Escanea o escribe un código.</p>
                 </div>
-                <button @click="confirmarGuia" :disabled="!guiaItems.length || (guiaSubtipo==='SALIDA_MOVIMIENTO' && !guiaZonaDestino) || !puedeConfirmarDevolucion"
+                <!-- [v2.8.39] Sin :disabled — clic siempre activa confirmarGuia, que valida y hace shake+warn si falta algo -->
+                <button @click="confirmarGuia" data-guia-confirmar
                         class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 shrink-0 transition-all"
-                        :class="guiaSubtipo === 'SALIDA_DEVOLUCION_WH' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/50 disabled:from-rose-900/40 disabled:to-amber-900/40' : 'bg-red-500 disabled:bg-red-900/40 text-white'">
+                        :class="[guiaSubtipo === 'SALIDA_DEVOLUCION_WH' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/50' : 'bg-red-500 text-white', (!guiaItems.length || (guiaSubtipo==='SALIDA_MOVIMIENTO' && !guiaZonaDestino) || !puedeConfirmarDevolucion) ? 'opacity-50' : '']">
                     {{ guiaSubtipo === 'SALIDA_DEVOLUCION_WH' ? '📦 Enviar al almacén' : '↓ Confirmar Salida' }} ({{ guiaItems.length }} items)
                 </button>
             </div>
@@ -5883,68 +5925,121 @@
                     </div>
                     <p v-if="!guiaItems.length" class="text-gray-600 text-center py-6 text-sm">Escanea o escribe un código para agregar productos.</p>
                 </div>
-                <button @click="confirmarGuia" :disabled="!guiaItems.length"
-                        class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 disabled:bg-emerald-900/40 text-white active:scale-95 shrink-0">
+                <button @click="confirmarGuia" data-guia-confirmar
+                        class="w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 bg-emerald-500 text-white active:scale-95 shrink-0 transition-all"
+                        :class="!guiaItems.length ? 'opacity-50' : ''">
                     ↑ Confirmar Entrada ({{ guiaItems.length }} items)
                 </button>
             </div>
         </div>
 
         <!-- TAB: HISTORIAL -->
-        <div v-if="guiaTab === 'historial'" class="flex-1 overflow-y-auto p-4">
+        <div v-if="guiaTab === 'historial'" class="flex-1 overflow-y-auto px-4 pb-4">
+            <!-- [v2.8.39] Buscador + filtros (réplica WH) -->
+            <div class="sticky top-0 z-10 bg-gray-900 pt-3 pb-2 -mx-4 px-4 border-b border-gray-800">
+                <div class="flex gap-2 mb-2">
+                    <input v-model="guiaBusqHist" @keyup.enter="guiaBuscarHistorial" type="text" placeholder="Buscar guía, producto, vendedor..."
+                           class="flex-1 bg-gray-800 text-white text-sm px-4 py-2.5 rounded-xl border border-gray-700 outline-none focus:border-amber-500">
+                    <button @click="guiaBuscarHistorial" class="bg-amber-500 text-white font-black px-4 rounded-xl active:scale-95">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </button>
+                    <button v-if="guiaBusqHist" @click="guiaBusqHist=''; guiaSearchHitId=null" class="bg-gray-700 text-gray-300 font-black px-3 rounded-xl active:scale-95">✕</button>
+                </div>
+                <div class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                    <button @click="setGuiaFiltro('todos')"    class="g-filtro shrink-0" :class="guiaFiltro==='todos' ? 'g-filtro-on' : 'g-filtro-off'">Todos · {{ guiaContadores.todos }}</button>
+                    <button @click="setGuiaFiltro('ingreso')"  class="g-filtro shrink-0" :class="guiaFiltro==='ingreso' ? 'g-filtro-on' : 'g-filtro-off'">↑ Ingreso · {{ guiaContadores.ingreso }}</button>
+                    <button @click="setGuiaFiltro('salida')"   class="g-filtro shrink-0" :class="guiaFiltro==='salida' ? 'g-filtro-on' : 'g-filtro-off'">↓ Salida · {{ guiaContadores.salida }}</button>
+                    <button @click="setGuiaFiltro('abiertas')" class="g-filtro shrink-0" :class="guiaFiltro==='abiertas' ? 'g-filtro-on' : 'g-filtro-off'">◌ Abiertas · {{ guiaContadores.abiertas }}</button>
+                </div>
+            </div>
+
             <div v-if="guiaHistorialCargando" class="flex justify-center py-12"><svg class="animate-spin w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
             <div v-else-if="!guiaHistorial.length" class="text-center py-12 text-gray-500 text-sm">Sin guías registradas para {{ guiaZona }}</div>
-            <div v-else class="space-y-2">
-                <div v-for="g in guiaHistorial" :key="g.id_guia" class="bg-gray-800 rounded-2xl overflow-hidden border border-gray-700">
-                    <!-- Cabecera guía -->
-                    <button @click="expandirGuia(g)" class="w-full flex items-center gap-3 p-3 text-left">
-                        <div class="w-2 h-10 rounded-full shrink-0" :class="g.tipo.startsWith('SALIDA') ? 'bg-red-500' : 'bg-emerald-500'"></div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="text-[10px] font-black px-2 py-0.5 rounded uppercase"
-                                    :class="g.tipo==='SALIDA_JEFA' ? 'bg-amber-900/50 text-amber-300' : g.tipo==='SALIDA_MOVIMIENTO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='SALIDA_VENTAS' ? 'bg-gray-700 text-gray-400' : g.tipo==='ENTRADA_TRASLADO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='ENTRADA_ALMACEN' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-purple-900/50 text-purple-300'">
-                                    {{ g.tipo.replace('_',' ') }}
-                                </span>
-                                <!-- [v2.8.30] Candado de estado ABIERTA/CERRADA (réplica WH) -->
-                                <span v-if="esGuiaCerrada(g)" class="g-estado g-estado-cerrada" title="Guía cerrada"><span class="g-estado-dot"></span>🔒 Cerrada</span>
-                                <span v-else-if="esGuiaAbierta(g)" class="g-estado g-estado-abierta" title="Guía abierta"><span class="g-estado-dot"></span>🔓 Abierta</span>
-                                <span v-if="g.zona_destino" class="text-gray-500 text-xs">→ {{ g.zona_destino }}</span>
+            <div v-else-if="!guiaGruposPorDia.length" class="text-center py-12 text-gray-500 text-sm">Sin guías que coincidan con el filtro</div>
+
+            <!-- Agrupado por día (Hoy / Ayer / fecha · TZ Perú). [Vue3] :key en el div real, NO en <template v-for> -->
+            <div v-for="grupo in guiaGruposPorDia" :key="grupo.key">
+                <div class="g-day-hdr">
+                    <span class="g-day-hdr-txt">{{ grupo.label }}</span>
+                    <span class="g-day-line"></span>
+                    <span class="g-day-chip">📋 {{ grupo.count }}</span>
+                </div>
+                <div class="space-y-2 pb-2">
+                    <div v-for="g in grupo.items" :key="g.id_guia"
+                         :data-guia-card="g.id_guia"
+                         class="bg-gray-800 rounded-2xl overflow-hidden border-l-4 border border-gray-700 transition-all"
+                         :class="[esGuiaIngreso(g) ? 'border-l-emerald-500' : 'border-l-red-500', g.id_guia === guiaCelebraId ? 'g-card-celebra' : '', g.id_guia === guiaSearchHitId ? 'g-search-hit' : '']">
+                        <!-- Cabecera guía -->
+                        <button @click="expandirGuia(g)" class="w-full flex items-center gap-3 p-3 text-left">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-[10px] font-black px-2 py-0.5 rounded uppercase"
+                                        :class="g.tipo==='SALIDA_JEFA' ? 'bg-amber-900/50 text-amber-300' : g.tipo==='SALIDA_MOVIMIENTO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='SALIDA_VENTAS' ? 'bg-gray-700 text-gray-400' : g.tipo==='SALIDA_DEVOLUCION_WH' ? 'bg-rose-900/50 text-rose-300' : g.tipo==='ENTRADA_TRASLADO' ? 'bg-blue-900/50 text-blue-300' : g.tipo==='ENTRADA_ALMACEN' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-purple-900/50 text-purple-300'">
+                                        {{ g.tipo.replace(/_/g,' ') }}
+                                    </span>
+                                    <!-- [v2.8.30] Candado de estado ABIERTA/CERRADA (réplica WH) · SALIDA_VENTAS = auto, sin candado -->
+                                    <template v-if="!esGuiaVentasAuto(g)">
+                                        <span v-if="esGuiaCerrada(g)" class="g-estado g-estado-cerrada" title="Guía cerrada"><span class="g-estado-dot"></span>🔒 Cerrada</span>
+                                        <span v-else-if="esGuiaAbierta(g)" class="g-estado g-estado-abierta" title="Guía abierta"><span class="g-estado-dot"></span>◌ Abierta</span>
+                                    </template>
+                                    <span v-if="g.zona_destino" class="text-gray-500 text-xs">→ {{ g.zona_destino }}</span>
+                                </div>
+                                <p class="text-gray-400 text-xs mt-0.5 truncate">{{ g.id_guia }} · {{ g.vendedor }}</p>
+                                <p v-if="g.observacion" class="text-gray-500 text-xs truncate">{{ g.observacion }}</p>
                             </div>
-                            <p class="text-gray-400 text-xs mt-0.5">{{ g.id_guia }} · {{ g.vendedor }}</p>
-                            <p v-if="g.observacion" class="text-gray-500 text-xs truncate">{{ g.observacion }}</p>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <p class="text-gray-400 text-xs">{{ g.fecha ? new Date(g.fecha).toLocaleDateString('es-PE') : '' }}</p>
-                        </div>
-                    </button>
-                    <!-- Items expandidos -->
-                    <div v-if="guiaDetallando?.id_guia === g.id_guia" class="border-t border-gray-700 px-4 py-3">
-                        <div v-if="!guiaDetalle.length" class="text-gray-500 text-xs text-center py-2">Cargando...</div>
-                        <div v-for="it in guiaDetalle" :key="it.cod_barras" class="flex justify-between py-1 text-sm">
-                            <span class="text-gray-300">{{ getNombrePres(it.cod_barras) }}</span>
-                            <span class="font-black" :class="g.tipo.startsWith('SALIDA') ? 'text-red-400' : 'text-emerald-400'">{{ g.tipo.startsWith('SALIDA') ? '-' : '+' }}{{ fmtCantGuia(it.cantidad) }}</span>
-                        </div>
-                        <div class="mt-3 flex gap-2">
-                            <button @click="imprimirGuia(g)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                                Imprimir 80mm
-                            </button>
-                            <!-- [v2.8.30] Reabrir guía cerrada (requiere clave admin) → me.reabrir_guia_zona (+30 min) -->
-                            <button v-if="esGuiaReabrible(g)" @click="reabrirGuia(g)" :disabled="reabriendoGuiaId === g.id_guia"
-                                    class="flex-1 bg-amber-600/80 hover:bg-amber-500 disabled:bg-amber-900/40 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 018 0m-9 4h10a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2v-5a2 2 0 012-2z"></path></svg>
-                                {{ reabriendoGuiaId === g.id_guia ? 'Reabriendo...' : '🔓 Reabrir' }}
-                            </button>
-                            <!-- [CUTOVER] Cerrar guía ABIERTA → aplica stock una vez (botón mínimo; hold-to-confirm = siguiente tanda) -->
-                            <button v-if="esGuiaAbierta(g)" @click="cerrarGuia(g)" :disabled="cerrandoGuiaId === g.id_guia"
-                                    class="flex-1 bg-emerald-600/80 hover:bg-emerald-500 disabled:bg-emerald-900/40 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                                {{ cerrandoGuiaId === g.id_guia ? 'Cerrando...' : '🔒 Cerrar' }}
-                            </button>
+                            <div class="text-right shrink-0">
+                                <p class="text-gray-300 text-xs font-bold">{{ guiaHora(g.fecha) }}</p>
+                                <p class="text-gray-500 text-[10px]">{{ g.fecha ? new Date(g.fecha).toLocaleDateString('es-PE') : '' }}</p>
+                            </div>
+                        </button>
+                        <!-- Items expandidos -->
+                        <div v-if="guiaDetallando?.id_guia === g.id_guia" class="border-t border-gray-700 px-4 py-3">
+                            <div v-if="!guiaDetalle.length" class="text-gray-500 text-xs text-center py-2">Cargando...</div>
+                            <div v-for="it in guiaDetalle" :key="it.cod_barras" class="flex justify-between py-1 text-sm">
+                                <span class="text-gray-300">{{ getNombrePres(it.cod_barras) }}</span>
+                                <span class="font-black" :class="esGuiaIngreso(g) ? 'text-emerald-400' : 'text-red-400'">{{ esGuiaIngreso(g) ? '+' : '-' }}{{ fmtCantGuia(it.cantidad) }}</span>
+                            </div>
+                            <div class="mt-3 flex gap-2">
+                                <button @click="imprimirGuia(g)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                                    Imprimir 80mm
+                                </button>
+                                <!-- [v2.8.30] Reabrir guía cerrada (requiere clave admin) → me.reabrir_guia_zona (+30 min) -->
+                                <button v-if="esGuiaReabrible(g) && !esGuiaVentasAuto(g)" @click="reabrirGuia(g)" :disabled="reabriendoGuiaId === g.id_guia"
+                                        class="flex-1 bg-amber-600/80 hover:bg-amber-500 disabled:bg-amber-900/40 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 018 0m-9 4h10a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2v-5a2 2 0 012-2z"></path></svg>
+                                    {{ reabriendoGuiaId === g.id_guia ? 'Reabriendo...' : '🔓 Reabrir' }}
+                                </button>
+                                <!-- [v2.8.39] Cerrar guía ABIERTA — HOLD-TO-CONFIRM (mantén ~850ms) → aplica stock 1 vez -->
+                                <button v-if="esGuiaAbierta(g) && !esGuiaVentasAuto(g)"
+                                        data-guia-hold
+                                        @pointerdown="cerrarHoldStart(g, $event)" @pointerup="cerrarHoldEnd" @pointerleave="cerrarHoldEnd" @pointercancel="cerrarHoldEnd"
+                                        @contextmenu.prevent
+                                        :disabled="cerrandoGuiaId === g.id_guia || esGuiaLocalEnVuelo(g)"
+                                        class="g-hold-btn flex-1 bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 select-none touch-none active:scale-95">
+                                    <span data-guia-hold-fill class="g-hold-fill"></span>
+                                    <span data-guia-hold-lbl class="g-hold-lbl flex items-center gap-1.5">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        {{ cerrandoGuiaId === g.id_guia ? 'Cerrando...' : (esGuiaLocalEnVuelo(g) ? 'Sincronizando…' : '🔒 Cerrar guía') }}
+                                    </span>
+                                </button>
+                            </div>
+                            <p v-if="esGuiaAbierta(g) && !esGuiaVentasAuto(g)" class="text-[10px] text-emerald-400/70 text-center mt-1.5">Mantén presionado para cerrar</p>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- [v2.8.39] ─── Banner UNDO de borrado de item (4s, réplica WH) ─── -->
+        <div v-if="guiaUndo && guiaFlujo === 'form'"
+             class="g-undo-banner absolute bottom-24 left-4 right-20 bg-gray-800 border border-gray-600 rounded-2xl shadow-2xl overflow-hidden z-30">
+            <div class="flex items-center gap-3 px-4 py-3">
+                <span class="text-xl shrink-0">🗑️</span>
+                <p class="flex-1 min-w-0 text-white text-sm font-bold truncate">Quitaste <span class="text-amber-300">{{ guiaUndo.item.nombre }}</span></p>
+                <button @click="deshacerQuitarItem" class="shrink-0 bg-amber-500 text-white font-black text-xs px-4 py-2 rounded-xl active:scale-95">Deshacer</button>
+            </div>
+            <div class="h-1 bg-amber-500 g-undo-bar"></div>
         </div>
 
         <!-- ─── Botón flotante de comentario (solo en paso form) ─── -->
@@ -7349,6 +7444,12 @@
         const guiaDetalle = ref([]); // items del guiaDetallando
         const reabriendoGuiaId = ref(null); // [v2.8.30] id de la guía que se está reabriendo (lock UI)
         const cerrandoGuiaId = ref(null);   // [CUTOVER] id de la guía que se está cerrando (lock UI)
+        // [v2.8.39] Historial estilo WH: filtro + búsqueda + celebración + undo
+        const guiaFiltro = ref('todos');    // 'todos' | 'ingreso' | 'salida' | 'abiertas'
+        const guiaBusqHist = ref('');       // texto de búsqueda en historial
+        const guiaCelebraId = ref(null);    // id de la guía recién creada → glow de celebración
+        const guiaSearchHitId = ref(null);  // id de la guía resaltada por la búsqueda
+        const guiaUndo = ref(null);         // { item, idx, timer } para deshacer borrado (4s)
         const guiaCamara = ref(false);
         let html5QrGuia = null;
         // Cajero activo en zona (para bloquear ventas sin cajero)
@@ -9790,6 +9891,23 @@
                     setTimeout(() => { try { row.classList.remove('g-row-glow'); } catch(_){} }, 950);
                 } catch(_){}
             });
+        };
+
+        // [v2.8.39] Whoosh descendente para BORRAR item de guía (réplica WH delete).
+        const playWhooshGuia = () => {
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = _audioCtx(); if (!ctx) return;
+                if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination);
+                o.type = 'sawtooth';
+                o.frequency.setValueAtTime(620, ctx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(160, ctx.currentTime + 0.22);
+                g.gain.setValueAtTime(0.22, ctx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.24);
+                o.start(); o.stop(ctx.currentTime + 0.26);
+            } catch(_){}
         };
 
         // [v2.5.42] Sonido cashRing — beep corto y agradable cuando aparece
@@ -17391,6 +17509,9 @@
             guiaSubtipo.value = '';
             guiaZonaDestino.value = '';
             guiaFlujo.value = 'tipo';
+            // [v2.8.39] confirmar cualquier undo de borrado pendiente (el item ya salió)
+            if (guiaUndo.value && guiaUndo.value.timer) { clearTimeout(guiaUndo.value.timer); }
+            guiaUndo.value = null;
             if (camaraGuiaAbierta.value) toggleCamaraGuia();
         };
 
@@ -17788,7 +17909,32 @@
             guiaBusq.value = '';
         };
 
-        const quitarItemGuia = (idx) => { guiaItems.value.splice(idx, 1); };
+        // [v2.8.39] Borrar item de la guía en curso con UNDO de 4s (whoosh + haptic, réplica WH).
+        //   El item sale al instante (optimista); un banner ofrece deshacer durante 4s. Si pasa
+        //   el tiempo, el borrado queda firme. Si había otro undo pendiente, se confirma primero.
+        const quitarItemGuia = (idx) => {
+            const item = guiaItems.value[idx];
+            if (!item) return;
+            // confirma cualquier undo previo (sin re-insertar el anterior)
+            if (guiaUndo.value && guiaUndo.value.timer) { clearTimeout(guiaUndo.value.timer); }
+            guiaItems.value.splice(idx, 1);
+            try { playWhooshGuia(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate([12, 30]); } catch(_){}
+            const timer = setTimeout(() => { if (guiaUndo.value && guiaUndo.value.timer === timer) guiaUndo.value = null; }, 4000);
+            guiaUndo.value = { item: { ...item }, idx, timer };
+        };
+        const deshacerQuitarItem = () => {
+            const u = guiaUndo.value;
+            if (!u) return;
+            clearTimeout(u.timer);
+            const at = Math.min(u.idx, guiaItems.value.length);
+            guiaItems.value.splice(at, 0, u.item);
+            guiaUndo.value = null;
+            try { playBeepOK(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate(20); } catch(_){}
+            // re-glow de la fila restaurada
+            nextTick(() => { try { _sensorialGuiaAutoSum(u.item.cod_barras); } catch(_){} });
+        };
 
         const fmtCantGuia = (c) => {
             const n = parseFloat(c) || 0;
@@ -17799,7 +17945,7 @@
         // true mientras haya >=1 guía sincronizándose, solo para el guard de
         // sincronizarCatalogoBase. NO bloquea el botón — el form ya fue reseteado.
         let _guiasInFlight = 0;
-        const _postGuiaBackground = async (payload, destinoSnap) => {
+        const _postGuiaBackground = async (payload, destinoSnap, localId) => {
             _guiasInFlight++;
             procesandoGuia.value = true;
             try {
@@ -17814,10 +17960,24 @@
                         const d = await res.json();
                         if (d.status === 'success') {
                             exito = true;
+                            // [v2.8.39] Reconciliar la guía optimista local con el idGuia + estado REAL
+                            //   que devuelve GAS (ABIERTA si el flag de ciclo está ON; sin estado = legacy →
+                            //   CONFIRMADO). Así la card deja de ser 'G-LOCAL-…' y muestra el estado correcto
+                            //   sin parpadeo, y el merge-guard ya no la trata como huérfana en vuelo.
+                            if (localId && d.idGuia) {
+                                const gi = guiaHistorial.value.findIndex(x => x.id_guia === localId);
+                                if (gi >= 0) {
+                                    // GAS devuelve estado='ABIERTA' solo con el flag de ciclo ON (registrarGuiaAbierta);
+                                    // legacy registrarGuia NO manda estado → CONFIRMADO (evita quedar en ABIERTA falso con flag OFF).
+                                    const estadoReal = d.estado || 'CONFIRMADO';
+                                    guiaHistorial.value[gi] = { ...guiaHistorial.value[gi], id_guia: d.idGuia, estado: estadoReal };
+                                    try { lsSet('mosexpress_guias_' + payload.zona, JSON.stringify(guiaHistorial.value)); } catch(_){}
+                                }
+                            }
                             const msg = d.idGuiaEntrada
                                 ? `${d.idGuia} + traslado a ${destinoSnap} confirmados`
-                                : `${d.idGuia} confirmada`;
-                            agregarToast('Guía registrada ✓', msg);
+                                : `${d.idGuia} registrada`;
+                            agregarToast('Guía sincronizada ✓', msg);
                             if (modoGuias.value) listarGuiasHistorial();
                         }
                     } catch(e) { /* reintenta */ }
@@ -17831,10 +17991,30 @@
             }
         };
 
+        // [v2.8.39] Shake + warn + vibrate en validación fallida (réplica WH _cgFeedbackBloqueo).
+        // Sacude el botón de confirmar del flujo activo, suena alerta y vibra.
+        const _guiaShakeConfirmar = () => {
+            try { playBeepError?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate([60, 80, 60]); } catch(_){}
+            nextTick(() => {
+                document.querySelectorAll('[data-guia-confirmar]').forEach(btn => {
+                    btn.classList.remove('g-shake'); void btn.offsetWidth; btn.classList.add('g-shake');
+                    setTimeout(() => { try { btn.classList.remove('g-shake'); } catch(_){} }, 500);
+                });
+            });
+        };
+
         const confirmarGuia = () => {
-            if (!guiaItems.value.length || !guiaZona.value) return;
+            if (!guiaItems.value.length) { _guiaShakeConfirmar(); agregarToast('Faltan productos', 'Escanea al menos un producto', 'warning'); return; }
+            if (!guiaZona.value) { _guiaShakeConfirmar(); return; }
             if (guiaSubtipo.value === 'SALIDA_MOVIMIENTO' && !guiaZonaDestino.value) {
-                agregarToast('Error', 'Selecciona la zona destino del movimiento');
+                _guiaShakeConfirmar();
+                agregarToast('Falta zona destino', 'Selecciona la zona destino del movimiento', 'warning');
+                return;
+            }
+            if (!puedeConfirmarDevolucion.value) {
+                _guiaShakeConfirmar();
+                agregarToast('Devolución incompleta', 'Marca el estado (y foto/nota) de cada producto', 'warning');
                 return;
             }
 
@@ -17878,26 +18058,39 @@
             // [v2.7.8] lsSet con GC seguro — no destruye pending_sales/fantasma/carrito
             lsSet('mosexpress_stock_zonas', JSON.stringify(stockZonas.value));
 
-            // 2. Entrada optimista al historial local (visible al instante)
+            // 2. Entrada optimista al historial local (visible al instante).
+            //    [v2.8.39] Estado optimista espejando el modelo de ciclo: las MANUALES
+            //    (jefa/movimiento/entrada-almacén/libre/devolución-WH) nacen ABIERTA cuando el
+            //    flag ME_GUIAS_CICLO_ABIERTA está ON. Como el front no conoce el flag, mostramos
+            //    ABIERTA optimista y reconciliamos con el `estado` REAL que devuelve el POST
+            //    (legacy registrarGuia no manda estado → cae a CONFIRMADO; el refresh confirma).
+            const _localId = 'G-LOCAL-' + Date.now();
+            const _esManualCiclo = ['SALIDA_JEFA','SALIDA_MOVIMIENTO','SALIDA_DEVOLUCION_WH','ENTRADA_ALMACEN','ENTRADA_LIBRE'].includes(subtipoSnap);
             const _guiaOpt = {
-                id_guia: 'G-LOCAL-' + Date.now(),
+                id_guia: _localId,
                 fecha: new Date().toISOString(),
                 vendedor: config.value.vendedor,
                 zona: zonaSnap,
                 tipo: subtipoSnap,
                 observacion: payload.observacion || '',
                 zona_destino: destinoSnap,
-                estado: 'CONFIRMADO'
+                estado: _esManualCiclo ? 'ABIERTA' : 'CONFIRMADO'
             };
             guiaHistorial.value = [_guiaOpt, ...guiaHistorial.value];
             lsSet('mosexpress_guias_' + zonaSnap, JSON.stringify(guiaHistorial.value));
-            agregarToast('Guía enviada', 'Registrando en segundo plano...');
+
+            // [v2.8.39] CELEBRAR al crear: chime + glow en la card nueva + haptic (réplica WH).
+            try { playVentaOK?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate([18, 40, 18, 40, 60]); } catch(_){}
+            guiaCelebraId.value = _localId;
+            setTimeout(() => { if (guiaCelebraId.value === _localId) guiaCelebraId.value = null; }, 2400);
+            agregarToast('Guía creada ✓', _esManualCiclo ? 'Abierta · ciérrala cuando termines de contar' : 'Registrando en segundo plano...', 'success');
 
             // 3. Liberar el form inmediatamente — usuario puede agregar otra guía sin esperar
             _resetGuiaForm();
 
             // 4. POST a GAS fire-and-forget (corre en background, no bloquea el form)
-            _postGuiaBackground(payload, destinoSnap);
+            _postGuiaBackground(payload, destinoSnap, _localId);
 
             // [v2.7.6/9] DEVOLUCION_WH: notifica al backend WH vía MOS bridge
             // Loguea ampliamente para que el usuario pueda ver dónde está el fallo
@@ -17953,12 +18146,42 @@
             }
         };
 
+        // [v2.8.39] MERGE-GUARD del historial (patrón patchGuiaCache de WH): el refresh NO
+        // debe (a) hacer desaparecer una guía optimista local 'G-LOCAL-…' que el server aún
+        // no devuelve, ni (b) pisar un estado que el usuario acaba de patchear localmente
+        // (cerrar/reabrir/celebrar) mientras la lectura del backend va con cache/latencia.
+        // Estrategia: partimos de la lista del server; reinyectamos al frente los locales
+        // en vuelo que el server no trae; preferimos el estado MÁS AVANZADO por id_guia
+        // (CERRADA gana a ABIERTA gana a sin-estado) para no "reabrir" visualmente una guía
+        // que el usuario acaba de cerrar (el backend es idempotente; la verdad converge).
+        const _rankEstadoGuia = (e) => ({ 'CERRADA': 3, 'CONFIRMADO': 3, 'ABIERTA': 2 }[_normEstadoGuia({ estado: e })] || 1);
+        const _mergeGuiasHistorial = (serverGuias) => {
+            const prev = guiaHistorial.value || [];
+            const prevById = {};
+            prev.forEach(g => { if (g && g.id_guia) prevById[g.id_guia] = g; });
+            const srv = (serverGuias || []).map(g => {
+                const local = prevById[g.id_guia];
+                // si el local tiene un estado más avanzado (cerró/confirmó) y el server aún
+                // refleja el anterior, conservamos el avance local (idempotente en backend).
+                if (local && _rankEstadoGuia(local.estado) > _rankEstadoGuia(g.estado)) {
+                    return { ...g, estado: local.estado };
+                }
+                return g;
+            });
+            const srvIds = new Set(srv.map(g => g.id_guia));
+            // optimistas locales 'G-LOCAL-…' que el server todavía no reconcilió → al frente
+            const huerfanosLocales = prev.filter(g => g && _esGuiaLocalEnVuelo(g) && !srvIds.has(g.id_guia));
+            return [...huerfanosLocales, ...srv];
+        };
+
         const listarGuiasHistorial = async () => {
             const cacheKey = 'mosexpress_guias_' + guiaZona.value;
-            // Mostrar cache inmediatamente si existe
+            // Mostrar cache inmediatamente si existe (sin pisar lo que ya hay en memoria fresco)
             try {
-                const cached = localStorage.getItem(cacheKey);
-                if (cached) guiaHistorial.value = JSON.parse(cached);
+                if (!guiaHistorial.value.length) {
+                    const cached = localStorage.getItem(cacheKey);
+                    if (cached) guiaHistorial.value = JSON.parse(cached);
+                }
             } catch(e) {}
             // Spinner solo si no hay nada que mostrar
             if (!guiaHistorial.value.length) guiaHistorialCargando.value = true;
@@ -17966,8 +18189,8 @@
                 const r = await fetch(`${API_URL}?accion=listar_guias&zona=${encodeURIComponent(guiaZona.value)}`);
                 const d = await r.json();
                 if (d.status === 'success') {
-                    guiaHistorial.value = d.guias;
-                    localStorage.setItem(cacheKey, JSON.stringify(d.guias));
+                    guiaHistorial.value = _mergeGuiasHistorial(d.guias);   // [v2.8.39] merge-guard
+                    localStorage.setItem(cacheKey, JSON.stringify(guiaHistorial.value));
                 }
             } catch(e) { /* usa cache */ }
             guiaHistorialCargando.value = false;
@@ -17983,6 +18206,105 @@
                 if (d.status === 'success') guiaDetalle.value = d.items;
             } catch(e) {}
         };
+
+        // ════════════════════════════════════════════════════════════════════════════
+        // [v2.8.39] HISTORIAL ESTILO WH — día (Hoy/Ayer/fecha TZ Perú) + filtros + búsqueda
+        // ════════════════════════════════════════════════════════════════════════════
+        // Día en TZ America/Lima como 'YYYY-MM-DD' (espeja _diaPeru de WH y el backend; evita
+        // desync si el dispositivo está en otra zona horaria). NO usa getDate() local.
+        const _diaPeru = (fechaInput) => {
+            try {
+                const d = fechaInput ? new Date(fechaInput) : new Date();
+                if (isNaN(d.getTime())) return '0000-00-00';
+                // en-CA con timeZone Lima → 'YYYY-MM-DD' directo
+                return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+            } catch (_) { return '0000-00-00'; }
+        };
+        const _hoyPeru  = () => _diaPeru(new Date());
+        const _ayerPeru = () => _diaPeru(new Date(Date.now() - 86400000));
+        const _mesesAbrev = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+        // Etiqueta legible de un día 'YYYY-MM-DD' → Hoy / Ayer / "5 jun" / "05/06/2025"
+        const _gDayLabel = (key) => {
+            if (!key || key === '0000-00-00') return 'Sin fecha';
+            const hoy = _hoyPeru();
+            if (key === hoy) return 'Hoy';
+            if (key === _ayerPeru()) return 'Ayer';
+            const [yyyy, mm, dd] = key.split('-');
+            return yyyy === hoy.slice(0, 4)
+                ? `${parseInt(dd, 10)} ${_mesesAbrev[parseInt(mm, 10) - 1]}`
+                : `${dd}/${mm}/${yyyy}`;
+        };
+        // Hora HH:MM en TZ Perú para mostrar en cada card.
+        const guiaHora = (fecha) => {
+            if (!fecha) return '';
+            try {
+                const d = new Date(fecha);
+                if (isNaN(d.getTime())) return '';
+                return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+            } catch (_) { return ''; }
+        };
+        // ¿La guía es de tipo INGRESO (entrada) o SALIDA? (color-coded en la UI)
+        const esGuiaIngreso = (g) => !String(g && g.tipo || '').toUpperCase().startsWith('SALIDA');
+        // SALIDA_VENTAS es automática → fuera del ciclo abrir/cerrar (no botón cerrar/reabrir).
+        const esGuiaVentasAuto = (g) => String(g && g.tipo || '').toUpperCase() === 'SALIDA_VENTAS';
+
+        // Historial filtrado por chip (Todos / Ingreso / Salida / ◌ Abiertas) + búsqueda.
+        const guiaHistorialFiltrado = computed(() => {
+            const q = String(guiaBusqHist.value || '').trim().toLowerCase();
+            return guiaHistorial.value.filter(g => {
+                // filtro de naturaleza/estado
+                if (guiaFiltro.value === 'ingreso' && !esGuiaIngreso(g)) return false;
+                if (guiaFiltro.value === 'salida'  &&  esGuiaIngreso(g)) return false;
+                if (guiaFiltro.value === 'abiertas' && !esGuiaAbierta(g)) return false;
+                // búsqueda libre (id, tipo, vendedor, observación, zona destino)
+                if (q) {
+                    const hay = [g.id_guia, g.tipo, g.vendedor, g.observacion, g.zona_destino]
+                        .map(x => String(x || '').toLowerCase()).join(' ');
+                    if (hay.indexOf(q) < 0) return false;
+                }
+                return true;
+            });
+        });
+
+        // Agrupación por día (Hoy/Ayer/fecha), ordenada desc. [{key,label,items,count}]
+        const guiaGruposPorDia = computed(() => {
+            const map = {};
+            guiaHistorialFiltrado.value.forEach(g => {
+                const k = (g.fecha && _diaPeru(g.fecha)) || '0000-00-00';
+                if (!map[k]) map[k] = [];
+                map[k].push(g);
+            });
+            return Object.keys(map).sort((a, b) => b.localeCompare(a)).map(k => {
+                // dentro del día, más reciente primero
+                const items = map[k].slice().sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+                return { key: k, label: _gDayLabel(k), items, count: items.length };
+            });
+        });
+
+        const guiaContadores = computed(() => {
+            const all = guiaHistorial.value;
+            return {
+                todos:    all.length,
+                ingreso:  all.filter(esGuiaIngreso).length,
+                salida:   all.filter(g => !esGuiaIngreso(g)).length,
+                abiertas: all.filter(esGuiaAbierta).length
+            };
+        });
+
+        // Búsqueda con scroll-to + highlight: salta a la 1ra coincidencia y la resalta.
+        const guiaBuscarHistorial = () => {
+            const lista = guiaHistorialFiltrado.value;
+            if (!lista.length) { try { playBeepError(); } catch(_){} return; }
+            const target = lista[0];
+            guiaSearchHitId.value = target.id_guia;
+            try { playBeepOK(); } catch(_){}
+            nextTick(() => {
+                const el = document.querySelector(`[data-guia-card="${CSS.escape(String(target.id_guia))}"]`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => { if (guiaSearchHitId.value === target.id_guia) guiaSearchHitId.value = null; }, 2900);
+            });
+        };
+        const setGuiaFiltro = (f) => { guiaFiltro.value = f; try { if (navigator.vibrate) navigator.vibrate(10); } catch(_){} try { playBeepSuave?.(); } catch(_){} };
 
         // ════════════════════════════════════════════════════════════════════════════
         // [v2.8.30] CANDADO DE GUÍAS — estado ABIERTA/CERRADA + reabrir con clave admin
@@ -18039,14 +18361,20 @@
         };
 
         // [CUTOVER] Cierra una guía ABIERTA → aplica stock UNA vez (OUT origen + IN espejo si traslado)
-        // vía me.cerrar_guia_zona (wrapper idempotente). Botón mínimo de esta tanda; el hold-to-confirm
-        // + efectos van en la siguiente. Optimista: parchea estado local a CERRADA antes del refresh.
-        // Idempotente en backend → un doble-tap NO dobla el stock.
-        const cerrarGuia = async (guia) => {
+        // vía me.cerrar_guia_zona (wrapper idempotente). Optimista: parchea estado local a CERRADA
+        // al instante; rollback a ABIERTA si la RPC falla. Idempotente en backend → doble-tap NO dobla.
+        const _ejecutarCierreGuia = async (guia) => {
             if (!guia || !guia.id_guia) return;
             if (!esGuiaAbierta(guia)) { agregarToast('Guía no abierta', 'No requiere cerrar'); return; }
             if (cerrandoGuiaId.value === guia.id_guia) return;
+            // Guía local aún sin reconciliar con el backend → no se puede cerrar todavía.
+            if (_esGuiaLocalEnVuelo(guia)) { agregarToast('Espera un momento', 'La guía aún se está registrando…', 'warning'); return; }
             cerrandoGuiaId.value = guia.id_guia;
+            // Optimista: cierra visual al instante.
+            const gi = guiaHistorial.value.findIndex(x => x.id_guia === guia.id_guia);
+            const estadoPrev = gi >= 0 ? guiaHistorial.value[gi].estado : 'ABIERTA';
+            if (gi >= 0) guiaHistorial.value[gi] = { ...guiaHistorial.value[gi], estado: 'CERRADA' };
+            try { lsSet('mosexpress_guias_' + guiaZona.value, JSON.stringify(guiaHistorial.value)); } catch(_){}
             try {
                 const token = await _mintTokenSB();
                 const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/cerrar_guia_zona`, {
@@ -18057,18 +18385,87 @@
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const d = await res.json();
                 if (!d || !d.ok) throw new Error((d && d.error) || 'RPC rechazó');
-                const gi = guiaHistorial.value.findIndex(x => x.id_guia === guia.id_guia);
-                if (gi >= 0) guiaHistorial.value[gi] = { ...guiaHistorial.value[gi], estado: 'CERRADA' };
-                try { lsSet('mosexpress_guias_' + guiaZona.value, JSON.stringify(guiaHistorial.value)); } catch(_){}
-                try { playVentaOK?.(); } catch(_){}
+                _cgFeedbackExito();   // chime done + haptic + label "¡Cerrada!"
                 agregarToast('🔒 Guía cerrada', guia.id_guia + ' · stock aplicado', 'success', 4000);
                 setTimeout(() => { if (modoGuias.value) listarGuiasHistorial(); }, 2500);
             } catch (e) {
+                // Rollback del optimista.
+                const gj = guiaHistorial.value.findIndex(x => x.id_guia === guia.id_guia);
+                if (gj >= 0) guiaHistorial.value[gj] = { ...guiaHistorial.value[gj], estado: estadoPrev };
+                try { lsSet('mosexpress_guias_' + guiaZona.value, JSON.stringify(guiaHistorial.value)); } catch(_){}
+                try { playBeepError?.(); } catch(_){}
+                try { if (navigator.vibrate) navigator.vibrate([60, 80, 60]); } catch(_){}
                 agregarToast('No se pudo cerrar', String(e.message || e), 'warning', 6000);
             } finally {
                 cerrandoGuiaId.value = null;
             }
         };
+
+        // ── [v2.8.39] HOLD-TO-CONFIRM del cierre (réplica WH cerrarHold*) ──
+        // Mantener presionado ~850ms con fill animado + haptic creciente (8→12→[18,30,18]);
+        // soltar antes = cancela (a prueba de toques accidentales). prefers-reduced-motion →
+        // confirmación inmediata. Triple feedback: sonoro (click/done) + visual (fill) + háptico.
+        const _CG_HOLD_MS = 850;
+        let _cgRAF = null, _cgStart = 0, _cgFired = false, _cgGuia = null, _cgHap50 = false;
+        const _cgEl = () => document.querySelector('[data-guia-hold]');
+        const _cgFillEl = () => document.querySelector('[data-guia-hold-fill]');
+        const _cgLblEl  = () => document.querySelector('[data-guia-hold-lbl]');
+
+        const cerrarHoldStart = (guia, ev) => {
+            try { ev && ev.preventDefault && ev.preventDefault(); } catch(_){}
+            if (!guia || !esGuiaAbierta(guia) || _esGuiaLocalEnVuelo(guia)) return;
+            if (cerrandoGuiaId.value) return;
+            cerrarHoldCancel();
+            _cgFired = false; _cgGuia = guia; _cgHap50 = false;
+            _cgStart = (window.performance && performance.now) ? performance.now() : Date.now();
+            const btn = _cgEl(); if (btn) btn.classList.add('holding');
+            const lbl = _cgLblEl(); if (lbl) lbl.textContent = 'Mantén…';
+            try { playBeepSuave?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate(8); } catch(_){}
+            const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+            if (reduce) { _cgComplete(); return; }
+            const fill = _cgFillEl();
+            const tick = () => {
+                const now = (window.performance && performance.now) ? performance.now() : Date.now();
+                const p = Math.min(1, (now - _cgStart) / _CG_HOLD_MS);
+                if (fill) fill.style.transform = 'scaleX(' + p + ')';
+                if (p > 0.5 && !_cgHap50) { _cgHap50 = true; try { if (navigator.vibrate) navigator.vibrate(12); } catch(_){} }
+                if (p >= 1) { _cgComplete(); return; }
+                _cgRAF = requestAnimationFrame(tick);
+            };
+            _cgRAF = requestAnimationFrame(tick);
+        };
+        const cerrarHoldEnd = () => { if (_cgFired) return; cerrarHoldCancel(); };
+        const cerrarHoldCancel = () => {
+            if (_cgRAF) { cancelAnimationFrame(_cgRAF); _cgRAF = null; }
+            const btn = _cgEl();
+            if (btn) btn.classList.remove('holding');
+            const fill = _cgFillEl(); if (fill && !_cgFired) fill.style.transform = 'scaleX(0)';
+            const lbl = _cgLblEl(); if (lbl && !_cgFired) lbl.textContent = '🔒 Cerrar guía';
+            _cgHap50 = false;
+        };
+        const _cgComplete = () => {
+            if (_cgFired) return;
+            _cgFired = true;
+            if (_cgRAF) { cancelAnimationFrame(_cgRAF); _cgRAF = null; }
+            const btn = _cgEl(); if (btn) btn.classList.remove('holding');
+            try { if (navigator.vibrate) navigator.vibrate([18, 30, 18]); } catch(_){}
+            const g = _cgGuia; _cgGuia = null;
+            if (g) _ejecutarCierreGuia(g);
+        };
+        const _cgFeedbackExito = () => {
+            try { playVentaOK?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate([18, 40, 18, 40, 60]); } catch(_){}
+            const btn = _cgEl();
+            if (btn) {
+                btn.classList.add('g-hold-done');
+                const lbl = _cgLblEl(); if (lbl) lbl.textContent = '¡Cerrada!';
+                setTimeout(() => { try { btn.classList.remove('g-hold-done'); } catch(_){} }, 1200);
+            }
+        };
+
+        // Fallback NO-hold (accesibilidad / clic simple): cierra con la misma lógica idempotente.
+        const cerrarGuia = (guia) => _ejecutarCierreGuia(guia);
 
         const imprimirGuia = async (guia) => {
             if (!config.value.estacion?.PrintNode_ID) { agregarToast('Error', 'Sin impresora configurada'); return; }
@@ -18430,6 +18827,11 @@
           // [v2.8.30] UX moderna + candado de guías
           guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, esGuiaReabrible, reabrirGuia, reabriendoGuiaId,
           cerrarGuia, cerrandoGuiaId,
+          // [v2.8.39] Historial estilo WH: día/filtros/búsqueda · hold-to-confirm · undo · helpers
+          guiaFiltro, guiaBusqHist, guiaCelebraId, guiaSearchHitId, guiaUndo,
+          guiaGruposPorDia, guiaContadores, guiaHora, esGuiaIngreso, esGuiaVentasAuto,
+          guiaBuscarHistorial, setGuiaFiltro, deshacerQuitarItem,
+          cerrarHoldStart, cerrarHoldEnd, esGuiaLocalEnVuelo: _esGuiaLocalEnVuelo,
           // [BUILD 1] Recibir guía de almacén (WH→ME por escaneo)
           modoRecibirWH, rwPaso, rwIdGuia, rwGuia, rwEscaneadosArr, rwResultado, rwBusq, rwCargando, rwCamara, rwTotalEscaneado,
           abrirRecibirWH, cerrarRecibirWH, rwToggleCamara, rwCargarGuia, rwEscanearItem, rwCerrarIngreso,
