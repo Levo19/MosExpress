@@ -18,7 +18,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.7.82"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.47"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
   <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.71"></script>
   <style>
@@ -8325,6 +8325,18 @@
                 origen:         'ME',
                 unwrapData:     true,
                 endpointPrefix: 'wh_',
+                // [Membretes 100% Supabase] el modal imprime góndola vía Edge print-adhesivo
+                // (mode:'crear-membrete'). Token ME (app=mosExpress). Fallback GAS si flag OFF/falla.
+                edgeCall:       async function(body) {
+                  const token = await _mintTokenSB();
+                  const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/print-adhesivo`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body || {})
+                  }, 150000);
+                  const d = await res.json().catch(() => null);
+                  return (!res.ok || !d) ? { ok: false, error: 'print-adhesivo HTTP ' + res.status } : d;
+                },
                 // [v2.7.51] Provider del catálogo: en ME los productos viven en
                 // db.value.PRODUCTO_BASE (Vue ref, no en window). Pasamos un
                 // callback para que el módulo lo pueda leer.
