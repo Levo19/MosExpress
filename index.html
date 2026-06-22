@@ -6482,7 +6482,7 @@
                         Sis: {{ item.cantSistema }}
                     </p>
                     <input v-model.number="item.cantReal"
-                           type="number" min="0" step="1"
+                           type="number" min="0" step="1" placeholder="contar"
                            :ref="el => { if(el) auditInputRefs[idx] = el }"
                            @input="item.estado = 'pendiente'; if (parseFloat(item.cantReal) !== 0) item.ceroConfirmado = false"
                            @blur="autoGuardarItem(item)"
@@ -18941,7 +18941,7 @@
                 const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === String(r.Cod_Barras));
                 const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
                 const nombre = base ? (base.Nombre + ' · ' + pres.Empaque) : r.Cod_Barras;
-                return { cod_barras: String(r.Cod_Barras), nombre, cantSistema: parseFloat(r.Cantidad) || 0, cantReal: parseFloat(r.Cantidad) || 0, confirmado: false, esCatalogo: false };
+                return { cod_barras: String(r.Cod_Barras), nombre, cantSistema: parseFloat(r.Cantidad) || 0, cantReal: null, confirmado: false, esCatalogo: false };
             });
             if (!auditItems.value.length) agregarToast('Aviso', 'No hay stock registrado en ' + auditZona.value);
         };
@@ -19018,7 +19018,7 @@
             const cantSistema = stockRow ? parseFloat(stockRow.Cantidad) || 0 : 0;
 
             // ── 4. Agregar al tope de la lista (optimista) ──
-            const newItem = { cod_barras: cbFinal, nombre, cantSistema, cantReal: cantSistema, estado: 'pendiente' };
+            const newItem = { cod_barras: cbFinal, nombre, cantSistema, cantReal: null, estado: 'pendiente' };
             playBeepOK();
             auditItems.value.unshift(newItem);
             _guardarAuditHoy();
