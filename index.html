@@ -18,7 +18,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.48"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.310"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
   <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.71"></script>
   <style>
@@ -8395,15 +8395,33 @@
                         precio:      parseFloat((presP && presP.Precio_Venta) || 0) || 0
                       };
                     });
-                    // Equivalencias: Cod_Barras_Real es el código alternativo que el
-                    // operador puede escanear (puede ser un Cod_Barras de otra presentación
-                    // del mismo SKU_Base, o el propio SKU_Base como alias).
-                    var equivalencias = equiv.map(function(e) {
-                      return {
-                        skuBase: e.SKU_Base,
-                        codigoBarra: e.Cod_Barras_Real || e.Cod_Alias || '',
-                        activo: e.Activo === true || String(e.Activo).toUpperCase() === 'TRUE' || e.Activo === 1
-                      };
+                    // Equivalencias [v2.8.50 FIX]: en ME el código que el operador
+                    // ESCANEA vive en Cod_Alias; Cod_Barras_Real es el canónico/skuBase
+                    // al que resuelve (igual que auditEscanear/16122/18245). El mapeo
+                    // viejo exponía codigoBarra=Cod_Barras_Real → al escanear un
+                    // equivalente (que está en Cod_Alias) NUNCA matcheaba → "código no
+                    // encontrado". Ahora emitimos UNA entrada por cada código escaneable
+                    // (alias y real), resuelta al skuBase del producto.
+                    var equivalencias = [];
+                    equiv.forEach(function(e) {
+                      var act = e.Activo === true || String(e.Activo).toUpperCase() === 'TRUE' || e.Activo === 1 || e.Activo === undefined || e.Activo === '';
+                      if (!act) return;
+                      var real  = String(e.Cod_Barras_Real || '').trim();
+                      var alias = String(e.Cod_Alias || '').trim();
+                      // Resolver skuBase destino: SKU_Base si viene; sino el producto
+                      // cuyo codigoBarra/skuBase === Cod_Barras_Real; sino el propio real.
+                      var sku = e.SKU_Base ? String(e.SKU_Base).trim() : '';
+                      if (!sku && real) {
+                        var pr = productos.find(function(p) {
+                          return String(p.codigoBarra) === real || String(p.skuBase) === real;
+                        });
+                        sku = pr ? String(pr.skuBase) : real;
+                      }
+                      if (!sku) return;
+                      // El alias es el código alternativo que se escanea; el real también
+                      // puede serlo (si es un barcode y no el propio skuBase).
+                      if (alias) equivalencias.push({ skuBase: sku, codigoBarra: alias, activo: true });
+                      if (real && real !== alias && real !== sku) equivalencias.push({ skuBase: sku, codigoBarra: real, activo: true });
                     });
                     return { productos: productos, equivalencias: equivalencias, origen: 'ME' };
                   } catch(_) { return null; }
