@@ -1,1 +1,1 @@
-{ "version": "2.8.53", "build": "CERO-GAS auth: _mintTokenSB acuna por Edge mint-me (Supabase, claim app=mosExpress, valida deviceId server-side); GAS MINT_TOKEN queda solo kill-switch. ~17 call-sites heredan el cambio. mint-me probada end-to-end (token aceptado por PostgREST)." }
+{ "version": "2.8.54", "build": "F6 push wiring: ME registra su token FCM directo en Supabase (mos.registrar_push_token) ademas de GAS. Aditivo." }

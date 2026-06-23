@@ -14078,6 +14078,18 @@
                     return;
                 }
 
+                // [F6 push · cero-GAS] Registro directo a Supabase (mos.registrar_push_token). Aditivo al GAS.
+                try {
+                    const _tk = await _mintTokenSB();
+                    await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/registrar_push_token`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: { token, usuario: config.value.vendedor, appOrigen: 'mosExpress', deviceId: devIdReg,
+                            dispositivo: (config.value.estacion?.Estacion_Nombre || 'MosExpress') + ' · ' + navigator.userAgent.substring(0, 80) } })
+                    }, 8000);
+                    console.log('[Push ME] token registrado en Supabase ✅');
+                } catch(eSB) { console.warn('[Push ME] registro Supabase falló:', eSB?.message); }
+
                 // Registrar en MOS GAS con usuario + deviceId
                 try {
                     await fetch(MOS_GAS_URL, {

@@ -68,7 +68,7 @@ self.addEventListener('notificationclick', event => {
 //           → la barra de 4s reinicia en borrados consecutivos; (3) intent-map TTL en el merge-guard
 //           → la REAPERTURA optimista deja de ser revertida por un refresh disparado por otra accion
 //           (simetrico con el cierre). Money-safe: el backend cerrar/reabrir sigue idempotente con lock.
-const VERSION = '2.8.53';
+const VERSION = '2.8.54';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
