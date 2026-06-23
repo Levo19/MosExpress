@@ -1,1 +1,1 @@
-{ "version": "2.8.51", "build": "CPE 100% Supabase: _crearCPEDirecto ahora llama 1 sola RPC me.emitir_cpe_fac (registra venta + emite via capa central fac, atomico, sin GAS ni 3 saltos). Mismo ticket+QR SUNAT. Detras del flag ME_CPE_DIRECTO." }
+{ "version": "2.8.52", "build": "AUTH F1: verificarClaveAdmin Supabase-first (RPC central mos.verificar_clave_admin, gate acepta mosExpress), GAS kill-switch. Helper _verifClaveAdminME normaliza al shape GAS. Las 3 apps validan clave admin por Supabase." }

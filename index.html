@@ -1842,17 +1842,8 @@
           if (err) err.textContent = 'MOS_GAS_URL no configurada — pídelo al master';
           return;
         }
-        const r = await fetch(mosUrl, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'verificarClaveAdmin',
-            clave: clave,
-            accion: 'DESBLOQUEO_HORARIO_ME',
-            appOrigen: 'MosExpress',
-            detalle: 'Habilitación operativa 1 hora pasado el horario'
-          })
-        });
-        const j = await r.json();
+        const j = await _verifClaveAdminME({ clave: clave, accion: 'DESBLOQUEO_HORARIO_ME',
+          appOrigen: 'MosExpress', detalle: 'Habilitación operativa 1 hora pasado el horario' });
         if (!j || !j.data || !j.data.autorizado) {
           if (err) err.textContent = (j && j.data && j.data.error) || 'Clave incorrecta';
           return;
@@ -14503,23 +14494,9 @@
             let resultado = null;
             if (navigator.onLine && !offlineMode.value) {
                 try {
-                    const r = await fetch(MOS_GAS_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            action: 'verificarClaveAdmin',
-                            clave: clave,
-                            accion: accion,
-                            refDocumento: ref,
-                            appOrigen: 'mosExpress',
-                            dispositivo: deviceId.value || '',
-                            // [v2.5.24] Auditoría enriquecida
-                            tier: tier,
-                            cache_hit: 0,
-                            tiempo_verify_ms: tiempo_verify_ms,
-                            deviceId: deviceId.value || ''
-                        })
-                    });
-                    const j = await r.json();
+                    const j = await _verifClaveAdminME({ clave: clave, accion: accion, refDocumento: ref,
+                        appOrigen: 'mosExpress', dispositivo: deviceId.value || '', tier: tier, cache_hit: 0,
+                        tiempo_verify_ms: tiempo_verify_ms, deviceId: deviceId.value || '' });
                     if (j?.ok && j.data) resultado = j.data;
                 } catch(e) { /* fallback offline */ }
             }
@@ -15689,6 +15666,34 @@
             if (!d || !d.ok || !d.token) throw new Error('mint-token: ' + ((d && d.error) || 'sin token'));
             _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 300);
             return d.token;
+        };
+
+        // [AUTH F1] Verificación de clave admin Supabase-first: RPC central mos.verificar_clave_admin
+        // (bcrypt + cascada de rol + auditoría). El gate ya acepta mosExpress (SQL 219). Devuelve la MISMA
+        // shape que el GAS ({ok:true, data:{autorizado,error,...}}) → los call-sites no cambian. GAS solo
+        // kill-switch (sin token/error). Esto saca la auth de ME del camino GAS.
+        const _verifClaveAdminME = async (params) => {
+            try {
+                const token = await _mintTokenSB();
+                const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/verificar_clave_admin`, {
+                    method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Accept-Profile':'mos', 'Content-Profile':'mos', 'Content-Type':'application/json' },
+                    body: JSON.stringify({ p_clave:String(params.clave||''), p_accion:String(params.accion||'GENERICA'),
+                        p_ref:String(params.refDocumento||params.ref||''), p_app:String(params.appOrigen||'mosExpress'),
+                        p_device:String(params.deviceId||params.dispositivo||''), p_detalle:String(params.detalle||''),
+                        p_tier:(params.tier!=null?parseInt(params.tier,10):null), p_cliente_meta:null })
+                }, 8000);
+                if (res.ok) {
+                    const d = await res.json();
+                    if (d && typeof d.ok !== 'undefined') return { ok:true, data:{ autorizado:!!d.autorizado, error:d.error||'',
+                        validadoPor:d.validado_por||'', idPersonal:d.id_personal||'', nombre:d.nombre||'', rol:d.rol||'', nivel:d.nivel } };
+                }
+            } catch(_) { /* → GAS kill-switch */ }
+            try {
+                const r = await fetch((typeof MOS_GAS_URL!=='undefined' && MOS_GAS_URL) || localStorage.getItem('mosexpress_mos_url') || '', {
+                    method:'POST', body: JSON.stringify({ action:'verificarClaveAdmin', ...params }) });
+                return await r.json();
+            } catch(e) { return null; }
         };
 
         // ─────────────────────────────────────────────────────────────────────────────────────────
