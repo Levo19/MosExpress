@@ -8560,7 +8560,7 @@
 
           // Bloqueo remoto del usuario — polling cada 30s + check inicial al cargar
           setTimeout(_checkBloqueoUsuario, 4000);
-          _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 30 * 1000);
+          _intervalBloqueoPoll = setInterval(_checkBloqueoUsuario, 120 * 1000);  // [FIX cuota GAS] 30s→120s: pollea MOS GAS getEstadoBloqueoUsuario; 30s todo el día agotaba urlfetch. 2min de latencia en detectar bloqueo es aceptable (seguridad). TODO: migrar a lectura Supabase (mos.vendedores_me_bloqueados) cuando el write de bloqueo sea coherente.
           // [v2.7.11] Arrancar check de horario cada 5min
           arrancarHorarioCheckInterval();
 

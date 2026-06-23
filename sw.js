@@ -68,7 +68,7 @@ self.addEventListener('notificationclick', event => {
 //           → la barra de 4s reinicia en borrados consecutivos; (3) intent-map TTL en el merge-guard
 //           → la REAPERTURA optimista deja de ser revertida por un refresh disparado por otra accion
 //           (simetrico con el cierre). Money-safe: el backend cerrar/reabrir sigue idempotente con lock.
-const VERSION = '2.8.56';
+const VERSION = '2.8.57';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
@@ -185,8 +185,9 @@ self.addEventListener('fetch', e => {
       return fetch(e.request).then(res => {
         if (!res || res.status !== 200) return res;
         if (res.type !== 'basic' && res.type !== 'cors') return res;
+        if (e.request.method !== 'GET') return res;   // [FIX] Cache.put solo soporta GET (HEAD/POST lanzan)
         const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
+        caches.open(CACHE).then(c => c.put(e.request, clone)).catch(() => {});  // defensivo: nunca uncaught
         return res;
       }).catch(() => Response.error());
     })
