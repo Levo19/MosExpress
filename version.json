@@ -1,1 +1,1 @@
-{ "version": "2.8.55", "build": "F6 espia device ME cero-GAS: _espiaCliPostMOS Supabase-first (mos.espia_sync/push_batch/iniciar_dispositivo/config/subir_respuesta/reneg via mint-me), fallback GAS. Chunk sigue GAS." }
+{ "version": "2.8.56", "build": "FIX operacional: (1) desbloqueo horario llamaba _verifClaveAdminME fuera de scope Vue -> is not defined; ahora GAS directo. (2) estado de impresora dejaba de pollear GAS (agotaba cuota urlfetch -> rompia login/verif) -> ahora Edge printers (op:verify/list). SW HEAD era del SW viejo cacheado." }

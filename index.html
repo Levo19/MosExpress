@@ -1842,10 +1842,16 @@
           if (err) err.textContent = 'MOS_GAS_URL no configurada — pídelo al master';
           return;
         }
-        const j = await _verifClaveAdminME({ clave: clave, accion: 'DESBLOQUEO_HORARIO_ME',
-          appOrigen: 'MosExpress', detalle: 'Habilitación operativa 1 hora pasado el horario' });
-        if (!j || !j.data || !j.data.autorizado) {
-          if (err) err.textContent = (j && j.data && j.data.error) || 'Clave incorrecta';
+        // [FIX scope] Este overlay corre TOP-LEVEL (fuera del closure Vue donde vive _verifClaveAdminME) →
+        // referenciarlo daba "_verifClaveAdminME is not defined". Validamos por GAS directo (mosUrl ya está acá),
+        // tolerante al shape ({autorizado} o {data:{autorizado}}).
+        const _res = await fetch(mosUrl, { method: 'POST', body: JSON.stringify({
+          action: 'verificarClaveAdmin', clave: clave, accion: 'DESBLOQUEO_HORARIO_ME',
+          appOrigen: 'MosExpress', detalle: 'Habilitación operativa 1 hora pasado el horario' }) });
+        const j0 = await _res.json().catch(() => null);
+        const _autorizado = !!(j0 && (j0.autorizado || (j0.data && j0.data.autorizado)));
+        if (!_autorizado) {
+          if (err) err.textContent = (j0 && ((j0.data && j0.data.error) || j0.error)) || 'Clave incorrecta';
           return;
         }
         const hasta = Date.now() + 60 * 60 * 1000;
@@ -7195,16 +7201,27 @@
                 return;
             }
             try {
-                const r = await fetch(`${API_URL}?accion=estado_impresoras&ids=${pid}`);
-                if (!r.ok) {
-                    meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'HTTP ' + r.status + ' del GAS' };
-                    console.warn('[ME chip imp] fetch HTTP', r.status, 'pid=', pid);
-                    return;
-                }
-                const d = await r.json();
-                if (d.status !== 'success') {
-                    meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'GAS error: ' + (d.mensaje || 'desconocido') };
-                    console.warn('[ME chip imp] GAS error:', d);
+                // [FIX cuota GAS] Estado de impresora por Edge `printers` (op:verify), NO por GAS. El polling cada
+                // 30s a estado_impresoras estaba AGOTANDO la cuota diaria de urlfetch de GAS → rompía TODOS los
+                // fetch a GAS (login fallback, verificarClaveAdmin → "error de red"). El Edge pega a PrintNode
+                // directo (sin cuota GAS). Si el Edge falla → 'checking' (NO caer a GAS, para no re-quemar cuota).
+                let d;
+                try {
+                    const _tk = await _mintTokenSB();
+                    const _r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/printers`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ op: 'verify', printerId: pid })
+                    }, 8000);
+                    const _jd = await _r.json().catch(() => null);
+                    if (_r.ok && _jd && _jd.ok && _jd.data) {
+                        d = { status: 'success', impresoras: [{ id: pid, name: _jd.data.name || ('#' + pid), online: !!_jd.data.online, reason: _jd.data.reason }] };
+                    } else {
+                        meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'Verificando impresora…' };
+                        return;
+                    }
+                } catch (eEdge) {
+                    meImpresoraEstado.value = { ...meImpresoraEstado.value, state: 'checking', reason: 'Sin verificar (Edge)' };
                     return;
                 }
                 if (!d.impresoras || !d.impresoras.length) {
@@ -11743,15 +11760,21 @@
                     ids.forEach(pid => { wizImpresorasStatus.value[pid] = { state: 'checking', name: '#' + pid, reason: 'Sin red — no se puede verificar' }; });
                     return;
                 }
-                const r = await fetch(`${API_URL}?accion=estado_impresoras&ids=${ids.join(',')}`);
-                const d = await r.json();
-                if (d.status === 'success' && d.impresoras) {
-                    d.impresoras.forEach(p => {
-                        wizImpresorasStatus.value[String(p.id)] = {
-                            state: p.online ? 'online' : 'offline',
-                            name: p.name || ('#' + p.id),
-                            reason: p.reason || (p.online ? 'Lista para imprimir' : 'Apagada o sin red')
-                        };
+                // [FIX cuota GAS] Estado en bulk por Edge `printers` (op:list), NO por GAS (no quemar urlfetch).
+                const _tk = await _mintTokenSB();
+                const _r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/printers`, {
+                    method: 'POST', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ op: 'list' })
+                }, 10000);
+                const _jd = await _r.json().catch(() => null);
+                if (_r.ok && _jd && _jd.ok && Array.isArray(_jd.data)) {
+                    const _byPid = {};
+                    _jd.data.forEach(p => { const k = String(p.printNodeId || p.id || '').trim(); if (k) _byPid[k] = p; });
+                    ids.forEach(pid => {
+                        const p = _byPid[String(pid)];
+                        wizImpresorasStatus.value[String(pid)] = p
+                            ? { state: p.online ? 'online' : 'offline', name: p.nombre || p.name || ('#' + pid), reason: p.reason || (p.online ? 'Lista para imprimir' : 'Apagada o sin red') }
+                            : { state: 'offline', name: '#' + pid, reason: 'No reportada' };
                     });
                 }
             } catch(e) {
