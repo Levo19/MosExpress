@@ -15654,12 +15654,26 @@
                 fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) }).catch(()=>{});
             } catch(_) {}
         };
-        // Pide a GAS un JWT scoped por zona (MINT_TOKEN). Cachea hasta ~30s antes de exp.
+        // [CERO-GAS auth] Acuña el JWT de dispositivo ME por la Edge `mint-me` (Supabase, claim app='mosExpress',
+        // valida deviceId contra mos.dispositivos server-side). GAS MINT_TOKEN queda solo como kill-switch ante
+        // fallo/timeout de la Edge. Cachea hasta ~30s antes de exp. Un solo helper → ~17 call-sites heredan el cambio.
         const _mintTokenSB = async () => {
             const now = Math.floor(Date.now()/1000);
             if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
-            // [Lote1-C · fix A5] timeout 6s — un GAS colgado en el mint dejaba TODA la
-            // cadena directa (venta+impresión) esperando minutos sin caer al fallback.
+            // 1) Edge mint-me (camino directo Supabase, cero GAS)
+            try {
+                const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/mint-me`, {
+                    method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
+                    body: JSON.stringify({ deviceId: deviceId.value })
+                }, 6000);
+                const d = await res.json().catch(() => null);
+                if (res.ok && d && d.ok === true && d.token) {
+                    _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 1800);
+                    return d.token;
+                }
+            } catch(_) { /* → GAS kill-switch */ }
+            // 2) Fallback GAS MINT_TOKEN (kill-switch; timeout 6s para no colgar la cadena directa)
             const res = await _meFetchTimeout(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
                 body: JSON.stringify({ tipoEvento:'MINT_TOKEN', deviceId: deviceId.value }) }, 6000);
             const d = await res.json();

@@ -1,1 +1,1 @@
-{ "version": "2.8.52", "build": "AUTH F1: verificarClaveAdmin Supabase-first (RPC central mos.verificar_clave_admin, gate acepta mosExpress), GAS kill-switch. Helper _verifClaveAdminME normaliza al shape GAS. Las 3 apps validan clave admin por Supabase." }
+{ "version": "2.8.53", "build": "CERO-GAS auth: _mintTokenSB acuna por Edge mint-me (Supabase, claim app=mosExpress, valida deviceId server-side); GAS MINT_TOKEN queda solo kill-switch. ~17 call-sites heredan el cambio. mint-me probada end-to-end (token aceptado por PostgREST)." }
