@@ -13119,7 +13119,30 @@
         // ════════════════════════════════════════════════════════════════════
         let _espiaCli = null;
 
+        // [F6 espía · cero-GAS] acción→RPC Supabase (mos.espia_*). El chunk (Drive) NO está mapeado → sigue GAS.
+        const _ESPIA_RPC_ME = {
+            espiaIniciarDispositivo: 'espia_iniciar_dispositivo', espiaConfig: 'espia_config',
+            espiaSync: 'espia_sync', espiaPushBatch: 'espia_push_batch',
+            espiaSubirRespuesta: 'espia_subir_respuesta', espiaSubirRenegOferta: 'espia_subir_reneg_oferta',
+            espiaCerrarSesion: 'espia_cerrar_sesion'
+        };
         async function _espiaCliPostMOS(accion, params) {
+            // Supabase-first: RPC mos.espia_* vía mint-me; mismo shape {ok,data}. Fallback GAS.
+            const rpc = _ESPIA_RPC_ME[accion];
+            if (rpc && window.ESPIA_DIRECTO !== false) {
+                try {
+                    const tk = await _mintTokenSB();
+                    const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: params || {} })
+                    }, 9000);
+                    if (res.ok) {
+                        const d = await res.json().catch(() => null);
+                        if (d && !(d.ok === false && String(d.error || '') === 'APP_NO_AUTORIZADA')) return d;
+                    }
+                } catch(_) { /* → GAS */ }
+            }
             try {
                 // [v2.7.31] Inyectar token HMAC automáticamente
                 const body = Object.assign({ action: accion }, params || {});
