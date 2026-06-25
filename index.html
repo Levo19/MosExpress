@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.66';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.67';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -17454,13 +17454,39 @@
                txt += "================================================\n";
                txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
                txt += "------------------------------------------------\n";
+               // [Ticket granel + nombre largo] Helpers locales:
+               //  · _pesoBonito: peso inteligente — gramos enteros si <1kg, kilos sin ceros sobrantes si >=1kg.
+               //    Así el cliente entiende "100 g" o "5 kg" en vez del factor crudo "0.1".
+               //  · _wrapNombre: parte el nombre en hasta 2 renglones por palabra (no corta a media palabra).
+               const _pesoBonito = (kg) => {
+                   const g = Math.round((parseFloat(kg) || 0) * 1000);
+                   if (g < 1000) return g + ' g';
+                   return (g / 1000).toFixed(3).replace(/\.?0+$/, '') + ' kg';
+               };
+               const _wrapNombre = (nombre, ancho, maxLineas) => {
+                   const palabras = String(nombre || '').trim().split(/\s+/);
+                   const lineas = [];
+                   let cur = '';
+                   for (const w of palabras) {
+                       const cand = cur ? cur + ' ' + w : w;
+                       if (cand.length <= ancho) { cur = cand; }
+                       else { if (cur) lineas.push(cur); cur = w; if (lineas.length >= maxLineas) break; }
+                   }
+                   if (cur && lineas.length < maxLineas) lineas.push(cur);
+                   return lineas.slice(0, maxLineas).map(l => l.length > ancho ? l.substring(0, ancho) : l);
+               };
                itemsParaImprimir.forEach(item => {
                    const m = item.nombre.match(/^(.+?)\s+\((.+)\)$/);
                    const baseName = m ? m[1] : item.nombre;
                    const empaque  = m ? m[2] : null;
-                   let desc = baseName.length > 31 ? baseName.substring(0, 31) : baseName.padEnd(31, ' ');
-                   txt += String(item.cantidad).padEnd(5, ' ') + " " + desc + " " + parseFloat(item.subtotal).toFixed(2).padStart(10, ' ') + "\n";
-                   if (empaque) txt += "        " + empaque.substring(0, 38) + "\n";
+                   const esGranelTk = String(item.unidad_de_medida || '').toUpperCase() === 'KGM';
+                   // Graneles: la "cantidad" real es el peso en kg → en CANT mostramos "1" (una bolsa) y el peso va abajo.
+                   const cantTxt = esGranelTk ? '1' : String(item.cantidad);
+                   const lineasNombre = _wrapNombre(baseName, 31, 2);
+                   txt += cantTxt.padEnd(5, ' ') + " " + (lineasNombre[0] || '').padEnd(31, ' ') + " " + parseFloat(item.subtotal).toFixed(2).padStart(10, ' ') + "\n";
+                   for (let i = 1; i < lineasNombre.length; i++) txt += "      " + lineasNombre[i] + "\n";
+                   if (esGranelTk) txt += "      Peso: " + _pesoBonito(item.cantidad) + "\n";
+                   if (empaque) txt += "      " + empaque.substring(0, 40) + "\n";
                });
                txt += "------------------------------------------------\n";
                txt += "\x1b\x61\x02";

@@ -1,1 +1,1 @@
-{ "version": "2.8.66", "build": "FIX urgente cola de membretes (modulo compartido CDN MOS, bump ?v=): los comentarios con '+' lider generaban NaN y la lista de la cola no se veia. Arreglado. Mismo fix que MOS 2.43.335." }
+{ "version": "2.8.67", "build": "Ticket de venta: graneles muestran '1' (una bolsa) + linea inteligente 'Peso: 100 g / 5 kg' (gramos si <1kg, kilos sin ceros si >=1kg) en vez del factor crudo '0.1'. Nombres largos se parten en 2 renglones por palabra (sin cortar palabras). Solo afecta el ticket impreso; graneles por unidad de medida KGM." }
