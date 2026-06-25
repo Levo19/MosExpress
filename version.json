@@ -1,1 +1,1 @@
-{ "version": "2.8.62", "build": "SW updateViaCache:'none' al registrar -> el navegador siempre revalida sw.js contra la red (nunca del cache HTTP) -> arregla el SW obsoleto eterno que dejaba el catalogo/precio viejo. (El bug del cache.put HEAD ya estaba arreglado en 2.8.61, solo no se habia activado por el SW viejo.)" }
+{ "version": "2.8.63", "build": "Banner de version en consola: imprime 'ME cargado v2.8.63' en cada carga + compara con el server y avisa si hay una mas nueva (igual que MOS). Asi siempre se ve la version y se detectan updates pendientes." }

@@ -4,6 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>MOSexpress v2 Modular</title>
+  <script>
+    // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
+    (function () {
+      var V = '2.8.63';   // ⚠ bumpear junto con sw.js + version.json
+      var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
+      console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
+      try {
+        fetch('version.json?cb=' + Date.now(), { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            var sv = j && j.version;
+            if (sv && sv !== V) {
+              console.log('%c ⚠ HAY VERSIÓN NUEVA: v' + sv + ' (tú tienes v' + V + ') → refresca (Ctrl+Shift+R) ',
+                          'background:#f59e0b;color:#000;' + s);
+            } else if (sv) {
+              console.log('%c ✓ Estás en la última (v' + sv + ') ', 'background:#6366f1;color:#fff;' + s);
+            }
+          }).catch(function () {});
+      } catch (e) {}
+    })();
+  </script>
   <link rel="manifest" href="manifest.json">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
