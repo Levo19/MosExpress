@@ -161,6 +161,17 @@
     /* Safe area iOS PWA */
     :root { --safe-b: env(safe-area-inset-bottom, 0px); }
     nav.fixed.bottom-0 { padding-bottom: var(--safe-b); height: calc(4rem + var(--safe-b)); }
+    /* [P2 UX] Glow ambiental de la barra inferior cuando el catálogo se refresca en background
+       (poller/realtime) — reemplaza al overlay azul bloqueante. Verde que enciende y apaga. */
+    @keyframes navCatGlow {
+      0%   { box-shadow: 0 -10px 15px -3px rgba(0,0,0,0.05); border-top-color:#e5e7eb; }
+      28%  { box-shadow: 0 -2px 28px 3px rgba(16,185,129,0.60); border-top-color:#10b981; }
+      60%  { box-shadow: 0 -2px 22px 1px rgba(16,185,129,0.35); border-top-color:#34d399; }
+      100% { box-shadow: 0 -10px 15px -3px rgba(0,0,0,0.05); border-top-color:#e5e7eb; }
+    }
+    @keyframes navCatPulse { 0%,100%{ transform:scale(1); } 40%{ transform:scale(1.16); color:#10b981; } }
+    nav.nav-catalogo-glow { animation: navCatGlow 1.6s ease-in-out; border-top-width:2px; }
+    nav.nav-catalogo-glow .nav-tab svg { animation: navCatPulse 1.6s ease-in-out; }
     /* Botones táctiles mínimos */
     button { min-height: 40px; touch-action: manipulation; }
     button:disabled { opacity: 0.5 !important; cursor: not-allowed; }
@@ -4257,7 +4268,7 @@
          data-nav-root
          @mouseleave="programarColapso(1200)" @mouseenter="expandirNav"
          class="h-16 bg-white border-t border-gray-200 flex justify-around items-center fixed bottom-0 w-full z-40 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] text-xs font-bold shrink-0 transition-transform overflow-hidden"
-         :class="{ 'nav-entrada': navEntrada }">
+         :class="{ 'nav-entrada': navEntrada, 'nav-catalogo-glow': catalogoGlow }">
 
         <!-- FIRMA: indicador líquido único (se desliza + viaja de color) -->
         <div class="nav-ind" :style="{ left: navInd.left + 'px', width: navInd.width + 'px', color: colorModulo }">
@@ -9266,6 +9277,17 @@
         };
 
         const procesandoCatalogo = ref(false);
+        // [P2 UX] Refresco de catálogo en SEGUNDO PLANO (poller/realtime): NO bloquea la pantalla.
+        // Aviso ambiental: la barra inferior brilla/pulsa verde + vibración corta + toast chico.
+        const catalogoGlow = ref(false);
+        let _catGlowTimer = null;
+        const _dispararGlowCatalogo = () => {
+            catalogoGlow.value = true;
+            try { if (navigator.vibrate) navigator.vibrate([18, 40, 18]); } catch(_){}
+            try { agregarToast('Catálogo al día', 'Llegaron cambios de precios/productos.', 'success', 2200); } catch(_){}
+            if (_catGlowTimer) clearTimeout(_catGlowTimer);
+            _catGlowTimer = setTimeout(() => { catalogoGlow.value = false; }, 1600);
+        };
         // Frase rotante para el sync overlay (se cambia cada 2.8s mientras sincroniza)
         const _syncFrases = [
             'Buscando lo último del catálogo…',
@@ -9406,13 +9428,14 @@
             }
         };
 
-        const sincronizarCatalogoBase = async () => {
+        const sincronizarCatalogoBase = async (silent = false) => {
             if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 dbCargada.value = true;
-                return agregarToast("Aviso", "No disponible offline/mock");
+                return silent ? null : agregarToast("Aviso", "No disponible offline/mock");
             }
-            if (procesandoGuia.value) return; // no competir con GAS mientras hay guía en curso
-            procesandoCatalogo.value = true;
+            if (procesandoGuia.value) return; // no competir con una venta en curso
+            // [P2] silent=true (poller/realtime): NO mostrar el overlay azul bloqueante.
+            if (!silent) procesandoCatalogo.value = true;
             const ctrl = new AbortController();
             const timeoutId = setTimeout(() => ctrl.abort(), 90000); // 90s timeout duro
             try {
@@ -9453,7 +9476,9 @@
                     dbCargada.value = true;
                     await nextTick(); // ceder al UI antes del map
                     mapearCatalogoLocal();
-                    agregarToast("Éxito", "Catálogo actualizado");
+                    // [P2] background → glow ambiental; primera carga/manual → toast normal.
+                    if (silent) _dispararGlowCatalogo();
+                    else agregarToast("Éxito", "Catálogo actualizado");
                     _syncImpresorasFromProyectoMOS();
                     _cargarConfigMos();
                     _sincronizarAdminCache();
@@ -9480,9 +9505,11 @@
                     dbCargada.value = false; // sin datos — bloquear wizard
                 }
                 const detalle = e?.name === 'AbortError' ? 'Tiempo agotado (90s)' : String(e?.message || e || 'error').slice(0, 120);
-                agregarToast("Error", `Catálogo: ${detalle}` + (tieneZonas ? '' : ' · pulsa Reintentar'), 'error');
+                // [P2] en background no spameamos error: el cache previo sigue vivo y reintenta solo.
+                if (!silent) agregarToast("Error", `Catálogo: ${detalle}` + (tieneZonas ? '' : ' · pulsa Reintentar'), 'error');
+                else console.warn('[catálogo background] ' + detalle);
             }
-            procesandoCatalogo.value = false;
+            if (!silent) procesandoCatalogo.value = false;
         };
 
         // ─────────────────────────────────────────────────────────────────────────────────────────
@@ -9547,10 +9574,9 @@
                     return;
                 }
                 _catVerPendiente = false;
-                // sincronizarCatalogoBase re-descarga y, al terminar, _refrescarBaselineCatalogo
-                // actualiza _catVer a la versión nueva.
-                await sincronizarCatalogoBase();
-                agregarToast('Catálogo actualizado', 'Se sincronizaron cambios de productos.', 'info', 3000);
+                // [P2] SILENCIOSO: re-descarga en background → glow en la barra + vibración, sin
+                // overlay azul. _refrescarBaselineCatalogo actualiza _catVer a la versión nueva.
+                await sincronizarCatalogoBase(true);
             } catch (e) {
                 // Error de red/token → reintenta el próximo ciclo. Silencioso (no spamear toasts).
                 console.warn('[catVer] chequeo falló', e?.message || e);
@@ -19306,7 +19332,7 @@
           sincronizarDatos, isSyncing, pendingSales,
           // [v2.7.4] Ventas fantasma — banner + panel de revisión
           ventasFantasma, mostrarPanelFantasmas, limpiarVentasFantasma,
-          procesandoCatalogo, sincronizarCatalogoBase,
+          procesandoCatalogo, catalogoGlow, sincronizarCatalogoBase,
           syncQuote, syncQuoteFading,
           modalPresentaciones, prodSeleccionado, elegirPresentacion, cerrarModalPres,
           mostrarTeclado, toggleTeclado,
