@@ -1,1 +1,1 @@
-{ "version": "2.8.65", "build": "Cola de membretes (modulo compartido CDN MOS, bump del ?v=): buscador inteligente por palabras + sin acentos, layout fijo con scroll moderno (5-6 visibles, cola sin limite), y limpia al imprimir. Mismo fix que MOS 2.43.332." }
+{ "version": "2.8.66", "build": "FIX urgente cola de membretes (modulo compartido CDN MOS, bump ?v=): los comentarios con '+' lider generaban NaN y la lista de la cola no se veia. Arreglado. Mismo fix que MOS 2.43.335." }
