@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.63';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.64';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9257,6 +9257,15 @@
                      }
                      const term = encodeURIComponent(String(base.Nombre || 'N/A').split(' ')[0].toLowerCase());
                      const stockVal = (stockKey && base[stockKey] !== undefined && base[stockKey] !== '') ? (parseInt(base[stockKey]) || 0) : null;
+                     // [tramos] segmentos_precio del canónico (Factor=1) → al prodObj, para que el
+                     // ADD DIRECTO del granel (click de card) aplique el tramo (no solo el picker de presentación).
+                     let _segsProd = null;
+                     try {
+                         const _canon = pres.find(p => parseFloat(p.Factor) === 1) || presBase;
+                         const _raw = _canon && _canon.segmentos_precio;
+                         const _arr = typeof _raw === 'string' ? JSON.parse(_raw) : _raw;
+                         if (Array.isArray(_arr) && _arr.length) _segsProd = _arr;
+                     } catch(_) {}
                      prodsText.push({
                          idUnico: String(base.SKU_Base), sku: String(base.SKU_Base), skuBase: String(base.SKU_Base),
                          skuProducto: String(presBase.SKU || base.SKU_Base), // idProducto de la presentación base
@@ -9268,7 +9277,8 @@
                          tipoIgv:      parseInt(base.Tipo_IGV    || '1', 10), // 1=Gravado 2=Exonerado 3=Inafecto
                          unidadMedida: String(base.Unidad_Medida || 'NIU'),   // NIU=Unidad KGM=Kg ZZ=Servicio
                          promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`,
-                         stock: stockVal
+                         stock: stockVal,
+                         segmentosPrecio: _segsProd   // [tramos] usado por el add directo del granel
                      });
                  } catch(e) { console.warn("Error mapeando item", base.SKU_Base, e); }
             });
