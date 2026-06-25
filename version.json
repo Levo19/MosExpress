@@ -1,1 +1,1 @@
-{ "version": "2.8.58", "build": "P2 100% Supabase: catalogo (incl. PRECIO) se lee directo de mos.catalogo_pos_rls en vez de GAS ?accion=descargar. Arregla precio que no propagaba a ME (Hoja stale por sync off). Shape identico, fallback a cache si falla." }
+{ "version": "2.8.59", "build": "P2: quitado boton sync manual (catalogo en vivo via Supabase realtime). P1: pickup nace en Supabase (ME GAS enviarPickupAWH -> wh.crear_pickup_cierre_caja, deploy @231). 100% Supabase, cero GAS en el camino del catalogo y del pickup." }

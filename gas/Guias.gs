@@ -781,6 +781,29 @@ function generarGuiaSalidaVentas(ss, cajaId, vendedor, zona) {
 // por skuBase y enviarla a WH para que el operador despache.
 // ════════════════════════════════════════════════════════════════════════
 function enviarPickupAWH(ss, idGuia, cajaId, vendedor, zona, totalesPorCodBarras) {
+  // [100% Supabase 2026-06-24] El pickup NACE en Supabase: wh.crear_pickup_cierre_caja
+  // resuelve el canónico (mos.productos) e inserta en wh.pickups → el trigger v2 lo
+  // consolida en la lista acumulada de la zona. SIN leer la Hoja, SIN reenviar a WH GAS.
+  // Le pasamos los totales por cod_barras que el cierre ya tiene (cero riesgo de timing).
+  try {
+    var _ventas = [];
+    Object.keys(totalesPorCodBarras || {}).forEach(function(cod){
+      var q = parseFloat(totalesPorCodBarras[cod]) || 0;
+      if (q > 0) _ventas.push({ cod_barras: String(cod), cantidad: q });
+    });
+    if (!_ventas.length) return;
+    var _r = _sbRpc('wh', 'crear_pickup_cierre_caja', { p: { id_caja: cajaId, ventas: _ventas } });
+    if (!_r || !_r.ok || !_r.data || _r.data.ok === false)
+      Logger.log('crear_pickup_cierre_caja FALLO: ' + JSON.stringify((_r && (_r.error || _r.data)) || 'sin respuesta'));
+    else
+      Logger.log('Pickup → Supabase OK · ' + cajaId + ' · ' + JSON.stringify(_r.data.data));
+  } catch(eRPC) { Logger.log('enviarPickupAWH (Supabase) error: ' + eRPC.message); }
+  return;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CÓDIGO LEGACY (Hoja MOS + forward a WH GAS) — INALCANZABLE tras el return.
+  // Reemplazado por el RPC de arriba. Se conserva temporalmente por referencia.
+  // ─────────────────────────────────────────────────────────────────────────────
   // El catálogo de productos NO vive en MosExpress. Vive en ProyectoMOS_DB
   // (PRODUCTOS_MASTER + EQUIVALENCIAS), accesible vía Script Property MOS_SS_ID.
   // MosExpress siempre lee desde ahí (ver Catalogo.gs:descargarCatalogo).
