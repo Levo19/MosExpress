@@ -1191,7 +1191,9 @@
       } catch(e) {}
     };
 
-    navigator.serviceWorker.register('./sw.js').then(reg => {
+    // updateViaCache:'none' → el navegador SIEMPRE revalida sw.js contra la red al chequear updates
+    // (nunca del caché HTTP) → no más SW obsoleto eterno (causa del catálogo/precio viejo).
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
       _reg = reg;
 
       if (reg.waiting) { _activateWaiting(reg.waiting); return; }

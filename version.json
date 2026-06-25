@@ -1,1 +1,1 @@
-{ "version": "2.8.61", "build": "P2 UX: SIN toast al actualizar precio. Efecto impactante: la barra inferior se pinta de verde (inset wash) + las tabs saltan/se pintan + vibracion + chime ascendente MeSfx.updateArrived (no monedas)." }
+{ "version": "2.8.62", "build": "SW updateViaCache:'none' al registrar -> el navegador siempre revalida sw.js contra la red (nunca del cache HTTP) -> arregla el SW obsoleto eterno que dejaba el catalogo/precio viejo. (El bug del cache.put HEAD ya estaba arreglado en 2.8.61, solo no se habia activado por el SW viejo.)" }
