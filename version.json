@@ -1,1 +1,1 @@
-{ "version": "2.8.57", "build": "FIX cuota GAS: bloqueo poll 30s->120s (getEstadoBloqueoUsuario en MOS GAS). SW: guard method GET + catch en put (HEAD ya no lanza). + 2.8.56 (verif scope + impresora Edge)." }
+{ "version": "2.8.58", "build": "P2 100% Supabase: catalogo (incl. PRECIO) se lee directo de mos.catalogo_pos_rls en vez de GAS ?accion=descargar. Arregla precio que no propagaba a ME (Hoja stale por sync off). Shape identico, fallback a cache si falla." }

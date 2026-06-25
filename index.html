@@ -9413,10 +9413,20 @@
             const ctrl = new AbortController();
             const timeoutId = setTimeout(() => ctrl.abort(), 90000); // 90s timeout duro
             try {
-                const req = await fetch(`${API_URL}?accion=descargar`, { signal: ctrl.signal });
-                const rawText = await req.text();
+                // [100% Supabase] El catálogo (incl. PRECIO en PRESENTACIONES) se lee DIRECTO de
+                // mos.catalogo_pos_rls — mismo shape que el viejo ?accion=descargar de GAS, pero
+                // con el precio FRESCO de mos.productos (el sync Hoja está apagado → GAS daba precio
+                // viejo). Si falla, el catch de abajo preserva el cache previo (no brickea el POS).
+                const _tok = await _mintTokenSB();
+                const req = await fetch(`${SUPABASE_URL}/rest/v1/rpc/catalogo_pos_rls`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tok, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: '{}',
+                    signal: ctrl.signal
+                });
                 clearTimeout(timeoutId);
-                const res = JSON.parse(rawText);
+                if (!req.ok) throw new Error('catalogo_pos_rls HTTP ' + req.status);
+                const res = await req.json();
                 if (res.status === 'success' && res.data) {
                     // Persistir crudo en IndexedDB (sin límite práctico de tamaño).
                     // _guardarCatalogo nunca lanza: si IDB y localStorage fallan,
