@@ -1,1 +1,1 @@
-{ "version": "2.8.60", "build": "P2 UX: el refresco de catalogo en background (poller/realtime) ya NO bloquea con el overlay azul. Aviso ambiental: la barra inferior brilla/pulsa verde + vibracion corta + toast chico. El overlay solo queda para la primera carga." }
+{ "version": "2.8.61", "build": "P2 UX: SIN toast al actualizar precio. Efecto impactante: la barra inferior se pinta de verde (inset wash) + las tabs saltan/se pintan + vibracion + chime ascendente MeSfx.updateArrived (no monedas)." }

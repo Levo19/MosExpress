@@ -165,13 +165,13 @@
        (poller/realtime) — reemplaza al overlay azul bloqueante. Verde que enciende y apaga. */
     @keyframes navCatGlow {
       0%   { box-shadow: 0 -10px 15px -3px rgba(0,0,0,0.05); border-top-color:#e5e7eb; }
-      28%  { box-shadow: 0 -2px 28px 3px rgba(16,185,129,0.60); border-top-color:#10b981; }
-      60%  { box-shadow: 0 -2px 22px 1px rgba(16,185,129,0.35); border-top-color:#34d399; }
+      16%  { box-shadow: inset 0 0 0 120px rgba(16,185,129,.28), 0 -3px 44px 9px rgba(16,185,129,0.8); border-top-color:#10b981; }
+      45%  { box-shadow: inset 0 0 0 120px rgba(16,185,129,.13), 0 -2px 26px 3px rgba(16,185,129,0.42); border-top-color:#34d399; }
       100% { box-shadow: 0 -10px 15px -3px rgba(0,0,0,0.05); border-top-color:#e5e7eb; }
     }
-    @keyframes navCatPulse { 0%,100%{ transform:scale(1); } 40%{ transform:scale(1.16); color:#10b981; } }
-    nav.nav-catalogo-glow { animation: navCatGlow 1.6s ease-in-out; border-top-width:2px; }
-    nav.nav-catalogo-glow .nav-tab svg { animation: navCatPulse 1.6s ease-in-out; }
+    @keyframes navCatPulse { 0%,100%{ transform:scale(1) translateY(0); color:inherit; } 35%{ transform:scale(1.22) translateY(-2px); color:#059669; } }
+    nav.nav-catalogo-glow { animation: navCatGlow 1.9s cubic-bezier(.22,1,.36,1); border-top-width:2px; }
+    nav.nav-catalogo-glow .nav-tab { animation: navCatPulse 1.9s ease-in-out; }
     /* Botones táctiles mínimos */
     button { min-height: 40px; touch-action: manipulation; }
     button:disabled { opacity: 0.5 !important; cursor: not-allowed; }
@@ -9283,10 +9283,12 @@
         let _catGlowTimer = null;
         const _dispararGlowCatalogo = () => {
             catalogoGlow.value = true;
-            try { if (navigator.vibrate) navigator.vibrate([18, 40, 18]); } catch(_){}
-            try { agregarToast('Catálogo al día', 'Llegaron cambios de precios/productos.', 'success', 2200); } catch(_){}
+            // [P2 UX] Efecto IMPACTANTE, sin toast: la barra inferior se pinta de verde + las tabs
+            // saltan, vibración, y un chime ascendente "llegó dato nuevo" (no monedas).
+            try { if (navigator.vibrate) navigator.vibrate([25, 50, 35, 50, 25]); } catch(_){}
+            try { MeSfx.updateArrived(); } catch(_){}
             if (_catGlowTimer) clearTimeout(_catGlowTimer);
-            _catGlowTimer = setTimeout(() => { catalogoGlow.value = false; }, 1600);
+            _catGlowTimer = setTimeout(() => { catalogoGlow.value = false; }, 1900);
         };
         // Frase rotante para el sync overlay (se cambia cada 2.8s mientras sincroniza)
         const _syncFrases = [
