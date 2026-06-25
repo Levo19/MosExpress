@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.67';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.68';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -19072,6 +19072,26 @@
         // Fallback NO-hold (accesibilidad / clic simple): cierra con la misma lógica idempotente.
         const cerrarGuia = (guia) => _ejecutarCierreGuia(guia);
 
+        // [v2.8.68] Resuelve nombres de productos por código desde Supabase (RPC mos.nombres_por_codigos):
+        // canónico de mos.productos/equivalencias (mismo criterio que la Edge ticket-guia de WH). Devuelve
+        // { "<cod>": "<NOMBRE>" } solo de los que resolvió, o {} si falla/offline → el caller cae a local/código.
+        async function _nombresPorCodigosSB(codigos) {
+            try {
+                if (!codigos || !codigos.length) return {};
+                const tk = await _mintTokenSB();
+                const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/nombres_por_codigos`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { codigos: codigos } })
+                }, 9000);
+                if (res.ok) {
+                    const d = await res.json().catch(() => null);
+                    if (d && d.ok && d.data) return d.data;
+                }
+            } catch (_) { /* offline / error → {} → fallback local */ }
+            return {};
+        }
+
         const imprimirGuia = async (guia) => {
             if (!config.value.estacion?.PrintNode_ID) { agregarToast('Error', 'Sin impresora configurada'); return; }
             let items = guiaDetalle.value;
@@ -19085,10 +19105,15 @@
             const esSalida = guia.tipo.indexOf('SALIDA') === 0;
             const tipoLabel = {
                 SALIDA_JEFA: 'SALIDA - PEDIDO JEFA', SALIDA_MOVIMIENTO: 'SALIDA - MOVIMIENTO',
-                SALIDA_VENTAS: 'SALIDA - VENTAS TURNO', ENTRADA_ALMACEN: 'ENTRADA - ALMACEN',
+                SALIDA_VENTAS: 'SALIDA - VENTAS TURNO', SALIDA_DEVOLUCION_WH: 'SALIDA - DEVOLUCION ALMACEN',
+                ENTRADA_ALMACEN: 'ENTRADA - ALMACEN',
                 ENTRADA_TRASLADO: 'ENTRADA - TRASLADO', ENTRADA_LIBRE: 'ENTRADA - LIBRE'
             }[guia.tipo] || guia.tipo;
             const fechaStr = guia.fecha ? new Date(guia.fecha).toLocaleString('es-PE') : '';
+            // [v2.8.68 · 100% Supabase] Nombres desde mos.productos/equivalencias (canónico). Antes se resolvía
+            // SOLO del catálogo local y SIN equivalencias → equivalentes/graneles salían como "código + cant"
+            // sin nombre (ej. devolución a almacén). Supabase-first; fallback local + código si está offline.
+            const _nombresSB = await _nombresPorCodigosSB(items.map(it => String(it.cod_barras || '')).filter(Boolean));
 
             let txt = "\x1b\x40\x1b\x61\x01"; // Init + centrar
             txt += "\x1b\x21\x30MOSexpress\n"; // Titulo grande
@@ -19105,9 +19130,23 @@
             txt += "PRODUCTO                    CANT\n";
             txt += "------------------------------------------------\n";
             items.forEach(function(it) {
-                const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === it.cod_barras);
-                const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
-                const nom = base ? (base.Nombre + ' ' + pres.Empaque).substring(0, 26) : it.cod_barras.substring(0, 26);
+                const cb = String(it.cod_barras || '');
+                let nom = _nombresSB[cb] || '';
+                if (!nom) {
+                    // Fallback local (offline): presentación por barcode, o equivalencia (Cod_Alias → real/SKU), → base.
+                    let pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === cb);
+                    if (!pres) {
+                        const eq = (db.value.EQUIVALENCIAS || []).find(e => String(e.Cod_Alias) === cb);
+                        if (eq) {
+                            const codReal = String(eq.Cod_Barras_Real);
+                            pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === codReal)
+                                || (db.value.PRESENTACIONES || []).find(p => String(p.SKU_Base) === codReal && (parseFloat(String(p.Factor).replace(',', '.')) || 1) === 1);
+                        }
+                    }
+                    const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
+                    nom = base ? (base.Nombre + ' ' + (pres.Empaque || '')) : cb;
+                }
+                nom = String(nom).substring(0, 26);
                 txt += nom.padEnd(28) + fmtCantGuia(it.cantidad).padStart(4) + "\n";
             });
             txt += "================================================\n";
