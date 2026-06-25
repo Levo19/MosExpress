@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.69';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.70';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -2151,7 +2151,7 @@
             await new Promise((res, rej) => {
               navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 });
             });
-            try { _meModalAlert('📍 Ubicación activada ✓', { titulo: 'GPS' }); } catch(_){}
+            try { (window._meModalAlert || window.alert)('📍 Ubicación activada ✓', { titulo: 'GPS' }); } catch(_){}
           } catch (gerr) {
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             const code = gerr && gerr.code;
@@ -2160,13 +2160,13 @@
             else if (code === 2) msg = 'No se pudo obtener la ubicación (GPS apagado o sin señal).' + (isIOS ? '\n\nRevisa que Localización esté ENCENDIDA en Ajustes del iPhone.' : '');
             else                 msg = 'No se pudo activar la ubicación ahora.';
             msg += '\n\nEs OPCIONAL — puedes entrar a ME sin GPS con el botón de abajo.';
-            try { _meModalAlert(msg, { titulo: '📍 Ubicación' }); } catch(_){}
+            try { (window._meModalAlert || window.alert)(msg, { titulo: '📍 Ubicación' }); } catch(_){}
             throw gerr;  // re-lanzo: que NO se marque como concedido
           }
         } else if (perm === 'install') {
           const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
           if (isIOS) {
-            _meModalAlert('📱 Instalar en iOS:\n\n1. Toca el botón Compartir\n2. Desliza y elige "Añadir a inicio"\n3. Toca "Añadir"\n\nLa app aparecerá en tu pantalla de inicio.', { titulo: 'Cómo instalar en iOS' });
+            (window._meModalAlert || window.alert)('📱 Instalar en iOS:\n\n1. Toca el botón Compartir\n2. Desliza y elige "Añadir a inicio"\n3. Toca "Añadir"\n\nLa app aparecerá en tu pantalla de inicio.', { titulo: 'Cómo instalar en iOS' });
             try {
               const v = window._ME_PERMS_VERSION || 'unk';
               localStorage.setItem('me_install_dismissed_v' + v, '1');
@@ -8787,6 +8787,10 @@
                 requestAnimationFrame(() => backdrop.classList.add('is-open'));
             });
         };
+        // [fix] Exponer en window: el WIZARD de permisos (IIFE aparte, fuera de este setup()) lo usa para el
+        // feedback del GPS y las instrucciones de instalar en iOS. Sin esto, esas llamadas tiraban
+        // ReferenceError en silencio → "le doy click y nada" + la tarjeta Instalar quedaba colgada en iPhone.
+        try { window._meModalAlert = _meModalAlert; } catch(_) {}
 
         // --- NAVEGACIÓN MODULAR Y MIDDLEWARE DE CAJA ---
         const cambiarModulo = (mod) => {
