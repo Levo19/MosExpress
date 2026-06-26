@@ -177,8 +177,15 @@ function procesarAperturaCaja(data) {
     } catch(e) { /* no-fatal */ }
   }
 
+  // [Reparacion #1 · modo espejo] Si viene data.idCaja, esta llamada es un ESPEJO de una apertura
+  // que YA se hizo DIRECTO en Supabase (me.abrir_caja vía front, flag ME_APERTURA_DIRECTO). En ese
+  // caso NO re-aplicamos el guard (la caja ya existe en me.cajas → daría falso "turno activo"), NO
+  // generamos id nuevo (usamos el de Supabase) y NO re-dualWrite (la RPC ya escribió me.cajas). Solo
+  // espejamos a la Hoja (idempotente) + push a admins. Simétrico al CIERRE_CAJA-mirror del cierre directo.
+  var _esEspejoAp = !!(data && data.idCaja);
+
   // Un solo cajero activo por zona a la vez — FUENTE PRIMARIA: Supabase (me.cajas).
-  if (data.zona) {
+  if (data.zona && !_esEspejoAp) {
     var sbActAp = _meCajaActivaZona(String(data.zona));   // {id_caja,vendedor,...} | {__vacio:true} | null
     if (sbActAp && sbActAp.id_caja) {
       return generarRespuestaError(
@@ -199,24 +206,33 @@ function procesarAperturaCaja(data) {
     }
   }
 
-  var idCaja = "CAJA-" + new Date().getTime();
+  var idCaja = _esEspejoAp ? String(data.idCaja) : ("CAJA-" + new Date().getTime());
   var _tz    = Session.getScriptTimeZone();
   var _ahora = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd HH:mm:ss');
   // SHEET (best-effort espejo): Columnas ID_Caja|Vendedor|Estacion|Fecha_Apertura|Monto_Inicial|Estado|Monto_Final|Fecha_Cierre|Zona_ID|PrintNode_ID
   if (sheetCajas) {
     try {
-      sheetCajas.appendRow([
-        idCaja, data.vendedor, data.estacion, _ahora,
-        data.montoInicial || 0, "ABIERTA", "", "", data.zona || '',
-        data.printNodeId || ''
-      ]);
-      SpreadsheetApp.flush();
+      // [modo espejo] idempotente: si la fila ya existe (mirror reintentado/doble-tap) NO duplicar.
+      var _yaEnHoja = false;
+      if (_esEspejoAp) {
+        var _vc = sheetCajas.getDataRange().getValues();
+        for (var _r = 1; _r < _vc.length; _r++) { if (String(_vc[_r][0]) === idCaja) { _yaEnHoja = true; break; } }
+      }
+      if (!_yaEnHoja) {
+        sheetCajas.appendRow([
+          idCaja, data.vendedor, data.estacion, _ahora,
+          data.montoInicial || 0, "ABIERTA", "", "", data.zona || '',
+          data.printNodeId || ''
+        ]);
+        SpreadsheetApp.flush();
+      }
     } catch (eAp) { Logger.log('[procesarAperturaCaja] appendRow CAJAS (espejo) falló: ' + eAp.message); }
   }
 
   // [cajas-directo] Espejo a Supabase en tiempo real (best-effort, no rompe la apertura). Upsert por
   // id_caja → inserta la caja recién abierta; el cierre luego actualiza la misma fila. Mapeo = batch.
-  try {
+  // [modo espejo] omitido: la RPC me.abrir_caja YA escribió me.cajas (no re-escribir desde GAS).
+  if (!_esEspejoAp) try {
     _dualWriteCajaME({
       ID_Caja: idCaja, Vendedor: data.vendedor, Estacion: data.estacion, Fecha_Apertura: _ahora,
       Monto_Inicial: data.montoInicial || 0, Estado: 'ABIERTA', Monto_Final: '', Fecha_cierre: '',

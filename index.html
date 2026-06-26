@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.73';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.74';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12581,7 +12581,31 @@
                     printNodeId:  config.value.estacion?.PrintNode_ID || ''
                 };
                 let cid = 'CAJA-LOCAL-' + Date.now();
-                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                let aperturada = false;
+                // [Reparacion #1] Apertura DIRECTA a Supabase (me.abrir_caja) → la caja queda lista al
+                // instante (sin el cold-start de GAS). El espejo a Hoja + push a admins se hace en
+                // BACKGROUND (fire-and-forget, modo espejo con idCaja). Si la RPC falla, cae a GAS abajo.
+                if (!offlineMode.value && aperturaDirecto()) {
+                    try {
+                        const dAp = await _abrirCajaDirecto(payload);
+                        // Guard anti "sesión cajero fantasma": cerró sesión mientras esperábamos Supabase.
+                        if (!config.value.completado) {
+                            localStorage.removeItem('mosexpress_config');
+                            localStorage.removeItem('mosexpress_session_date');
+                            procesandoCaja.value = false;
+                            return;
+                        }
+                        cid = dAp.idCaja;
+                        aperturada = true;
+                        // Espejo a Hoja + push admins: fire-and-forget (modo espejo, GAS NO re-crea ni re-guarda
+                        // en me.cajas — solo Hoja + push). FUERA del camino crítico = sin lentitud.
+                        try {
+                            fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
+                                body: JSON.stringify(Object.assign({}, payload, { idCaja: cid })) }).catch(()=>{});
+                        } catch(_) {}
+                    } catch(eAp) { /* Supabase falló → fallback a GAS abajo */ }
+                }
+                if (!aperturada && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                     try {
                         const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                         // Guard: usuario cerró sesión mientras esperaba GAS.
@@ -15655,6 +15679,30 @@
             if (!res.ok) throw new Error('cerrar_caja HTTP ' + res.status);
             const d = await res.json();
             if (!d || d.status !== 'success') throw new Error('cerrar_caja: ' + ((d && d.error) || 'fallo'));
+            return d;
+        };
+        // [Reparacion #1] Apertura DIRECTA a Supabase (RPC me.abrir_caja). Mata el cold-start de GAS
+        // ("Creando caja" lento: GAS daba 2 saltos GAS→Supabase + Sheet + push SÍNCRONOS). Gateado por
+        // ME_APERTURA_DIRECTO. Devuelve {status, idCaja, cajasAutoCerradas, dedup?}. Lanza → caller cae a GAS.
+        const aperturaDirecto = () => _flagOn('ME_APERTURA_DIRECTO', 'me_apertura_directo');
+        const _abrirCajaDirecto = async (payload) => {
+            const token = await _mintTokenSB();
+            const p = {
+                vendedor:     payload.vendedor || '',
+                estacion:     payload.estacion || '',
+                montoInicial: payload.montoInicial,
+                zona:         payload.zona || '',
+                printNodeId:  payload.printNodeId || '',
+                deviceId:     deviceId.value || ''
+            };
+            const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/abrir_caja`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p: p })
+            }, 8000);
+            if (!res.ok) throw new Error('abrir_caja HTTP ' + res.status);
+            const d = await res.json();
+            if (!d || d.status !== 'success') throw new Error('abrir_caja: ' + ((d && d.error) || 'fallo'));
             return d;
         };
         // Manda un print job DIRECTO a PrintNode vía la Edge Function `imprimir` (key en secret server-side).
