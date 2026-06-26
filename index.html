@@ -15824,7 +15824,9 @@
             const nfEstado = r.nf_estado || r.estado || 'PENDIENTE';
             const nfData = (r.hash || r.qr || r.pdf) ? { hash: r.hash || '', enlace: r.pdf || '', qrString: r.qr || '' } : null;
             return { correlativo: r.correlativo, id_venta: r.id_venta, nfData: nfData, nfEstado: nfEstado,
-                     nf: { nf_estado: nfEstado, nf_hash: r.hash || '', nf_enlace: r.pdf || '' } };
+                     // [Rep #9] persistir tambien el QR SUNAT (set_cpe_nf lo guarda en me.ventas.nf_qr) → el
+                     // ticket (re)imprime el QR fiscal real, no el correlativo.
+                     nf: { nf_estado: nfEstado, nf_hash: r.hash || '', nf_enlace: r.pdf || '', nf_qr: r.qr || '' } };
         };
         // [Fase 2] Crea un movimiento de caja DIRECTO en Supabase (RPC crear_movimiento_directo). Idempotente
         // por id_extra (generado por el cliente, reusado en RPC+mirror). Devuelve {status,id_extra,dedup}.
