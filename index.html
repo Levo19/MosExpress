@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.72';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.73';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15845,7 +15845,10 @@
         // GAS, que conserva su respuesta 'validacion'. Éxito/not_found legítimo se sirve; error de infra → GAS.
         const _meBuscarClienteDoc = async (doc, tipoDoc) => {
             const docN = String(doc || '').replace(/\D/g, '');
-            if (_flagOn('MOS_SUNAT_EDGE', 'me_sunat_edge') && (docN.length === 8 || docN.length === 11)) {
+            // [fix] FACTURA con doc != 11 → NO ir al Edge (resuelve como DNI); caer a GAS conserva el hint
+            // 'validacion' ("FACTURA requiere RUC de 11 dígitos"). El Edge no conoce tipoDoc.
+            const _facturaCorta = (String(tipoDoc || '').toUpperCase() === 'FACTURA' && docN.length !== 11);
+            if (_flagOn('MOS_SUNAT_EDGE', 'me_sunat_edge') && !_facturaCorta && (docN.length === 8 || docN.length === 11)) {
                 try {
                     const token = await _mintTokenSB();
                     if (token) {
