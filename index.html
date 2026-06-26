@@ -15016,8 +15016,7 @@
             const doc = (adminConvEstado.value.doc || '').trim();
             if (doc.length !== 8 && doc.length !== 11) return;
             try {
-                const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}`);
-                const j = await r.json();
+                const j = await _meBuscarClienteDoc(doc);
                 if (j?.status === 'success' && j.nombre) {
                     adminConvEstado.value.nombre = j.nombre;
                     adminConvEstado.value.direccion = j.direccion || '';
@@ -15121,8 +15120,7 @@
             const doc = (adminEditCliEstado.value.doc || '').trim();
             if (doc.length !== 8 && doc.length !== 11) return;
             try {
-                const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}`);
-                const j = await r.json();
+                const j = await _meBuscarClienteDoc(doc);
                 if (j?.status === 'success' && j.nombre) {
                     adminEditCliEstado.value.nombre = j.nombre;
                     adminEditCliEstado.value.direccion = j.direccion || '';
@@ -15838,6 +15836,31 @@
             if (!d || !d.ok || !d.token) throw new Error('mint-token: ' + ((d && d.error) || 'sin token'));
             _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 300);
             return d.token;
+        };
+
+        // [#6 SUNAT cero-GAS] Lookup DNI/RUC: Edge `consultar-documento` (claim app='mosExpress') si el flag
+        // global MOS_SUNAT_EDGE está ON, con GAS de red de seguridad. Devuelve el MISMO shape que el GAS
+        // consultar_cliente ({status,nombre,documento,tipo,fuente,direccion,codigo}) → los 3 call-sites no
+        // cambian su consumo. Solo se entra al Edge con doc de largo válido (8/11) — un doc incompleto cae a
+        // GAS, que conserva su respuesta 'validacion'. Éxito/not_found legítimo se sirve; error de infra → GAS.
+        const _meBuscarClienteDoc = async (doc, tipoDoc) => {
+            const docN = String(doc || '').replace(/\D/g, '');
+            if (_flagOn('MOS_SUNAT_EDGE', 'me_sunat_edge') && (docN.length === 8 || docN.length === 11)) {
+                try {
+                    const token = await _mintTokenSB();
+                    if (token) {
+                        const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/consultar-documento`, {
+                            method:'POST',
+                            headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+                            body: JSON.stringify({ doc: docN })
+                        }, 15000);
+                        const d = await res.json().catch(() => null);
+                        if (d && (d.status === 'success' || d.status === 'not_found')) return d;
+                    }
+                } catch(_) { /* → GAS red de seguridad */ }
+            }
+            const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}${tipoDoc ? ('&tipoDoc=' + encodeURIComponent(tipoDoc)) : ''}`);
+            return await r.json();
         };
 
         // [AUTH F1] Verificación de clave admin Supabase-first: RPC central mos.verificar_clave_admin
@@ -17095,8 +17118,7 @@
            try {
                if (offlineMode.value) throw new Error('Sin conexión');
                // [v2.5.59] Pasar tipoDoc al backend para validación contextual
-               const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}&tipoDoc=${encodeURIComponent(tipoDoc)}`);
-               const d = await r.json();
+               const d = await _meBuscarClienteDoc(doc, tipoDoc);
                if (d.status === 'success') {
                    pago.value.docCliente       = d.documento;
                    pago.value.nombreCliente    = d.nombre;
