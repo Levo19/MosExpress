@@ -1,1 +1,1 @@
-{ "version": "2.8.75", "build": "Review R1 fixes: cierra caja huerfana si hay logout durante la apertura directa (me.cancelar_apertura) -> no bloquea la zona; + pasa nf_qr en el payload CPE (fundacion QR SUNAT en ticket)." }
+{ "version": "2.8.76", "build": "Review R2 fix (REGRESION money-critical): el cierre compensatorio de caja huerfana (R1) cerraba una caja LEGITIMA cuando la apertura hacia DEDUP (mismo cajero re-loguea con caja ya abierta). Ahora solo cancela si la apertura CREO caja nueva (!dAp.dedup)." }

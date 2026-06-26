@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.75';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.76';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12590,14 +12590,17 @@
                         const dAp = await _abrirCajaDirecto(payload);
                         // Guard anti "sesión cajero fantasma": cerró sesión mientras esperábamos Supabase.
                         if (!config.value.completado) {
-                            // [Review R1 fix] la RPC YA creó la caja en me.cajas → cerrarla (CERRADA_AUTO) para que
-                            // no quede ABIERTA huérfana bloqueando la zona. Fire-and-forget (me.cancelar_apertura).
-                            try { (async () => {
-                                const _tk = await _mintTokenSB();
-                                fetch(`${SUPABASE_URL}/rest/v1/rpc/cancelar_apertura`, { method:'POST',
-                                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+_tk, 'Content-Profile':'me', 'Content-Type':'application/json' },
-                                    body: JSON.stringify({ p: { idCaja: (dAp && dAp.idCaja) || '' } }) }).catch(()=>{});
-                            })(); } catch(_) {}
+                            // [Review R2 fix] cancelar la caja huérfana SOLO si la apertura CREÓ una caja nueva.
+                            // Si fue DEDUP (mismo cajero ya tenía una caja ABIERTA hoy → me.abrir_caja devuelve esa
+                            // caja existente con dedup:true SIN crear nada), NO tocarla: puede tener ventas/POR_COBRAR.
+                            if (dAp && !dAp.dedup && dAp.idCaja) {
+                                try { (async () => {
+                                    const _tk = await _mintTokenSB();
+                                    fetch(`${SUPABASE_URL}/rest/v1/rpc/cancelar_apertura`, { method:'POST',
+                                        headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+_tk, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                                        body: JSON.stringify({ p: { idCaja: dAp.idCaja } }) }).catch(()=>{});
+                                })(); } catch(_) {}
+                            }
                             localStorage.removeItem('mosexpress_config');
                             localStorage.removeItem('mosexpress_session_date');
                             procesandoCaja.value = false;
