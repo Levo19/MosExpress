@@ -359,7 +359,9 @@ function reconciliarCPEsPendientes(diasAtras) {
     var nfe   = String(data[i][idxNFE] || '');
 
     if (tipo !== 'BOLETA' && tipo !== 'FACTURA') continue;
-    if (nfe === 'EMITIDO') continue;
+    // [500x-2b] NO reconciliar estados terminales: EMITIDO (ya conforme) ni BAJA* (anulado) — re-consultar
+    // una baja y reescribir EMITIDO REVERTIRÍA la anulación fiscal. Solo PENDIENTE/RECHAZADO/ERROR siguen.
+    if (nfe === 'EMITIDO' || nfe.toUpperCase().indexOf('BAJA') === 0) continue;
     if (!corr || corr.indexOf('undefined-') === 0) continue;
     if (fecha instanceof Date && fecha < hace) continue;
 

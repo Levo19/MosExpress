@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.85';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.86';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15940,7 +15940,7 @@
                 // aceptada_por_sunat + código/descripción SUNAT + enlaces XML/CDR + nº orden → set_cpe_nf los persiste.
                 const _traza = (ed) => ({
                     aceptada: (ed.estado === 'EMITIDO') || ed.aceptada === true,
-                    sunat_desc: ed.sunatDescription || '', sunat_code: (ed.sunat_responsecode != null ? String(ed.sunat_responsecode) : ''),
+                    sunat_desc: ed.sunatDescription || '', sunat_code: ed.sunat_code || (ed.sunat_responsecode != null ? String(ed.sunat_responsecode) : ''),
                     enlace_xml: ed.enlace_xml || '', enlace_cdr: ed.enlace_cdr || '', numero_orden_sunat: ed.numero_orden_sunat || '',
                     consultado: true
                 });
@@ -16196,22 +16196,23 @@
                 // (pasar sessionStartTime ocultaría las ventas previas al login del vendedor).
                 const d = await _ventasVendedorDirecto(null);
                 if (!d || d.status !== 'success') return;
-                // índice de lo local por ref_local (para preservar items/QR de reimpresión)
+                // índice de lo local por ref_local Y por id (la entrada local usa id=localId=ref_local; el
+                // fallback por id cubre entradas viejas sin ref_local). Asi el merge preserva items/QR.
                 const byRef = {};
-                ventasHoy.value.forEach(x => { if (x.ref_local) byRef[x.ref_local] = x; });
+                ventasHoy.value.forEach(x => { if (x.ref_local) byRef[x.ref_local] = x; if (x.id) byRef[x.id] = byRef[x.id] || x; });
                 const usados = new Set();
                 const result = [];
                 d.ventas.forEach(v => {
                     const ref = v.ref_local || '';
                     const anulada = String(v.forma_pago || '').toUpperCase().indexOf('ANULADO') === 0;
-                    const loc = ref && byRef[ref];
+                    const loc = (ref && byRef[ref]) || byRef[v.id_venta];
                     if (loc) {   // ya existía local → actualizar estado autoritativo, conservar lo rico
                         loc.syncStatus = 'synced';
                         if (loc.raw_data) loc.raw_data.status = 'synced';
                         loc.anulada = anulada;
                         if (v.nf_estado) loc.nfEstado = v.nf_estado;
                         if (v.correlativo) loc.correlativo = v.correlativo;
-                        result.push(loc); usados.add(ref);
+                        result.push(loc); if (ref) usados.add(ref); if (loc.id) usados.add(loc.id); if (loc.ref_local) usados.add(loc.ref_local);
                     } else {     // solo en Supabase (otro dispositivo / cache perdido) → agregar
                         result.push({
                             id: ref || v.id_venta, id_venta_gas: v.id_venta, ref_local: ref,
@@ -16226,11 +16227,14 @@
                 });
                 // conservar las locales aún NO sincronizadas (pending/fantasma) que Supabase todavía no tiene
                 ventasHoy.value.forEach(x => {
-                    if (x.ref_local && usados.has(x.ref_local)) return;
+                    if ((x.ref_local && usados.has(x.ref_local)) || (x.id && usados.has(x.id))) return;
                     if (x.syncStatus !== 'synced') result.push(x);
                 });
-                result.sort((a,b) => (b.timestamp - a.timestamp));
-                ventasHoy.value = result;
+                // dedup defensivo por id (evita doble-conteo si quedara alguna colisión)
+                const _seen = new Set();
+                const _dedup = result.filter(r => { const k = r.id || r.ref_local; if (_seen.has(k)) return false; _seen.add(k); return true; });
+                _dedup.sort((a,b) => (b.timestamp - a.timestamp));
+                ventasHoy.value = _dedup;
                 lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
             } catch(e) { console.warn('[cargarVentasVendedor] (deja el local):', e && e.message); }
         };
@@ -17581,6 +17585,12 @@
                }
            }
            if (pago.value.tipoDoc === 'FACTURA') {
+               // [500x-2b] SUNAT: FACTURA solo admite RUC (tipo 6). Un CE (tipo 4) de 11 chars NO es válido.
+               if (pago.value.tipoDocClienteCE) {
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('⚠ FACTURA requiere RUC', 'No admite Carné de Extranjería ni Pasaporte. Usa un RUC (11 dígitos).');
+                   return;
+               }
                if (pago.value.docCliente === '66666' || pago.value.docCliente.length !== 11) {
                    try { playBeepError?.(); } catch(_){}
                    agregarToast('⚠ RUC inválido', 'FACTURA requiere RUC de 11 dígitos (no admite VARIOS).');
@@ -17739,7 +17749,7 @@
            }
 
            // 1. Guardar en historial local inmediatamente (para mostrar en UI)
-           const ht = { id: localId, tipo: tipoDocVenta, correlativo: correlativoLocal, total: totalVenta, timestamp: localTs, cliente_doc: docClienteVenta || '-', cliente_nombre: nombreClienteVenta || 'Genérico', items_count: itemsParaImprimir.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
+           const ht = { id: localId, ref_local: localId, tipo: tipoDocVenta, correlativo: correlativoLocal, total: totalVenta, timestamp: localTs, cliente_doc: docClienteVenta || '-', cliente_nombre: nombreClienteVenta || 'Genérico', items_count: itemsParaImprimir.length, expanded: false, raw_data: ventaBase, syncStatus: 'pending' };
            ventasHoy.value.unshift(ht);
            lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
 
