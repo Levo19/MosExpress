@@ -1,1 +1,1 @@
-{"version":"2.8.78","build":"limpieza consola: reverse-geocode open-meteo (endpoint equivocado, daba 400 siempre) -> no-op con fallback; + favicon data-URI (mata 404). Sin cambios funcionales."}
+{"version":"2.8.79","build":"#1 emision NV CERO-GAS: un fallo de INFRA (red/timeout/5xx/sin-token) ya NO cae a GAS -> imprime LOCAL + encola para REINTENTO DIRECTO a Supabase (idempotente por ref_local). NEGOCIO (caja cerrada/validacion) bloquea/avisa. CPE sigue por GAS hasta Etapa 4. Revision adversarial money-safety pasada."}

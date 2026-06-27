@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.78';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.79';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9795,6 +9795,43 @@
                let intentos = 0;
                let exito = false;
                while (intentos < 3 && !exito) {
+                   // [#1 cero-GAS] Las NV encoladas con direct:true reintentan DIRECTO a Supabase
+                   // (crear_venta_directa, idempotente por ref_local), NO por GAS. Los CPE y la cola
+                   // legacy (sin direct) siguen por GAS hasta el go-live fiscal de Etapa 4.
+                   if (venta.direct) {
+                       try {
+                           const rd = await _crearVentaDirecta(venta.raw_data, venta.id);
+                           pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                           const hIdxD = ventasHoy.value.findIndex(v => v.id === venta.id);
+                           if (hIdxD > -1) {
+                               const tkD = ventasHoy.value[hIdxD];
+                               tkD.syncStatus = 'synced'; tkD.raw_data.status = 'synced';
+                               tkD.correlativo = rd.correlativo; tkD.id_venta_gas = rd.id_venta || tkD.id_venta_gas;
+                           }
+                           try { _mirrorVentaAsync(venta.raw_data, rd.id_venta, rd.correlativo); } catch(_){}
+                           exitos++; exito = true;
+                       } catch (eD) {
+                           const mD = String(eD && eD.message || '');
+                           if (/CAJA_NO_ABIERTA/.test(mD) || /crear_venta_directa:\s/.test(mD)) {
+                               // negocio determinístico (caja cerrada / validación) → no reintentar; sacar + avisar.
+                               pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                               const hF = ventasHoy.value.findIndex(v => v.id === venta.id);
+                               if (hF > -1) ventasHoy.value[hF].syncStatus = 'fantasma';
+                               // [#12] persistir YA (no esperar a exitos>0) para que el chip fantasma sobreviva un reload.
+                               lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                               lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                               try { playBeepError?.(); } catch(_){}
+                               agregarToast('⚠ Venta NO registrada',
+                                   (venta.raw_data?.header?.total ? 'S/ ' + venta.raw_data.header.total + ' · ' : '') +
+                                   'el backend la rechazó (caja cerrada / datos). Avisa al cajero/admin.', 'error');
+                               exito = true;
+                           } else {
+                               intentos++;   // infra → reintento con backoff
+                               if (intentos < 3) await new Promise(r => setTimeout(r, Math.pow(2, intentos) * 1000));
+                           }
+                       }
+                       continue;
+                   }
                    try {
                        const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(venta.raw_data) });
                        const res = await req.json();
@@ -17738,7 +17775,10 @@
            // ── Modo offline puro ─────────────────────────────────────────
            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                imprimirTicketVenta(correlativoLocal, false, null);
-               pendingSales.value.push({ id: localId, raw_data: ventaBase });
+               // [#1 cero-GAS] NV con escritura directa → direct:true: la cola reintenta DIRECTO a Supabase
+               // al reconectar (no GAS), idempotente por ref_local. CPE / NV-sin-flag siguen por GAS.
+               const _dirNV = escrituraDirectaSupabase() && tipoDocVenta === 'NOTA_DE_VENTA';
+               pendingSales.value.push(_dirNV ? { id: localId, raw_data: ventaBase, direct: true } : { id: localId, raw_data: ventaBase });
                lsSet('pending_sales', JSON.stringify(pendingSales.value));
                // No toast — el cajero ya tiene su ticket (con LOCAL es esperado offline)
                return;
@@ -17778,8 +17818,26 @@
                        agregarToast('⚠ Tu caja está cerrada', 'Se cerró (jornada vencida). Abre una caja nueva para vender — la venta NO se registró.', 'error', 7000);
                        return;   // NO GAS: la regla de negocio manda (no se rescata una venta que debe bloquearse)
                    }
-                   console.warn('[escritura directa] fallback a GAS:', _msgDir);
-                   // otros errores (infra: token/red/5xx) → sigue al path GAS normal (sin return)
+                   // [#1 cero-GAS] Distinguir NEGOCIO vs INFRA. La RPC lanza `crear_venta_directa: <error>`
+                   // (negocio: status≠success) vs `crear_venta_directa HTTP 5xx`/timeout/sin-token (infra).
+                   if (/crear_venta_directa:\s/.test(_msgDir)) {
+                       // Rechazo de negocio determinístico (validación) → ni reintento ni GAS lo arreglan. Avisar.
+                       const _ixN = ventasHoy.value.findIndex(v => v.id === localId);
+                       if (_ixN !== -1) { ventasHoy.value.splice(_ixN, 1); lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
+                       agregarToast('⚠ Venta rechazada', _msgDir.replace(/^.*crear_venta_directa:\s*/, ''), 'error', 6000);
+                       return;
+                   }
+                   // INFRA (red/timeout/5xx/sin token): CERO-GAS → imprimir LOCAL + encolar para REINTENTO
+                   // DIRECTO (marca direct:true). Idempotente por ref_local (crear_venta_directa dedup) → no duplica.
+                   console.info('[escritura directa] infra → cola directa (cero-GAS):', _msgDir);
+                   try { imprimirTicketVenta(correlativoLocal, false, null); } catch(_) {}
+                   const _yaEnCola = pendingSales.value.some(v => v.id === localId);
+                   if (!_yaEnCola) {
+                       pendingSales.value.push({ id: localId, raw_data: ventaBase, direct: true });
+                       lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                   }
+                   agregarToast('Venta en cola', 'Reintentando directo a Supabase (impresa con correlativo local).', 'info', 3500);
+                   return;   // CERO-GAS: ya NO cae al path GAS
                }
            }
 
