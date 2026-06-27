@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.79';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.80';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15833,23 +15833,25 @@
         // único + NubeFact dentro de Postgres), atómico. Reemplaza los 3 saltos viejos
         // (crear_cpe_directo → Edge emitir-cpe → set_cpe_nf). Mismo shape de retorno → el
         // call-site y la impresión del QR SUNAT no cambian. Sin GAS.
+        // [#18/#19 cero-GAS · token en Edge] 3 saltos: (1) me.crear_cpe_directo crea la venta CPE PENDIENTE
+        // + mintea el correlativo atómico + RESUELVE la serie desde mos.series_documentales (Supabase, fresca
+        // — SQL 270); (2) Edge `emitir-cpe` emite a NubeFact con el TOKEN EN SECRET (no en tabla); (3) me.set_cpe_nf
+        // patchea el resultado NF. Si la emisión falla/queda PENDIENTE → la reconciliación re-emite; igual imprime
+        // con el correlativo. Idempotente: ref_local (crear) + correlativo (NubeFact dedup) → reintento no duplica.
         const _crearCPEDirecto = async (ventaBase, localId) => {
             const token = await _mintTokenSB();
             const h = ventaBase.header || {};
-            const est = config.value.estacion || {};
             const posc = ventaBase.pos_config || ventaBase.pos || {};
             const tipoDoc = h.tipoDoc;   // 'BOLETA' | 'FACTURA'
-            const serie = posc.serieActual
-                || (tipoDoc === 'FACTURA' ? (est.Serie_Factura || est.SerieFactura || 'F001')
-                                          : (est.Serie_Boleta  || est.SerieBoleta  || 'B001'));
             const cli = h.cliente || {};
+            const est = config.value.estacion || {};
+            // 1) crear venta CPE PENDIENTE + mint correlativo (la RPC resuelve la serie de Supabase por estación/zona).
             const payload = {
-                ref_local: localId, serie: serie, tipo_doc: tipoDoc,
+                ref_local: localId, tipo_doc: tipoDoc,
+                serie: posc.serieActual || '',   // fallback; la RPC prioriza mos.series_documentales
                 vendedor: (ventaBase.auth && ventaBase.auth.vendedor) || config.value.vendedor || '',
                 estacion: (ventaBase.auth && ventaBase.auth.estacion) || est.idEstacion || '',
-                cliente: { tipo: cli.tipo || 0, doc: cli.doc || '', nombre: cli.nombre || '',
-                           direccion: cli.direccion || '', email: cli.email || '' },
-                tipo_doc_cliente: cli.tipo || 0,
+                cliente_doc: cli.doc || '', cliente_nombre: cli.nombre || '', tipo_doc_cliente: cli.tipo || 0,
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
                 id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '', obs: h.obs || '',
                 items: (ventaBase.items || []).map(it => ({ sku: it.sku, nombre: it.nombre, cantidad: it.cantidad,
@@ -15857,22 +15859,44 @@
                     cod_sunat: it.cod_sunat || '', valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv,
                     unidad_medida: it.unidad_de_medida || it.unidad_medida || 'NIU' }))
             };
-            // timeout 25s: NubeFact corre dentro de la RPC (http en Postgres). Si excede, la venta NO se
-            // graba (rollback atómico) y el caller cae a su fallback; el reintento manda el mismo nº (dedup).
-            const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/emitir_cpe_fac`, {
+            const resC = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/crear_cpe_directo`, {
                 method:'POST',
                 headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
                 body: JSON.stringify({ p: payload })
-            }, 25000);
-            if (!res.ok) throw new Error('emitir_cpe_fac HTTP ' + res.status);
-            const r = await res.json();
-            if (!r || r.status !== 'success') throw new Error('emitir_cpe_fac: ' + ((r && (r.error || r.errores)) || 'fallo'));
-            const nfEstado = r.nf_estado || r.estado || 'PENDIENTE';
-            const nfData = (r.hash || r.qr || r.pdf) ? { hash: r.hash || '', enlace: r.pdf || '', qrString: r.qr || '' } : null;
-            return { correlativo: r.correlativo, id_venta: r.id_venta, nfData: nfData, nfEstado: nfEstado,
-                     // [Rep #9] persistir tambien el QR SUNAT (set_cpe_nf lo guarda en me.ventas.nf_qr) → el
-                     // ticket (re)imprime el QR fiscal real, no el correlativo.
-                     nf: { nf_estado: nfEstado, nf_hash: r.hash || '', nf_enlace: r.pdf || '', nf_qr: r.qr || '' } };
+            }, 8000);
+            if (!resC.ok) throw new Error('crear_cpe_directo HTTP ' + resC.status);
+            const cr = await resC.json();
+            if (!cr || cr.status !== 'success') throw new Error('crear_cpe_directo: ' + ((cr && cr.error) || 'fallo'));
+            const correlativo = cr.correlativo;
+            // dedup: ya estaba EMITIDO/RECHAZADO (reintento) → no re-emitir, devolver tal cual.
+            if (cr.dedup && cr.nf_estado && cr.nf_estado !== 'PENDIENTE') {
+                return { correlativo, id_venta: cr.id_venta, nfData: null, nfEstado: cr.nf_estado,
+                         nf: { nf_estado: cr.nf_estado, nf_hash: cr.nf_hash || '', nf_enlace: cr.nf_enlace || '', nf_qr: '' } };
+            }
+            // 2) emitir a NubeFact por el Edge (token en secret). Falla/infra → queda PENDIENTE (reconciliación re-emite).
+            let nf = { nf_estado: 'PENDIENTE', nf_hash: '', nf_enlace: '', nf_qr: '' };
+            let nfData = null;
+            try {
+                const ed = await _emitirCPEDirecto(ventaBase, correlativo);
+                if (ed && ed.ok) {
+                    const estNF = ed.estado || (ed.aceptada ? 'EMITIDO' : 'PENDIENTE');
+                    nf = { nf_estado: estNF, nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '' };
+                    nfData = (ed.hash || ed.qrString || ed.enlace) ? { hash: ed.hash || '', enlace: ed.enlace || '', qrString: ed.qrString || '' } : null;
+                } else if (ed && ed.rechazadoPorSunat) {
+                    nf = { nf_estado: 'RECHAZADO', nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '' };
+                    nfData = (ed.hash || ed.qrString) ? { hash: ed.hash || '', enlace: ed.enlace || '', qrString: ed.qrString || '' } : null;
+                }
+                // ed.ok=false sin rechazo = infra → queda PENDIENTE (reconciliación re-emite).
+            } catch (_) { /* emisión falló → PENDIENTE; igual imprime con el correlativo (sin QR SUNAT aún) */ }
+            // 3) patchear el resultado NF en me.ventas (set_cpe_nf).
+            try {
+                await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/set_cpe_nf`, {
+                    method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                    body: JSON.stringify({ p_ref_local: localId, p_nf: nf })
+                }, 8000);
+            } catch (_) {}
+            return { correlativo, id_venta: cr.id_venta, nfData, nfEstado: nf.nf_estado, nf };
         };
         // [Fase 2] Crea un movimiento de caja DIRECTO en Supabase (RPC crear_movimiento_directo). Idempotente
         // por id_extra (generado por el cliente, reusado en RPC+mirror). Devuelve {status,id_extra,dedup}.
