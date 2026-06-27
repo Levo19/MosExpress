@@ -324,9 +324,11 @@ function editarClienteVenta(data) {
   }
   if (!encontrada) return generarRespuestaError('Venta ' + idV + ' no encontrada');
 
-  // Bloqueo: CPE emitido NO se puede editar (SUNAT)
-  if (tipoDoc !== 'NOTA_DE_VENTA' && nfEstado === 'EMITIDO') {
-    return generarRespuestaError('CPE emitido (' + tipoDoc + ') no se puede editar. Solicite la baja del CPE primero.');
+  // Bloqueo: NINGÚN CPE (BOLETA/FACTURA) es editable — bloquear por TIPO, no por estado [H7 500x-2].
+  // En cuanto se minteó el correlativo el comprobante fue (o será reconciliado) a NubeFact/SUNAT, así que
+  // PENDIENTE/RECHAZADO/NULL tampoco deben mutar el titular fiscal. Solo NOTA_DE_VENTA. Para CPE: dar baja+reemitir.
+  if (tipoDoc !== 'NOTA_DE_VENTA') {
+    return generarRespuestaError('Comprobante ' + tipoDoc + ' (estado ' + (nfEstado || '(sin)') + ') no editable: el titular fiscal no se cambia tras mintear el correlativo. Solo NOTA_DE_VENTA. Para CPE: dar de baja y reemitir.');
   }
 
   var docNew = String(data.clienteDoc || '');

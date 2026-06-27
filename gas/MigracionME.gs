@@ -248,7 +248,10 @@ function _dualWriteVentaPatchME(idVenta, patch){
     : [String(idVenta||'').trim()].filter(Boolean);
   if(!ids.length || !patch) return {ok:false, error:'sin id_venta/patch'};
   var filtro = (ids.length===1) ? ('eq.'+ids[0]) : ('in.('+ids.join(',')+')');
-  var r=_sb('PATCH','me.ventas',{ data:patch, filters:{ id_venta:filtro }, maxRetry:1 });
+  // [500x H4] maxRetry 3 (idempotente: mismo patch): bajo sync-off, este PATCH es el ÚNICO camino
+  // durable de una edición/anulación que va por el bridge GAS (no por la RPC directa). Reintentar
+  // reduce la ventana de pérdida silenciosa ante un 5xx transitorio. No es el hot-path de la venta.
+  var r=_sb('PATCH','me.ventas',{ data:patch, filters:{ id_venta:filtro }, maxRetry:3 });
   if(!r.ok) Logger.log('[dualWrite venta patch] '+ids.length+' id(s) falló: HTTP '+(r.code)+' '+(r.error||''));
   return r;
 }
@@ -577,6 +580,48 @@ function revertirMESupabase(){
   return estado;
 }
 
+// ============================================================
+// CUTOVER VENTAS-ME (Etapa 3) — un-block del sync para `ventas`.
+// El panel MOS edita tickets (forma pago / cliente / anular) 100% Supabase vía RPCs
+// me.editar_forma_pago / me.editar_cliente / me.anular_venta (SQL 260). PERO el sync
+// Hoja→sombra re-upsertea me.ventas desde la Hoja cada 15min → REVERTIRÍA una edición
+// directa. Estos helpers AGREGAN/QUITAN `ventas` a ME_SYNC_OFF_TABLAS preservando lo ya
+// presente (stock_zonas/guias_*). Correr UNA vez en el editor ANTES de prender el flag
+// MOS `me_edit_directo`. Idempotente + reversible sin redeploy.
+//
+// ⚠️ PRE-CHECK money-safety: con `ventas` sync-off, el batch ya no reconcilia la sombra
+// desde la Hoja. Es SEGURO porque TODO writer de ventas patchea la sombra directo:
+//   · creación de venta → me.crear_venta_directa (ME_ESCRITURA_DIRECTA=1)
+//   · ediciones GAS bridge (flag OFF) → _dualWriteVentaPatchME (PATCH explícito)
+//   · anulación masiva al cierre → _dualWriteVentaPatchME
+//   · ediciones directas (flag ON) → RPC me.* (atómica)
+// El espejo a la Hoja queda como respaldo inerte. Revertir = quitar `ventas` del set.
+function activarMEVentasDirecto(){
+  var p = PropertiesService.getScriptProperties();
+  var set = _meSyncOffSet();           // preserva lo existente (stock_zonas, guias_*)
+  set['ventas'] = 1;
+  var csv = _meSyncOffSetTablas(Object.keys(set));
+  var ok = (_meSyncOffSet()['ventas'] === 1);
+  var out = {
+    ok: ok, accion: 'VENTAS sync-off ' + (ok ? 'ACTIVADO' : 'FALLÓ'),
+    ME_SYNC_OFF_TABLAS: csv,
+    nota: ok ? 'Ahora una edición directa de ticket (RPC me.*) NO se revierte. Prende el flag MOS me_edit_directo.'
+             : '⚠ `ventas` NO quedó en el set — revisar.'
+  };
+  Logger.log('🎟  activarMEVentasDirecto → ME_SYNC_OFF_TABLAS = ' + csv + (ok ? '  ✓' : '  ✗ REVISAR'));
+  return out;
+}
+
+function revertirMEVentasDirecto(){
+  var set = _meSyncOffSet();
+  delete set['ventas'];
+  var csv = _meSyncOffSetTablas(Object.keys(set));
+  var ok = !(_meSyncOffSet()['ventas']);
+  Logger.log('↩ revertirMEVentasDirecto → ME_SYNC_OFF_TABLAS = "' + csv + '"' + (ok ? '  ✓ (ventas removido)' : '  ✗ REVISAR'));
+  return { ok: ok, accion: 'VENTAS sync-off REVERTIDO', ME_SYNC_OFF_TABLAS: csv,
+    nota: 'El sync Hoja→sombra de ventas reanuda. Apaga ANTES el flag MOS me_edit_directo para no descuadrar.' };
+}
+
 // Diagnóstico de solo lectura: muestra el estado actual de los flags sin cambiar nada.
 function estadoMESupabase(){
   var p = PropertiesService.getScriptProperties();
@@ -594,6 +639,42 @@ function _syncMEImpl(full){
   var _off=_meSyncOffSet();
   Object.keys(_ME_SPECS).forEach(function(tabla){
     var cfg=_ME_SPECS[tabla];
+    // [cutover ventas-ME] `ventas` sync-off pero CON heal insert-missing: el panel edita tickets directo
+    // a la sombra (RPCs me.*), así que NO podemos re-upsertear (revertiría la edición). PERO una creación
+    // de venta cuyo _dualWriteVentaME (hot path, 1 intento) falló quedaría SOLO en la Hoja → perdida de la
+    // sombra bajo sync-off. Este heal INSERTA solo las cabeceras FALTANTES (jamás toca filas existentes →
+    // cero revert). Cubre el agujero de durabilidad de creación. El detalle se auto-sana por su propio sync.
+    if(tabla==='ventas' && _off['ventas']){
+      try{
+        if(!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(cfg.sheet)){ resumen['ventas']={skipped:'sync OFF; sin hoja'}; return; }
+        var rowsV=_meBuildRows('ventas');
+        var tailV=_ME_SYNC_TAILS['ventas']||500;
+        var sliceV=(full || rowsV.length<=tailV) ? rowsV : rowsV.slice(rowsV.length-tailV);
+        var idsV=sliceV.map(function(r){ return String(r.id_venta); }).filter(function(x){ return x && x!=='undefined'; });
+        var existV={};
+        var getOK=true;
+        for(var b=0;b<idsV.length && getOK;b+=200){
+          var loteG=idsV.slice(b,b+200);
+          var g=_sb('GET','me.ventas',{ select:'id_venta', filters:{ id_venta:'in.('+loteG.join(',')+')' }, maxRetry:1 });
+          if(g && g.ok && Array.isArray(g.data)) g.data.forEach(function(x){ existV[String(x.id_venta)]=1; });
+          else getOK=false;
+        }
+        if(!getOK){ resumen['ventas']={skipped:'sync OFF; heal abortado (GET sombra falló — no se inserta para no arriesgar)'}; return; }
+        var missingV=sliceV.filter(function(r){ return !existV[String(r.id_venta)]; });
+        if(!missingV.length){ resumen['ventas']={skipped:'sync OFF', heal:{faltantes:0}}; return; }
+        var upH=0, errH=[];
+        for(var m=0;m<missingV.length;m+=100){
+          var loteM=missingV.slice(m,m+100);
+          // insert-missing PURO (ignore-duplicates): si una raza creó/editó la fila entre el GET y
+          // este POST, ON CONFLICT DO NOTHING la deja intacta → cierra el TOCTOU (nunca revierte una
+          // edición directa) y no enmascara faltantes con el 409→ok del merge.
+          var rM=_sbUpsertIgnore('me.ventas',loteM,cfg.onConflict);
+          if(rM.ok) upH+=loteM.length; else errH.push('lote '+m+': HTTP '+rM.code+' '+(rM.error||''));
+        }
+        resumen['ventas']={skipped:'sync OFF', heal:{faltantes:missingV.length, insertadas:upH, errores:errH}};
+      }catch(eH){ resumen['ventas']={skipped:'sync OFF', heal:{error:String(eH&&eH.message||eH)}}; }
+      return;
+    }
     // [cutover stock-directo] tabla excluida del sync (la gobierna Supabase) → NO re-upsertear desde la Hoja.
     if(_off[tabla]){ resumen[tabla]={skipped:'sync OFF (ME_SYNC_OFF_TABLAS)'}; return; }
     // [correlativo Supabase] si Postgres es el minter, NO re-sincronizar el contador desde Sheets

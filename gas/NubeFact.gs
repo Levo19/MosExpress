@@ -342,6 +342,7 @@ function reconciliarCPEsPendientes(diasAtras) {
   var idxNFE   = headers.indexOf('NF_Estado');
   var idxNFH   = headers.indexOf('NF_Hash');
   var idxNFL   = headers.indexOf('NF_Enlace');
+  var idxIdV   = headers.indexOf('ID_Venta');   // [cutover ventas-ME] para patchar la sombra (no solo la Hoja)
   if (idxTipo < 0 || idxCorr < 0 || idxNFE < 0) {
     return { ok: false, error: 'Columnas requeridas no encontradas' };
   }
@@ -369,16 +370,35 @@ function reconciliarCPEsPendientes(diasAtras) {
     if (!serie || !numero) continue;
     stats.total++;
 
+    // [cutover ventas-ME] ID_Venta de la fila → para PATCH directo a la sombra (delete-safe).
+    // Sin esto, con `ventas` en ME_SYNC_OFF_TABLAS la aceptación SUNAT async NUNCA llegaría a
+    // me.ventas (el batch sync ya no la carga) → estado fiscal stale en el panel. Best-effort.
+    var idvR = (idxIdV >= 0) ? String(data[i][idxIdV] || '').trim() : '';
+
     var cons = consultarCPENubeFact(serie, numero, tipo);
     if (cons.ok && cons.aceptada) {
       // Aceptada por SUNAT → actualizar fila
       sheet.getRange(fila, idxNFE + 1).setValue('EMITIDO');
       if (idxNFH >= 0 && cons.hash)   sheet.getRange(fila, idxNFH + 1).setValue(cons.hash);
       if (idxNFL >= 0 && cons.enlace) sheet.getRange(fila, idxNFL + 1).setValue(cons.enlace);
+      // PATCH durable a la sombra (fiscal): nf_estado + hash/enlace si vinieron.
+      try {
+        if (idvR && typeof _dualWriteVentaPatchME === 'function') {
+          var patchE = { nf_estado: 'EMITIDO' };
+          if (cons.hash)   patchE.nf_hash   = cons.hash;
+          if (cons.enlace) patchE.nf_enlace = cons.enlace;
+          _dualWriteVentaPatchME(idvR, patchE);
+        }
+      } catch (eDW) { Logger.log('[reconciliarCPEs] patch sombra EMITIDO: ' + (eDW && eDW.message)); }
       stats.emitidos++;
       stats.detalles.push({ corr: corr, accion: 'reconciliado_emitido' });
     } else if (cons.ok && !cons.aceptada) {
-      sheet.getRange(fila, idxNFE + 1).setValue('RECHAZADO_SUNAT');
+      // [MED10 500x-2] Vocabulario fiscal canónico = 'RECHAZADO' (no 'RECHAZADO_SUNAT'): me.set_cpe_nf y
+      // el filtro de fac.reconciliar solo reconocen 'RECHAZADO'; un 'RECHAZADO_SUNAT' quedaba invisible al
+      // reconciliador centralizado. Un solo término en toda la columna fiscal.
+      sheet.getRange(fila, idxNFE + 1).setValue('RECHAZADO');
+      try { if (idvR && typeof _dualWriteVentaPatchME === 'function') _dualWriteVentaPatchME(idvR, { nf_estado: 'RECHAZADO' }); }
+      catch (eDW2) { Logger.log('[reconciliarCPEs] patch sombra RECHAZADO: ' + (eDW2 && eDW2.message)); }
       stats.rechazados++;
       stats.detalles.push({ corr: corr, accion: 'rechazado_sunat', motivo: cons.sunatDescription });
     } else if (cons.noExiste) {

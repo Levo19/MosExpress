@@ -51,7 +51,10 @@ function getCierreHtml(idCaja) {
           metodo:      String(vd[v][8] || 'EFECTIVO'),
           correlativo: String(vd[v][9] || ''),
           estado:      String(vd[v][12] || 'COMPLETADO'),
-          obs:         String(vd[v][14] || '')
+          obs:         String(vd[v][14] || ''),
+          // [MED15 500x-2] anulada por PREFIJO de FormaPago (cubre 'ANULADO' y 'ANULADO_CONVERSION', que
+          // NUNCA toca col12/Estado_Envio) — evita doble conteo de la NV convertida contra el CPE de reemplazo.
+          anulada:     String(vd[v][8] || '').toUpperCase().indexOf('ANULADO') === 0 || String(vd[v][12] || '') === 'ANULADO'
         });
       }
     }
@@ -77,7 +80,7 @@ function getCierreHtml(idCaja) {
       };
       detMap[dvId].push(item);
       var venta = ventas.filter(function(x){ return x.idVenta === dvId; })[0];
-      if (venta && venta.estado !== 'ANULADO') {
+      if (venta && !venta.anulada) {
         var pn = item.nombre || 'Sin nombre';
         prodTotales[pn] = (prodTotales[pn] || 0) + item.subtotal;
       }
@@ -102,8 +105,8 @@ function getCierreHtml(idCaja) {
   }
 
   // ── 5. Calcular analítica ────────────────────────────────────
-  var activas    = ventas.filter(function(x){ return x.estado !== 'ANULADO'; });
-  var anuladas   = ventas.filter(function(x){ return x.estado === 'ANULADO'; });
+  var activas    = ventas.filter(function(x){ return !x.anulada; });
+  var anuladas   = ventas.filter(function(x){ return  x.anulada; });
   var sinCobrar  = activas.filter(function(x){ return x.metodo === 'POR_COBRAR'; });
   var creditos   = activas.filter(function(x){ return x.metodo === 'CREDITO'; });
   var cobradas   = activas.filter(function(x){ return x.metodo !== 'POR_COBRAR'; });

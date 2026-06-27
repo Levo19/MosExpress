@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.80';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.81';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9820,10 +9820,25 @@
                                // [#12] persistir YA (no esperar a exitos>0) para que el chip fantasma sobreviva un reload.
                                lsSet('pending_sales', JSON.stringify(pendingSales.value));
                                lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                               // [MED13 500x-2] una venta OFFLINE ya cobrada+impresa que rebota por caja cerrada al
+                               // sincronizar = dinero en efectivo sin registro en servidor → persistir al panel de
+                               // fantasmas (no solo el chip) para que el admin la vea y la re-registre en una caja abierta.
+                               try {
+                                   const _fant = JSON.parse(lsGet('mosexpress_ventas_fantasma') || '[]');
+                                   _fant.unshift({ id: venta.id, ts: Date.now(),
+                                       vendedor: venta.raw_data?.header?.vendedor || venta.raw_data?.auth?.vendedor || config.value.vendedor,
+                                       zona: config.value.zona,
+                                       total: parseFloat(venta.raw_data?.header?.total) || 0,
+                                       metodo: venta.raw_data?.header?.metodo || '',
+                                       motivo: /CAJA_NO_ABIERTA/.test(mD) ? 'CAJA_CERRADA_AL_SINCRONIZAR' : 'RECHAZO_VALIDACION',
+                                       mensaje: mD, impreso: true });
+                                   lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fant.slice(0, 50)));
+                                   ventasFantasma.value = _fant.slice(0, 50);
+                               } catch(_){}
                                try { playBeepError?.(); } catch(_){}
                                agregarToast('⚠ Venta NO registrada',
                                    (venta.raw_data?.header?.total ? 'S/ ' + venta.raw_data.header.total + ' · ' : '') +
-                                   'el backend la rechazó (caja cerrada / datos). Avisa al cajero/admin.', 'error');
+                                   'el backend la rechazó (caja cerrada / datos). Revísala en el panel de fantasmas.', 'error');
                                exito = true;
                            } else {
                                intentos++;   // infra → reintento con backoff
@@ -9877,6 +9892,33 @@
                            // NO reintentar (genera bucle infinito). Descartar de la cola.
                            console.warn('[ME sync] Descartando venta PAYLOAD_INVALIDO:', venta.id, res.campos_faltantes);
                            pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                           exito = true; // sale del while sin reintentar
+                       } else if (res.status === 'error' && (res.error === 'CAJA_NO_ABIERTA' || res.error === 'NO_CAJA_ACTIVA_EN_ZONA')) {
+                           // [H4 500x-2] rechazo de NEGOCIO determinístico en el path GAS (cola legacy sin direct).
+                           // Antes caía al else→intentos++ → tras 3 fallos NO salía de pendingSales → el poller la
+                           // reintentaba cada 30s para SIEMPRE + re-disparaba VENTAS_FANTASMA duplicadas en GAS.
+                           // Ahora: sacar de la cola, marcar fantasma, persistir al panel y avisar (espeja el branch direct).
+                           console.warn('[ME sync] GAS rechazó por negocio (no reintentar):', venta.id, res.error);
+                           pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                           const hFg = ventasHoy.value.findIndex(v => v.id === venta.id);
+                           if (hFg > -1) ventasHoy.value[hFg].syncStatus = 'fantasma';
+                           lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                           try {
+                               const _fg = JSON.parse(lsGet('mosexpress_ventas_fantasma') || '[]');
+                               _fg.unshift({ id: venta.id, ts: Date.now(),
+                                   vendedor: venta.raw_data?.header?.vendedor || venta.raw_data?.auth?.vendedor || config.value.vendedor,
+                                   zona: config.value.zona,
+                                   total: parseFloat(venta.raw_data?.header?.total) || 0,
+                                   metodo: venta.raw_data?.header?.metodo || '',
+                                   motivo: res.error === 'CAJA_NO_ABIERTA' ? 'CAJA_CERRADA_AL_SINCRONIZAR' : 'NO_CAJA_ACTIVA_EN_ZONA',
+                                   mensaje: res.mensaje || res.error, impreso: true });
+                               lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fg.slice(0, 50)));
+                               ventasFantasma.value = _fg.slice(0, 50);
+                           } catch(_){}
+                           try { playBeepError?.(); } catch(_){}
+                           agregarToast('⚠ Venta NO registrada',
+                               (venta.raw_data?.header?.total ? 'S/ ' + venta.raw_data.header.total + ' · ' : '') +
+                               'el backend la rechazó (caja cerrada). Revísala en el panel de fantasmas.', 'error');
                            exito = true; // sale del while sin reintentar
                        } else {
                            intentos++;
@@ -15778,7 +15820,7 @@
             const payload = {
                 ref_local: localId, serie: serie, tipo_doc: 'NOTA_DE_VENTA',
                 vendedor: (ventaBase.auth && ventaBase.auth.vendedor) || config.value.vendedor || '',
-                estacion: (ventaBase.auth && ventaBase.auth.estacion) || est.idEstacion || '',
+                estacion: (ventaBase.auth && (ventaBase.auth.idEstacion || ventaBase.auth.estacion)) || est.idEstacion || '',  // [LOW19b] preferir ID
                 cliente_doc: (h.cliente && h.cliente.doc) || '', cliente_nombre: (h.cliente && h.cliente.nombre) || '',
                 tipo_doc_cliente: (h.cliente && h.cliente.tipo) || 0,
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
@@ -15850,7 +15892,7 @@
                 ref_local: localId, tipo_doc: tipoDoc,
                 serie: posc.serieActual || '',   // fallback; la RPC prioriza mos.series_documentales
                 vendedor: (ventaBase.auth && ventaBase.auth.vendedor) || config.value.vendedor || '',
-                estacion: (ventaBase.auth && ventaBase.auth.estacion) || est.idEstacion || '',
+                estacion: (ventaBase.auth && (ventaBase.auth.idEstacion || ventaBase.auth.estacion)) || est.idEstacion || '',  // [LOW19b] preferir ID para resolver serie por estación
                 cliente_doc: cli.doc || '', cliente_nombre: cli.nombre || '', tipo_doc_cliente: cli.tipo || 0,
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
                 id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '', obs: h.obs || '',
@@ -17542,6 +17584,7 @@
               auth: {
                   vendedor:  config.value.vendedor,
                   estacion:  _est.Estacion_Nombre || '',
+                  idEstacion: _est.idEstacion || '',   // [LOW19b 500x-2] ID real (no el nombre) para que la RPC resuelva la serie por estación
                   deviceId:  deviceId.value,
                   esCajero:  config.value.esCajero,
                   rol:       config.value.esCajero ? 'CAJERO' : 'VENDEDOR'
@@ -17741,6 +17784,7 @@
                        //   NO_CAJA_ACTIVA_EN_ZONA → cajero cerró/no abrió caja
                        //   VENTA_RECHAZADA        → genérico
                        if (res.error === 'PAYLOAD_INVALIDO' || res.error === 'NO_CAJA_ACTIVA_EN_ZONA'
+                           || res.error === 'CAJA_NO_ABIERTA'   // [H3 500x-2] caja cerrada (cajero) = rechazo fatal, no reintentar ni imprimir
                            || res.error === 'CPE_SIN_IDEMKEY'
                            || (res.status === 'success' && !res.idVenta)) {
                            const errFatal = new Error((res.error || 'VENTA_RECHAZADA') + ': ' + (res.mensaje || 'sin detalle'));
@@ -17889,7 +17933,28 @@
                    agregarToast(rd.nfEstado === 'EMITIDO' ? 'CPE emitido ✓' : ('CPE ' + rd.nfEstado), rd.correlativo);
                    return;   // EXCLUSIVIDAD
                } catch (eCpe) {
-                   console.warn('[CPE directo] fallback a GAS:', eCpe && eCpe.message);
+                   const _msgCpe = String(eCpe && eCpe.message || '');
+                   // [H8/H3 500x-2] Distinguir NEGOCIO vs INFRA igual que el path NV (17839-17854).
+                   // Caer ciego a GAS ante un rechazo de negocio crearía un ticket FISCAL fantasma en una
+                   // caja cerrada/conciliada. Evaluar CAJA_NO_ABIERTA primero (también matchea crear_cpe_directo:).
+                   if (/CAJA_NO_ABIERTA/.test(_msgCpe)) {
+                       cajaAbierta.value = false;
+                       const _ixC = ventasHoy.value.findIndex(v => v.id === localId);
+                       if (_ixC !== -1) { ventasHoy.value.splice(_ixC, 1); lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
+                       agregarToast('⚠ Tu caja está cerrada', 'Se cerró (jornada vencida). Abre una caja nueva — el comprobante NO se emitió.', 'error', 7000);
+                       return;   // NO GAS: la regla de negocio manda
+                   }
+                   if (/crear_cpe_directo:\s/.test(_msgCpe)) {
+                       // Rechazo de negocio determinístico (TOTAL_NO_CUADRA, SERIE_REQUERIDA, …) → ni reintento ni GAS lo arreglan.
+                       const _ixD = ventasHoy.value.findIndex(v => v.id === localId);
+                       if (_ixD !== -1) { ventasHoy.value.splice(_ixD, 1); lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
+                       agregarToast('⚠ Comprobante rechazado', _msgCpe.replace(/^.*crear_cpe_directo:\s*/, ''), 'error', 6000);
+                       return;   // NO GAS
+                   }
+                   // INFRA (HTTP 5xx/timeout/sin token de la Edge): cae al path GAS, que dedupea por ref_local
+                   // (procesarVenta → _meVentaPorRefLocal) y con CORRELATIVO_SOURCE=supabase reusa el MISMO
+                   // idem_key=ref_local → no re-mintea ni re-emite. (CPE-direct infra-retry 100% cero-GAS = task #20.)
+                   console.warn('[CPE directo] infra → fallback a GAS (dedup por ref_local):', _msgCpe);
                    // sigue al path GAS normal (sin return)
                }
            }
@@ -17972,7 +18037,11 @@
                        const motivo = e.code || 'VENTA_RECHAZADA';
                        const msgUser = motivo === 'NO_CAJA_ACTIVA_EN_ZONA'
                            ? '⛔ No hay caja activa en tu zona — pide al cajero que abra caja'
+                           : motivo === 'CAJA_NO_ABIERTA'
+                           ? '⛔ Tu caja está cerrada — abre una caja nueva para seguir vendiendo'
                            : ('⛔ Venta rechazada por backend: ' + motivo);
+                       // [H3 500x-2] caja cerrada → reflejar el estado en la UI (forzar reabrir)
+                       if (motivo === 'CAJA_NO_ABIERTA') { try { cajaAbierta.value = false; } catch(_){} }
                        console.error('[ME venta] FANTASMA detectada:', motivo, e.message);
                        // Marca la venta en ventasHoy como FANTASMA (no synced)
                        const idx = ventasHoy.value.findIndex(v => v.id === localId);

@@ -101,10 +101,13 @@ function estadoCajas() {
     var vd = ventasSheet.getDataRange().getValues();
     for (var v = 1; v < vd.length; v++) {
       var idCaja  = String(vd[v][10] || '');
-      var estado  = String(vd[v][12] || 'COMPLETADO');
       var metodo  = String(vd[v][8]  || 'EFECTIVO');
       var tipoDoc = String(vd[v][7]  || 'NOTA_DE_VENTA');
       var total   = parseFloat(vd[v][6]) || 0;
+      // [MED14 500x-2] Anulado se deriva de FormaPago (col8) por PREFIJO, no de col12/Estado_Envio (que
+      // SIEMPRE es 'COMPLETADO' — la rama era código muerto y contaba las anuladas como venta, inflando
+      // el arqueo). Prefijo cubre 'ANULADO' y 'ANULADO_CONVERSION'.
+      var anulado = metodo.toUpperCase().indexOf('ANULADO') === 0;
       if (!idCaja) continue;
 
       if (!ventasPorCaja[idCaja]) {
@@ -113,7 +116,7 @@ function estadoCajas() {
       }
       var vc = ventasPorCaja[idCaja];
 
-      if (estado === 'ANULADO') {
+      if (anulado) {
         vc.anulados++;
       } else if (metodo === 'POR_COBRAR') {
         vc.sinCobrar++;

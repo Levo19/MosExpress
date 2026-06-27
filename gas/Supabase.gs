@@ -84,6 +84,7 @@ function _sbOnce_(method, schemaTable, opts) {
   var prefer = [];
   if (opts.prefer) prefer.push(opts.prefer);
   if (!isRead && opts.upsert) prefer.push('resolution=merge-duplicates');
+  else if (!isRead && opts.upsertIgnore) prefer.push('resolution=ignore-duplicates');  // insert-missing puro (NO actualiza filas existentes → no revierte)
   prefer.push(opts.returnRep ? 'return=representation' : 'return=minimal');
   if (prefer.length && !isRead) headers['Prefer'] = prefer.join(',');
 
@@ -148,6 +149,12 @@ function _sb(method, schemaTable, opts) {
 function _sbSelect(schemaTable, opts) { return _sb('GET', schemaTable, opts || {}); }
 function _sbInsert(schemaTable, rows, returnRep) {
   return _sb('POST', schemaTable, { data: rows, returnRep: !!returnRep });
+}
+// Insert-missing PURO: ON CONFLICT DO NOTHING (resolution=ignore-duplicates). NUNCA actualiza
+// una fila existente → seguro para el heal bajo sync-off (no revierte ediciones directas ni
+// enmascara faltantes con el 409→ok del path merge).
+function _sbUpsertIgnore(schemaTable, rows, onConflict, returnRep) {
+  return _sb('POST', schemaTable, { data: rows, upsertIgnore: true, onConflict: onConflict, returnRep: !!returnRep });
 }
 function _sbUpsert(schemaTable, rows, onConflict, returnRep) {
   return _sb('POST', schemaTable, { data: rows, upsert: true, onConflict: onConflict, returnRep: !!returnRep });

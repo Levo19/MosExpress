@@ -99,6 +99,24 @@ function procesarVenta(data) {
   if (auth.esCajero && !pos.cajaId) {
     header.metodo = 'POR_COBRAR';
   }
+  // [500x #14] Cajero CON cajaId pero esa caja ya está CERRADA (p.ej. auto-cierre de jornada
+  // vencida): NUNCA crear el ticket en una caja cerrada/arqueada (era ticket fantasma cross-día).
+  // Antes solo se validaba caja-ABIERTA para vendedores (no-cajeros). Rechazar con CAJA_NO_ABIERTA
+  // para que el front bloquee + fuerce reabrir caja (igual que crear_venta_directa). Solo rechaza si
+  // Supabase confirma CERRADA (false); si no es concluyente (null, p.ej. red caída) deja pasar.
+  else if (auth.esCajero && pos.cajaId) {
+    try {
+      var _cjOk = (typeof _meCajaAbiertaEnZona === 'function') ? _meCajaAbiertaEnZona(String(pos.cajaId), '') : null;
+      if (_cjOk === false) {
+        Logger.log('[procesarVenta] RECHAZADA CAJA_NO_ABIERTA (cajero) · caja=' + pos.cajaId);
+        return {
+          idVenta: null, correlativo: null, printDispatched: false, dedupVenta: false,
+          error: 'CAJA_NO_ABIERTA',
+          mensaje: 'Tu caja está cerrada. Abre una caja nueva para vender.'
+        };
+      }
+    } catch (eCjC) { Logger.log('[procesarVenta] check caja cajero falló (no bloquea): ' + eCjC.message); }
+  }
 
   // [v2.6.0] DEFENSA: vendedor (no cajero) creando venta debe tener caja
   // activa en su zona. Si vino con cajaId pero esa caja ya está CERRADA,
