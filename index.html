@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.81';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.82';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15920,12 +15920,20 @@
             let nfData = null;
             try {
                 const ed = await _emitirCPEDirecto(ventaBase, correlativo);
+                // [TRAZABILIDAD 500x-2] capturar el estado fiscal COMPLETO de NubeFact/SUNAT (no solo hash/qr):
+                // aceptada_por_sunat + código/descripción SUNAT + enlaces XML/CDR + nº orden → set_cpe_nf los persiste.
+                const _traza = (ed) => ({
+                    aceptada: (ed.estado === 'EMITIDO') || ed.aceptada === true,
+                    sunat_desc: ed.sunatDescription || '', sunat_code: (ed.sunat_responsecode != null ? String(ed.sunat_responsecode) : ''),
+                    enlace_xml: ed.enlace_xml || '', enlace_cdr: ed.enlace_cdr || '', numero_orden_sunat: ed.numero_orden_sunat || '',
+                    consultado: true
+                });
                 if (ed && ed.ok) {
                     const estNF = ed.estado || (ed.aceptada ? 'EMITIDO' : 'PENDIENTE');
-                    nf = { nf_estado: estNF, nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '' };
+                    nf = { nf_estado: estNF, nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '', ..._traza(ed) };
                     nfData = (ed.hash || ed.qrString || ed.enlace) ? { hash: ed.hash || '', enlace: ed.enlace || '', qrString: ed.qrString || '' } : null;
                 } else if (ed && ed.rechazadoPorSunat) {
-                    nf = { nf_estado: 'RECHAZADO', nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '' };
+                    nf = { nf_estado: 'RECHAZADO', nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '', ..._traza(ed), aceptada: false };
                     nfData = (ed.hash || ed.qrString) ? { hash: ed.hash || '', enlace: ed.enlace || '', qrString: ed.qrString || '' } : null;
                 }
                 // ed.ok=false sin rechazo = infra → queda PENDIENTE (reconciliación re-emite).
