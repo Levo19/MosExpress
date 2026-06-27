@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.83';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.84';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9102,6 +9102,8 @@
                   iniciarPollingZona();
                   cargarVentasZona(); // primera carga inmediata
               }
+              // [c · 500x-2 · cero-GAS] el vendedor carga SU listado personal desde Supabase (no solo cache local)
+              if (!config.value.esCajero) cargarVentasVendedor();
           }
         };
 
@@ -9943,6 +9945,8 @@
            }
            localStorage.removeItem('_mos_syncing');
            isSyncing.value = false;
+           // [c · 500x-2] tras sincronizar, refrescar el listado del vendedor desde Supabase (estado fresco)
+           if (!config.value.esCajero && exitos > 0) { try { cargarVentasVendedor(); } catch(_){} }
 
            // F3: auto-reimpresión de CPEs emitidos (después de soltar el flag isSyncing)
            if (reimprimirCola.length > 0) {
@@ -16157,6 +16161,66 @@
             cargandoZona.value = false;
         };
 
+        // [c · 500x-2 · cero-GAS] Listado PERSONAL del vendedor desde Supabase (me.ventas_hoy_vendedor),
+        // no solo del cache local. Merge: el estado autoritativo de Supabase (synced/anulada/nfEstado) se
+        // funde con las filas locales (preservando items/QR para reimpresión) + conserva lo aún NO sincronizado.
+        const _ventasVendedorDirecto = async (desde) => {
+            const token = await _mintTokenSB();
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/ventas_hoy_vendedor`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p_vendedor: config.value.vendedor || '', desde_str: desde || null })
+            });
+            if (!res.ok) throw new Error('rpc vendedor HTTP ' + res.status);
+            const d = await res.json();
+            if (!d || !Array.isArray(d.ventas)) throw new Error('rpc vendedor: respuesta inesperada');
+            return d;
+        };
+        const cargarVentasVendedor = async () => {
+            if (config.value.esCajero) return;            // los cajeros usan cargarVentasZona
+            if (!config.value.vendedor) return;
+            try {
+                const d = await _ventasVendedorDirecto(sessionStartTime.value || null);
+                if (!d || d.status !== 'success') return;
+                // índice de lo local por ref_local (para preservar items/QR de reimpresión)
+                const byRef = {};
+                ventasHoy.value.forEach(x => { if (x.ref_local) byRef[x.ref_local] = x; });
+                const usados = new Set();
+                const result = [];
+                d.ventas.forEach(v => {
+                    const ref = v.ref_local || '';
+                    const anulada = String(v.forma_pago || '').toUpperCase().indexOf('ANULADO') === 0;
+                    const loc = ref && byRef[ref];
+                    if (loc) {   // ya existía local → actualizar estado autoritativo, conservar lo rico
+                        loc.syncStatus = 'synced';
+                        if (loc.raw_data) loc.raw_data.status = 'synced';
+                        loc.anulada = anulada;
+                        if (v.nf_estado) loc.nfEstado = v.nf_estado;
+                        if (v.correlativo) loc.correlativo = v.correlativo;
+                        result.push(loc); usados.add(ref);
+                    } else {     // solo en Supabase (otro dispositivo / cache perdido) → agregar
+                        result.push({
+                            id: ref || v.id_venta, id_venta_gas: v.id_venta, ref_local: ref,
+                            tipo: v.tipo_doc || '', correlativo: v.correlativo,
+                            total: parseFloat(v.total) || 0, timestamp: new Date(v.fecha).getTime(),
+                            cliente_doc: v.cliente_doc || '', cliente_nombre: v.cliente_nombre || 'Genérico',
+                            items_count: 0, expanded: false, syncStatus: 'synced', nfEstado: v.nf_estado || '',
+                            anulada: anulada,
+                            raw_data: { auth:{vendedor:v.vendedor}, header:{ metodo:v.forma_pago||'', tipoDoc:v.tipo_doc||'' }, items: [], status:'synced' }
+                        });
+                    }
+                });
+                // conservar las locales aún NO sincronizadas (pending/fantasma) que Supabase todavía no tiene
+                ventasHoy.value.forEach(x => {
+                    if (x.ref_local && usados.has(x.ref_local)) return;
+                    if (x.syncStatus !== 'synced') result.push(x);
+                });
+                result.sort((a,b) => (b.timestamp - a.timestamp));
+                ventasHoy.value = result;
+                lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+            } catch(e) { console.warn('[cargarVentasVendedor] (deja el local):', e && e.message); }
+        };
+
         // ════════════════════════════════════════════════════════════
         // [Lote1-C · fix C1] MUTACIONES DE DINERO CONFIABLES
         // Antes: COBRAR_VENTA / ANULACION se mandaban fire-and-forget con
@@ -19670,7 +19734,7 @@
           resolverDecisionLocal: resolverDecisionLocal,
           uiState,
           cajaAbierta, idCajaActual, montoAperturaMemoria, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
-          ventasZona, cargandoZona, cargarVentasZona, cobradosEnSesion, sessionStartTime, playCoinSound,
+          ventasZona, cargandoZona, cargarVentasZona, cargarVentasVendedor, cobradosEnSesion, sessionStartTime, playCoinSound,
           soundEnabled, toggleSound,
           voiceEnabled, toggleVoice,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
