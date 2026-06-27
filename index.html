@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.76';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.77';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -17767,8 +17767,21 @@
                    agregarToast('Venta directa ✓', rd.correlativo + (rd.dedup ? ' (ya existía)' : ''));
                    return;   // EXCLUSIVIDAD: no pendingSales, no procesarVenta
                } catch (eDir) {
-                   console.warn('[escritura directa] fallback a GAS:', eDir && eDir.message);
-                   // sigue al path GAS normal (sin return)
+                   const _msgDir = String(eDir && eDir.message || '');
+                   // CAJA_NO_ABIERTA es un RECHAZO DE NEGOCIO (la caja cerró — p.ej. auto-cierre de
+                   // jornada vencida), NO un fallo de infraestructura. Caer a GAS aquí SALTEARÍA la regla
+                   // (GAS no valida caja cerrada → crearía un ticket fantasma en una caja ya conciliada).
+                   // → Bloquear, avisar, y forzar la reapertura de caja (cajaAbierta=false → pantalla de
+                   //   apertura). Mismo criterio que _desempacarME en MOS (negocio bloquea, infra cae a GAS).
+                   if (/CAJA_NO_ABIERTA/.test(_msgDir)) {
+                       cajaAbierta.value = false;
+                       const _ixB = ventasHoy.value.findIndex(v => v.id === localId);
+                       if (_ixB !== -1) { ventasHoy.value.splice(_ixB, 1); lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
+                       agregarToast('⚠ Tu caja está cerrada', 'Se cerró (jornada vencida). Abre una caja nueva para vender — la venta NO se registró.', 'error', 7000);
+                       return;   // NO GAS: la regla de negocio manda (no se rescata una venta que debe bloquearse)
+                   }
+                   console.warn('[escritura directa] fallback a GAS:', _msgDir);
+                   // otros errores (infra: token/red/5xx) → sigue al path GAS normal (sin return)
                }
            }
 

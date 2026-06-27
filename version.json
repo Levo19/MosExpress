@@ -1,1 +1,1 @@
-{ "version": "2.8.76", "build": "Review R2 fix (REGRESION money-critical): el cierre compensatorio de caja huerfana (R1) cerraba una caja LEGITIMA cuando la apertura hacia DEDUP (mismo cajero re-loguea con caja ya abierta). Ahora solo cancela si la apertura CREO caja nueva (!dAp.dedup)." }
+{"version":"2.8.77","build":"fix money: CAJA_NO_ABIERTA en emision directa ya NO cae a GAS (era ticket fantasma en caja cerrada por jornada vencida). Ahora bloquea + avisa + fuerza reabrir caja. Negocio bloquea, infra cae a GAS."}
