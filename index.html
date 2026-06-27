@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.82';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.83';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -17472,13 +17472,22 @@
                await esperarCorrelativoONV(3000); // resuelve cuando llega o cuando cajero decide
            }
 
-           // [v40] Cliente obligatorio. El campo nunca puede quedar vacío.
-           // Si el operador borró el chip sin elegir nada → mostrar warning,
-           // forzar VARIOS o que elija. Bloquea hasta que haya cliente válido.
+           // [v40 + 500x-2] Cliente obligatorio. Según SUNAT, NV y BOLETA < S/700 admiten "consumidor
+           // anónimo" → en vez de bloquear, AUTO-rellenamos VARIOS (el casillero ya no queda vacío).
+           // BOLETA ≥ S/700 y FACTURA exigen identificación real → ahí sí se bloquea (guards de abajo).
            if (!pago.value.nombreCliente || !pago.value.docCliente) {
-               try { playBeepError?.(); } catch(_){}
-               agregarToast('⚠ Falta cliente', 'Selecciona un cliente del listado o toca "Usar VARIOS"');
-               return;
+               const _puedeVarios = pago.value.tipoDoc === 'NOTA_DE_VENTA'
+                                 || (pago.value.tipoDoc === 'BOLETA' && granTotal.value < 700);
+               if (_puedeVarios) {
+                   cargarClienteVarios();   // doc 66666 / nombre VARIOS → tipo SUNAT 0 (sin documento)
+               } else {
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('⚠ Falta cliente',
+                     pago.value.tipoDoc === 'FACTURA'
+                       ? 'FACTURA requiere RUC + razón social del cliente.'
+                       : 'Boleta de S/ 700 o más: SUNAT exige identificar al cliente (DNI/RUC).');
+                   return;
+               }
            }
            // [v40.1] Validaciones según reglas SUNAT reales:
            //   - Nota de venta: cualquier cliente (VARIOS ok)
