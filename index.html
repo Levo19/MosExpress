@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.84';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.85';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3583,6 +3583,10 @@
                         </button>
                     </div>
                     <div class="flex gap-1.5 flex-wrap">
+                        <button @click="tabCajaActivo = 'TODAS'"
+                                :class="['me-tab-pill', tabCajaActivo === 'TODAS' ? 'active' : '']">
+                            Todas <span class="me-tab-badge">{{ conteoTodas }}</span>
+                        </button>
                         <button @click="tabCajaActivo = 'NOTAS'"
                                 :class="['me-tab-pill', tabCajaActivo === 'NOTAS' ? 'active' : '']">
                             Notas <span class="me-tab-badge">{{ conteoNotas }}</span>
@@ -3601,7 +3605,7 @@
                 <!-- Acordeón de Tickets -->
                 <div class="space-y-3 pb-20">
                     <div v-if="ventasHistorialFiltradas.length === 0" class="text-center py-10 text-gray-400 bg-white rounded-2xl border-2 border-dashed border-gray-200 font-bold">
-                        Aún no hay {{ tabCajaActivo.toLowerCase() }} registradas.
+                        {{ tabCajaActivo === 'TODAS' ? 'Aún no hay ventas registradas hoy.' : 'Aún no hay ' + tabCajaActivo.toLowerCase() + ' registradas.' }}
                     </div>
                     
                     <div v-for="venta in ventasHistorialFiltradas" :key="venta.id"
@@ -7191,7 +7195,7 @@
         const ventasHoy = ref([]); // Tickets del vendedor en este dispositivo (hoy)
         const ventasZona = ref([]); // Tickets de toda la zona (solo cajero, fetch GAS)
         const cargandoZona = ref(false);
-        const tabCajaActivo = ref('NOTAS'); // 'NOTAS', 'BOLETAS', 'FACTURAS'
+        const tabCajaActivo = ref('TODAS'); // 'TODAS' (default, todas en orden de emisión), 'NOTAS', 'BOLETAS', 'FACTURAS'
         // Estado para flujo COBRAR (cajero cobra ticket emitido por vendedor)
         const modalCobro = ref(false);
         const ventaCobrar = ref(null);
@@ -8052,10 +8056,14 @@
         // Filtro Historial de Caja
         const ventasHistorialFiltradas = computed(() => {
             const TIPO_MAP = { 'NOTAS': 'NOTA_DE_VENTA', 'BOLETAS': 'BOLETA', 'FACTURAS': 'FACTURA' };
-            const tipoFiltro = TIPO_MAP[tabCajaActivo.value] || tabCajaActivo.value;
-            // Cajero: tickets de toda la zona (GAS). Vendedor: sus tickets locales del dispositivo.
+            // Cajero: tickets de toda la zona. Vendedor: sus tickets (Supabase + local).
             const fuente = config.value.esCajero ? ventasZona.value : ventasHoy.value;
-            return fuente.filter(v => v.tipo === tipoFiltro);
+            // 'TODAS' (default): una sola lista con TODO en orden de emisión (más reciente primero).
+            // Los demás tabs filtran por tipo de documento.
+            const base = (tabCajaActivo.value === 'TODAS')
+                ? (fuente || []).slice()
+                : (fuente || []).filter(v => v.tipo === (TIPO_MAP[tabCajaActivo.value] || tabCajaActivo.value));
+            return base.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         });
 
         // [v2.5.40] Info no-monetaria del turno para el header (sin balance en vivo).
@@ -8096,6 +8104,10 @@
             return (fuente || []).filter(v => !v.anulada && v.credito).length;
         });
         // Para los tabs modernos con conteo
+        const conteoTodas = computed(() => {
+            const f = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
+            return (f || []).length;
+        });
         const conteoNotas = computed(() => {
             const f = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
             return (f || []).filter(v => v.tipo === 'NOTA_DE_VENTA').length;
@@ -16180,7 +16192,9 @@
             if (config.value.esCajero) return;            // los cajeros usan cargarVentasZona
             if (!config.value.vendedor) return;
             try {
-                const d = await _ventasVendedorDirecto(sessionStartTime.value || null);
+                // desde=null → la RPC usa inicio del DÍA (Lima): "mis ventas de hoy" completas, NO desde el login
+                // (pasar sessionStartTime ocultaría las ventas previas al login del vendedor).
+                const d = await _ventasVendedorDirecto(null);
                 if (!d || d.status !== 'success') return;
                 // índice de lo local por ref_local (para preservar items/QR de reimpresión)
                 const byRef = {};
@@ -19823,7 +19837,7 @@
           ultimoTicketReimprimible, reimprimirUltimoTicket,
           // [v2.5.44] KPI cards + tabs modernos
           cantAnuladosTurno, cantPorCobrarTurno, cantCreditoTurno,
-          conteoNotas, conteoBoletas, conteoFacturas,
+          conteoTodas, conteoNotas, conteoBoletas, conteoFacturas,
           darkMode, toggleDarkMode,
           anularVenta,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
