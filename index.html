@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.77';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.78';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -26,6 +26,7 @@
     })();
   </script>
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%A7%BE%3C/text%3E%3C/svg%3E">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -11969,13 +11970,10 @@
         const _wizClimaEmoji = (code) => (
             code === 0 ? '☀' : code < 3 ? '🌤' : code < 50 ? '☁' : code < 70 ? '🌧' : '⛈'
         );
-        // Reverse-geocode ligero (open-meteo, sin API key) → nombre de ciudad.
-        const _wizReverseCiudad = (lat, lon) => {
-            return fetch(`https://geocoding-api.open-meteo.com/v1/search?latitude=${lat}&longitude=${lon}&count=1&language=es`)
-                .then(r => r.json())
-                .then(d => d?.results?.[0]?.name || '')
-                .catch(() => '');
-        };
+        // Reverse-geocode: open-meteo NO ofrece reverse (su /v1/search es FORWARD name→coords y
+        // rechaza lat/long con HTTP 400). Antes esa llamada daba 400 rojo en consola en cada arranque.
+        // Sin un reverse-geocode fiable sin API key, usamos el nombre de ciudad de fallback. (No-op.)
+        const _wizReverseCiudad = (lat, lon) => Promise.resolve('');
         // Pide el clima para coords dadas y pinta el texto (con nombre de ciudad).
         const _wizFetchClima = (lat, lon, ciudadFallback) => {
             if (!navigator.onLine) return;
