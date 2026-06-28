@@ -1,4 +1,4 @@
 {
- "version": "2.8.92",
- "build": "2.8.92 (UX Bloque B): metodos de pago EFECTIVO/VIRTUAL/MIXTO con acento de color al seleccionar (verde/azul/morado) + iconos + haptico. VIRTUAL ahora muestra un bloque de confirmacion (S/ total · Yape/Plin) en vez de quedar vacio (que encogia/deformaba el modal al cambiar de metodo)."
+ "version": "2.8.93",
+ "build": "2.8.93 (UX Bloque C - cliente): buscador unificado con X para vaciar el casillero + toggle Peru/Extranjero al lado de 'Cliente' (CE/Pasaporte alfanumerico, oculto y bloqueado en FACTURA). Sin coincidencia en RENIEC/SUNAT -> lapiz para registrar el nombre a mano (DNI o RUC). Se quitaron los botones 'Usar VARIOS' y 'Corregir documento'. BOLETA: VARIOS por defecto < S/700, vacio >= S/700 (ahorra un click). Bloque B: cuerpo de pago con min-height estable (no se deforma el modal al alternar EFECTIVO/VIRTUAL/MIXTO)."
 }

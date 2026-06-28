@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.92';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.93';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4631,13 +4631,19 @@
 
                <!-- ── CLIENTE: buscador unificado (visible siempre, opcional en NV) ── -->
                <div>
-                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
-                   Cliente
-                   <span v-if="pago.tipoDoc === 'FACTURA'">(RUC)</span>
-                   <span v-else-if="pago.tipoDoc === 'BOLETA' && granTotal >= 700" class="text-amber-600">(DNI / RUC obligatorio · ≥ S/700)</span>
-                   <span v-else-if="pago.tipoDoc === 'BOLETA'" class="text-gray-300 normal-case font-medium">— default VARIOS · DNI/RUC opcional</span>
-                   <span v-else class="text-gray-300 normal-case font-medium">— opcional · default VARIOS</span>
-                 </label>
+                 <!-- Label + toggle origen Perú/Extranjero (oculto en FACTURA = solo RUC) -->
+                 <div class="flex items-center justify-between gap-2 mb-1.5">
+                   <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider shrink-0">
+                     Cliente
+                     <span v-if="pago.tipoDoc === 'FACTURA'" class="text-purple-500 normal-case">· RUC</span>
+                     <span v-else-if="pago.tipoDoc === 'BOLETA' && granTotal >= 700" class="text-amber-600 normal-case">· obligatorio ≥ S/700</span>
+                     <span v-else class="text-gray-300 normal-case font-medium">· default VARIOS</span>
+                   </label>
+                   <div v-if="pago.tipoDoc !== 'FACTURA'" class="flex bg-gray-100 rounded-full p-0.5 text-[10px] font-black shrink-0">
+                     <button @click="setClienteOrigen('PE')" :class="!pago.tipoDocClienteCE ? 'bg-white shadow text-gray-800' : 'text-gray-400'" class="px-2.5 py-1 rounded-full transition-all active:scale-95">🇵🇪 Perú</button>
+                     <button @click="setClienteOrigen('EX')" :class="pago.tipoDocClienteCE ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2.5 py-1 rounded-full transition-all active:scale-95">🌎 Extranjero</button>
+                   </div>
+                 </div>
 
                  <!-- Estado A: cliente confirmado → chip verde -->
                  <div v-if="pago.nombreCliente" class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
@@ -4650,17 +4656,57 @@
                    </button>
                  </div>
 
-                 <!-- Estado B: buscando (input + lupa) -->
-                 <div v-if="!pago.nombreCliente && !clienteModoManual">
+                 <!-- EXTRANJERO (toggle): CE/Pasaporte alfanumérico + nombre. No aplica a FACTURA. -->
+                 <div v-else-if="pago.tipoDocClienteCE" class="space-y-2">
+                   <div class="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2">
+                     <span class="text-base shrink-0">🌎</span>
+                     <p class="text-[11px] text-indigo-700 font-bold leading-tight">Carné de Extranjería o Pasaporte (alfanumérico)</p>
+                   </div>
+                   <div class="relative">
+                     <input v-model="pago.docCliente" type="text" inputmode="text" autocomplete="off" placeholder="N° de CE o Pasaporte"
+                            class="w-full p-3.5 pr-11 border-2 border-indigo-200 rounded-xl font-bold text-sm bg-white focus:border-indigo-500 outline-none uppercase tracking-wide">
+                     <button v-if="pago.docCliente" @click="limpiarExtranjero" class="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-gray-200 text-gray-500 hover:bg-gray-300 flex items-center justify-center text-lg font-black leading-none active:scale-90 transition-transform" title="Limpiar">&times;</button>
+                   </div>
                    <div class="flex gap-2">
-                     <input v-model="busquedaNombre" @input="clienteModoManual=false" type="text" inputmode="text" autocomplete="off"
-                            :placeholder="pago.tipoDoc === 'FACTURA' ? 'RUC o razón social...' : 'Nombre, DNI (8) o RUC (11)...'"
-                            class="flex-1 p-3.5 border-2 rounded-xl font-semibold text-sm bg-gray-50 focus:border-posPrimary outline-none transition-colors"
-                            :class="busquedaNombre ? 'border-gray-300' : 'border-gray-100'">
+                     <input v-model="clienteNombreManual" type="text" placeholder="Nombre del cliente..." @keyup.enter="confirmarClienteCE"
+                            class="flex-1 p-3 bg-white border-2 border-indigo-200 rounded-xl text-sm font-bold focus:border-indigo-500 outline-none">
+                     <button @click="confirmarClienteCE" :disabled="!String(pago.docCliente||'').trim() || !clienteNombreManual.trim()"
+                             class="bg-indigo-500 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">✓ Guardar</button>
+                   </div>
+                 </div>
+
+                 <!-- Registro manual de nombre (lápiz) — el DNI/RUC ya está tipeado y validado -->
+                 <div v-else-if="pago.registroManualDNI" class="space-y-2">
+                   <div class="flex items-start gap-2 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-2.5">
+                     <span class="text-base shrink-0">✏️</span>
+                     <div class="flex-1 min-w-0">
+                       <p class="text-xs text-emerald-800 font-bold">Registrar a mano · {{ String(pago.docCliente||'').length === 11 ? 'RUC' : 'DNI' }} {{ pago.docCliente }}</p>
+                       <p class="text-[10px] text-emerald-700 mt-0.5">Se guarda en clientes frecuentes — la próxima vez lo halla solo.</p>
+                     </div>
+                   </div>
+                   <div class="flex gap-2">
+                     <input v-model="clienteNombreManual" type="text" placeholder="Nombre y apellidos / razón social..." @keyup.enter="confirmarClienteManualDNI"
+                            class="flex-1 p-3 bg-white border-2 border-emerald-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none">
+                     <button @click="confirmarClienteManualDNI" :disabled="!clienteNombreManual.trim()"
+                             class="bg-emerald-600 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">✓ Guardar</button>
+                   </div>
+                   <button @click="limpiarBusqueda" class="text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1">← Cancelar</button>
+                 </div>
+
+                 <!-- PERUANO (default): buscador DNI/RUC con X -->
+                 <div v-else>
+                   <div class="flex gap-2">
+                     <div class="flex-1 relative">
+                       <input v-model="busquedaNombre" @input="clienteModoManual=false" type="text" inputmode="text" autocomplete="off"
+                              :placeholder="pago.tipoDoc === 'FACTURA' ? 'RUC o razón social...' : 'Nombre, DNI (8) o RUC (11)...'"
+                              class="w-full p-3.5 pr-11 border-2 rounded-xl font-semibold text-sm bg-gray-50 focus:border-posPrimary outline-none transition-colors"
+                              :class="busquedaNombre ? 'border-gray-300' : 'border-gray-100'">
+                       <button v-if="busquedaNombre || clienteModoManual" @click="limpiarBusqueda" class="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-gray-200 text-gray-500 hover:bg-gray-300 flex items-center justify-center text-lg font-black leading-none active:scale-90 transition-transform" title="Limpiar">&times;</button>
+                     </div>
                      <!-- Lupa: gris cuando no hay doc válido, verde oscuro cuando sí -->
                      <button @click="buscarClienteAPI"
                              :disabled="!clienteBusqEsDocumento || !!sugerenciasCliente.length || buscandoCliente"
-                             class="w-14 rounded-xl font-bold flex items-center justify-center transition-all active:scale-95"
+                             class="w-14 rounded-xl font-bold flex items-center justify-center transition-all active:scale-95 shrink-0"
                              :class="clienteBusqEsDocumento && !sugerenciasCliente.length ? 'bg-gray-800 text-emerald-400 shadow-md' : 'bg-gray-100 text-gray-300'">
                        <svg v-if="buscandoCliente" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                        <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -4711,91 +4757,14 @@
                        <div v-if="c.Direccion" class="text-[10px] text-gray-400 mt-0.5 truncate">📍 {{ c.Direccion }}</div>
                      </div>
                    </div>
-                 </div>
-
-                 <!-- [v40/v41] Estado C: API no encontró nada → opciones controladas.
-                      Reintentar / Usar VARIOS / Guardar como CE / Extranjero.
-                      El flujo de "cliente sin doc con autorización admin" se eliminó:
-                      el caso de CE cubre extranjeros y casos sin RENIEC/SUNAT. -->
-                 <div v-if="clienteModoManual && !pago.nombreCliente" class="space-y-2">
-                   <!-- Caso C1: opciones cuando no hay match en API -->
-                   <div v-if="!pago.tipoDocClienteCE && !pago.registroManualDNI" class="space-y-2">
-                     <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                       <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                       <div class="flex-1 min-w-0">
-                         <p class="text-xs text-amber-800 font-bold">Sin coincidencias en RENIEC/SUNAT</p>
-                         <p class="text-[10px] text-amber-700 mt-0.5">Doc: <span class="font-mono font-bold">{{ pago.docCliente }}</span></p>
-                       </div>
+                   <!-- Sin coincidencia en RENIEC/SUNAT → ✏️ registrar el nombre a mano (el doc ya está tipeado) -->
+                   <div v-if="clienteModoManual" class="mt-2 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                     <span class="text-base shrink-0">🔍</span>
+                     <div class="flex-1 min-w-0">
+                       <p class="text-xs text-amber-800 font-bold">Sin coincidencia en {{ String(pago.docCliente||'').length === 11 ? 'SUNAT' : 'RENIEC' }}</p>
+                       <p class="text-[10px] text-amber-700 mt-0.5">Doc <span class="font-mono font-bold">{{ pago.docCliente }}</span> · regístralo a mano</p>
                      </div>
-                     <div class="flex gap-2">
-                       <button @click="corregirDocumento"
-                               class="flex-1 bg-blue-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
-                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                         Corregir documento
-                       </button>
-                       <button @click="cargarClienteVarios"
-                               class="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">
-                         👤 Usar VARIOS
-                       </button>
-                     </div>
-                     <!-- [v2.7.1] Ingreso manual DNI peruano: cuando APISPeru no lo tiene
-                          pero el cliente está presente y dice su nombre. Tratado como DNI
-                          normal (no CE) — SUNAT recibe tipo=1 (DNI). Visible solo si doc
-                          es 8 dígitos. -->
-                     <button v-if="pago.docCliente && pago.docCliente.length === 8"
-                             @click="iniciarRegistroManualDNI"
-                             class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
-                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                       Ingresar nombre manualmente (DNI peruano)
-                     </button>
-                     <!-- [v41] Carné de Extranjería: guarda doc tal cual + nombre manual, sin PIN admin -->
-                     <button @click="iniciarRegistroCE"
-                             class="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform flex items-center justify-center gap-1.5">
-                       🪪 Guardar como CE / Extranjero (con este código)
-                     </button>
-                   </div>
-                   <!-- Caso C2 [v41]: registro como CE/Extranjero → input nombre manual sin PIN -->
-                   <div v-else-if="pago.tipoDocClienteCE" class="space-y-2">
-                     <div class="flex items-start gap-2 bg-indigo-50 border border-indigo-300 rounded-xl px-3 py-2.5">
-                       <span class="text-base shrink-0">🪪</span>
-                       <div class="flex-1 min-w-0">
-                         <p class="text-xs text-indigo-800 font-bold">Carné de Extranjería / Pasaporte</p>
-                         <p class="text-[10px] text-indigo-600 mt-0.5">Doc: <span class="font-mono font-bold">{{ pago.docCliente }}</span> · ingresá nombre del cliente</p>
-                       </div>
-                     </div>
-                     <div class="flex gap-2">
-                       <input v-model="clienteNombreManual" type="text" placeholder="Nombre del extranjero..."
-                              @keyup.enter="confirmarClienteCE"
-                              class="flex-1 p-3 bg-white border-2 border-indigo-200 rounded-xl text-sm font-bold focus:border-indigo-500 outline-none">
-                       <button @click="confirmarClienteCE" :disabled="!clienteNombreManual.trim()"
-                               class="bg-indigo-500 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">
-                         ✓ Guardar
-                       </button>
-                     </div>
-                     <button @click="cancelarRegistroCE" class="text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1">← Volver a opciones</button>
-                   </div>
-                   <!-- Caso C3 [v2.7.1]: registro manual DNI peruano (no CE) -->
-                   <div v-else-if="pago.registroManualDNI" class="space-y-2">
-                     <div class="flex items-start gap-2 bg-emerald-50 border border-emerald-300 rounded-xl px-3 py-2.5">
-                       <span class="text-base shrink-0">📝</span>
-                       <div class="flex-1 min-w-0">
-                         <p class="text-xs text-emerald-800 font-bold">DNI peruano · ingreso manual</p>
-                         <p class="text-[10px] text-emerald-700 mt-0.5">DNI: <span class="font-mono font-bold">{{ pago.docCliente }}</span> · escribí el nombre del cliente</p>
-                       </div>
-                     </div>
-                     <div class="flex gap-2">
-                       <input v-model="clienteNombreManual" type="text" placeholder="Nombre y apellidos del cliente..."
-                              @keyup.enter="confirmarClienteManualDNI"
-                              class="flex-1 p-3 bg-white border-2 border-emerald-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none">
-                       <button @click="confirmarClienteManualDNI" :disabled="!clienteNombreManual.trim()"
-                               class="bg-emerald-600 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">
-                         ✓ Guardar
-                       </button>
-                     </div>
-                     <p class="text-[9px] text-emerald-700 italic leading-tight px-1">
-                       Se guardará como DNI normal en CLIENTES_FRECUENTES. La próxima venta del mismo cliente lo encontrará al instante.
-                     </p>
-                     <button @click="cancelarRegistroManualDNI" class="text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1">← Volver a opciones</button>
+                     <button @click="iniciarRegistroManualDNI" class="shrink-0 bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 active:scale-95 transition-transform" title="Registrar nombre a mano">✏️ Registrar</button>
                    </div>
                  </div>
 
@@ -4822,22 +4791,27 @@
                    <span v-if="pago.ventaCreditoDirecto" class="text-[10px] font-bold bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full shrink-0">CREDITO</span>
                </button>
 
+               <!-- [Bloque B UX] Cuerpo de pago con altura mínima estable: al alternar EFECTIVO/VIRTUAL/MIXTO
+                    el modal ya no salta (VIRTUAL es chico, MIXTO alto). min-h fija una base; MIXTO crece. -->
+               <div v-if="config.esCajero" class="min-h-[208px] space-y-3">
                <!-- EFECTIVO: monto recibido + vuelto -->
-               <div v-if="config.esCajero && pago.metodo === 'EFECTIVO'">
-                 <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido (S/)</label>
-                 <div class="grid grid-cols-5 gap-1.5 mb-2">
-                   <button @click="setMonto(granTotal)" class="col-span-1 bg-emerald-100 text-emerald-800 rounded-lg font-black text-[10px] active:scale-95 py-2.5">EXAC.</button>
-                   <button v-for="billete in [10,20,50,100]" :key="billete" @click="setMonto(billete)" class="bg-white border-2 border-gray-100 text-gray-800 rounded-lg font-black text-sm active:scale-95 py-2.5">{{ billete }}</button>
+               <div v-if="pago.metodo === 'EFECTIVO'" class="space-y-3">
+                 <div>
+                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Efectivo Recibido (S/)</label>
+                   <div class="grid grid-cols-5 gap-1.5 mb-2">
+                     <button @click="setMonto(granTotal)" class="col-span-1 bg-emerald-100 text-emerald-800 rounded-lg font-black text-[10px] active:scale-95 py-2.5">EXAC.</button>
+                     <button v-for="billete in [10,20,50,100]" :key="billete" @click="setMonto(billete)" class="bg-white border-2 border-gray-100 text-gray-800 rounded-lg font-black text-sm active:scale-95 py-2.5">{{ billete }}</button>
+                   </div>
+                   <input v-model.number="pago.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-4xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary focus:bg-white outline-none">
                  </div>
-                 <input v-model.number="pago.montoRecibido" type="number" step="0.01" class="w-full p-4 text-center text-4xl font-black bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-posPrimary focus:bg-white outline-none">
-               </div>
-               <div v-if="config.esCajero && pago.metodo === 'EFECTIVO'" class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
-                 <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
-                 <span class="text-4xl font-black" :class="vuelto < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vuelto.toFixed(2) }}</span>
+                 <div class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
+                   <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
+                   <span class="text-4xl font-black" :class="vuelto < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vuelto.toFixed(2) }}</span>
+                 </div>
                </div>
 
                <!-- MIXTO: virtual + efectivo -->
-               <div v-if="config.esCajero && pago.metodo === 'MIXTO'" class="space-y-3">
+               <div v-if="pago.metodo === 'MIXTO'" class="space-y-3">
                  <div>
                    <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Monto Virtual / Yape (S/)</label>
                    <input v-model.number="pago.montoVirtual" type="number" step="0.01" placeholder="0.00" class="w-full p-4 text-center text-3xl font-black bg-blue-50 border-2 border-posSecondary rounded-2xl focus:bg-white outline-none">
@@ -4859,7 +4833,7 @@
                </div>
 
                <!-- VIRTUAL: confirmación — el cliente paga el total por Yape/Plin/transferencia (sin monto recibido ni vuelto) -->
-               <div v-if="config.esCajero && pago.metodo === 'VIRTUAL'" class="p-5 rounded-2xl border-2 border-blue-200 bg-blue-50 flex items-center gap-4">
+               <div v-if="pago.metodo === 'VIRTUAL'" class="p-5 rounded-2xl border-2 border-blue-200 bg-blue-50 flex items-center gap-4">
                  <span class="text-3xl shrink-0">📱</span>
                  <div class="flex-1 min-w-0">
                    <p class="text-[11px] font-bold text-blue-400 uppercase tracking-wider">Pago digital · Yape / Plin / Transf.</p>
@@ -4867,8 +4841,9 @@
                    <p class="text-[11px] text-blue-500 font-semibold mt-1">El cliente paga el total exacto — sin vuelto</p>
                  </div>
                </div>
+               </div>
             </div>
-    
+
             <button @click="procesarPago" data-pago-confirmar :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || ((pago.tipoDoc === 'FACTURA' || (pago.tipoDoc === 'BOLETA' && granTotal >= 700)) && !pago.nombreCliente) || !!errorDocumento" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
                     :class="pago.ventaCreditoDirecto ? '!bg-orange-500 shadow-orange-200' : ''">
                <svg v-if="procesando" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -17174,6 +17149,27 @@
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
         };
+        // [Bloque C UX] Toggle origen del cliente: 'PE' (peruano → DNI/RUC) o 'EX' (extranjero → CE/Pasaporte
+        // alfanumérico). Limpia el estado al cambiar. El extranjero NO aplica a FACTURA (se oculta el toggle).
+        const setClienteOrigen = (origen) => {
+            limpiarCliente();
+            pago.value.tipoDocClienteCE = (origen === 'EX');
+        };
+        // [Bloque C UX] X del buscador peruano: vacía el casillero y vuelve a buscar (sin perder el modo).
+        const limpiarBusqueda = () => {
+            busquedaNombre.value = '';
+            pago.value.docCliente = '';
+            pago.value.nombreCliente = '';
+            clienteModoManual.value = false;
+            pago.value.registroManualDNI = false;
+            clienteNombreManual.value = '';
+        };
+        // [Bloque C UX] X del extranjero: limpia doc + nombre para reescribir.
+        const limpiarExtranjero = () => {
+            pago.value.docCliente = '';
+            pago.value.nombreCliente = '';
+            clienteNombreManual.value = '';
+        };
         // [v41] Registrar como Carné de Extranjería / Pasaporte cuando APISPeru
         // no encontró el doc. CE puede tener longitudes variables (incluso 8 díg
         // como un DNI). El operador ingresa nombre manual y se guarda con el
@@ -17225,7 +17221,8 @@
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
             try { playBeepOK?.(); } catch(_){}
-            agregarToast('✓ Cliente DNI manual', nombre + ' · DNI ' + pago.value.docCliente);
+            const _et = String(pago.value.docCliente||'').length === 11 ? 'RUC' : 'DNI';
+            agregarToast('✓ Cliente registrado', nombre + ' · ' + _et + ' ' + pago.value.docCliente);
         };
         // Cliente VARIOS por defecto en Nota de Venta cuando el cajero no quiere
         // tipear nada (el cliente "anónimo"). DNI 66666 ya existe en CLIENTES_FRECUENTES.
@@ -19846,6 +19843,8 @@
           iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE,
           // [v2.7.1] DNI peruano manual (cuando APISPeru no lo tiene en su base)
           iniciarRegistroManualDNI, cancelarRegistroManualDNI, confirmarClienteManualDNI,
+          // [Bloque C UX] toggle origen + limpiar buscador/extranjero
+          setClienteOrigen, limpiarBusqueda, limpiarExtranjero,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           // [v2.7.78 CLEANUP] bHerramientas, imprimirMembrete, procesandoMembrete,
