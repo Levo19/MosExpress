@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.86';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.87';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -18297,6 +18297,29 @@
         const reimprimirTicket = async (ventaLocal) => {
             agregarToast('Preparando reimpresión...', ventaLocal.correlativo);
 
+            // [#9 · CERO-GAS] MODELO ÚNICO: reimprimir por el MISMO Edge `ticket-comprobante` que usa MOS
+            // (un solo formato NV/boleta/factura CON QR/hash SUNAT real). Requiere el id_venta real
+            // (sincronizado) + estar online. Si falta el id, está offline o el Edge falla → builder LOCAL (abajo).
+            const _printerId = config.value.estacion?.PrintNode_ID;
+            const _idV = ventaLocal.id_venta_gas || '';
+            if (_idV && navigator.onLine && _printerId) {
+                try {
+                    const _tok = await _mintTokenSB();
+                    const _r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/ticket-comprobante`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ idVenta: _idV, printerId: _printerId, reimpresion: true })
+                    }, 12000);
+                    const _d = await _r.json().catch(() => null);
+                    if (_r.ok && _d && _d.ok) {
+                        agregarToast('Reimpresión enviada ✓', ventaLocal.correlativo);
+                        return;   // CENTRALIZADO + cero-GAS + QR SUNAT
+                    }
+                    console.warn('[reimprimir] Edge ticket-comprobante:', _d && _d.error, '→ fallback local');
+                } catch (e) { console.warn('[reimprimir] Edge falló → fallback local:', e && e.message); }
+            }
+
+            // ── Fallback LOCAL (offline / sin id sincronizado / Edge no disponible) ──
             // Obtener items: primero del objeto local, si vacíos buscar en GAS
             let items = (ventaLocal.raw_data && ventaLocal.raw_data.items) ? ventaLocal.raw_data.items : [];
             if (items.length === 0 && ventaLocal.id_venta_gas && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
