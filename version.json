@@ -1,4 +1,4 @@
 {
- "version": "2.8.89",
- "build": "2.8.89: BOLETA ahora pre-carga VARIOS por defecto (igual que NV) — el boton BOLETA llamaba limpiarCliente() mientras NV llamaba cargarClienteVarios(). Ahora ambos traen VARIOS; si la boleta es >=700 el errorDocumento obliga a identificar (DNI/RUC). Etiqueta dinamica segun umbral."
+ "version": "2.8.90",
+ "build": "2.8.90 (fix CE en boleta >=700): el guard de boleta >=S/700 solo permitia DNI(8)/RUC(11) -> un CE de 9 digitos quedaba bloqueado aunque es identificacion valida. Ahora CE/Pasaporte (tipo 4/7) tambien pasan el umbral. CE/pasaporte ya emiten boleta < y >= 700 (via boton Guardar como CE). Factura sigue exigiendo RUC."
 }

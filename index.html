@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.89';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.90';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -17587,9 +17587,11 @@
            //   - Factura: RUC (11) + dirección fiscal OBLIGATORIOS
            if (pago.value.tipoDoc === 'BOLETA' && granTotal.value >= 700) {
                const docLen = String(pago.value.docCliente || '').length;
-               if (docLen !== 8 && docLen !== 11) {
+               // [fix CE] CE/Pasaporte (tipo 4/7) también IDENTIFICAN al comprador → válidos para ≥ S/700.
+               // Solo se bloquea si NO es CE y el doc no es DNI(8) ni RUC(11) (p.ej. VARIOS 66666).
+               if (!pago.value.tipoDocClienteCE && docLen !== 8 && docLen !== 11) {
                    try { playBeepError?.(); } catch(_){}
-                   agregarToast('⚠ Boleta ≥ S/700', 'SUNAT exige DNI (8) o RUC (11) para boletas de S/ 700 o más. Busca al cliente.');
+                   agregarToast('⚠ Boleta ≥ S/700', 'SUNAT exige identificar al cliente: DNI (8), RUC (11) o Carné de Extranjería/Pasaporte. Búscalo o regístralo como CE.');
                    return;
                }
            }
