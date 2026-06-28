@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.95';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.96';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9551,7 +9551,7 @@
                     else agregarToast("Éxito", "Catálogo actualizado");
                     _syncImpresorasFromProyectoMOS();
                     _cargarConfigMos();
-                    _sincronizarAdminCache();
+                    // [G4 online-only] (se eliminó _sincronizarAdminCache: verificación admin siempre online)
                     // Refrescar el baseline de versión del catálogo (poller). Fire-and-forget:
                     // si falla la lectura de versión, el catálogo igual quedó actualizado.
                     _refrescarBaselineCatalogo();
@@ -14711,41 +14711,9 @@
         const _pinAccion = ref({ accion: 'GENERICA', refDocumento: '' });
         const pinValidando = ref(false);
 
-        const _cargarAdminCache = () => {
-            try {
-                const raw = localStorage.getItem('mosexpress_admin_cache');
-                return raw ? JSON.parse(raw) : null;
-            } catch(e) { return null; }
-        };
-        const _guardarAdminCache = (data) => {
-            try { localStorage.setItem('mosexpress_admin_cache', JSON.stringify(data)); } catch(e) {}
-        };
-        const _sincronizarAdminCache = async () => {
-            if (offlineMode.value || !navigator.onLine) return;
-            try {
-                const r = await fetch(MOS_GAS_URL + '?action=getAdminPinsCache');
-                const j = await r.json();
-                if (j?.ok && j.data?.globalPin) {
-                    _guardarAdminCache({
-                        globalPin: String(j.data.globalPin),
-                        adminPins: Array.isArray(j.data.adminPins) ? j.data.adminPins : [],
-                        sincronizadoEn: Date.now()
-                    });
-                }
-            } catch(e) { /* tolerar */ }
-        };
-
-        const _validarLocalmente = (clave) => {
-            const cache = _cargarAdminCache();
-            if (!cache || !cache.globalPin) return null;
-            if (clave.length !== 8 || !/^\d{8}$/.test(clave)) return { ok: false, error: 'Clave debe ser de 8 dígitos' };
-            const globalPart = clave.substring(0, 4);
-            const userPart = clave.substring(4, 8);
-            if (globalPart !== cache.globalPin) return { ok: false, error: 'Clave incorrecta' };
-            const admin = (cache.adminPins || []).find(a => String(a.pin) === userPart);
-            if (!admin) return { ok: false, error: 'Clave incorrecta' };
-            return { ok: true, validadoPor: 'admin:' + admin.nombre + ' (offline)', idPersonal: admin.idPersonal };
-        };
+        // [G4 online-only] Se eliminaron _cargarAdminCache/_guardarAdminCache/_sincronizarAdminCache/
+        // _validarLocalmente: la verificación de clave admin es siempre online (mos.verificar_clave_admin,
+        // bcrypt+lockout+auditoría). Ya no se baja ni almacena material de PIN en el dispositivo.
 
         // [v2.5.24] _pinTier — la sensibilidad inferida del catálogo MOS
         // (1=rutina, 2=sensible, 3=crítica). El backend la usa para tier
@@ -14768,8 +14736,7 @@
             pinError.value = '';
             _pinT0.value = Date.now();
             modalPin.value = true;
-            // Refrescar caché en background para próxima vez
-            _sincronizarAdminCache();
+            // [G4 online-only] Ya no se cachean PINs admin: la verificación es siempre online.
         };
 
         // [v2.5.25] Handlers del keypad táctil del modalPin
@@ -14802,23 +14769,25 @@
             const tier = _ME_AUTH_TIERS[String(accion).toUpperCase()] || 2;
             const tiempo_verify_ms = Date.now() - (_pinT0.value || Date.now());
 
-            // Intentar online primero
+            // [G4 online-only] La verificación de clave admin es SIEMPRE online (Supabase-first vía
+            // _verifClaveAdminME → mos.verificar_clave_admin, con bcrypt + lockout + auditoría server-side).
+            // Ya NO se cachean PINs en el dispositivo (un PIN de 4 díg no se puede proteger offline). Sin
+            // conexión, las acciones de admin (anular, crédito, baja CPE…) se bloquean con aviso.
             let resultado = null;
-            if (navigator.onLine && !offlineMode.value) {
-                try {
-                    const j = await _verifClaveAdminME({ clave: clave, accion: accion, refDocumento: ref,
-                        appOrigen: 'mosExpress', dispositivo: deviceId.value || '', tier: tier, cache_hit: 0,
-                        tiempo_verify_ms: tiempo_verify_ms, deviceId: deviceId.value || '' });
-                    if (j?.ok && j.data) resultado = j.data;
-                } catch(e) { /* fallback offline */ }
+            if (!navigator.onLine || offlineMode.value) {
+                pinValidando.value = false;
+                pinError.value = 'Sin conexión — conéctate para autorizar';
+                pinInput.value = '';
+                return;
             }
-            // Fallback offline o error de red
+            try {
+                const j = await _verifClaveAdminME({ clave: clave, accion: accion, refDocumento: ref,
+                    appOrigen: 'mosExpress', dispositivo: deviceId.value || '', tier: tier, cache_hit: 0,
+                    tiempo_verify_ms: tiempo_verify_ms, deviceId: deviceId.value || '' });
+                if (j?.ok && j.data) resultado = j.data;
+            } catch(e) { /* red caída → se trata abajo como no-autorizado reintentar */ }
             if (!resultado) {
-                const local = _validarLocalmente(clave);
-                if (local) resultado = local.ok
-                    ? { autorizado: true, validadoPor: local.validadoPor, idPersonal: local.idPersonal }
-                    : { autorizado: false, error: local.error };
-                else resultado = { autorizado: false, error: 'Sin caché. Conecta a internet primero.' };
+                resultado = { autorizado: false, error: 'No se pudo verificar — reintenta' };
             }
 
             pinValidando.value = false;

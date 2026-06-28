@@ -1,4 +1,4 @@
 {
- "version": "2.8.95",
- "build": "2.8.95 (cero-GAS G2): el registro GPS de ubicacion (_gpsRegistrar) es Supabase-first via mos.registrar_ubicacion (perfil mos, flag GPS_DIRECTO). false/OFF -> fallback al write GAS. INERTE por default."
+ "version": "2.8.96",
+ "build": "2.8.96 (G4 online-only · seguridad): se ELIMINO el cache de PINs admin offline (exponia PINs plaintext). La verificacion de clave admin (anular, credito, baja CPE...) es SIEMPRE online via _verifClaveAdminME (mos.verificar_clave_admin: bcrypt+lockout+auditoria). Sin conexion se bloquea con aviso 'conectate para autorizar'. Removidos los 4 helpers de cache admin."
 }
