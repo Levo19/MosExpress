@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.90';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.91';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4623,9 +4623,9 @@
                     </span>
                   </div>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
-                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios(); onCambioTipoDoc('NOTA_DE_VENTA')" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
-                      <button @click="pago.tipoDoc = 'BOLETA'; cargarClienteVarios(); onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
-                      <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente(); onCambioTipoDoc('FACTURA')" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
+                      <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios(); onCambioTipoDoc('NOTA_DE_VENTA')" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">N.V.</button>
+                      <button @click="pago.tipoDoc = 'BOLETA'; defaultClienteBoleta(); onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-blue-500 text-white shadow-md shadow-blue-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">BOLETA</button>
+                      <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente(); onCambioTipoDoc('FACTURA')" :class="pago.tipoDoc === 'FACTURA' ? 'bg-purple-500 text-white shadow-md shadow-purple-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">FACTURA</button>
                   </div>
                </div>
 
@@ -17229,6 +17229,12 @@
             clienteModoManual.value     = false;
             clienteNombreManual.value   = '';
         };
+        // [UX] Default de cliente al pasar a BOLETA: < S/700 → VARIOS (consumidor anónimo); ≥ S/700 → VACÍO
+        // (el cajero DEBE identificar; así no hay que borrar VARIOS antes de buscar — ahorra un click).
+        const _defaultClienteBoleta = () => {
+            if (granTotal.value >= 700) { try { limpiarCliente(); } catch(_){} }
+            else cargarClienteVarios();
+        };
         // Convierte un número entero a texto en español (para TTS del monto)
         const numALetras = (n) => {
             if (n === 0) return 'cero';
@@ -19839,7 +19845,7 @@
           etiqsPendientes, etiqsModalAbierto, etiqsProcesando,
           cargarEtiqsPendientes, abrirEtiqsModal, etiqMarcarPegada,
           etiqMarcarTodasPegadas, etiqReimprimir, etiqAutoPrintAlAperturaCaja,
-          db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, toggleVentaCreditoDirecto,
+          db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, defaultClienteBoleta: _defaultClienteBoleta, toggleVentaCreditoDirecto,
           deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo, abrirInSituAdmin,
           actInSituShow, actInSituNombre, actInSituClave, actInSituErr, actInSituBusy,
           abrirActivarInSitu, confirmarActivarInSitu,

@@ -1,4 +1,4 @@
 {
- "version": "2.8.90",
- "build": "2.8.90 (fix CE en boleta >=700): el guard de boleta >=S/700 solo permitia DNI(8)/RUC(11) -> un CE de 9 digitos quedaba bloqueado aunque es identificacion valida. Ahora CE/Pasaporte (tipo 4/7) tambien pasan el umbral. CE/pasaporte ya emiten boleta < y >= 700 (via boton Guardar como CE). Factura sigue exigiendo RUC."
+ "version": "2.8.91",
+ "build": "2.8.91 (UX Bloque A): boleta >=S/700 ya NO pre-carga VARIOS (default vacio -> ahorra el click de borrarlo antes de buscar; <700 sigue con VARIOS). + botones NV/BOLETA/FACTURA con acento de color prominente al seleccionar (NV verde, BOLETA azul, FACTURA morado) + haptico (scale/active)."
 }
