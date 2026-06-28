@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.91';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.92';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4805,9 +4805,9 @@
                <div v-if="config.esCajero">
                   <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Método de Pago</label>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl mb-4">
-                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'EFECTIVO'; pago.montoVirtual = 0" :class="pago.metodo === 'EFECTIVO' && !pago.ventaCreditoDirecto ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">EFECTIVO</button>
-                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal; pago.montoVirtual = 0" :class="pago.metodo === 'VIRTUAL' && !pago.ventaCreditoDirecto ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">VIRTUAL</button>
-                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'MIXTO'; pago.montoRecibido = 0; pago.montoVirtual = 0" :class="pago.metodo === 'MIXTO' && !pago.ventaCreditoDirecto ? 'bg-white text-posSecondary shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">MIXTO</button>
+                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'EFECTIVO'; pago.montoVirtual = 0" :class="pago.metodo === 'EFECTIVO' && !pago.ventaCreditoDirecto ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">💵 EFECTIVO</button>
+                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'VIRTUAL'; pago.montoRecibido = granTotal; pago.montoVirtual = 0" :class="pago.metodo === 'VIRTUAL' && !pago.ventaCreditoDirecto ? 'bg-blue-500 text-white shadow-md shadow-blue-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">📱 VIRTUAL</button>
+                      <button @click="pago.ventaCreditoDirecto = false; pago.metodo = 'MIXTO'; pago.montoRecibido = 0; pago.montoVirtual = 0" :class="pago.metodo === 'MIXTO' && !pago.ventaCreditoDirecto ? 'bg-purple-500 text-white shadow-md shadow-purple-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">🔀 MIXTO</button>
                   </div>
                </div>
                <!-- 📒 Vender directo a crédito — visible para vendedor y cajero (requiere PIN admin) -->
@@ -4855,6 +4855,16 @@
                  <div class="p-4 rounded-2xl border-2 border-gray-100 bg-white flex justify-between items-center shadow-sm">
                    <span class="text-gray-400 font-bold text-sm uppercase tracking-wider">Vuelto</span>
                    <span class="text-4xl font-black" :class="vuelto < 0 ? 'text-red-500' : 'text-gray-800'">S/ {{ vuelto.toFixed(2) }}</span>
+                 </div>
+               </div>
+
+               <!-- VIRTUAL: confirmación — el cliente paga el total por Yape/Plin/transferencia (sin monto recibido ni vuelto) -->
+               <div v-if="config.esCajero && pago.metodo === 'VIRTUAL'" class="p-5 rounded-2xl border-2 border-blue-200 bg-blue-50 flex items-center gap-4">
+                 <span class="text-3xl shrink-0">📱</span>
+                 <div class="flex-1 min-w-0">
+                   <p class="text-[11px] font-bold text-blue-400 uppercase tracking-wider">Pago digital · Yape / Plin / Transf.</p>
+                   <p class="text-3xl font-black text-blue-700 mt-0.5 leading-none">S/ {{ granTotal.toFixed(2) }}</p>
+                   <p class="text-[11px] text-blue-500 font-semibold mt-1">El cliente paga el total exacto — sin vuelto</p>
                  </div>
                </div>
             </div>

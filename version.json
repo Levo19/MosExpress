@@ -1,4 +1,4 @@
 {
- "version": "2.8.91",
- "build": "2.8.91 (UX Bloque A): boleta >=S/700 ya NO pre-carga VARIOS (default vacio -> ahorra el click de borrarlo antes de buscar; <700 sigue con VARIOS). + botones NV/BOLETA/FACTURA con acento de color prominente al seleccionar (NV verde, BOLETA azul, FACTURA morado) + haptico (scale/active)."
+ "version": "2.8.92",
+ "build": "2.8.92 (UX Bloque B): metodos de pago EFECTIVO/VIRTUAL/MIXTO con acento de color al seleccionar (verde/azul/morado) + iconos + haptico. VIRTUAL ahora muestra un bloque de confirmacion (S/ total · Yape/Plin) en vez de quedar vacio (que encogia/deformaba el modal al cambiar de metodo)."
 }
