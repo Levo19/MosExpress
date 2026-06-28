@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.97';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.98';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8028,7 +8028,11 @@
                 if (pago.value.tipoDoc === 'BOLETA' && granTotal.value >= 700) return 'Boleta ≥ S/ 700: identifica al cliente (DNI o RUC)';
                 return '';
             }
-            if (pago.value.tipoDoc === 'BOLETA' && !/^\d{8}$/.test(doc)) return 'DNI debe tener exactamente 8 dígitos';
+            // [fix boleta+RUC] SUNAT SÍ permite boleta con RUC (tipo 6), no solo DNI. Aceptar DNI(8) O RUC(11)
+            // (CE/Pasaporte ya pasó por el bypass de arriba; VARIOS<700 también). Antes solo aceptaba 8 díg →
+            // bloqueaba emitir boleta a un cliente con RUC.
+            if (pago.value.tipoDoc === 'BOLETA' && !/^\d{8}$/.test(doc) && !/^\d{11}$/.test(doc))
+                return 'Para boleta: DNI (8 díg) o RUC (11 díg)';
             if (pago.value.tipoDoc === 'FACTURA' && !/^\d{11}$/.test(doc)) return 'RUC debe tener exactamente 11 dígitos';
             return '';
         });

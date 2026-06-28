@@ -1,4 +1,4 @@
 {
- "version": "2.8.97",
- "build": "2.8.97 (series single-source): las cajas ahora leen las series (NV/Boleta/Factura) DIRECTO de Supabase (mos.series_documentales_app, la tabla que se edita en MOS) y las superponen sobre el catalogo GAS viejo. Cierra el desajuste serie-emitida vs serie-filtrada (BBB1 vs B001) que ocultaba boletas en la lista del cajero. Una sola fuente de verdad: editas la serie en MOS -> se propaga sola a las cajas al refrescar."
+ "version": "2.8.98",
+ "build": "2.8.98 (fix legal/dinero): se podia quedar bloqueada la emision de BOLETA con RUC. errorDocumento exigia exactamente 8 digitos (DNI) para boleta -> un RUC (11) daba 'DNI debe tener 8 digitos'. SUNAT SI permite boleta con RUC (tipo 6). Ahora boleta acepta DNI(8) O RUC(11) (CE/Pasaporte por el bypass; VARIOS<700). Factura sigue exigiendo RUC."
 }
