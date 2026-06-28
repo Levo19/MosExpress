@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.99';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.100';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9401,6 +9401,29 @@
         // Config global desde ProyectoMOS_DB → tabla CONFIG_MOS (clave/valor).
         // Trae metas, PINs, parametros del ecosistema. Cacheado en localStorage.
         const mosConfig = ref({});
+        // [#9 Opción D fase 2] Datos fiscales de la empresa para el HEADER del ticket (mismo que la Edge). Se
+        // cachean en localStorage + se refrescan al cargar vía me.empresa_fiscal (SQL 285). Fallback hardcoded
+        // (datos PÚBLICOS, van impresos en cada comprobante) para que el header nunca quede vacío sin red.
+        const empresaFiscal = ref((() => {
+            try { const c = JSON.parse(localStorage.getItem('mosexpress_empresa_fiscal') || 'null'); if (c && c.ruc) return c; } catch(_) {}
+            return { ruc: '20610714057', razonSocial: 'INVERSIONES MOS EIRL', telefono: '967767081', email: 'caseritotonys@gmail.com',
+                     direccion: 'CAL. RAUL PORRAS BARRENECHEA CDRA 3 NRO 67 - MERCADO N 2 - PISCO - ICA' };
+        })());
+        const _cargarEmpresaFiscal = async () => {
+            try {
+                const _tk = await _mintTokenSB();
+                const _r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/empresa_fiscal`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: '{}'
+                }, 8000);
+                const _j = await _r.json().catch(() => null);
+                if (_j && _j.ok && _j.data && _j.data.ruc) {
+                    empresaFiscal.value = _j.data;
+                    try { localStorage.setItem('mosexpress_empresa_fiscal', JSON.stringify(_j.data)); } catch(_) {}
+                }
+            } catch(_) { /* queda el cache/fallback */ }
+        };
         const _cargarConfigMos = async () => {
             try {
                 if (offlineMode.value) return;
@@ -9588,6 +9611,7 @@
                     else agregarToast("Éxito", "Catálogo actualizado");
                     _syncImpresorasFromProyectoMOS();
                     _cargarConfigMos();
+                    _cargarEmpresaFiscal();   // [#9 D fase 2] refresca datos fiscales para el header del ticket
                     // [G4 online-only] (se eliminó _sincronizarAdminCache: verificación admin siempre online)
                     // Refrescar el baseline de versión del catálogo (poller). Fire-and-forget:
                     // si falla la lectura de versión, el catálogo igual quedó actualizado.
@@ -17827,119 +17851,112 @@
            // Helper: construir y enviar ticket ESC/POS con el correlativo final.
            // nfData (opcional): {hash, enlace, qrString} — si viene, se usa QR de SUNAT
            const imprimirTicketVenta = (correlativo, esSincronizado, nfData) => {
+               // [#9 Opción D fase 2] Layout CLONADO de la Edge ticket-comprobante → el ticket original (online y
+               // offline) se ve IGUAL que la reimpresión: header fiscal (empresa) + items granel-aware + IGV
+               // desglosado + QR (SUNAT en CPE, correlativo en NV) + leyenda fiscal. EXTRA propio del original: el
+               // VUELTO (solo EFECTIVO/MIXTO), que la Edge no puede mostrar (no se guarda en base).
+               const W = 48;
                const titulo = tipoDocVenta !== 'NOTA_DE_VENTA' ? tipoDocVenta : 'NOTA_DE_VENTA';
-               let txt = "\x1b\x40\x1b\x61\x01";
-               txt += "\x1b\x21\x30MOSexpress\n";
-               txt += "\x1b\x21\x00\n";
-               txt += "\x1b\x21\x10" + titulo + "\n";
-               txt += "\x1b\x21\x00Tk: " + correlativo + "\n";
-               txt += "================================================\n";
-               txt += "\x1b\x61\x00";
-               txt += "FECHA   : " + new Date().toLocaleString() + "\n";
-               if (nombreClienteVenta && nombreClienteVenta !== 'VARIOS') {
-                   txt += "CLIENTE : " + nombreClienteVenta + "\n";
-                   if (docClienteVenta && docClienteVenta !== '66666') txt += "DOC     : " + docClienteVenta + "\n";
-               }
-               txt += (config.value.esCajero ? "CAJERO  " : "VENDEDOR") + ": " + config.value.vendedor + "\n";
-               txt += "================================================\n";
-               txt += "CANT  DESCRIPCION                      SUBTOTAL \n";
-               txt += "------------------------------------------------\n";
-               // [Ticket granel + nombre largo] Helpers locales:
-               //  · _pesoBonito: peso inteligente — gramos enteros si <1kg, kilos sin ceros sobrantes si >=1kg.
-               //    Así el cliente entiende "100 g" o "5 kg" en vez del factor crudo "0.1".
-               //  · _wrapNombre: parte el nombre en hasta 2 renglones por palabra (no corta a media palabra).
-               const _pesoBonito = (kg) => {
-                   const g = Math.round((parseFloat(kg) || 0) * 1000);
-                   if (g < 1000) return g + ' g';
-                   return (g / 1000).toFixed(3).replace(/\.?0+$/, '') + ' kg';
-               };
-               const _wrapNombre = (nombre, ancho, maxLineas) => {
-                   const palabras = String(nombre || '').trim().split(/\s+/);
-                   const lineas = [];
-                   let cur = '';
-                   for (const w of palabras) {
-                       const cand = cur ? cur + ' ' + w : w;
-                       if (cand.length <= ancho) { cur = cand; }
-                       else { if (cur) lineas.push(cur); cur = w; if (lineas.length >= maxLineas) break; }
+               const esCPE = (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA');
+               const emp = empresaFiscal.value || {};
+               const _n = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[^\x20-\x7e]/g, '');   // NFD descompone tildes; strip a ASCII imprimible (térmica)
+               const _wrap = (texto, ancho) => {
+                   texto = _n(texto).trim(); if (!texto) return [];
+                   const palabras = texto.split(/\s+/); const out = []; let cur = '';
+                   for (let p of palabras) {
+                       while (p.length > ancho) { if (cur) { out.push(cur); cur = ''; } out.push(p.slice(0, ancho)); p = p.slice(ancho); }
+                       const sep = cur ? ' ' : '';
+                       if ((cur + sep + p).length <= ancho) cur = cur + sep + p; else { out.push(cur); cur = p; }
                    }
-                   if (cur && lineas.length < maxLineas) lineas.push(cur);
-                   return lineas.slice(0, maxLineas).map(l => l.length > ancho ? l.substring(0, ancho) : l);
+                   if (cur) out.push(cur); return out;
                };
-               itemsParaImprimir.forEach(item => {
-                   const m = item.nombre.match(/^(.+?)\s+\((.+)\)$/);
-                   const baseName = m ? m[1] : item.nombre;
-                   const empaque  = m ? m[2] : null;
-                   const esGranelTk = String(item.unidad_de_medida || '').toUpperCase() === 'KGM';
-                   // Graneles: la "cantidad" real es el peso en kg → en CANT mostramos "1" (una bolsa) y el peso va abajo.
-                   const cantTxt = esGranelTk ? '1' : String(item.cantidad);
-                   const lineasNombre = _wrapNombre(baseName, 31, 2);
-                   txt += cantTxt.padEnd(5, ' ') + " " + (lineasNombre[0] || '').padEnd(31, ' ') + " " + parseFloat(item.subtotal).toFixed(2).padStart(10, ' ') + "\n";
-                   for (let i = 1; i < lineasNombre.length; i++) txt += "      " + lineasNombre[i] + "\n";
-                   if (esGranelTk) txt += "      Peso: " + _pesoBonito(item.cantidad) + "\n";
-                   if (empaque) txt += "      " + empaque.substring(0, 40) + "\n";
+               const _pad = (l, r) => { l = _n(l); r = _n(r); let pad = W - l.length - r.length; if (pad < 1) pad = 1; return l + ' '.repeat(pad) + r; };
+               const _money = (x) => { const v = Number(x); return (Number.isFinite(v) ? v : 0).toFixed(2); };
+               const _esPeso = (u) => { u = String(u || '').toUpperCase().trim(); return u === 'KGM' || u === 'KG' || u === 'KGS' || u === 'G' || u === 'GMS' || u === 'GR'; };
+               const _fmtCant = (c, u) => {
+                   if (_esPeso(u)) { if (c > 0 && c < 1) return Math.round(c * 1000) + ' g'; const s = (c % 1 === 0) ? c.toFixed(0) : c.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''); return s + ' kg'; }
+                   return (c % 1 === 0) ? String(c) : c.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+               };
+               const _docLabel = (t) => { t = String(t || '').toUpperCase(); if (t === 'BOLETA') return 'BOLETA DE VENTA ELECTRONICA'; if (t === 'FACTURA') return 'FACTURA ELECTRONICA'; if (t === 'NOTA_DE_VENTA' || t === 'NV') return 'NOTA DE VENTA'; return t || 'COMPROBANTE'; };
+               const _cliDocLabel = (td) => { switch (Number(td)) { case 1: return 'DNI'; case 4: return 'C.E.'; case 6: return 'RUC'; case 7: return 'PASAP'; default: return 'DOC'; } };
+               const SEP = '-'.repeat(W), EQ = '='.repeat(W);
+
+               let txt = "\x1b\x40\x1b\x61\x01";                                       // init + center
+               txt += "\x1b\x21\x30MOSexpress\n\x1b\x21\x00\n";                        // wordmark (doble)
+               txt += "\x1b\x45\x01" + _n(emp.razonSocial || 'INVERSIONES MOS') + "\x1b\x45\x00\n";
+               if (emp.ruc) txt += "R.U.C. " + _n(emp.ruc) + "\n";
+               _wrap(emp.direccion || '', W).forEach(l => { if (l) txt += l + "\n"; });
+               if (emp.telefono || emp.email) txt += _n([emp.telefono ? ('Tel ' + emp.telefono) : '', emp.email || ''].filter(Boolean).join('  ')) + "\n";
+               txt += EQ + "\n";
+               txt += "\x1b\x21\x10\x1b\x45\x01" + _docLabel(tipoDocVenta) + "\x1b\x45\x00\n";
+               txt += _n(correlativo) + "\x1b\x21\x00\n";
+               txt += "\x1b\x61\x00" + SEP + "\n";                                     // left
+               const fStr = new Date().toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+               txt += _pad('Fecha : ' + fStr, ('Cajero: ' + (config.value.vendedor || '')).slice(0, 20)) + "\n";
+               const _cliNom = String(nombreClienteVenta || '').trim();
+               const _cliDoc = String(docClienteVenta || '').trim();
+               if ((_cliNom && _cliNom !== 'VARIOS') || (_cliDoc && _cliDoc !== '66666')) {
+                   if (_cliNom && _cliNom !== 'VARIOS') _wrap('Cliente: ' + _cliNom, W).forEach(l => txt += l + "\n");
+                   if (_cliDoc && _cliDoc !== '66666') txt += _cliDocLabel(tipoDocCliente) + '    : ' + _n(_cliDoc) + "\n";
+               }
+               txt += SEP + "\n";
+               txt += "\x1b\x45\x01" + _pad('DESCRIPCION', 'IMPORTE') + "\x1b\x45\x00\n";
+               itemsParaImprimir.forEach(it => {
+                   const cant = Number(it.cantidad) || 0, precio = Number(it.precio) || 0, um = it.unidad_de_medida;
+                   const nom = String(it.nombre || '').replace(/\s*\(.*\)\s*$/, '');
+                   let ls = _wrap(nom, W); if (ls.length > 2) { ls = ls.slice(0, 2); ls[1] = ls[1].slice(0, W - 3) + '...'; }
+                   ls.forEach(l => txt += l + "\n");
+                   const unitTxt = _esPeso(um) ? ('S/ ' + _money(precio) + '/kg') : ('S/ ' + _money(precio));
+                   txt += _pad('  ' + _fmtCant(cant, um) + '  x  ' + unitTxt, 'S/ ' + _money(it.subtotal)) + "\n";
                });
-               txt += "------------------------------------------------\n";
-               txt += "\x1b\x61\x02";
-               txt += "\x1b\x21\x10TOTAL: S/ " + totalVenta.toFixed(2) + "\n\x1b\x21\x00";
+               txt += SEP + "\n";
+               if (esCPE && totalGravada > 0) {
+                   txt += _pad('OP. GRAVADA', 'S/ ' + _money(totalGravada)) + "\n";
+                   txt += _pad('IGV (18%)', 'S/ ' + _money(totalIGV)) + "\n";
+               }
+               const _exonInaf = (subExonerado || 0) + (subInafecto || 0);
+               if (esCPE && _exonInaf > 0) txt += _pad('OP. EXON./INAF.', 'S/ ' + _money(_exonInaf)) + "\n";
+               txt += "\x1b\x21\x10\x1b\x45\x01" + _pad('TOTAL', 'S/ ' + _money(totalVenta)) + "\x1b\x45\x00\x1b\x21\x00\n";
+               // forma de pago + VUELTO (solo EFECTIVO/MIXTO, donde hay cambio real — decisión del dueño)
                if (metodoVenta === 'MIXTO') {
-                   txt += "METODO: MIXTO\n";
-                   txt += "VIRTUAL : S/ " + montoVirtualVenta.toFixed(2) + "\n";
-                   txt += "EFECTIVO: S/ " + (totalVenta - montoVirtualVenta).toFixed(2) + "\n";
-                   if (vueltoVenta > 0) { txt += "PAGO EFE: S/ " + montoRecibidoVenta.toFixed(2) + "\n"; txt += "VUELTO  : S/ " + vueltoVenta.toFixed(2) + "\n"; }
+                   txt += "Forma de pago: MIXTO\n";
+                   txt += _pad('  Virtual', 'S/ ' + _money(montoVirtualVenta)) + "\n";
+                   txt += _pad('  Efectivo', 'S/ ' + _money(totalVenta - montoVirtualVenta)) + "\n";
+                   if (vueltoVenta > 0) { txt += _pad('  Recibido', 'S/ ' + _money(montoRecibidoVenta)) + "\n"; txt += _pad('  Vuelto', 'S/ ' + _money(vueltoVenta)) + "\n"; }
+               } else if (metodoVenta === 'EFECTIVO') {
+                   txt += "Forma de pago: EFECTIVO\n";
+                   if (montoRecibidoVenta > 0) { txt += _pad('  Recibido', 'S/ ' + _money(montoRecibidoVenta)) + "\n"; txt += _pad('  Vuelto', 'S/ ' + _money(vueltoVenta)) + "\n"; }
                } else if (metodoVenta === 'CREDITO') {
-                   txt += "METODO: CREDITO (Aut. admin)\n";
-                   if (adminAuthVenta && adminAuthVenta.nombre) {
-                       txt += "AUTORIZA: " + adminAuthVenta.nombre + "\n";
-                   }
+                   txt += "Forma de pago: CREDITO (Aut. admin)\n";
+                   if (adminAuthVenta && adminAuthVenta.nombre) txt += "Autoriza: " + _n(adminAuthVenta.nombre) + "\n";
                } else if (metodoVenta === 'POR_COBRAR') {
-                   txt += "METODO: POR COBRAR (cajero)\n";
+                   txt += "Forma de pago: POR COBRAR\n";
                } else {
-                   txt += "METODO: " + metodoVenta + "\n";
-                   if (metodoVenta === 'EFECTIVO' && montoRecibidoVenta > 0) {
-                       txt += "PAGO  : S/ " + montoRecibidoVenta.toFixed(2) + "\n";
-                       txt += "VUELTO: S/ " + vueltoVenta.toFixed(2) + "\n";
-                   }
+                   txt += "Forma de pago: " + _n(metodoVenta || '') + "\n";
                }
-               // CPE emitido: agregar info SUNAT (hash + enlace) y QR de SUNAT
-               if (nfData && nfData.hash && (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA')) {
-                   txt += "\x1b\x61\x01\n";
-                   txt += "\x1b\x21\x00Comprobante electronico SUNAT\n";
-                   if (nfData.hash) txt += String(nfData.hash).substring(0, 32) + "\n";
+               if (!esSincronizado) txt += "(Sin conexion - N. sujeto a cambio)\n";
+               txt += SEP + "\n";
+               // QR: CPE → cadena SUNAT (si emitió; PENDIENTE no lleva); NV → correlativo
+               const qrData = esCPE ? ((nfData && nfData.qrString) ? nfData.qrString : '') : correlativo;
+               if (qrData) { txt += "\x1b\x61\x01" + qrESCPOS(qrData) + "\n\x1b\x61\x00"; }
+               // pie
+               txt += "\x1b\x61\x01";
+               if (esCPE) {
+                   _wrap('Representacion impresa de la ' + _docLabel(tipoDocVenta) + '.', W).forEach(l => txt += l + "\n");
+                   const _emitido = !!((nfData && nfData.hash) || qrData);
+                   if (_emitido) { txt += "Autorizado mediante R.I. SUNAT\n"; if (nfData && nfData.hash) txt += "Hash: " + _n(String(nfData.hash).substring(0, 32)) + "\n"; }
+                   else txt += "Comprobante en proceso de envio a SUNAT\n";
+                   if (emp.email) txt += "Consulte: " + _n(emp.email) + "\n";
+               } else {
+                   txt += "Gracias por su compra\n(Nota de venta - no es comprobante\nde pago electronico)\n";
                }
-               txt += "\n\x1b\x61\x01*** GRACIAS POR SU COMPRA ***\n";
-               if (!esSincronizado) txt += "(Sin conexion - N° sujeto a cambio)\n";
-               // QR: si CPE emitido, usar la cadena oficial SUNAT; si NV, el correlativo
-               var qrPayload = (nfData && nfData.qrString) ? nfData.qrString : correlativo;
-               txt += qrESCPOS(qrPayload);
-               txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";
-               // Timeout 8s para PrintNode (no bloquear UI si la impresora está caída)
+               txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";          // feed + corte
                const printPromise = mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, titulo, b64ESC(txt));
                const timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('PrintNode timeout 8s')), 8000));
                Promise.race([printPromise, timeoutP])
                    .catch(e => agregarToast('Error Impresión', e.message));
            };
 
-           // [#9 · Opción D] MODELO ÚNICO de ticket en la EMISIÓN ORIGINAL: si hay red + idVenta sincronizado,
-           // imprime por la MISMA Edge `ticket-comprobante` que la reimpresión (un solo formato NV/boleta/factura
-           // con QR/hash SUNAT). La Edge está DISEÑADA para "ME al vender". Fallback al builder local (offline /
-           // sin id / Edge falla), que es la red de seguridad offline-first. [Fase 2: alinear el layout del local.]
-           const _imprimirOriginalDoc = async (idVenta, correlativo, esSincronizado, nfData) => {
-               const _printerId = config.value.estacion?.PrintNode_ID;
-               if (idVenta && navigator.onLine && _printerId) {
-                   try {
-                       const _tok = await _mintTokenSB();
-                       const _r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/ticket-comprobante`, {
-                           method: 'POST',
-                           headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json' },
-                           body: JSON.stringify({ idVenta, printerId: _printerId, reimpresion: false })
-                       }, 8000);   // [#7 review] 8s en venta (Edge sano responde <2s; recorta solo la cola de fallo)
-                       const _d = await _r.json().catch(() => null);
-                       if (_r.ok && _d && _d.ok) return;   // impreso por el modelo único (cero-GAS, QR SUNAT)
-                       console.warn('[ticket original] Edge ticket-comprobante → fallback local:', _d && _d.error);
-                   } catch (e) { console.warn('[ticket original] Edge falló → fallback local:', e && e.message); }
-               }
-               imprimirTicketVenta(correlativo, esSincronizado, nfData);   // fallback local (offline-safe)
-           };
 
            // ── Helper: fetch con timeout (no quedar colgado en redes lentas) ──
            const _fetchConTimeout = async (url, opts, ms) => {
@@ -18048,7 +18065,7 @@
            if (escrituraDirectaSupabase() && tipoDocVenta === 'NOTA_DE_VENTA') {
                try {
                    const rd = await _crearVentaDirecta(ventaBase, localId);
-                   _imprimirOriginalDoc(rd.id_venta, rd.correlativo, true, null);   // [#9 D] Edge-first + fallback local
+                   imprimirTicketVenta(rd.correlativo, true, null);   // [#9 D] original = builder local (formato Edge + vuelto)
                    const idx = ventasHoy.value.findIndex(v => v.id === localId);
                    if (idx !== -1) {
                        ventasHoy.value[idx].correlativo  = rd.correlativo;
@@ -18104,7 +18121,7 @@
            if (escrituraDirectaSupabase() && cpeDirectoSupabase() && (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA')) {
                try {
                    const rd = await _crearCPEDirecto(ventaBase, localId);
-                   _imprimirOriginalDoc(rd.id_venta, rd.correlativo, true, rd.nfData);   // [#9 D] Edge-first (QR SUNAT) + fallback local
+                   imprimirTicketVenta(rd.correlativo, true, rd.nfData);   // [#9 D] original = builder local (formato Edge + vuelto)
                    const idx = ventasHoy.value.findIndex(v => v.id === localId);
                    if (idx !== -1) {
                        ventasHoy.value[idx].correlativo  = rd.correlativo;

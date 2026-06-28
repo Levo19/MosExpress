@@ -1,4 +1,4 @@
 {
- "version": "2.8.99",
- "build": "2.8.99 (#9 modelo unico de ticket - Opcion D fase 1): la EMISION ORIGINAL (al cobrar) ahora imprime por la MISMA Edge ticket-comprobante que la reimpresion (un solo formato NV/boleta/factura con QR/hash SUNAT) cuando hay red + idVenta sincronizado; fallback al builder local offline-safe. Asi original==reimpresion. Edge: un CPE PENDIENTE ya NO dice 'Autorizado SUNAT' (dice 'en proceso de envio'). Revisado 500x (sin hallazgos criticos)."
+ "version": "2.8.100",
+ "build": "2.8.100 (#9 modelo unico de ticket - Opcion D fase 2): el ticket ORIGINAL (online y offline) ahora se ve IGUAL que la reimpresion - se reescribio el builder local clonando el layout de la Edge (header fiscal con RUC/razon social/direccion + items granel-aware + IGV desglosado + QR + leyenda SUNAT). EXTRA: el VUELTO (solo EFECTIVO/MIXTO, decision del dueno) que la Edge no puede mostrar. Datos fiscales via me.empresa_fiscal (SQL 285, cache + fallback). Se revirtio la fase 1 (original ya no va por la Edge, para conservar el vuelto). Revisado 500x: sin double-print, QR intacto, simbolos OK."
 }
