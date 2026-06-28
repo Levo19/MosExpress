@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.98';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.99';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -17919,6 +17919,28 @@
                    .catch(e => agregarToast('Error Impresión', e.message));
            };
 
+           // [#9 · Opción D] MODELO ÚNICO de ticket en la EMISIÓN ORIGINAL: si hay red + idVenta sincronizado,
+           // imprime por la MISMA Edge `ticket-comprobante` que la reimpresión (un solo formato NV/boleta/factura
+           // con QR/hash SUNAT). La Edge está DISEÑADA para "ME al vender". Fallback al builder local (offline /
+           // sin id / Edge falla), que es la red de seguridad offline-first. [Fase 2: alinear el layout del local.]
+           const _imprimirOriginalDoc = async (idVenta, correlativo, esSincronizado, nfData) => {
+               const _printerId = config.value.estacion?.PrintNode_ID;
+               if (idVenta && navigator.onLine && _printerId) {
+                   try {
+                       const _tok = await _mintTokenSB();
+                       const _r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/ticket-comprobante`, {
+                           method: 'POST',
+                           headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json' },
+                           body: JSON.stringify({ idVenta, printerId: _printerId, reimpresion: false })
+                       }, 8000);   // [#7 review] 8s en venta (Edge sano responde <2s; recorta solo la cola de fallo)
+                       const _d = await _r.json().catch(() => null);
+                       if (_r.ok && _d && _d.ok) return;   // impreso por el modelo único (cero-GAS, QR SUNAT)
+                       console.warn('[ticket original] Edge ticket-comprobante → fallback local:', _d && _d.error);
+                   } catch (e) { console.warn('[ticket original] Edge falló → fallback local:', e && e.message); }
+               }
+               imprimirTicketVenta(correlativo, esSincronizado, nfData);   // fallback local (offline-safe)
+           };
+
            // ── Helper: fetch con timeout (no quedar colgado en redes lentas) ──
            const _fetchConTimeout = async (url, opts, ms) => {
                const ctrl = new AbortController();
@@ -18026,7 +18048,7 @@
            if (escrituraDirectaSupabase() && tipoDocVenta === 'NOTA_DE_VENTA') {
                try {
                    const rd = await _crearVentaDirecta(ventaBase, localId);
-                   imprimirTicketVenta(rd.correlativo, true, null);
+                   _imprimirOriginalDoc(rd.id_venta, rd.correlativo, true, null);   // [#9 D] Edge-first + fallback local
                    const idx = ventasHoy.value.findIndex(v => v.id === localId);
                    if (idx !== -1) {
                        ventasHoy.value[idx].correlativo  = rd.correlativo;
@@ -18082,7 +18104,7 @@
            if (escrituraDirectaSupabase() && cpeDirectoSupabase() && (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA')) {
                try {
                    const rd = await _crearCPEDirecto(ventaBase, localId);
-                   imprimirTicketVenta(rd.correlativo, true, rd.nfData);   // QR SUNAT si emitió; si quedó PENDIENTE, sin QR oficial
+                   _imprimirOriginalDoc(rd.id_venta, rd.correlativo, true, rd.nfData);   // [#9 D] Edge-first (QR SUNAT) + fallback local
                    const idx = ventasHoy.value.findIndex(v => v.id === localId);
                    if (idx !== -1) {
                        ventasHoy.value[idx].correlativo  = rd.correlativo;

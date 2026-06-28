@@ -1,4 +1,4 @@
 {
- "version": "2.8.98",
- "build": "2.8.98 (fix legal/dinero): se podia quedar bloqueada la emision de BOLETA con RUC. errorDocumento exigia exactamente 8 digitos (DNI) para boleta -> un RUC (11) daba 'DNI debe tener 8 digitos'. SUNAT SI permite boleta con RUC (tipo 6). Ahora boleta acepta DNI(8) O RUC(11) (CE/Pasaporte por el bypass; VARIOS<700). Factura sigue exigiendo RUC."
+ "version": "2.8.99",
+ "build": "2.8.99 (#9 modelo unico de ticket - Opcion D fase 1): la EMISION ORIGINAL (al cobrar) ahora imprime por la MISMA Edge ticket-comprobante que la reimpresion (un solo formato NV/boleta/factura con QR/hash SUNAT) cuando hay red + idVenta sincronizado; fallback al builder local offline-safe. Asi original==reimpresion. Edge: un CPE PENDIENTE ya NO dice 'Autorizado SUNAT' (dice 'en proceso de envio'). Revisado 500x (sin hallazgos criticos)."
 }
