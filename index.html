@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.96';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.97';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9421,6 +9421,34 @@
             }
         };
 
+        // [series single-source] Jala las series VIGENTES por zona desde Supabase (mos.series_documentales_app,
+        // la MISMA tabla que se edita en MOS) y las superpone sobre db.value.ZONAS_CONFIG. Así la serie que usan
+        // las cajas (filtro de la lista + creación) coincide con la que emite el backend → una sola fuente de
+        // verdad. Tolerante: si Supabase falla, quedan las series que vinieron del catálogo GAS.
+        const _overlaySeriesSupabase = async () => {
+            try {
+                if (offlineMode.value || !navigator.onLine) return;
+                if (!Array.isArray(db.value.ZONAS_CONFIG) || !db.value.ZONAS_CONFIG.length) return;
+                const tk = await _mintTokenSB();
+                const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/series_documentales_app`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: '{}'
+                }, 8000);
+                if (!res.ok) return;
+                const j = await res.json().catch(() => null);
+                const map = j && j.data;
+                if (!map || typeof map !== 'object') return;
+                db.value.ZONAS_CONFIG.forEach(z => {
+                    const s = map[z.Zona_ID];
+                    if (!s) return;
+                    if (s.Serie_Nota)    z.Serie_Nota    = s.Serie_Nota;
+                    if (s.Serie_Boleta)  z.Serie_Boleta  = s.Serie_Boleta;
+                    if (s.Serie_Factura) z.Serie_Factura = s.Serie_Factura;
+                });
+            } catch(_) { /* tolerar → quedan las series del catálogo GAS */ }
+        };
+
         const _syncImpresorasFromProyectoMOS = async () => {
             try {
                 if (offlineMode.value) return;
@@ -9470,6 +9498,11 @@
                         if (remota.Admin_PIN)     z.Admin_PIN     = remota.Admin_PIN;
                     });
                 }
+
+                // [series single-source] Superponer las series VIGENTES desde Supabase (la tabla que se edita
+                // en MOS) ANTES de persistir y de refrescar la estación → las cajas usan la MISMA serie que la
+                // emisión. Cierra el desajuste con la Hoja vieja (B001 vs BBB1). Tolerante.
+                await _overlaySeriesSupabase();
 
                 // Persistir el catálogo (con ZONAS_CONFIG ya mutado) en IndexedDB
                 _guardarCatalogo(db.value).catch(() => {});
