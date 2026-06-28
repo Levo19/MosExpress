@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.100';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.101';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1271,6 +1271,21 @@
           return;
         }
         if (j.version !== _APP_VERSION) {
+          // [banner ME] NO recargar MID-VENTA. Si hay venta en curso (procesando/cobrando), mostrar un banner
+          // SUAVE (no bloqueante) y DIFERIR: no setear _forceUpdateTriggered → reintenta en el próximo check
+          // (3min / visibilitychange), cuando la venta ya terminó. (_preCheckVersion ya bloquea INICIAR una venta nueva.)
+          if (window.__ME_BUSY__) {
+            let b = document.getElementById('meUpdBanner');
+            if (!b) {
+              b = document.createElement('div');
+              b.id = 'meUpdBanner';
+              b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:99990;background:#0f172a;color:#fff;padding:9px 18px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.35);';
+              document.body.appendChild(b);
+            }
+            b.textContent = '⬆ Actualización v' + j.version + ' lista · se aplica al terminar la venta';
+            return;
+          }
+          const _bnr = document.getElementById('meUpdBanner'); if (_bnr) _bnr.remove();
           _forceUpdateTriggered = true;
           // Mostrar overlay no-dismissable
           const el = document.getElementById('meUpdateOverlay');
@@ -7980,6 +7995,9 @@
         // --- ESTADOS PAGO (COBRO POS) ---
         const modalPago = ref(false);
         const procesando = ref(false);
+        // [banner ME] Expone "venta en curso" a window para que el forced-update NO recargue MID-VENTA
+        // (lo difiere hasta terminar la venta). El _preCheckVersion ya bloquea INICIAR una venta en versión vieja.
+        watch([procesando, modalPago, procesandoGuia], (v) => { try { window.__ME_BUSY__ = v.some(Boolean); } catch(_){} }, { immediate: true });
         const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, tipoDocClienteCE: false, registroManualDNI: false });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);

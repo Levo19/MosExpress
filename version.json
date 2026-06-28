@@ -1,4 +1,4 @@
 {
- "version": "2.8.100",
- "build": "2.8.100 (#9 modelo unico de ticket - Opcion D fase 2): el ticket ORIGINAL (online y offline) ahora se ve IGUAL que la reimpresion - se reescribio el builder local clonando el layout de la Edge (header fiscal con RUC/razon social/direccion + items granel-aware + IGV desglosado + QR + leyenda SUNAT). EXTRA: el VUELTO (solo EFECTIVO/MIXTO, decision del dueno) que la Edge no puede mostrar. Datos fiscales via me.empresa_fiscal (SQL 285, cache + fallback). Se revirtio la fase 1 (original ya no va por la Edge, para conservar el vuelto). Revisado 500x: sin double-print, QR intacto, simbolos OK."
+ "version": "2.8.101",
+ "build": "2.8.101 (banner ME - no reload mid-venta): el forced-update ya NO recarga la app a mitad de una venta. Si hay venta en curso (procesando o cobrando), muestra un banner suave 'actualizacion lista, se aplica al terminar' y DIFIERE el reload al proximo check (cuando la venta termino). El _preCheckVersion sigue bloqueando INICIAR una venta nueva en version vieja."
 }
