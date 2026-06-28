@@ -1,4 +1,4 @@
 {
- "version": "2.8.88",
- "build": "2.8.88 (fix VARIOS): el doc 66666 (VARIOS=consumidor sin documento) ya NO da \"DNI debe tener 8 digitos\" en boleta — SUNAT lo permite en NV y boleta<S/700 (tipo_doc 0, numero 0). El boton confirmar ya NO exige cliente para boleta<700 ni NV (auto-VARIOS lo llena) — solo FACTURA y boleta>=700 exigen identificar. CE (7 digitos) emite boleta via el boton Guardar como CE (tipo 4, no requiere 8 digitos)."
+ "version": "2.8.89",
+ "build": "2.8.89: BOLETA ahora pre-carga VARIOS por defecto (igual que NV) — el boton BOLETA llamaba limpiarCliente() mientras NV llamaba cargarClienteVarios(). Ahora ambos traen VARIOS; si la boleta es >=700 el errorDocumento obliga a identificar (DNI/RUC). Etiqueta dinamica segun umbral."
 }

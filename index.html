@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.88';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.89';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4624,7 +4624,7 @@
                   </div>
                   <div class="flex space-x-2 bg-gray-100 p-1 rounded-xl">
                       <button @click="pago.tipoDoc = 'NOTA_DE_VENTA'; cargarClienteVarios(); onCambioTipoDoc('NOTA_DE_VENTA')" :class="pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-white text-posPrimary shadow' : 'text-gray-500'" class="flex-[1.5] py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">N.V.</button>
-                      <button @click="pago.tipoDoc = 'BOLETA'; limpiarCliente(); onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
+                      <button @click="pago.tipoDoc = 'BOLETA'; cargarClienteVarios(); onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">BOLETA</button>
                       <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente(); onCambioTipoDoc('FACTURA')" :class="pago.tipoDoc === 'FACTURA' ? 'bg-white text-gray-800 shadow' : 'text-gray-500'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider">FACTURA</button>
                   </div>
                </div>
@@ -4634,7 +4634,8 @@
                  <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
                    Cliente
                    <span v-if="pago.tipoDoc === 'FACTURA'">(RUC)</span>
-                   <span v-else-if="pago.tipoDoc === 'BOLETA'">(DNI / RUC)</span>
+                   <span v-else-if="pago.tipoDoc === 'BOLETA' && granTotal >= 700" class="text-amber-600">(DNI / RUC obligatorio · ≥ S/700)</span>
+                   <span v-else-if="pago.tipoDoc === 'BOLETA'" class="text-gray-300 normal-case font-medium">— default VARIOS · DNI/RUC opcional</span>
                    <span v-else class="text-gray-300 normal-case font-medium">— opcional · default VARIOS</span>
                  </label>
 
