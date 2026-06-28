@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.87';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.88';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4858,7 +4858,7 @@
                </div>
             </div>
     
-            <button @click="procesarPago" data-pago-confirmar :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || (pago.tipoDoc !== 'NOTA_DE_VENTA' && !pago.nombreCliente) || !!errorDocumento" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
+            <button @click="procesarPago" data-pago-confirmar :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || ((pago.tipoDoc === 'FACTURA' || (pago.tipoDoc === 'BOLETA' && granTotal >= 700)) && !pago.nombreCliente) || !!errorDocumento" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
                     :class="pago.ventaCreditoDirecto ? '!bg-orange-500 shadow-orange-200' : ''">
                <svg v-if="procesando" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                <span>{{ procesando ? 'IMPRIMIENDO...' : (pago.ventaCreditoDirecto ? '📋 EMITIR A CRÉDITO' : 'IMPRIMIR TICKET') }}</span>
@@ -8034,6 +8034,14 @@
             if (!doc) return '';
             // [v41] CE/Pasaporte tiene longitud variable → bypass validación estricta
             if (pago.value.tipoDocClienteCE) return '';
+            // [fix VARIOS] El doc '66666' = consumidor SIN documento (VARIOS). SUNAT lo permite en NV y en
+            // BOLETA < S/ 700 (tipo_documento 0, número 0 — NO requiere 8 dígitos). Solo se exige identificar
+            // si la boleta es ≥ S/ 700 o es FACTURA. Antes daba "DNI debe tener 8 dígitos" y bloqueaba VARIOS.
+            if (doc === '66666') {
+                if (pago.value.tipoDoc === 'FACTURA') return 'FACTURA requiere RUC (no admite VARIOS)';
+                if (pago.value.tipoDoc === 'BOLETA' && granTotal.value >= 700) return 'Boleta ≥ S/ 700: identifica al cliente (DNI o RUC)';
+                return '';
+            }
             if (pago.value.tipoDoc === 'BOLETA' && !/^\d{8}$/.test(doc)) return 'DNI debe tener exactamente 8 dígitos';
             if (pago.value.tipoDoc === 'FACTURA' && !/^\d{11}$/.test(doc)) return 'RUC debe tener exactamente 11 dígitos';
             return '';
