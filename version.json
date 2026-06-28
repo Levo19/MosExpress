@@ -1,4 +1,4 @@
 {
- "version": "2.8.94",
- "build": "2.8.94 (cero-GAS): el poll de estado-de-bloqueo del cajero (_checkBloqueoUsuario) ahora es Supabase-first via mos.estado_bloqueo_usuario (heartbeat dispositivo+personal + lectura de bloqueo en 1 RPC, mismo que WH). INERTE por default: kill-switch server-side ME_BLOQUEO_DIRECTO en mos.config (!= '1' -> el RPC devuelve *_OFF -> cae a GAS al instante, sin redeploy). Fallback GAS identico al legacy. Opt-out por dispositivo: localStorage me_bloqueo_navegador='0'."
+ "version": "2.8.95",
+ "build": "2.8.95 (cero-GAS G2): el registro GPS de ubicacion (_gpsRegistrar) es Supabase-first via mos.registrar_ubicacion (perfil mos, flag GPS_DIRECTO). false/OFF -> fallback al write GAS. INERTE por default."
 }
