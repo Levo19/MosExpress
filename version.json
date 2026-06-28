@@ -1,4 +1,4 @@
 {
- "version": "2.8.93",
- "build": "2.8.93 (UX Bloque C - cliente): buscador unificado con X para vaciar el casillero + toggle Peru/Extranjero al lado de 'Cliente' (CE/Pasaporte alfanumerico, oculto y bloqueado en FACTURA). Sin coincidencia en RENIEC/SUNAT -> lapiz para registrar el nombre a mano (DNI o RUC). Se quitaron los botones 'Usar VARIOS' y 'Corregir documento'. BOLETA: VARIOS por defecto < S/700, vacio >= S/700 (ahorra un click). Bloque B: cuerpo de pago con min-height estable (no se deforma el modal al alternar EFECTIVO/VIRTUAL/MIXTO)."
+ "version": "2.8.94",
+ "build": "2.8.94 (cero-GAS): el poll de estado-de-bloqueo del cajero (_checkBloqueoUsuario) ahora es Supabase-first via mos.estado_bloqueo_usuario (heartbeat dispositivo+personal + lectura de bloqueo en 1 RPC, mismo que WH). INERTE por default: kill-switch server-side ME_BLOQUEO_DIRECTO en mos.config (!= '1' -> el RPC devuelve *_OFF -> cae a GAS al instante, sin redeploy). Fallback GAS identico al legacy. Opt-out por dispositivo: localStorage me_bloqueo_navegador='0'."
 }

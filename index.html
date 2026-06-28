@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.93';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.94';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13217,22 +13217,49 @@
             } catch(e) { /* tolerar */ }
         };
 
+        // [cero-GAS] Estado de bloqueo + heartbeat directo a Supabase (mos.estado_bloqueo_usuario, perfil mos).
+        // Devuelve {ok:true,data:{...}} (shape idéntico al GAS) o null si: flag server-side ME_BLOQUEO_DIRECTO
+        // != '1', opt-out de dispositivo, offline o error → el caller cae a GAS. El RPC hace el heartbeat
+        // (ultima_conexion en mos.dispositivos + mos.personal) cuando responde ok, igual que el side-effect GAS.
+        const _meEstadoBloqueoDirecto = async (p) => {
+            try { if (localStorage.getItem('me_bloqueo_navegador') === '0') return null; } catch(_) {}
+            try {
+                const tk = await _mintTokenSB();
+                const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/estado_bloqueo_usuario`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: p || {} })
+                }, 8000);
+                if (res.ok) {
+                    const d = await res.json().catch(() => null);
+                    if (d && d.ok === true && d.data) return d;   // éxito (flag ON)
+                }
+            } catch(_) { /* → GAS */ }
+            return null;   // ME_BLOQUEO_DIRECTO_OFF / error → GAS
+        };
+
         const _checkBloqueoUsuario = async () => {
             if (!config.value.completado || !config.value.vendedor) return;
             if (offlineMode.value || !navigator.onLine) return;
             try {
-                // Round 2: enviar contexto de sesión para que MOS actualice
-                // Ultima_Conexion + Ultima_Zona/Estacion/Sesion en DISPOSITIVOS
-                // (sin round-trip extra, aprovechamos esta llamada que ya corre cada 30s)
+                // El heartbeat (Ultima_Conexion + Zona/Estacion/Sesion en DISPOSITIVOS + presencia de personal)
+                // lo hace el RPC directo cuando el flag está ON; el GAS legacy lo hace en su side-effect.
                 const est = config.value.estacion || {};
-                const url = MOS_GAS_URL + '?action=getEstadoBloqueoUsuario'
-                          + '&nombre=' + encodeURIComponent(config.value.vendedor)
-                          + '&appOrigen=mosExpress'
-                          + '&deviceId=' + encodeURIComponent(deviceId.value || '')
-                          + '&idZona=' + encodeURIComponent(est.Zona_ID || '')
-                          + '&idEstacion=' + encodeURIComponent(est.idEstacion || '');
-                const r = await fetch(url);
-                const j = await r.json();
+                // [cero-GAS] Supabase-first: heartbeat + bloqueo en 1 RPC. null → flag OFF / error → GAS legacy.
+                let j = await _meEstadoBloqueoDirecto({
+                    nombre: config.value.vendedor, appOrigen: 'mosExpress',
+                    deviceId: deviceId.value || '', idZona: est.Zona_ID || '', idEstacion: est.idEstacion || ''
+                });
+                if (!j) {
+                    const url = MOS_GAS_URL + '?action=getEstadoBloqueoUsuario'
+                              + '&nombre=' + encodeURIComponent(config.value.vendedor)
+                              + '&appOrigen=mosExpress'
+                              + '&deviceId=' + encodeURIComponent(deviceId.value || '')
+                              + '&idZona=' + encodeURIComponent(est.Zona_ID || '')
+                              + '&idEstacion=' + encodeURIComponent(est.idEstacion || '');
+                    const r = await fetch(url);
+                    j = await r.json();
+                }
                 if (!j || !j.ok || !j.data) return;
                 const prev = usuarioBloqueado.value;
                 usuarioBloqueado.value = {
