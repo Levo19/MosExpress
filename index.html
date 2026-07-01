@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.109';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.110';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15748,8 +15748,11 @@
                         try { playSonidoCobroAsignado(); } catch(_){}
                         try { if (navigator.vibrate) navigator.vibrate([200, 80, 200, 80, 200, 80, 300]); } catch(_){}
                         for (const cobro of nuevos) {
-                            // Imprimir ticket físico de aviso
+                            // Imprimir ticket físico de aviso (cabecera: cliente, vencimiento, monto…)
                             _imprimirAvisoCobroAsignado(cobro);
+                            // [fix cobro directo] + el TICKET COMPLETO en formato unificado (el detalle que
+                            // el aviso perdió al pasar la lectura de cobros a la RPC directa sin itemsOriginal).
+                            _imprimirTicketCopiaCobro(cobro);
                             // Toast por cada uno
                             agregarToast('🔔 Nuevo cobro asignado',
                                 (cobro.cliente || 'cliente') + ' · S/ ' + parseFloat(cobro.monto).toFixed(2),
@@ -18697,6 +18700,24 @@
                     })
                 }, 12000);
             } catch (_) { /* best-effort: el cobro ya quedó registrado */ }
+        };
+
+        // [fix cobro directo] Con el cobro DIRECTO la RPC cobros_pendientes_caja no trae itemsOriginal →
+        // el aviso quedó solo con la cabecera (antes GAS traía el detalle). Reimprimimos el TICKET COMPLETO
+        // en el formato UNIFICADO vía el Edge ticket-comprobante (usa idVenta, que la RPC sí devuelve).
+        // Sin sello PAGADO (aún no se cobró). Best-effort, junto al aviso.
+        const _imprimirTicketCopiaCobro = async (cobro) => {
+            try {
+                const _pid = config.value.estacion?.PrintNode_ID;
+                if (!cobro || !cobro.idVenta || !navigator.onLine || !_pid) return;
+                const _tok = await _mintTokenSB();
+                if (!_tok) return;
+                await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/ticket-comprobante`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ idVenta: cobro.idVenta, printerId: _pid, reimpresion: true })
+                }, 12000);
+            } catch (_) { /* best-effort */ }
         };
 
         const reimprimirTicket = async (ventaLocal) => {

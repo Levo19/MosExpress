@@ -1,4 +1,4 @@
 {
- "version": "2.8.109",
- "build": "2.8.109 (P1 sello PAGADO cero-GAS): al confirmar un cobro asignado por el camino DIRECTO (me.confirmar_cobro), el front reimprime el ticket con sello 'PAGADO / COBRO DIFERIDO' via Edge ticket-comprobante (param pagoDiferido). Antes ese sello solo salia por GAS. Best-effort, no bloquea el cobro."
+ "version": "2.8.110",
+ "build": "2.8.110 (fix aviso cobro directo): al asignar un cobro, ademas del aviso (cabecera) se reimprime el TICKET COMPLETO en formato unificado via Edge ticket-comprobante. El detalle se habia perdido al pasar la lectura de cobros a la RPC directa (cobros_pendientes_caja sin itemsOriginal). Usa cobro.idVenta. Best-effort."
 }
