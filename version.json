@@ -1,4 +1,4 @@
 {
- "version": "2.8.104",
- "build": "2.8.104 (companion 100x fixes): XSS cerrado (nombre escapado), overlay solicitante no se duplica (guard), overlay de aprobar se auto-cierra a los ~2min (no bloquea pantalla), aprobar-falla usa cooldown (no re-pop storm), hold-to-confirm con guard de reentrancia + touchcancel, callbacks de poll envueltos en try/catch. Todo fail-safe, cero-GAS."
+ "version": "2.8.105",
+ "build": "2.8.105 (companion 100x fixes): XSS cerrado (nombre escapado), overlay solicitante no se duplica (guard), overlay de aprobar se auto-cierra a los ~2min (no bloquea pantalla), aprobar-falla usa cooldown (no re-pop storm), hold-to-confirm con guard de reentrancia + touchcancel, callbacks de poll envueltos en try/catch. Todo fail-safe, cero-GAS."
 }

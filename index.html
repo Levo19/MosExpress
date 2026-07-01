@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.104';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.105';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -11825,6 +11825,7 @@
         // Overlays vanilla (no tocan Vue). Fail-safe: cualquier error se traga → el POS sigue.
         // ══════════════════════════════════════════════════════════════════
         let _extPollReq = null, _extPollPpal = null, _extShownAppr = {}, _extApprCooldown = {}, _extPedirAbierto = false, _extApprAbierto = false;
+        let _notaTimer = null, _notaSesionTs = 0, _notaLocal = '', _notaEditando = false, _notaOff = false, _notaPulso = false;
         const _extRpc = async (fn, body) => {
             try {
                 const token = await _mintTokenSB();
@@ -11847,14 +11848,24 @@
             s.textContent = `
             @keyframes _extIn{from{opacity:0;transform:scale(.9) translateY(10px)}to{opacity:1;transform:none}}
             @keyframes _extBeam{0%{left:-40%}100%{left:110%}}
+            @keyframes _extRoll{0%{opacity:0;transform:translateY(-16px) scale(.7)}60%{opacity:1}100%{opacity:1;transform:none}}
+            @keyframes _extBurst{0%{transform:scale(0);opacity:.9}70%{opacity:.35}100%{transform:scale(2.4);opacity:0}}
+            @keyframes _notaPulseK{0%,100%{box-shadow:0 6px 20px rgba(0,0,0,.4)}50%{box-shadow:0 0 0 4px rgba(56,189,248,.5),0 6px 24px rgba(56,189,248,.4)}}
             ._extBk{position:fixed;inset:0;background:rgba(2,6,23,.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px}
             ._extCard{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:22px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:_extIn .3s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden}
             ._extBeamLine{position:absolute;top:0;height:2px;width:35%;background:linear-gradient(90deg,transparent,#38bdf8,transparent);animation:_extBeam 1.6s ease-in-out infinite}
             ._extCode{font-size:34px;font-weight:800;letter-spacing:10px;color:#38bdf8;text-align:center;margin:10px 0;font-variant-numeric:tabular-nums}
+            ._extCode span{display:inline-block;animation:_extRoll .5s cubic-bezier(.2,.9,.3,1.3) both}
+            ._extBurst{position:absolute;left:50%;top:38%;width:80px;height:80px;margin:-40px 0 0 -40px;border-radius:50%;background:radial-gradient(circle,#10b981,transparent 70%);animation:_extBurst .8s ease-out forwards;pointer-events:none}
             ._extBtn{flex:1;padding:12px;border-radius:12px;border:none;font-weight:700;font-size:14px;cursor:pointer}
             ._extBtnOk{background:linear-gradient(135deg,#10b981,#059669);color:#fff;position:relative;overflow:hidden}
             ._extBtnNo{background:#1e293b;color:#cbd5e1}
             ._extRing{position:absolute;inset:0;pointer-events:none}
+            ._notaFab{position:fixed;left:14px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:99990;width:46px;height:46px;border-radius:50%;border:1px solid #1e293b;background:#0f172a;color:#38bdf8;font-size:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.4);cursor:pointer}
+            ._notaFab.pulso{animation:_notaPulseK 1.4s ease-in-out infinite}
+            ._notaFab .dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#38bdf8;border:2px solid #0f172a;display:none}
+            ._notaFab.pulso .dot{display:block}
+            ._notaTa{width:100%;min-height:96px;background:#0b1220;border:1px solid #1e293b;border-radius:12px;color:#e2e8f0;padding:12px;font-size:15px;resize:none;outline:none}
             `;
             document.head.appendChild(s);
         };
@@ -11865,6 +11876,11 @@
             document.body.appendChild(bk);
             return bk;
         };
+        // [§9.1] odómetro: cada dígito entra con retardo escalonado (roll-in)
+        const _extCodeHtml = (code) => String(code == null ? '' : code).split('').map((d, i) =>
+            `<span style="animation-delay:${i * 0.09}s">${_extEsc(d)}</span>`).join(' ');
+        // [§9.1] ráfaga de éxito sobre la card (al vincular)
+        const _extBurst = (ov) => { try { const c = ov.querySelector('._extCard'); if (!c) return; const b = document.createElement('div'); b.className = '_extBurst'; c.appendChild(b); setTimeout(() => { try { b.remove(); } catch (e) {} }, 850); } catch (e) {} };
         // ── LADO SOLICITANTE (2º dispositivo): pide extensión y espera aprobación ──
         const _extPedir = async () => {
             if (_extPedirAbierto) return;                  // [100x #5a] no re-abrir/duplicar
@@ -11879,7 +11895,7 @@
                     <div style="font-size:34px">🔗</div>
                     <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Vincular este equipo</div>
                     <div style="color:#94a3b8;font-size:12px;margin-top:4px">Mostrá este código en tu equipo principal y aprobá ahí.</div>
-                    <div class="_extCode">${String(res.codigo).split('').join(' ')}</div>
+                    <div class="_extCode">${_extCodeHtml(res.codigo)}</div>
                     <div style="color:#64748b;font-size:11px" id="_extWait">Esperando aprobación…</div>
                     <button class="_extBtn _extBtnNo" id="_extCancel" style="margin-top:14px;width:100%">Cancelar</button>
                 </div>`);
@@ -11892,7 +11908,7 @@
                     if (done) return;
                     const st = await _extRpc('extension_estado', { idReq: res.idReq, deviceId: dev });
                     if (!st || !st.ok) return;
-                    if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
+                    if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
                     else if (st.estado === 'RECHAZADA' || st.estado === 'EXPIRADA' || st.estado === 'NO_ENCONTRADA') { _extHaptic([80]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = st.estado === 'EXPIRADA' ? 'Expiró — reintentá' : 'Rechazado'; w.style.color = '#ef4444'; } setTimeout(cerrar, 1400); }
                 } catch (e) { /* fail-safe */ }
             }, 3000);
@@ -11916,7 +11932,7 @@
                         <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Un equipo quiere entrar como</div>
                         <div style="color:#38bdf8;font-weight:800;font-size:18px">${_extEsc(req.nombre || 'este usuario')}</div>
                         <div style="color:#94a3b8;font-size:12px;margin-top:6px">Verificá que el código coincida:</div>
-                        <div class="_extCode">${String(req.codigo).split('').join(' ')}</div>
+                        <div class="_extCode">${_extCodeHtml(req.codigo)}</div>
                         <div style="display:flex;gap:10px;margin-top:14px">
                             <button class="_extBtn _extBtnNo" id="_extRej">Rechazar</button>
                             <button class="_extBtn _extBtnOk" id="_extOk"><span id="_extOkTxt">Mantené para aceptar</span>
@@ -11937,7 +11953,7 @@
                     try {
                         _extHaptic([15, 20, 25, 20, 40]); if (okTxt) okTxt.textContent = 'Aceptando…';
                         const r = await _extRpc('aprobar_extension', { idReq: req.idReq, codigo: req.codigo, deviceId: dev });
-                        if (r && r.ok) { if (okTxt) okTxt.textContent = '✓ Vinculado'; _extHaptic([10, 30, 10]); setTimeout(cerrar, 900); }
+                        if (r && r.ok) { if (okTxt) okTxt.textContent = '✓ Vinculado'; _extHaptic([10, 30, 10]); _extBurst(ov); setTimeout(cerrar, 900); }
                         else { if (okTxt) okTxt.textContent = 'No se pudo'; _extHaptic([80]); _extApprCooldown[req.idReq] = Date.now() + 20000; setTimeout(cerrar, 1200); }   // cooldown, no borrar guard
                     } catch (e) { _extApprCooldown[req.idReq] = Date.now() + 20000; setTimeout(cerrar, 1200); }
                 };
@@ -11945,8 +11961,71 @@
                 okBtn.addEventListener('mouseup', stop); okBtn.addEventListener('mouseleave', stop); okBtn.addEventListener('touchend', stop); okBtn.addEventListener('touchcancel', stop);
             } catch (e) { /* fail-safe: el POS sigue */ }
         };
-        const _extIniciar = () => { _extPedir(); if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); };
-        const _extDetener = () => { if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; } if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; } _extShownAppr = {}; _extPedirAbierto = false; };
+        // ── NOTA COMPARTIDA de sesión (principal ↔ companion, 100% Supabase) ──
+        const _notaCtx = () => { const cw = config.value; if (!cw || !cw.completado || !cw.zona || !cw.vendedor) return null; return { nombre: cw.vendedor, zona: cw.zona }; };
+        const _notaFabEl = () => document.getElementById('_notaFab');
+        const _notaEnsureFab = () => { let f = _notaFabEl(); if (f) return f; _extCssOnce(); f = document.createElement('button'); f.id = '_notaFab'; f.className = '_notaFab'; f.innerHTML = '📝<span class="dot"></span>'; f.title = 'Nota compartida del equipo'; f.onclick = _notaAbrir; document.body.appendChild(f); return f; };
+        const _notaQuitarFab = () => { const f = _notaFabEl(); if (f) { try { f.remove(); } catch (e) {} } };
+        const _notaMarcarPulso = (on) => { const f = _notaFabEl(); if (!f) return; _notaPulso = !!on; f.classList.toggle('pulso', !!on); };
+        const _notaTick = async () => {
+            const ctx = _notaCtx(); if (!ctx) { _notaQuitarFab(); return; }
+            const r = await _extRpc('nota_sesion_get', ctx);
+            if (!r || r.ok !== true) { _notaOff = true; _notaQuitarFab(); return; }   // flag off / no autorizado → sin FAB
+            _notaOff = false;
+            // solo con sesión ACTIVA y cuando aporta: hay ≥1 companion atado, o ya hay nota
+            const util = r.activa && ((r.companions || 0) > 0 || String(r.nota || '') !== '');
+            if (!util) { if (!_notaEditando) _notaQuitarFab(); return; }
+            _notaEnsureFab();
+            if (_notaEditando) return;                                                  // no pisar mientras edita
+            const ts = r.ts || 0;
+            if (ts > _notaSesionTs) {                                                    // llegó algo más nuevo (otro equipo)
+                const cambio = (String(r.nota || '') !== String(_notaLocal || '')) && _notaSesionTs > 0;
+                _notaSesionTs = ts; _notaLocal = String(r.nota || '');
+                if (cambio) { _extHaptic([12, 30, 12]); _notaMarcarPulso(true); }
+            }
+        };
+        function _notaAbrir() {
+            _notaMarcarPulso(false); _notaEditando = true;
+            const ov = _extOverlay(`
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                        <span style="font-size:22px">📝</span>
+                        <div style="font-weight:800;color:#e2e8f0;font-size:15px">Nota del equipo</div>
+                    </div>
+                    <div style="color:#94a3b8;font-size:11px;margin-bottom:8px">La ven y editan todos los equipos de esta sesión.</div>
+                    <textarea class="_notaTa" id="_notaTa" maxlength="280" placeholder="Ej: falta vuelto de S/50, cliente Ana paga 3pm…">${_extEsc(_notaLocal)}</textarea>
+                    <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:6px">
+                        <span id="_notaCnt" style="color:#64748b;font-size:11px"></span>
+                    </div>
+                    <div style="display:flex;gap:10px;margin-top:12px">
+                        <button class="_extBtn _extBtnNo" id="_notaX">Cerrar</button>
+                        <button class="_extBtn _extBtnOk" id="_notaSave">Guardar</button>
+                    </div>
+                </div>`);
+            const ta = ov.querySelector('#_notaTa'); const cnt = ov.querySelector('#_notaCnt');
+            const upd = () => { if (cnt) cnt.textContent = ta.value.length + '/280'; }; upd();
+            ta.addEventListener('input', upd);
+            try { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
+            const cerrar = () => { _notaEditando = false; try { ov.remove(); } catch (e) {} };
+            ov.querySelector('#_notaX').onclick = cerrar;
+            ov.querySelector('#_notaSave').onclick = async () => {
+                const btn = ov.querySelector('#_notaSave'); const txt = String(ta.value || '');
+                btn.textContent = 'Guardando…'; btn.disabled = true;
+                const ctx = _notaCtx();
+                const r = ctx ? await _extRpc('nota_sesion_set', { ...ctx, nota: txt, baseTs: _notaSesionTs }) : null;
+                if (r && r.ok) {
+                    _notaSesionTs = r.ts || _notaSesionTs; _notaLocal = String(r.nota != null ? r.nota : txt);
+                    if (r.conflict) {   // otro equipo escribió antes → mostrar lo del server, no pisar a ciegas
+                        _extHaptic([80]); ta.value = _notaLocal; upd(); btn.textContent = 'Se actualizó ↑'; btn.disabled = false;
+                        setTimeout(() => { if (btn) { btn.textContent = 'Guardar'; } }, 1500);
+                    } else { _extHaptic([10, 30, 10]); btn.textContent = '✓'; setTimeout(cerrar, 500); }
+                } else { btn.textContent = 'Reintentar'; btn.disabled = false; }
+            };
+        }
+        const _notaIniciar = () => { if (_notaTimer) clearInterval(_notaTimer); _notaTick(); _notaTimer = setInterval(_notaTick, 8000); };
+        const _notaDetener = () => { if (_notaTimer) { clearInterval(_notaTimer); _notaTimer = null; } _notaQuitarFab(); _notaSesionTs = 0; _notaLocal = ''; _notaEditando = false; };
+        const _extIniciar = () => { _extPedir(); if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); _notaIniciar(); };
+        const _extDetener = () => { if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; } if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; } _extShownAppr = {}; _extPedirAbierto = false; _notaDetener(); };
 
         // ── Métodos de navegación ──
         // [v2.8.9] Flujo rediseñado (4→3 pasos): 1 ¿Quién? · 2 Zona viva (elige
