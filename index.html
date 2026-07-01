@@ -15715,9 +15715,26 @@
             if (!config.value.esCajero || !cajaAbierta.value) return;
             if (!idCajaActual.value || idCajaActual.value.startsWith('CAJA-LOCAL-')) return;
             try {
-                // [v2.5.56] Timeout 15s — el polling no debe colgar la app si GAS lentea
-                const r = await _meFetchTimeout(`${API_URL}?accion=cobros_asignados_cajero&cajaId=${encodeURIComponent(idCajaActual.value)}`, {}, 15000);
-                const d = await r.json();
+                // [cutover cobro cero-GAS] lectura directa Supabase (gated server ME_COBRO_DIRECTO);
+                // si OFF/err → GAS. Mismo shape { status:'success', cobros:[...] }.
+                let d = null;
+                try {
+                    const _tk = await _mintTokenSB();
+                    if (_tk) {
+                        const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/cobros_pendientes_caja`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: { cajaId: idCajaActual.value } })
+                        }, 15000);
+                        const _dd = await _rr.json().catch(() => null);
+                        if (_rr.ok && _dd && _dd.ok === true) d = { status: 'success', cobros: _dd.cobros || [] };
+                    }
+                } catch (_) { /* cae a GAS */ }
+                if (!d) {
+                    // [v2.5.56] Timeout 15s — el polling no debe colgar la app si GAS lentea
+                    const r = await _meFetchTimeout(`${API_URL}?accion=cobros_asignados_cajero&cajaId=${encodeURIComponent(idCajaActual.value)}`, {}, 15000);
+                    d = await r.json();
+                }
                 if (d && d.status === 'success') {
                     const esPrimerPoll = _primerPollCobros;
                     _primerPollCobros = false;
@@ -15885,8 +15902,32 @@
             // [Lote1-C · fix A4] Rollback por idCobro (NO por índice: a los 1.2s el cobro
             // se filtra de la lista → el índice capturado apuntaba a OTRO cobro/undefined
             // → TypeError → caía al catch de red con un toast doblemente falso).
-            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
-                .then(r => r.json())
+            (async () => {
+                // [cutover cobro cero-GAS] intento directo Supabase (money-write byte-equivalente
+                // al GAS); COBRO_OFF/APP_NO_AUTORIZADA → GAS; error de negocio → NO GAS (evita doble
+                // registro; los {ok:false} del RPC son todos pre-write).
+                try {
+                    const _tk = await _mintTokenSB();
+                    if (_tk) {
+                        const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/confirmar_cobro`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: {
+                                idCobro: payload.idCobro, metodoFinal: payload.metodoFinal,
+                                montoEfectivo: payload.montoEfectivo, montoVirtual: payload.montoVirtual,
+                                vendedor: (payload.auth && payload.auth.vendedor) || config.value.vendedor
+                            } })
+                        }, 15000);
+                        const _dd = await _rr.json().catch(() => null);
+                        if (_rr.ok && _dd && _dd.ok === true) return { status: 'success', via: 'directo' };
+                        if (_dd && _dd.error && !/_OFF$/.test(_dd.error) && _dd.error !== 'APP_NO_AUTORIZADA') {
+                            return { status: 'error', mensaje: _dd.error };   // negocio autoritativo → sin GAS
+                        }
+                    }
+                } catch (_) { /* cae a GAS */ }
+                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                return await r.json();
+            })()
                 .then(d => {
                     if (d && d.status === 'success') {
                         // OK — refresh silencioso del listado
