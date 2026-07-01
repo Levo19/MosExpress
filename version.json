@@ -1,4 +1,4 @@
 {
- "version": "2.8.101",
- "build": "2.8.101 (banner ME - no reload mid-venta): el forced-update ya NO recarga la app a mitad de una venta. Si hay venta en curso (procesando o cobrando), muestra un banner suave 'actualizacion lista, se aplica al terminar' y DIFIERE el reload al proximo check (cuando la venta termino). El _preCheckVersion sigue bloqueando INICIAR una venta nueva en version vieja."
+ "version": "2.8.102",
+ "build": "2.8.102 (companion / extension de dispositivo): al entrar un 2o equipo con el mismo nombre+zona, pide vincularse (overlay con codigo de 3 digitos, cero-GAS, RPC mos.pedir_extension); el equipo PRINCIPAL recibe el pedido (poll cada 5s) y aprueba con HOLD-TO-CONFIRM (anillo + haptica). 100% Supabase, overlays vanilla (no tocan Vue), fail-safe (si algo falla el POS sigue)."
 }

@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.101';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.102';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -11787,11 +11787,13 @@
         };
         const _wizIniciarHeartbeat = () => {
             _wizRegistrarPresencia();
+            try { _extIniciar(); } catch (e) {}   // [companion] ¿2º device? + poll principal
             if (_wizHeartbeatTimer) clearInterval(_wizHeartbeatTimer);
             _wizHeartbeatTimer = setInterval(_wizRegistrarPresencia, 60000);
         };
         const _wizDetenerHeartbeat = () => {
             if (_wizHeartbeatTimer) { clearInterval(_wizHeartbeatTimer); _wizHeartbeatTimer = null; }
+            try { _extDetener(); } catch (e) {}   // [companion]
         };
         // ── [v2.8.12] Baja EXPLÍCITA de presencia (cerrar sesión / cerrar caja). ──
         // Borra la fila de me.presencia AL INSTANTE (RPC me.salir_presencia) para que
@@ -11817,6 +11819,120 @@
                 });
             } catch (e) { /* fire-and-forget: el TTL de 2min limpia igual */ }
         };
+
+        // ══════════════════════════════════════════════════════════════════
+        // [EXTENSIÓN DE DISPOSITIVO / companion] 100% Supabase (mos.*), cero-GAS.
+        // Overlays vanilla (no tocan Vue). Fail-safe: cualquier error se traga → el POS sigue.
+        // ══════════════════════════════════════════════════════════════════
+        let _extPollReq = null, _extPollPpal = null, _extShownAppr = {};
+        const _extRpc = async (fn, body) => {
+            try {
+                const token = await _mintTokenSB();
+                if (!token) return null;   // sin token → NO GAS, degradar en silencio
+                const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: body || {} })
+                });
+                return r.ok ? await r.json() : null;
+            } catch (e) { return null; }
+        };
+        const _extHaptic = (pat) => { try { navigator.vibrate && navigator.vibrate(pat); } catch (e) {} };
+        const _extDevId = () => (typeof deviceId !== 'undefined' && deviceId?.value) || localStorage.getItem('mosexpress_deviceId') || '';
+        const _extCssOnce = () => {
+            if (document.getElementById('_extCss')) return;
+            const s = document.createElement('style'); s.id = '_extCss';
+            s.textContent = `
+            @keyframes _extIn{from{opacity:0;transform:scale(.9) translateY(10px)}to{opacity:1;transform:none}}
+            @keyframes _extBeam{0%{left:-40%}100%{left:110%}}
+            ._extBk{position:fixed;inset:0;background:rgba(2,6,23,.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px}
+            ._extCard{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:22px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:_extIn .3s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden}
+            ._extBeamLine{position:absolute;top:0;height:2px;width:35%;background:linear-gradient(90deg,transparent,#38bdf8,transparent);animation:_extBeam 1.6s ease-in-out infinite}
+            ._extCode{font-size:34px;font-weight:800;letter-spacing:10px;color:#38bdf8;text-align:center;margin:10px 0;font-variant-numeric:tabular-nums}
+            ._extBtn{flex:1;padding:12px;border-radius:12px;border:none;font-weight:700;font-size:14px;cursor:pointer}
+            ._extBtnOk{background:linear-gradient(135deg,#10b981,#059669);color:#fff;position:relative;overflow:hidden}
+            ._extBtnNo{background:#1e293b;color:#cbd5e1}
+            ._extRing{position:absolute;inset:0;pointer-events:none}
+            `;
+            document.head.appendChild(s);
+        };
+        const _extOverlay = (html) => {
+            _extCssOnce();
+            const bk = document.createElement('div'); bk.className = '_extBk';
+            bk.innerHTML = `<div class="_extCard"><div class="_extBeamLine"></div>${html}</div>`;
+            document.body.appendChild(bk);
+            return bk;
+        };
+        // ── LADO SOLICITANTE (2º dispositivo): pide extensión y espera aprobación ──
+        const _extPedir = async () => {
+            const cw = config.value; if (!cw || !cw.completado || !cw.zona || !cw.vendedor) return;
+            const dev = _extDevId(); if (!dev) return;
+            const res = await _extRpc('pedir_extension', { nombre: cw.vendedor, zona: cw.zona, deviceId: dev, rol: cw.esCajero ? 'cajero' : 'vendedor', pushToken: (_pushTokenActual || '') });
+            if (!res || !res.ok || !res.needsApproval || !res.idReq) return;   // 1er device / ya atado / off → nada
+            _extHaptic([40, 60, 40]);
+            const ov = _extOverlay(`
+                <div style="text-align:center">
+                    <div style="font-size:34px">🔗</div>
+                    <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Vincular este equipo</div>
+                    <div style="color:#94a3b8;font-size:12px;margin-top:4px">Mostrá este código en tu equipo principal y aprobá ahí.</div>
+                    <div class="_extCode">${String(res.codigo).split('').join(' ')}</div>
+                    <div style="color:#64748b;font-size:11px" id="_extWait">Esperando aprobación…</div>
+                    <button class="_extBtn _extBtnNo" id="_extCancel" style="margin-top:14px;width:100%">Cancelar</button>
+                </div>`);
+            let done = false;
+            const cerrar = () => { done = true; try { ov.remove(); } catch (e) {} if (_extPollReq) clearInterval(_extPollReq); };
+            ov.querySelector('#_extCancel').onclick = () => { _extRpc('rechazar_extension', { idReq: res.idReq }); cerrar(); };
+            if (_extPollReq) clearInterval(_extPollReq);
+            _extPollReq = setInterval(async () => {
+                if (done) return;
+                const st = await _extRpc('extension_estado', { idReq: res.idReq, deviceId: dev });
+                if (!st || !st.ok) return;
+                if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
+                else if (st.estado === 'RECHAZADA' || st.estado === 'EXPIRADA' || st.estado === 'NO_ENCONTRADA') { _extHaptic([80]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = st.estado === 'EXPIRADA' ? 'Expiró — reintentá' : 'Rechazado'; w.style.color = '#ef4444'; } setTimeout(cerrar, 1400); }
+            }, 3000);
+            setTimeout(() => { if (!done) cerrar(); }, 130000);
+        };
+        // ── LADO PRINCIPAL: detecta pedidos y muestra aprobar (hold-to-confirm) ──
+        const _extPrincipalTick = async () => {
+            const dev = _extDevId(); if (!dev) return;
+            const res = await _extRpc('extension_pendientes', { deviceId: dev });
+            if (!res || !res.ok || !Array.isArray(res.pendientes) || !res.pendientes.length) return;
+            const req = res.pendientes[0];
+            if (_extShownAppr[req.idReq]) return;
+            _extShownAppr[req.idReq] = true;
+            _extHaptic([40, 60, 40]);
+            const ov = _extOverlay(`
+                <div style="text-align:center">
+                    <div style="font-size:34px">🔗</div>
+                    <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Un equipo quiere entrar como</div>
+                    <div style="color:#38bdf8;font-weight:800;font-size:18px">${(req.nombre || 'este usuario')}</div>
+                    <div style="color:#94a3b8;font-size:12px;margin-top:6px">Verificá que el código coincida:</div>
+                    <div class="_extCode">${String(req.codigo).split('').join(' ')}</div>
+                    <div style="display:flex;gap:10px;margin-top:14px">
+                        <button class="_extBtn _extBtnNo" id="_extRej">Rechazar</button>
+                        <button class="_extBtn _extBtnOk" id="_extOk"><span id="_extOkTxt">Mantené para aceptar</span>
+                            <svg class="_extRing" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="302" stroke-dashoffset="302" id="_extRingC" style="opacity:.6;transform:rotate(-90deg);transform-origin:center"/></svg>
+                        </button>
+                    </div>
+                </div>`);
+            const cerrar = () => { try { ov.remove(); } catch (e) {} };
+            ov.querySelector('#_extRej').onclick = () => { _extHaptic([80]); _extRpc('rechazar_extension', { idReq: req.idReq }); cerrar(); };
+            const ring = ov.querySelector('#_extRingC'); const okTxt = ov.querySelector('#_extOkTxt'); const okBtn = ov.querySelector('#_extOk');
+            let holdT = null, prog = 0;
+            const start = () => { _extHaptic([15]); holdT = setInterval(() => { prog += 100 / 8; if (ring) ring.style.strokeDashoffset = String(302 - 302 * Math.min(1, prog / 100)); if (prog >= 100) { clearInterval(holdT); confirmar(); } }, 100); };
+            const stop = () => { if (holdT) { clearInterval(holdT); holdT = null; } prog = 0; if (ring) ring.style.strokeDashoffset = '302'; };
+            const confirmar = async () => {
+                _extHaptic([15, 20, 25, 20, 40]); if (okTxt) okTxt.textContent = 'Aceptando…';
+                const r = await _extRpc('aprobar_extension', { idReq: req.idReq, codigo: req.codigo, deviceId: dev });
+                if (r && r.ok) { if (okTxt) okTxt.textContent = '✓ Vinculado'; _extHaptic([10, 30, 10]); }
+                else { if (okTxt) okTxt.textContent = 'No se pudo'; _extHaptic([80]); delete _extShownAppr[req.idReq]; }
+                setTimeout(cerrar, 900);
+            };
+            okBtn.addEventListener('mousedown', start); okBtn.addEventListener('touchstart', (e) => { e.preventDefault(); start(); }, { passive: false });
+            okBtn.addEventListener('mouseup', stop); okBtn.addEventListener('mouseleave', stop); okBtn.addEventListener('touchend', stop);
+        };
+        const _extIniciar = () => { _extPedir(); if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); };
+        const _extDetener = () => { if (_extPollReq) clearInterval(_extPollReq); if (_extPollPpal) clearInterval(_extPollPpal); _extShownAppr = {}; };
 
         // ── Métodos de navegación ──
         // [v2.8.9] Flujo rediseñado (4→3 pasos): 1 ¿Quién? · 2 Zona viva (elige
