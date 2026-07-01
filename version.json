@@ -1,4 +1,4 @@
 {
- "version": "2.8.106",
- "build": "2.8.106 (companion 100x fixes): XSS cerrado (nombre escapado), overlay solicitante no se duplica (guard), overlay de aprobar se auto-cierra a los ~2min (no bloquea pantalla), aprobar-falla usa cooldown (no re-pop storm), hold-to-confirm con guard de reentrancia + touchcancel, callbacks de poll envueltos en try/catch. Todo fail-safe, cero-GAS."
+ "version": "2.8.109",
+ "build": "2.8.109 (P1 sello PAGADO cero-GAS): al confirmar un cobro asignado por el camino DIRECTO (me.confirmar_cobro), el front reimprime el ticket con sello 'PAGADO / COBRO DIFERIDO' via Edge ticket-comprobante (param pagoDiferido). Antes ese sello solo salia por GAS. Best-effort, no bloquea el cobro."
 }

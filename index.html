@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.106';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.109';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15924,7 +15924,7 @@
                         // doble registro si el RPC ya escribió). Solo cae a GAS por: sin token / HTTP
                         // no-2xx / _OFF / APP_NO_AUTORIZADA / excepción.
                         if (_rr.ok && _dd) {
-                            if (_dd.ok === true) return { status: 'success', via: 'directo' };
+                            if (_dd.ok === true) { _reimprimirCobroSello(cobro); return { status: 'success', via: 'directo' }; }
                             const _e = String(_dd.error || '');
                             if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA') {
                                 return { status: 'error', mensaje: _e || 'no confirmado' };
@@ -18670,6 +18670,33 @@
                 }
             } catch(e) { /* silencioso, se muestra "Sin detalle" */ }
             venta.loadingItems = false;
+        };
+
+        // [P1 · sello PAGADO cero-GAS] Reimprime el ticket con sello "PAGADO · COBRO DIFERIDO" tras un
+        // cobro confirmado por el camino DIRECTO (me.confirmar_cobro). El GAS lo hacía server-side; en el
+        // directo lo dispara el front vía el Edge ticket-comprobante (param pagoDiferido). Best-effort.
+        const _reimprimirCobroSello = async (cobro) => {
+            try {
+                const _pid = config.value.estacion?.PrintNode_ID;
+                if (!cobro || !cobro.idVenta || !navigator.onLine || !_pid) return;
+                const _tok = await _mintTokenSB();
+                if (!_tok) return;
+                const n = new Date(), p = x => String(x).padStart(2, '0');
+                const fechaCobro = `${p(n.getDate())}/${p(n.getMonth() + 1)}/${n.getFullYear()} ${p(n.getHours())}:${p(n.getMinutes())}`;
+                await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/ticket-comprobante`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tok, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        idVenta: cobro.idVenta, printerId: _pid, reimpresion: true,
+                        pagoDiferido: {
+                            cajaCobro: cobro.cajaDestino || cobro.cajaDest || '',
+                            cajeroCobro: config.value.vendedor || '',
+                            adminAsig: cobro.adminAsig || '',
+                            fechaCobro
+                        }
+                    })
+                }, 12000);
+            } catch (_) { /* best-effort: el cobro ya quedó registrado */ }
         };
 
         const reimprimirTicket = async (ventaLocal) => {
