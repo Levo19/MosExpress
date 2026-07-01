@@ -1,4 +1,4 @@
 {
- "version": "2.8.102",
- "build": "2.8.102 (companion / extension de dispositivo): al entrar un 2o equipo con el mismo nombre+zona, pide vincularse (overlay con codigo de 3 digitos, cero-GAS, RPC mos.pedir_extension); el equipo PRINCIPAL recibe el pedido (poll cada 5s) y aprueba con HOLD-TO-CONFIRM (anillo + haptica). 100% Supabase, overlays vanilla (no tocan Vue), fail-safe (si algo falla el POS sigue)."
+ "version": "2.8.103",
+ "build": "2.8.103 (companion 100x fixes): XSS cerrado (nombre escapado), overlay solicitante no se duplica (guard), overlay de aprobar se auto-cierra a los ~2min (no bloquea pantalla), aprobar-falla usa cooldown (no re-pop storm), hold-to-confirm con guard de reentrancia + touchcancel, callbacks de poll envueltos en try/catch. Todo fail-safe, cero-GAS."
 }
