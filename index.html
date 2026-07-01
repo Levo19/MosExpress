@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.103';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.104';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -11824,7 +11824,7 @@
         // [EXTENSIÓN DE DISPOSITIVO / companion] 100% Supabase (mos.*), cero-GAS.
         // Overlays vanilla (no tocan Vue). Fail-safe: cualquier error se traga → el POS sigue.
         // ══════════════════════════════════════════════════════════════════
-        let _extPollReq = null, _extPollPpal = null, _extShownAppr = {}, _extApprCooldown = {}, _extPedirAbierto = false;
+        let _extPollReq = null, _extPollPpal = null, _extShownAppr = {}, _extApprCooldown = {}, _extPedirAbierto = false, _extApprAbierto = false;
         const _extRpc = async (fn, body) => {
             try {
                 const token = await _mintTokenSB();
@@ -11905,9 +11905,10 @@
                 const res = await _extRpc('extension_pendientes', { deviceId: dev });
                 if (!res || !res.ok || !Array.isArray(res.pendientes) || !res.pendientes.length) return;
                 const req = res.pendientes[0];
+                if (_extApprAbierto) return;   // [500x] no apilar overlays de requests distintas
                 if (_extShownAppr[req.idReq]) return;
                 if (_extApprCooldown[req.idReq] && Date.now() < _extApprCooldown[req.idReq]) return;   // [100x #5b] no storm
-                _extShownAppr[req.idReq] = true;
+                _extShownAppr[req.idReq] = true; _extApprAbierto = true;
                 _extHaptic([40, 60, 40]);
                 const ov = _extOverlay(`
                     <div style="text-align:center">
@@ -11923,13 +11924,12 @@
                             </button>
                         </div>
                     </div>`);
-                let cerrado = false, autoT = null;
-                const cerrar = () => { if (cerrado) return; cerrado = true; if (autoT) clearTimeout(autoT); try { ov.remove(); } catch (e) {} };
+                let cerrado = false, autoT = null, holdT = null, prog = 0, confirming = false;
+                const cerrar = () => { if (cerrado) return; cerrado = true; _extApprAbierto = false; if (autoT) clearTimeout(autoT); if (holdT) { clearInterval(holdT); holdT = null; } try { ov.remove(); } catch (e) {} };
                 // [100x #8] auto-cierre alineado al TTL del backend (2 min) → no bloquea la pantalla para siempre
                 autoT = setTimeout(() => { delete _extShownAppr[req.idReq]; cerrar(); }, 115000);
                 ov.querySelector('#_extRej').onclick = () => { _extHaptic([80]); _extRpc('rechazar_extension', { idReq: req.idReq }); cerrar(); };
                 const ring = ov.querySelector('#_extRingC'); const okTxt = ov.querySelector('#_extOkTxt'); const okBtn = ov.querySelector('#_extOk');
-                let holdT = null, prog = 0, confirming = false;
                 const start = () => { if (holdT || confirming) return; _extHaptic([15]); holdT = setInterval(() => { prog += 100 / 8; if (ring) ring.style.strokeDashoffset = String(302 - 302 * Math.min(1, prog / 100)); if (prog >= 100) { clearInterval(holdT); holdT = null; confirmar(); } }, 100); };
                 const stop = () => { if (holdT) { clearInterval(holdT); holdT = null; } prog = 0; if (ring) ring.style.strokeDashoffset = '302'; };
                 const confirmar = async () => {
