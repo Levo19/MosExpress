@@ -15919,9 +15919,16 @@
                             } })
                         }, 15000);
                         const _dd = await _rr.json().catch(() => null);
-                        if (_rr.ok && _dd && _dd.ok === true) return { status: 'success', via: 'directo' };
-                        if (_dd && _dd.error && !/_OFF$/.test(_dd.error) && _dd.error !== 'APP_NO_AUTORIZADA') {
-                            return { status: 'error', mensaje: _dd.error };   // negocio autoritativo → sin GAS
+                        // [100x hardening] toda respuesta 2xx del RPC es AUTORITATIVA: éxito → OK;
+                        // cualquier otro error que NO sea _OFF/APP_NO_AUTORIZADA → error (NO GAS, evita
+                        // doble registro si el RPC ya escribió). Solo cae a GAS por: sin token / HTTP
+                        // no-2xx / _OFF / APP_NO_AUTORIZADA / excepción.
+                        if (_rr.ok && _dd) {
+                            if (_dd.ok === true) return { status: 'success', via: 'directo' };
+                            const _e = String(_dd.error || '');
+                            if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA') {
+                                return { status: 'error', mensaje: _e || 'no confirmado' };
+                            }
                         }
                     }
                 } catch (_) { /* cae a GAS */ }
