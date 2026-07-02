@@ -1,4 +1,4 @@
 {
- "version": "2.8.114",
- "build": "2.8.114 (fix cobro en caja): el guard estricto cajaDestino===idCajaActual fallaba (campo undefined) y el cobro no se espejaba al arqueo local. Quitado: el cobro que confirma el cajero es siempre de su caja -> ahora aparece en Extras del turno + cuadra el cierre."
+ "version": "2.8.115",
+ "build": "2.8.115 (fix caja fantasma): al bootear, ME verifica contra el SERVER (me.caja_estado) que la caja restaurada del localStorage siga ABIERTA. Si MOS la cerro (forzado/auto), limpia el estado local en vez de mostrarla abierta."
 }

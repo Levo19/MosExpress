@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.114';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.115';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8977,6 +8977,9 @@
                      try { window._meAcquireWakeLock && _meAcquireWakeLock(); } catch(_){}
                      // [v40.3] Iniciar polling de cobros asignados al recuperar caja
                      setTimeout(() => iniciarPollingCobros(), 1000);
+                     // [fix caja fantasma] verificar contra el server que la caja SIGA abierta (MOS pudo
+                     // cerrarla forzado/auto). Si el server dice cerrada → limpia el estado local.
+                     _verificarCajaServidor(cr.idCaja);
                  } else {
                      // Caja de ayer: notificar cierre al GAS antes de descartar
                      if (cr.idCaja && !cr.idCaja.startsWith('CAJA-LOCAL-') &&
@@ -12731,6 +12734,35 @@
         // ABIERTA. Si la encuentra, mostramos el card "Retomar mi caja" antes
         // del wizard / modal sesión anterior, evitando que el cajero pierda
         // tickets/movimientos por un localStorage borrado.
+        // [fix caja fantasma] Verifica contra el SERVER que la caja restaurada del localStorage SIGA
+        // abierta. Si MOS la cerró (forzado / cierre normal / auto-cierre 23h), el local seguía diciendo
+        // "hoy" y ME mostraba una caja fantasma abierta. Solo limpia si la respuesta es AUTORITATIVA
+        // (existe + cerrada); ante error/duda no toca nada (no bloquea la operación).
+        const _verificarCajaServidor = async (idCaja) => {
+            try {
+                if (!idCaja || String(idCaja).startsWith('CAJA-LOCAL-') || !navigator.onLine) return;
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/caja_estado`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idCaja } })
+                }, 8000);
+                const d = await r.json().catch(() => null);
+                if (r.ok && d && d.ok === true && d.existe === true && d.abierta === false) {
+                    // la caja fue cerrada en el server → limpiar el estado local fantasma
+                    cajaAbierta.value = false;
+                    idCajaActual.value = '';
+                    montoAperturaMemoria.value = 0;
+                    try { localStorage.removeItem('mosexpress_caja_activa'); } catch(_){}
+                    try { extrasMovimientos.value = []; lsSet('mosexpress_extras_sesion', '[]'); } catch(_){}
+                    try { if (_cobrosAsigPollTimer) { clearInterval(_cobrosAsigPollTimer); _cobrosAsigPollTimer = null; } } catch(_){}
+                    currentModule.value = 'CAJA';
+                    try { agregarToast('🔒 Tu caja ya estaba cerrada', 'Se cerró desde administración. Abrí una nueva para vender.', 'warning'); } catch(_){}
+                }
+            } catch(_) { /* si falla la verificación, dejar el estado local (no bloquear) */ }
+        };
+
         const verificarCajaPorDeviceId = async () => {
             try {
                 const id = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
