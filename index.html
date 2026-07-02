@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.112';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.113';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8600,8 +8600,14 @@
                 // No robar foco si el usuario está editando un input de gramos del carrito
                 // (productos a granel) — sino el cajero no puede tipear el peso.
                 const _active = document.activeElement;
-                if (_active && (_active.classList?.contains('gramos-input') ||
-                    (_active.tagName === 'INPUT' && _active.type === 'number'))) {
+                // [fix foco] NO robar el cursor si hay un modal de clave/PIN abierto (Desbloqueo operativo 1h)
+                // ni si el cajero está escribiendo en CUALQUIER input (gramos, clave, búsqueda…). Antes el foco
+                // "se escapaba" al scanner cada 1.5s y no se podía tipear la clave. El scanner recupera el foco
+                // SOLO cuando nadie está escribiendo (activeElement no es un input) → al aceptar el modal vuelve solo.
+                if (document.getElementById('meDesbloqueoModal')?.classList.contains('visible')) return;
+                if (_active && _active !== scannerInput.value &&
+                    (_active.tagName === 'INPUT' || _active.tagName === 'TEXTAREA') &&
+                    !_active.readOnly && (_active.type || 'text').toLowerCase() !== 'hidden') {
                     return;
                 }
                 if (mostrarTeclado.value) {

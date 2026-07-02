@@ -1,4 +1,4 @@
 {
- "version": "2.8.112",
- "build": "2.8.112 (poll aviso 30s->15s): el aviso de cobro asignado llega mas rapido (el push ya notifica al instante; esto acelera la impresion del ticket de aviso)."
+ "version": "2.8.113",
+ "build": "2.8.113 (fix foco modal clave): el re-enfocador del scanner (cada 1.5s) ya NO roba el cursor cuando hay un modal de PIN abierto (Desbloqueo operativo 1h) ni cuando el cajero escribe en cualquier input. El scanner recupera foco solo al cerrar el modal."
 }
