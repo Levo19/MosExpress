@@ -1,4 +1,4 @@
 {
- "version": "2.8.111",
- "build": "2.8.111 (fix money cierre + cobro visible): el cierre directo pasa monto_final=NULL -> me.cerrar_caja calcula el arqueo AUTORITATIVO desde la DB (incluye cobros asignados cobrados, que el arqueo local no veia -> antes cerraba en 0). Ademas el ingreso del cobro se espeja al arqueo local (extrasMovimientos) para verse en la caja durante el turno + cuadrar el fallback GAS."
+ "version": "2.8.112",
+ "build": "2.8.112 (poll aviso 30s->15s): el aviso de cobro asignado llega mas rapido (el push ya notifica al instante; esto acelera la impresion del ticket de aviso)."
 }
