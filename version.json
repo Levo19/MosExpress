@@ -1,4 +1,4 @@
 {
- "version": "2.8.122",
- "build": "2.8.122 (CPE serie por zona): el modal Convertir NV->CPE auto-llena la serie desde la estacion del cajero (su zona) y la ajusta al alternar Boleta/Factura -> ya no se teclea a mano. Respalda el fix backend: fac.emitir_cpe deriva la serie de la zona de emision (mos.series_documentales) y me.convertir_nv_cpe pasa la zona de la NV. serieNueva ahora opcional."
+ "version": "2.8.123",
+ "build": "2.8.123 (CPE validaciones SUNAT): POS avisa bancarizacion (>=S/2000 en efectivo pide medio bancario, Ley 28194); modal Convertir NV->CPE relajado -> boleta <=S/700 permite VARIOS (sin doc), >700 exige DNI/RUC+nombre, acepta RUC; factura exige RUC+razon social+direccion. Mismas reglas enforced server-side en fac.emitir_cpe (paridad ME/MOS)."
 }
