@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.123';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.124';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -5604,9 +5604,9 @@
                 </div>
                 <!-- Doc + buscar -->
                 <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">{{ adminConvEstado.tipo === 'BOLETA' ? 'DNI (8 dígitos)' : 'RUC (11 dígitos)' }}</label>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">{{ adminConvEstado.tipo === 'BOLETA' ? 'DNI (8) o RUC (11)' : 'RUC (11 dígitos)' }}</label>
                     <div class="flex gap-2">
-                        <input v-model="adminConvEstado.doc" @input="adminConvEstado.clienteOK = false" type="text" :maxlength="adminConvEstado.tipo === 'BOLETA' ? 8 : 11" inputmode="numeric"
+                        <input v-model="adminConvEstado.doc" @input="adminConvEstado.clienteOK = false" type="text" maxlength="11" inputmode="numeric"
                                class="flex-1 p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
                         <button @click="adminBuscarCliente"
                                 :disabled="adminConvEstado.tipo === 'BOLETA' ? adminConvEstado.doc.length !== 8 : adminConvEstado.doc.length !== 11"
