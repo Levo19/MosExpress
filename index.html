@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.116';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.117';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13405,16 +13405,20 @@
                              if (rd && rd.status === 'success') {
                                  cierreOk = true;
                                  resCierre = rd;
-                                 const _mfAuth = (rd.monto_final != null) ? rd.monto_final : montoFinal;  // autoritativo de la RPC
-                                 // mirror + efectos secundarios en background (fire-and-forget). Si falla, el
-                                 // cierre GAS es idempotente y regenera la guía en una re-llamada; avisamos.
-                                 fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                                     tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: _mfAuth,
-                                     idsAnular: idsAnular, ventasTotal: cobradosEnSesion.value.length
-                                 }) }).catch(() => {
-                                     agregarToast('⚠ Cierre OK, sincronización pendiente',
-                                         'El arqueo quedó registrado, pero la guía/Sheets se sincroniza al volver la red.', 'warning');
-                                 });
+                                 // [cero-GAS P4] El mirror GAS `CIERRE_CAJA` se RETIRÓ: me.cerrar_caja ya corre
+                                 // server-side TODOS los efectos (descuento de stock + guía SALIDA_VENTAS + pickup
+                                 // WH `PK-VENTAS-<caja>`) y cancela los cobros ASIGNADO, atómico e idempotente. El
+                                 // push "caja cerrada" a MOS lo cubre el polling de MOS (lee me.estado_cajas en vivo).
+                                 // Si el directo fallara, el fallback GAS de abajo hace el cierre COMPLETO (red de seguridad).
+                                 // [observabilidad] me.cerrar_caja devuelve `efectos`; si el descuento de stock no se
+                                 // aplicó, avisamos (no bloquea el dinero, que es lo crítico).
+                                 try {
+                                     const _ef = rd.efectos && rd.efectos.data;
+                                     if (_ef && _ef.descuentoOk === false) {
+                                         agregarToast('⚠ Cierre OK, stock pendiente',
+                                             'El arqueo se registró, pero el descuento de stock no se aplicó. Avisa a soporte.', 'warning');
+                                     }
+                                 } catch(_e) {}
                              }
                          } catch(eD) {
                              console.warn('[cierre directo] fallback a GAS:', eD && eD.message);

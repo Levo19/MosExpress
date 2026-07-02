@@ -1,4 +1,4 @@
 {
- "version": "2.8.116",
- "build": "2.8.116 (presencia mas viva): salir_presencia con keepalive (la baja se registra aunque la pestaña navegue al cerrar sesion -> el vendedor desaparece YA, sin esperar el TTL de 2min) + pagehide handler (baja al cerrar la app) + poll de presencia 4s->2s (vendedor nuevo aparece mas rapido)."
+ "version": "2.8.117",
+ "build": "2.8.117 (cero-GAS P4 cierre): retirado el mirror GAS CIERRE_CAJA del cierre directo -> me.cerrar_caja ya corre server-side el descuento de stock (fix claim MOS) + guia SALIDA_VENTAS + pickup PK-VENTAS + cancela cobros ASIGNADO, atomico e idempotente; cross-guard backend anti doble-pickup; observabilidad descuentoOk en el return (aviso si el stock no se aplico). El fallback GAS sincrono se mantiene como red de seguridad."
 }
