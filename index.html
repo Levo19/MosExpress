@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.124';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.125';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4642,6 +4642,28 @@
                       <button @click="pago.tipoDoc = 'BOLETA'; defaultClienteBoleta(); onCambioTipoDoc('BOLETA')" :class="pago.tipoDoc === 'BOLETA' ? 'bg-blue-500 text-white shadow-md shadow-blue-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">BOLETA</button>
                       <button @click="pago.tipoDoc = 'FACTURA'; limpiarCliente(); onCambioTipoDoc('FACTURA')" :class="pago.tipoDoc === 'FACTURA' ? 'bg-purple-500 text-white shadow-md shadow-purple-200 scale-[1.02]' : 'text-gray-500 hover:text-gray-700'" class="flex-1 py-3.5 rounded-lg font-black text-xs transition-all tracking-wider active:scale-95">FACTURA</button>
                   </div>
+
+                  <!-- [Reglas SUNAT en vivo · checklist con efecto] -->
+                  <transition name="fade">
+                  <div v-if="cpeReglas.visible" class="mt-2 rounded-xl border-2 px-3 py-2 transition-all duration-300"
+                       :class="cpeReglas.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-300'">
+                    <p class="text-[10px] font-black uppercase tracking-wider mb-1 flex items-center gap-1" :class="cpeReglas.ok ? 'text-emerald-600' : 'text-amber-600'">
+                      <span>{{ cpeReglas.ok ? '✓' : '📋' }}</span> {{ cpeReglas.ok ? 'Requisitos SUNAT completos' : 'Requisitos SUNAT' }}
+                    </p>
+                    <div class="space-y-0.5">
+                      <div v-for="(r,i) in cpeReglas.items" :key="i" class="flex items-center gap-1.5 text-[11px] font-bold transition-all"
+                           :class="r.info ? 'text-gray-500' : (r.ok ? 'text-emerald-700' : 'text-amber-700')">
+                        <span class="shrink-0 w-4 text-center">{{ r.info ? 'ℹ️' : (r.ok ? '✅' : '⬜') }}</span>
+                        <span>{{ r.label }}</span>
+                      </div>
+                    </div>
+                    <div v-if="cpeReglas.banca" class="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-bold border transition-all"
+                         :class="cpeReglas.bancaEfectivo ? 'bg-rose-100 border-rose-300 text-rose-700 animate-pulse' : 'bg-blue-50 border-blue-200 text-blue-700'">
+                      <span class="shrink-0">{{ cpeReglas.bancaEfectivo ? '⚠' : '🏦' }}</span>
+                      <span>≥ S/2000: la operación debe ir <b>bancarizada</b> (transferencia, depósito, tarjeta, Yape/Plin). En efectivo puede anularse ante SUNAT (Ley 28194).</span>
+                    </div>
+                  </div>
+                  </transition>
                </div>
 
                <!-- ── CLIENTE: buscador unificado (visible siempre, opcional en NV) ── -->
@@ -5627,6 +5649,26 @@
                 <div>
                     <label class="block text-[10px] text-gray-400 mb-0.5">Serie</label>
                     <input v-model="adminConvEstado.serie" type="text" :placeholder="adminConvEstado.tipo === 'BOLETA' ? 'B001' : 'F001'" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
+                </div>
+
+                <!-- [Reglas SUNAT en vivo · conversión NV→CPE] -->
+                <div v-if="cpeReglasConv.visible" class="rounded-xl border-2 px-3 py-2 transition-all duration-300"
+                     :class="cpeReglasConv.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-300'">
+                  <p class="text-[10px] font-black uppercase tracking-wider mb-1 flex items-center gap-1" :class="cpeReglasConv.ok ? 'text-emerald-600' : 'text-amber-600'">
+                    <span>{{ cpeReglasConv.ok ? '✓' : '📋' }}</span> {{ cpeReglasConv.ok ? 'Requisitos SUNAT completos' : 'Requisitos SUNAT' }}
+                  </p>
+                  <div class="space-y-0.5">
+                    <div v-for="(r,i) in cpeReglasConv.items" :key="i" class="flex items-center gap-1.5 text-[11px] font-bold"
+                         :class="r.info ? 'text-gray-500' : (r.ok ? 'text-emerald-700' : 'text-amber-700')">
+                      <span class="shrink-0 w-4 text-center">{{ r.info ? 'ℹ️' : (r.ok ? '✅' : '⬜') }}</span>
+                      <span>{{ r.label }}</span>
+                    </div>
+                  </div>
+                  <div v-if="cpeReglasConv.banca" class="mt-1.5 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-bold border"
+                       :class="cpeReglasConv.bancaEfectivo ? 'bg-rose-100 border-rose-300 text-rose-700 animate-pulse' : 'bg-blue-50 border-blue-200 text-blue-700'">
+                    <span class="shrink-0">{{ cpeReglasConv.bancaEfectivo ? '⚠' : '🏦' }}</span>
+                    <span>≥ S/2000: debe ir <b>bancarizada</b> (transferencia/depósito/tarjeta). En efectivo puede anularse ante SUNAT.</span>
+                  </div>
                 </div>
             </div>
             <button @click="adminConfirmarConvertir"
@@ -8053,6 +8095,42 @@
                 return 'Para boleta: DNI (8 díg) o RUC (11 díg)';
             if (pago.value.tipoDoc === 'FACTURA' && !/^\d{11}$/.test(doc)) return 'RUC debe tener exactamente 11 dígitos';
             return '';
+        });
+
+        // ══ [Reglas SUNAT unificadas · checklist en vivo con efecto visual] ══════════════════════════
+        // Misma regla que el server (fac.emitir_cpe): FACTURA→RUC+nombre+dir; BOLETA>S/700→ID+nombre
+        // (≤700 VARIOS ok); total≥S/2000→bancarización. Se muestra en emitir ticket Y en convertir NV→CPE.
+        const _cpeReglas = (tipo, total, doc, ce, nombre, dir, metodo) => {
+            doc = String(doc || '').trim(); nombre = String(nombre || '').trim(); dir = String(dir || '').trim();
+            total = Number(total) || 0;
+            if (tipo === 'NOTA_DE_VENTA') return { visible: false, items: [], banca: false, ok: true };
+            const idOk = ce ? !!doc : (/^\d{8}$/.test(doc) || /^\d{11}$/.test(doc));
+            const items = [];
+            if (tipo === 'FACTURA') {
+                items.push({ label: 'RUC de 11 dígitos', ok: /^\d{11}$/.test(doc), req: true });
+                items.push({ label: 'Razón social', ok: !!nombre, req: true });
+                items.push({ label: 'Dirección fiscal', ok: !!dir, req: true });
+            } else { // BOLETA
+                if (total > 700) {
+                    items.push({ label: 'Identificar cliente (DNI/RUC/CE) — boleta > S/700', ok: idOk, req: true });
+                    items.push({ label: 'Nombre del cliente', ok: !!nombre, req: true });
+                } else {
+                    items.push({ label: 'Cliente opcional (VARIOS) — boleta ≤ S/700', ok: true, info: true });
+                }
+            }
+            const banca = total >= 2000;
+            const bancaEfectivo = banca && String(metodo || '').toUpperCase() === 'EFECTIVO';
+            const ok = items.every(i => i.ok || i.info);
+            return { visible: true, items, banca, bancaEfectivo, ok };
+        };
+        // Emisión (modal de pago del POS)
+        const cpeReglas = computed(() => _cpeReglas(pago.value.tipoDoc, granTotal.value,
+            pago.value.docCliente, pago.value.tipoDocClienteCE, pago.value.nombreCliente, pago.value.direccionCliente, pago.value.metodo));
+        // Conversión NV→CPE (modal admin)
+        const cpeReglasConv = computed(() => {
+            const e = adminConvEstado.value || {};
+            const t = ticketParaAdmin.value || {};
+            return _cpeReglas(e.tipo, (t.total || 0), e.doc, false, e.nombre, e.direccion, (t.raw_data && t.raw_data.header && t.raw_data.header.metodo) || '');
         });
 
         // Stock map: "Cod_Barras_ZonaID" → cantidad (para lookup rápido)
@@ -20421,7 +20499,7 @@
           resetearCajero, horaActual, scannerFocused,
           procesandoCierre, cerrarCaja, cerrarSesion,
           bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
-          procesando, pago, modalPago, vuelto, errorDocumento, procesarPago,
+          procesando, pago, modalPago, vuelto, errorDocumento, procesarPago, cpeReglas, cpeReglasConv,
           iniciarTurno, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
