@@ -1,4 +1,4 @@
 {
- "version": "2.8.113",
- "build": "2.8.113 (fix foco modal clave): el re-enfocador del scanner (cada 1.5s) ya NO roba el cursor cuando hay un modal de PIN abierto (Desbloqueo operativo 1h) ni cuando el cajero escribe en cualquier input. El scanner recupera foco solo al cerrar el modal."
+ "version": "2.8.114",
+ "build": "2.8.114 (fix cobro en caja): el guard estricto cajaDestino===idCajaActual fallaba (campo undefined) y el cobro no se espejaba al arqueo local. Quitado: el cobro que confirma el cajero es siempre de su caja -> ahora aparece en Extras del turno + cuadra el cierre."
 }

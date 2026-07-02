@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.113';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.114';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15945,7 +15945,11 @@
                                 // directo del cierre NO usa esto (pasa monto_final=null → la RPC calcula el auto de la
                                 // DB, que ya tiene el movimiento). Solo si el cobro es de LA caja de este cajero.
                                 try {
-                                    if (String(cobro.cajaDestino || '') === String(idCajaActual.value || '')) {
+                                    // [fix] SIN guard estricto: el cobro que confirma el cajero es SIEMPRE de su caja
+                                    // actual (cobros_pendientes_caja filtra por cajaId). El guard cajaDestino===idCajaActual
+                                    // fallaba cuando cobro.cajaDestino venía undefined → el cobro NO se espejaba al arqueo
+                                    // (el extra manual sí porque no tiene guard). Ahora siempre se agrega.
+                                    {
                                         const _mUp = String(payload.metodoFinal || '').toUpperCase();
                                         const _tot = parseFloat(cobro.monto) || 0;
                                         const _addExtra = (tipo, monto, sufijo) => {
