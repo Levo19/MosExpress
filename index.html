@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.117';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.118';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13417,6 +13417,11 @@
                                      if (_ef && _ef.descuentoOk === false) {
                                          agregarToast('⚠ Cierre OK, stock pendiente',
                                              'El arqueo se registró, pero el descuento de stock no se aplicó. Avisa a soporte.', 'warning');
+                                     } else if (rd.efectos && rd.efectos.ok === false) {
+                                         // fallo TOTAL de efectos (la RPC capturó una excepción): stock/guía/pickup NO
+                                         // corrieron. El dinero SÍ quedó registrado. Hay que avisar (no queda invisible).
+                                         agregarToast('⚠ Cierre OK, efectos pendientes',
+                                             'El arqueo se registró, pero el stock/guía no se aplicaron. Avisa a soporte.', 'warning');
                                      }
                                  } catch(_e) {}
                              }
