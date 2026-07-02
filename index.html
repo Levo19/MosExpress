@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.121';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.122';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -5598,8 +5598,8 @@
                 <div>
                     <label class="block text-xs font-black text-gray-500 uppercase mb-1.5">Tipo de comprobante</label>
                     <div class="grid grid-cols-2 gap-2">
-                        <button @click="adminConvEstado.tipo = 'BOLETA'"  :class="adminConvEstado.tipo === 'BOLETA'  ? 'bg-blue-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📄 Boleta (DNI)</button>
-                        <button @click="adminConvEstado.tipo = 'FACTURA'" :class="adminConvEstado.tipo === 'FACTURA' ? 'bg-purple-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📋 Factura (RUC)</button>
+                        <button @click="adminConvSetTipo('BOLETA')"  :class="adminConvEstado.tipo === 'BOLETA'  ? 'bg-blue-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📄 Boleta (DNI)</button>
+                        <button @click="adminConvSetTipo('FACTURA')" :class="adminConvEstado.tipo === 'FACTURA' ? 'bg-purple-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📋 Factura (RUC)</button>
                     </div>
                 </div>
                 <!-- Doc + buscar -->
@@ -15507,16 +15507,28 @@
             modalAdminAcc.value = false;
             _pinAdminThen('CONVERTIR_NV_A_CPE_DESDE_LISTA', venta.correlativo || venta.id, () => {
                 ticketParaAdmin.value = venta;
+                // [serie por zona] auto-llenar la serie desde la estación del cajero (su zona) — cada zona
+                // tiene su seriado. El cajero convierte tickets de SU zona → su Serie_Boleta/Factura es la
+                // correcta. Queda editable como override; el RPC además deriva de la zona de la NV (red de seguridad).
+                const _est = config.value.estacion || {};
                 adminConvEstado.value = {
                     tipo: 'BOLETA',
                     doc: venta.cliente_doc || '',
                     nombre: venta.cliente_nombre || '',
                     direccion: '',
-                    serie: '',
+                    serie: _est.Serie_Boleta || '',
+                    _sB: _est.Serie_Boleta || '',
+                    _sF: _est.Serie_Factura || '',
                     clienteOK: false
                 };
                 modalAdminConv.value = true;
             });
+        };
+
+        // [serie por zona] al alternar BOLETA/FACTURA, poner la serie de ESE tipo para la zona del cajero.
+        const adminConvSetTipo = (t) => {
+            adminConvEstado.value.tipo = t;
+            adminConvEstado.value.serie = (t === 'FACTURA' ? adminConvEstado.value._sF : adminConvEstado.value._sB) || '';
         };
 
         const adminBuscarCliente = async () => {
@@ -20521,7 +20533,7 @@
           modalAdminAcc, ticketParaAdmin, abrirAccionesAdmin,
           adminPuedeCobrar, adminPuedeConvertir, adminPuedeBajaCPE, adminPuedeEditarCliente,
           modalAdminCobrar, adminCobrarEstado, adminAbrirCobrarCredito, adminConfirmarCobrar,
-          modalAdminConv, adminConvEstado, adminAbrirConvertir, adminBuscarCliente, adminConfirmarConvertir,
+          modalAdminConv, adminConvEstado, adminAbrirConvertir, adminConvSetTipo, adminBuscarCliente, adminConfirmarConvertir,
           modalAdminBaja, adminBajaEstado, adminAbrirBajaCPE, adminConfirmarBaja,
           modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminEditCliBuscar, adminConfirmarEditarCliente,
           adminProcesando, reimpAuto, lsSet,

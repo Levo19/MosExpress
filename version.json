@@ -1,4 +1,4 @@
 {
- "version": "2.8.121",
- "build": "2.8.121 (B3 cobrar/creditar venta directo cero-GAS): router _postMutacionDinero enruta COBRAR_VENTA->me.cobrar_venta_directo y CREDITAR_VENTA->me.creditar_venta_directo (321) con GAS fallback; cubre procesarCobroPendiente/confirmarMoneda/revertirCobro/confirmarCredito + la cola offline. Setters idempotentes (no crean movimientos) -> replay directo->GAS re-setea el mismo valor sin doblar dinero. id_caja money-correct (define en que caja cuenta el efectivo), ANULADO bloqueado, historial, lock por venta."
+ "version": "2.8.122",
+ "build": "2.8.122 (CPE serie por zona): el modal Convertir NV->CPE auto-llena la serie desde la estacion del cajero (su zona) y la ajusta al alternar Boleta/Factura -> ya no se teclea a mano. Respalda el fix backend: fac.emitir_cpe deriva la serie de la zona de emision (mos.series_documentales) y me.convertir_nv_cpe pasa la zona de la NV. serieNueva ahora opcional."
 }
