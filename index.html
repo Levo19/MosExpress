@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.110';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.111';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13346,14 +13346,19 @@
                      // de abajo (fallback total). Con el flag en 0 este bloque NO se ejecuta (comportamiento intacto).
                      if (cierreDirecto()) {
                          try {
-                             const rd = await _cerrarCajaDirecto(_idCaja, montoFinal, idsAnular, 'CERRADA');
+                             // [fix money] Pasar monto_final=NULL → me.cerrar_caja calcula el arqueo AUTORITATIVO
+                             // desde la DB (apertura + efectivo ventas + INGRESO − EGRESO de me.movimientos_extra,
+                             // que INCLUYE los cobros asignados cobrados directo). El arqueo LOCAL (extrasMovimientos)
+                             // NO ve esos ingresos → daba montoFinal=0 y la caja cerraba en 0. Ahora la RPC manda.
+                             const rd = await _cerrarCajaDirecto(_idCaja, null, idsAnular, 'CERRADA');
                              if (rd && rd.status === 'success') {
                                  cierreOk = true;
                                  resCierre = rd;
+                                 const _mfAuth = (rd.monto_final != null) ? rd.monto_final : montoFinal;  // autoritativo de la RPC
                                  // mirror + efectos secundarios en background (fire-and-forget). Si falla, el
                                  // cierre GAS es idempotente y regenera la guía en una re-llamada; avisamos.
                                  fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                                     tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: montoFinal,
+                                     tipoEvento: 'CIERRE_CAJA', cajaId: _idCaja, montoFinal: _mfAuth,
                                      idsAnular: idsAnular, ventasTotal: cobradosEnSesion.value.length
                                  }) }).catch(() => {
                                      agregarToast('⚠ Cierre OK, sincronización pendiente',
@@ -15927,7 +15932,36 @@
                         // doble registro si el RPC ya escribió). Solo cae a GAS por: sin token / HTTP
                         // no-2xx / _OFF / APP_NO_AUTORIZADA / excepción.
                         if (_rr.ok && _dd) {
-                            if (_dd.ok === true) { _reimprimirCobroSello(cobro); return { status: 'success', via: 'directo' }; }
+                            if (_dd.ok === true) {
+                                _reimprimirCobroSello(cobro);
+                                // [fix display] Espejar el/los INGRESO(s) del cobro al arqueo LOCAL (extrasMovimientos)
+                                // para que se vean en la caja durante el turno y cuadre el fallback GAS. El path
+                                // directo del cierre NO usa esto (pasa monto_final=null → la RPC calcula el auto de la
+                                // DB, que ya tiene el movimiento). Solo si el cobro es de LA caja de este cajero.
+                                try {
+                                    if (String(cobro.cajaDestino || '') === String(idCajaActual.value || '')) {
+                                        const _mUp = String(payload.metodoFinal || '').toUpperCase();
+                                        const _tot = parseFloat(cobro.monto) || 0;
+                                        const _addExtra = (tipo, monto, sufijo) => {
+                                            if (!(monto > 0)) return;
+                                            const _id = 'EX-' + cobro.idCobro + (sufijo || '');
+                                            if (extrasMovimientos.value.some(e => e.id === _id)) return;   // idempotente
+                                            extrasMovimientos.value.push({ id: _id, tipo, monto, concepto: 'Abono deuda',
+                                                obs: 'Cobro ' + (cobro.correlativo || cobro.idVenta || ''), timestamp: Date.now() });
+                                        };
+                                        if (_mUp.indexOf('MIXTO') === 0) {
+                                            _addExtra('INGRESO', parseFloat(payload.montoEfectivo) || 0, '-E');
+                                            _addExtra('INGRESO_VIRTUAL', parseFloat(payload.montoVirtual) || 0, '-V');
+                                        } else if (_mUp === 'EFECTIVO') {
+                                            _addExtra('INGRESO', _tot, '');
+                                        } else {
+                                            _addExtra('INGRESO_VIRTUAL', _tot, '');
+                                        }
+                                        try { lsSet('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value)); } catch(_){}
+                                    }
+                                } catch(_){}
+                                return { status: 'success', via: 'directo' };
+                            }
                             const _e = String(_dd.error || '');
                             if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA') {
                                 return { status: 'error', mensaje: _e || 'no confirmado' };
