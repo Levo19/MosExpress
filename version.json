@@ -1,4 +1,4 @@
 {
- "version": "2.8.115",
- "build": "2.8.115 (fix caja fantasma): al bootear, ME verifica contra el SERVER (me.caja_estado) que la caja restaurada del localStorage siga ABIERTA. Si MOS la cerro (forzado/auto), limpia el estado local en vez de mostrarla abierta."
+ "version": "2.8.116",
+ "build": "2.8.116 (presencia mas viva): salir_presencia con keepalive (la baja se registra aunque la pestaña navegue al cerrar sesion -> el vendedor desaparece YA, sin esperar el TTL de 2min) + pagehide handler (baja al cerrar la app) + poll de presencia 4s->2s (vendedor nuevo aparece mas rapido)."
 }

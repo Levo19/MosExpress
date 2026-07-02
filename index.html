@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.115';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.116';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -11755,7 +11755,7 @@
             _wizCargarPresencia();
             if (_wizPresenciaTimer) clearInterval(_wizPresenciaTimer);
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                _wizPresenciaTimer = setInterval(_wizCargarPresencia, 4000);
+                _wizPresenciaTimer = setInterval(_wizCargarPresencia, 2000);  // [fix rezago] 4s→2s: presencia mas viva
             }
         };
         const _wizDetenerPollingPresencia = () => {
@@ -11823,11 +11823,24 @@
                 const token = await _mintTokenSB();
                 await fetch(`${SUPABASE_URL}/rest/v1/rpc/salir_presencia`, {
                     method: 'POST',
+                    keepalive: true,   // [fix rezago] el request SOBREVIVE el unload/navegación (logout) → la baja
+                                       // se registra YA y el vendedor desaparece al instante para los demás.
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
                     body: JSON.stringify({ p: { id_personal: idp, device_id: String(_devId || '') } })
                 });
             } catch (e) { /* fire-and-forget: el TTL de 2min limpia igual */ }
         };
+
+        // [fix rezago] Cierre de la app/pestaña (sin logout explícito): dar de baja la presencia al
+        // unload REAL. `!e.persisted` excluye el bfcache/background de móvil (ahí el vendedor sigue
+        // presente). keepalive dentro de _wizSalirPresencia asegura que el request complete.
+        try {
+            window.addEventListener('pagehide', (e) => {
+                try {
+                    if (!e.persisted && config.value && config.value.completado && config.value.vendedor) _wizSalirPresencia();
+                } catch(_){}
+            });
+        } catch(_){}
 
         // ══════════════════════════════════════════════════════════════════
         // [EXTENSIÓN DE DISPOSITIVO / companion] 100% Supabase (mos.*), cero-GAS.
