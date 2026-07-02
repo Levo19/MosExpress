@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.118';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.119';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15439,18 +15439,47 @@
             }
             adminProcesando.value = true;
             try {
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                    tipoEvento:    'COBRAR_CREDITO_CON_EXTRA',
-                    idVenta:       venta.id_venta_gas,
-                    cajaReceptora: c.cajaSel,
-                    metodo:        metodoFinal,
-                    montoEfectivo: monEf,
-                    montoVirtual:  monVi,
-                    obs:           c.obs || '',
-                    auth:          { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
-                    adminAuth:     adminAuthCache.value
-                })});
-                const j = await r.json();
+                // [B1 cobro directo cero-GAS] intento directo me.cobrar_credito_directo (314), GAS fallback.
+                // Cae a GAS SOLO por: sin token / HTTP no-2xx / COBRO_OFF / APP_NO_AUTORIZADA / excepción.
+                // Error de negocio (otro {ok:false}) → NO GAS (los {ok:false} del RPC son pre-write; el
+                // idempotente es {ok:true}). Cross-path safe: si el directo escribió, volteó forma_pago →
+                // el GAS (lee Supabase-first) ve que ya no está pendiente y rechaza (sin doble ingreso).
+                const j = await (async () => {
+                    try {
+                        const _tk = await _mintTokenSB();
+                        if (_tk) {
+                            const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/cobrar_credito_directo`, {
+                                method: 'POST',
+                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ p: {
+                                    idVenta: venta.id_venta_gas, cajaReceptora: c.cajaSel, metodo: metodoFinal,
+                                    montoEfectivo: monEf, montoVirtual: monVi, obs: c.obs || '',
+                                    vendedor: (adminAuthCache.value && adminAuthCache.value.nombre) || config.value.vendedor
+                                } })
+                            }, 15000);
+                            const _dd = await _rr.json().catch(() => null);
+                            if (_rr.ok && _dd) {
+                                if (_dd.ok === true) return { status: 'success', via: 'directo', mensaje: _dd.mensaje };
+                                const _e = String(_dd.error || '');
+                                if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA') {
+                                    return { status: 'error', mensaje: _e || 'no cobrado' };
+                                }
+                            }
+                        }
+                    } catch (_) { /* cae a GAS */ }
+                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                        tipoEvento:    'COBRAR_CREDITO_CON_EXTRA',
+                        idVenta:       venta.id_venta_gas,
+                        cajaReceptora: c.cajaSel,
+                        metodo:        metodoFinal,
+                        montoEfectivo: monEf,
+                        montoVirtual:  monVi,
+                        obs:           c.obs || '',
+                        auth:          { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
+                        adminAuth:     adminAuthCache.value
+                    })});
+                    return await r.json();
+                })();
                 if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
                 // Actualizar local
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);

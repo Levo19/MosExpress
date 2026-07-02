@@ -1,4 +1,4 @@
 {
- "version": "2.8.118",
- "build": "2.8.118 (500x R2 observabilidad): el aviso de cierre ahora cubre tambien el fallo TOTAL de efectos (rd.efectos.ok===false), no solo descuentoOk===false -> un fallo de stock/guia nunca queda invisible. Backend 319: advisory lock en ambas fns de pickup (cierra el race cross-txn del cross-guard) + paridad exacta de items PK-VENTAS/PCK-CC via mos._venta_canonico + ANULADO por prefijo."
+ "version": "2.8.119",
+ "build": "2.8.119 (B1 cobro directo cero-GAS): adminConfirmarCobrar intenta primero me.cobrar_credito_directo (314) con GAS fallback (COBRO_OFF/APP_NO_AUTORIZADA/sin token/HTTP no-2xx/excepcion -> GAS; error de negocio -> NO GAS). Cross-path safe: el directo voltea forma_pago -> el GAS lo ve no-pendiente y rechaza (sin doble ingreso). 314 idempotente (EX-DIR-<idVenta>), cierra el cobro ASIGNADO vivo. Paridad auth verificada (GAS no valida PIN server-side)."
 }
