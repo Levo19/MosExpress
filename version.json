@@ -1,4 +1,4 @@
 {
- "version": "2.8.120",
- "build": "2.8.120 (B2 rechazo directo cero-GAS): confirmarRechazarAsignado intenta primero me.rechazar_cobro_asignado (320) con GAS fallback. La RPC marca el cobro ASIGNADO->RECHAZADO + razon; la venta NO cambia (sigue CREDITO, re-asignable); idempotente + lock por venta; bloquea rechazar un COBRADO. Sin movimiento de dinero -> sin riesgo de doble registro."
+ "version": "2.8.121",
+ "build": "2.8.121 (B3 cobrar/creditar venta directo cero-GAS): router _postMutacionDinero enruta COBRAR_VENTA->me.cobrar_venta_directo y CREDITAR_VENTA->me.creditar_venta_directo (321) con GAS fallback; cubre procesarCobroPendiente/confirmarMoneda/revertirCobro/confirmarCredito + la cola offline. Setters idempotentes (no crean movimientos) -> replay directo->GAS re-setea el mismo valor sin doblar dinero. id_caja money-correct (define en que caja cuenta el efectivo), ANULADO bloqueado, historial, lock por venta."
 }

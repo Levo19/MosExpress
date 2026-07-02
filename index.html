@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.120';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.121';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -16747,9 +16747,44 @@
         //  - rechazo del backend → onReject(d) (rollback visual) + alarma
         //  - fallo de RED → encola para reintento (idempotente: el backend setea
         //    el mismo valor; re-aplicar no duplica dinero)
+        // [B3 cobro/credito directo cero-GAS] router directo-primero para mutaciones de dinero (SETTERS de
+        // forma_pago). COBRAR_VENTA → me.cobrar_venta_directo, CREDITAR_VENTA → me.creditar_venta_directo;
+        // GAS fallback. Como son SETTERS idempotentes (NO crean movimientos), un replay directo→GAS re-setea
+        // el mismo valor sin doblar dinero → seguro con la cola offline. Cae a GAS por: sin token / HTTP
+        // no-2xx / _OFF / APP_NO_AUTORIZADA / excepción / tipoEvento no mapeado. Error de negocio → {error}.
+        const _postMutacionDinero = async (payload) => {
+            const te = payload && payload.tipoEvento;
+            let rpc = null, body = null;
+            if (te === 'COBRAR_VENTA') {
+                rpc = 'cobrar_venta_directo';
+                body = { p: { idVenta: payload.idVenta, metodo: payload.metodo, cajaId: payload.cajaId || '', usuario: config.value.vendedor } };
+            } else if (te === 'CREDITAR_VENTA') {
+                rpc = 'creditar_venta_directo';
+                body = { p: { idVenta: payload.idVenta, obs: payload.obs || '', usuario: config.value.vendedor } };
+            }
+            if (rpc) {
+                try {
+                    const _tk = await _mintTokenSB();
+                    if (_tk) {
+                        const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        }, 15000);
+                        const _dd = await _rr.json().catch(() => null);
+                        if (_rr.ok && _dd) {
+                            if (_dd.ok === true) return { status: 'success', via: 'directo' };
+                            const _e = String(_dd.error || '');
+                            if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA') return { status: 'error', mensaje: _e };
+                        }
+                    }
+                } catch (_) { /* cae a GAS */ }
+            }
+            const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+            return await r.json();
+        };
         const _enviarMutacionDinero = (payload, ventaLocalId, onReject) => {
-            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
-                .then(r => r.json())
+            _postMutacionDinero(payload)
                 .then(d => {
                     if (d && d.status === 'success') {
                         const idx = ventasZona.value.findIndex(v => v.id === ventaLocalId);
@@ -16782,8 +16817,7 @@
             const item = q[0];
             // refrescar la ventana in-flight mientras siga pendiente
             if (item.ventaLocalId) _mutMarcar(item.ventaLocalId);
-            fetch(API_URL, { method: 'POST', body: JSON.stringify(item.payload) })
-                .then(r => r.json())
+            _postMutacionDinero(item.payload)
                 .then(d => {
                     // éxito O rechazo definitivo del backend → sacar de la cola
                     // (el poll reconverge la UI con el estado real del server)
