@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.119';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.120';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -16109,17 +16109,41 @@
             if (procesandoCobroAsig.value) return; // guard dobles clicks
             procesandoCobroAsig.value = true;
             try {
-                const r = await _meFetchTimeout(API_URL, { method: 'POST', body: JSON.stringify({
-                    tipoEvento: 'RECHAZAR_COBRO_ASIGNADO',
-                    idCobro: cobro.idCobro,
-                    razon: razon,
-                    auth: {
-                        vendedor: config.value.vendedor,
-                        esCajero: true, rol: 'CAJERO',
-                        deviceId: deviceId.value
-                    }
-                })}, 20000);
-                const d = await r.json();
+                // [B2 rechazo directo cero-GAS] intento directo me.rechazar_cobro_asignado (320), GAS fallback.
+                // Cae a GAS SOLO por: sin token / HTTP no-2xx / COBRO_OFF / APP_NO_AUTORIZADA / excepción.
+                // Sin movimiento de dinero → sin riesgo de doble registro; si el directo marcó RECHAZADO y
+                // el GAS corre igual, ve estado != ASIGNADO y no hace nada.
+                const d = await (async () => {
+                    try {
+                        const _tk = await _mintTokenSB();
+                        if (_tk) {
+                            const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/rechazar_cobro_asignado`, {
+                                method: 'POST',
+                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ p: { idCobro: cobro.idCobro, razon: razon } })
+                            }, 15000);
+                            const _dd = await _rr.json().catch(() => null);
+                            if (_rr.ok && _dd) {
+                                if (_dd.ok === true) return { status: 'success', via: 'directo' };
+                                const _e = String(_dd.error || '');
+                                if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA') {
+                                    return { status: 'error', mensaje: _e || 'no rechazado' };
+                                }
+                            }
+                        }
+                    } catch (_) { /* cae a GAS */ }
+                    const r = await _meFetchTimeout(API_URL, { method: 'POST', body: JSON.stringify({
+                        tipoEvento: 'RECHAZAR_COBRO_ASIGNADO',
+                        idCobro: cobro.idCobro,
+                        razon: razon,
+                        auth: {
+                            vendedor: config.value.vendedor,
+                            esCajero: true, rol: 'CAJERO',
+                            deviceId: deviceId.value
+                        }
+                    })}, 20000);
+                    return await r.json();
+                })();
                 if (d && d.status === 'success') {
                     try { playBeepError?.(); } catch(_){}
                     agregarToast('Cobro rechazado', 'Admin fue notificado');

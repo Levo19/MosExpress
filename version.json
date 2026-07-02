@@ -1,4 +1,4 @@
 {
- "version": "2.8.119",
- "build": "2.8.119 (B1 cobro directo cero-GAS): adminConfirmarCobrar intenta primero me.cobrar_credito_directo (314) con GAS fallback (COBRO_OFF/APP_NO_AUTORIZADA/sin token/HTTP no-2xx/excepcion -> GAS; error de negocio -> NO GAS). Cross-path safe: el directo voltea forma_pago -> el GAS lo ve no-pendiente y rechaza (sin doble ingreso). 314 idempotente (EX-DIR-<idVenta>), cierra el cobro ASIGNADO vivo. Paridad auth verificada (GAS no valida PIN server-side)."
+ "version": "2.8.120",
+ "build": "2.8.120 (B2 rechazo directo cero-GAS): confirmarRechazarAsignado intenta primero me.rechazar_cobro_asignado (320) con GAS fallback. La RPC marca el cobro ASIGNADO->RECHAZADO + razon; la venta NO cambia (sigue CREDITO, re-asignable); idempotente + lock por venta; bloquea rechazar un COBRADO. Sin movimiento de dinero -> sin riesgo de doble registro."
 }
