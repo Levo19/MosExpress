@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.125';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.126';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9059,12 +9059,25 @@
                      // cerrarla forzado/auto). Si el server dice cerrada → limpia el estado local.
                      _verificarCajaServidor(cr.idCaja);
                  } else {
-                     // Caja de ayer: notificar cierre al GAS antes de descartar
-                     if (cr.idCaja && !cr.idCaja.startsWith('CAJA-LOCAL-') &&
+                     // Caja de ayer: cerrarla. [B4 cero-GAS] intentar el cierre DIRECTO (me.cerrar_caja calcula
+                     // el arqueo REAL + corre los efectos server-side; mejor que el montoFinal:0 del GAS).
+                     // idsAnular=null → la RPC auto-anula los POR_COBRAR de la caja. Fallback GAS si off/falla.
+                     if (cr.idCaja && !cr.idCaja.startsWith('CAJA-LOCAL-') && !offlineMode.value &&
                          API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                         fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                             tipoEvento: 'CIERRE_CAJA', cajaId: cr.idCaja, montoFinal: 0
-                         }) }).catch(() => {});
+                         (async () => {
+                             let _ok = false;
+                             try {
+                                 if (cierreDirecto()) {
+                                     const rd = await _cerrarCajaDirecto(cr.idCaja, null, null, 'CERRADA');
+                                     _ok = !!(rd && rd.status === 'success');
+                                 }
+                             } catch(_) { /* cae a GAS */ }
+                             if (!_ok) {
+                                 try { await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                                     tipoEvento: 'CIERRE_CAJA', cajaId: cr.idCaja, montoFinal: 0
+                                 }) }); } catch(_) {}
+                             }
+                         })();
                      }
                      localStorage.removeItem('mosexpress_caja_activa');
                      agregarToast('⚠ Caja anterior cerrada', 'Se cerró automáticamente la caja del día anterior. Avisa a tu supervisor si hubo inconvenientes.', 'warning');
@@ -15545,6 +15558,9 @@
                             }
                         }
                     } catch (_) { /* cae a GAS */ }
+                    // [hardening cero-GAS] si el directo YA cobró (la venta dejó de estar pendiente) pese a
+                    // que perdimos la respuesta → NO llamar a GAS (cierra la ventana de doble registro).
+                    if ((await _meVentaPendiente(venta.id_venta_gas)) === false) return { status: 'success', via: 'directo-verificado' };
                     const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
                         tipoEvento:    'COBRAR_CREDITO_CON_EXTRA',
                         idVenta:       venta.id_venta_gas,
@@ -16152,6 +16168,9 @@
                         }
                     }
                 } catch (_) { /* cae a GAS */ }
+                // [hardening cero-GAS] si el directo YA confirmó el cobro (la venta dejó de estar pendiente)
+                // pese a perder la respuesta → NO llamar a GAS (cierra la ventana de doble registro).
+                if ((await _meVentaPendiente(String(cobro.idVenta || ''))) === false) return { status: 'success', via: 'directo-verificado' };
                 const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                 return await r.json();
             })()
@@ -16361,6 +16380,27 @@
             const d = await res.json();
             if (!d || d.status !== 'success') throw new Error('cerrar_caja: ' + ((d && d.error) || 'fallo'));
             return d;
+        };
+        // [hardening cobro cero-GAS] ¿la venta SIGUE pendiente de cobro? Lee forma_pago directo de Supabase.
+        //   true  = sigue CREDITO/POR_COBRAR (el directo NO aplicó → hay que ir a GAS)
+        //   false = ya cambió (el directo SÍ aplicó aunque perdimos la respuesta → NO llamar GAS = sin doble registro)
+        //   null  = no se pudo confirmar → caer a GAS (comportamiento seguro de siempre)
+        const _meVentaPendiente = async (idVenta) => {
+            if (!idVenta) return null;
+            try {
+                const tk = await _mintTokenSB();
+                if (!tk) return null;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/venta_estado_lectura`, {
+                    method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+tk, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                    body: JSON.stringify({ p_id_venta: idVenta })
+                }, 6000);
+                if (!r.ok) return null;
+                const d = await r.json().catch(() => null);
+                if (!d || d.ok !== true) return null;
+                const fp = String(d.forma_pago || '').toUpperCase();
+                return (fp === 'CREDITO' || fp === 'POR_COBRAR');
+            } catch(_) { return null; }
         };
         // [Reparacion #1] Apertura DIRECTA a Supabase (RPC me.abrir_caja). Mata el cold-start de GAS
         // ("Creando caja" lento: GAS daba 2 saltos GAS→Supabase + Sheet + push SÍNCRONOS). Gateado por
