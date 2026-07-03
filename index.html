@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.147';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.148';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13828,20 +13828,12 @@
                 // lo hace el RPC directo cuando el flag está ON; el GAS legacy lo hace en su side-effect.
                 const est = config.value.estacion || {};
                 // [cero-GAS] Supabase-first: heartbeat + bloqueo en 1 RPC. null → flag OFF / error → GAS legacy.
-                let j = await _meEstadoBloqueoDirecto({
+                // [CERO-GAS / CERO-FALLBACK] Solo directo (ME_BLOQUEO_DIRECTO=1 en prod). En error → null →
+                // se salta este tick (reintenta en 120s); ya no cae al GAS getEstadoBloqueoUsuario.
+                const j = await _meEstadoBloqueoDirecto({
                     nombre: config.value.vendedor, appOrigen: 'mosExpress',
                     deviceId: deviceId.value || '', idZona: est.Zona_ID || '', idEstacion: est.idEstacion || ''
                 });
-                if (!j) {
-                    const url = MOS_GAS_URL + '?action=getEstadoBloqueoUsuario'
-                              + '&nombre=' + encodeURIComponent(config.value.vendedor)
-                              + '&appOrigen=mosExpress'
-                              + '&deviceId=' + encodeURIComponent(deviceId.value || '')
-                              + '&idZona=' + encodeURIComponent(est.Zona_ID || '')
-                              + '&idEstacion=' + encodeURIComponent(est.idEstacion || '');
-                    const r = await fetch(url);
-                    j = await r.json();
-                }
                 if (!j || !j.ok || !j.data) return;
                 const prev = usuarioBloqueado.value;
                 usuarioBloqueado.value = {
@@ -14839,20 +14831,16 @@
                     } catch(_) {}
                     try {
                         const _gp = { deviceId: deviceId.value, lat: lat, lng: lng, accuracy: accuracy, bateria: bateria, usuarioLogueado: config.value.vendedor || '' };
-                        // [cero-GAS G2] Supabase-first: mos.registrar_ubicacion (flag GPS_DIRECTO). false → GAS.
-                        let _viaSb = false;
+                        // [CERO-GAS / CERO-FALLBACK] Solo directo: mos.registrar_ubicacion (GPS_DIRECTO=1 en prod).
+                        // En error se salta este tick (reintenta en ~5min); ya no cae al GAS registrarUbicacion.
                         try {
                             const tk = await _mintTokenSB();
-                            const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/registrar_ubicacion`, {
+                            await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/registrar_ubicacion`, {
                                 method: 'POST',
                                 headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ p: _gp })
                             }, 8000);
-                            if (res.ok) { const d = await res.json().catch(() => null); _viaSb = !!(d && d.ok === true); }
                         } catch(_) {}
-                        if (!_viaSb) {
-                            await fetch(MOS_GAS_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'registrarUbicacion' }, _gp)) });
-                        }
                     } catch(_) {}
                 },
                 (err) => console.warn('[GPS] error:', err?.message),
