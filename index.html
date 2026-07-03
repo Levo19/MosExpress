@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.146';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.147';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -7690,8 +7690,10 @@
             const zona = config.value.zona || '';
             const usr  = config.value.vendedor || '';
             if (!zona) return;
-            const res = await fetch(MOS_GAS_URL + '?action=getEtiquetasPendientes&idZona=' + encodeURIComponent(zona) + '&usuario=' + encodeURIComponent(usr));
-            const data = await res.json();
+            // [CERO-GAS] getEtiquetasPendientes → RPC mos.etiquetas_pendientes (via DeviceAuth.rpc).
+            // Antes pegaba a MOS_GAS_URL (302→404 = "letra roja" en consola).
+            if (!window.DeviceAuth || typeof DeviceAuth.rpc !== 'function') return;
+            const data = await DeviceAuth.rpc('etiquetas_pendientes', { idZona: zona, usuario: usr });
             if (data && data.ok && Array.isArray(data.data)) {
               etiqsPendientes.value = data.data;
             }
@@ -7778,6 +7780,11 @@
           const zona = config.value.zona;
           const usr  = config.value.vendedor || '';
           if (!printerId || !zona) return;
+          // [CERO-GAS] La impresión batch de etiquetas por zona pegaba a GAS imprimirBatchEtiquetasZona
+          // (302→404 = "letra roja" en consola; feature ya inoperante). Se neutraliza la llamada muerta.
+          // Para revivir el auto-print cero-GAS falta un Edge de impresión (PrintNode) para etiquetas de zona
+          // — la lista de pendientes sí quedó en Supabase (cargarEtiqsPendientes → mos.etiquetas_pendientes).
+          return;
           try {
             const res = await fetch(MOS_GAS_URL, {
               method: 'POST',
@@ -9673,6 +9680,11 @@
         const _syncImpresorasFromProyectoMOS = async () => {
             try {
                 if (offlineMode.value) return;
+                // [CERO-GAS] El GAS getEstacionesParaApp está retirado (302→404 = "letra roja" en consola) y
+                // esta re-sincronización era redundante: PrintNode_ID/Series/Admin_PIN por estación ya llegan
+                // con el catálogo (mos.catalogo_pos_rls → ZONAS_CONFIG) al arranque. Sin fuente RPC equivalente
+                // que traiga impresora+series (mos.estaciones no las tiene), se neutraliza la llamada muerta.
+                return;
                 const url = MOS_GAS_URL + '?action=getEstacionesParaApp&appOrigen=mosExpress';
                 const r = await fetch(url);
                 const j = await r.json();
