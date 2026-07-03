@@ -1,4 +1,4 @@
 {
- "version": "2.8.138",
- "build": "2.8.138 (consultar_cliente CERO-GAS): lookup DNI/RUC 100% Supabase. Validacion tipoDoc (FACTURA=RUC 11) al frontend + Edge consultar-documento. Sin fallback GAS: si la Edge no responde, ingreso manual."
+ "version": "2.8.139",
+ "build": "2.8.139 (horario CERO-GAS): verificarHorarioME -> mos.resolver_horario_personal (SQL 330). Day-keys reales lun/mar/mie/jue/vie/sab/dom, admins_libres, custom-gana, cruce medianoche, fail-open. Columna sombra mos.personal.horario_custom (degrada a config-app si NULL). Sin GAS."
 }

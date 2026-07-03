@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.138';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.139';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8017,10 +8017,19 @@
             }
           } catch(_) {}
           try {
-            const url = `${API_URL}?accion=verificarHorarioME&vendedor=${encodeURIComponent(config.value.vendedor)}`;
-            const r = await fetch(url);
-            const j = await r.json();
-            const d = (j && j.data) || j || {};
+            // [CERO-GAS] Horario 100% Supabase (mos.resolver_horario_personal, SQL 330). Fail-open: ante
+            // cualquier error → d={} → permitido !== false → NO bloquea (idéntico al catch del GAS).
+            const tk = await _mintTokenSB();
+            let d = {};
+            if (tk) {
+              const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/resolver_horario_personal`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+tk, 'Content-Profile':'mos', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p: { vendedor: config.value.vendedor, rol: (config.value.rol || ''), app: 'mosExpress' } })
+              }, 8000);
+              const j = await r.json().catch(() => null);
+              d = (j && j.ok && j.data) || {};
+            }
             if (d.permitido === false) {
               horarioInfo.value = d;
               horarioBloqueado.value = true;
