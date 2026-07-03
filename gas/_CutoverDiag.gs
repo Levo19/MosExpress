@@ -93,3 +93,29 @@ function cut5c_syncoff_ventas() {
   Logger.log('SYNCOFF_VENTAS => ' + JSON.stringify(r));
   return r;
 }
+
+// 6 — READ-ONLY. Estado de las fuentes de datos (para decidir si es seguro apagar el backstop/Hoja).
+// Si FUENTE_DATOS=supabase (o los Flips ya no se llaman), congelar la Hoja es seguro.
+function cut6_estado_fuentes() {
+  var p = PropertiesService.getScriptProperties();
+  var r = {
+    CORRELATIVO_SOURCE: p.getProperty('CORRELATIVO_SOURCE') || '(vacío→sheets)',
+    FUENTE_DATOS:       p.getProperty('FUENTE_DATOS')       || '(vacío→sheets)',
+    FUENTE_DATOS_OFF:   p.getProperty('FUENTE_DATOS_OFF')   || '(vacío)',
+    ME_SYNC_OFF_TABLAS: p.getProperty('ME_SYNC_OFF_TABLAS') || '(vacío)'
+  };
+  Logger.log('ESTADO_FUENTES => ' + JSON.stringify(r));
+  return r;
+}
+
+// 7 — Apagar el backstop (trigger reconciliarDirectasSheets 10min) = la Hoja de VENTAS deja de actualizarse
+// (queda archivo histórico). Correr SOLO tras confirmar (cut6) que nada lee la Hoja en vivo. Reversible:
+// re-instalar con instalarTriggerReconciliacionDirectas().
+function cut7_apagar_backstop() {
+  var n = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'reconciliarDirectasSheets') { ScriptApp.deleteTrigger(t); n++; }
+  });
+  Logger.log('BACKSTOP_OFF => trigger reconciliarDirectasSheets eliminado: ' + n);
+  return { ok: true, eliminados: n };
+}
