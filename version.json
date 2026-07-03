@@ -1,4 +1,4 @@
 {
- "version": "2.8.139",
- "build": "2.8.139 (horario CERO-GAS): verificarHorarioME -> mos.resolver_horario_personal (SQL 330). Day-keys reales lun/mar/mie/jue/vie/sab/dom, admins_libres, custom-gana, cruce medianoche, fail-open. Columna sombra mos.personal.horario_custom (degrada a config-app si NULL). Sin GAS."
+ "version": "2.8.140",
+ "build": "2.8.140 (device_state CERO-GAS): snapshot de recovery migrado PAREJO (read+write) a Supabase. _syncDeviceStateRemoto (write cada 60s) -> mos.set_device_state; getDeviceStateProxy (read en boot) -> mos.get_device_state (SQL 331, tabla mos.device_state). Sin GAS. Ultima lectura GAS de ME migrada (queda solo ping, endpoint muerto sin consumidor)."
 }

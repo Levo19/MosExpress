@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.139';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.140';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -6985,18 +6985,21 @@
                 try { cfg = JSON.parse(cfgRaw); } catch(_){}
                 try { ca  = caRaw ? JSON.parse(caRaw) : null; } catch(_){}
                 if (!cfg || !cfg.completado) return;
-                fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        tipoEvento: 'SYNC_DEVICE_STATE',
-                        deviceId:   did,
-                        app:        'ME',
-                        config:     cfg,
-                        cajaActiva: ca,
-                        fechaSesion: localStorage.getItem('mosexpress_session_date') || new Date().toDateString()
-                    })
-                }).catch(() => {}); // fire-and-forget
+                // [CERO-GAS] Snapshot directo a Supabase (mos.set_device_state, SQL 331). Fire-and-forget.
+                (async () => {
+                    try {
+                        const tk = await _mintTokenSB();
+                        if (!tk) return;
+                        await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/set_device_state`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: {
+                                deviceId: did, app: 'ME', config: cfg, cajaActiva: ca,
+                                fechaSesion: localStorage.getItem('mosexpress_session_date') || new Date().toDateString()
+                            } })
+                        }, 8000);
+                    } catch(_){}
+                })(); // fire-and-forget
             } catch(_){}
         };
         // Al cargar, si localStorage está vacío de config pero IDB tiene snapshot
@@ -12975,8 +12978,17 @@
                 // usuario — no es "retoma" porque no toca caja en backend, solo
                 // recupera la sesión que ya estaba activa.
                 try {
-                    const rs = await fetch(`${API_URL}?accion=getDeviceStateProxy&deviceId=${encodeURIComponent(id)}`);
-                    const ds = await rs.json();
+                    // [CERO-GAS] Recovery del snapshot directo a Supabase (mos.get_device_state, SQL 331).
+                    const tk = await _mintTokenSB();
+                    let ds = null;
+                    if (tk) {
+                        const rs = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/get_device_state`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: { deviceId: id } })
+                        }, 8000);
+                        ds = await rs.json().catch(() => null);
+                    }
                     const snap = ds && ds.data && ds.data.encontrado ? ds.data : null;
                     if (snap && snap.config && snap.fechaSesion === new Date().toDateString()) {
                         // Recovery silencioso: repueblar localStorage desde snapshot
