@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.141';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.142';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8344,7 +8344,8 @@
 
         // [v2.7.0] PIEZA C — Heartbeat ping al backend.
         // Reemplaza navigator.onLine como source-of-truth de "estamos online".
-        // Endpoint: ?accion=ping (ya existe en Code.gs, retorna {status:success,ok:true,ts}).
+        // [CERO-GAS] Endpoint: Supabase GoTrue health (${SUPABASE_URL}/auth/v1/health con apikey → 200).
+        //   Chequea conectividad al backend REAL (antes pingeaba GAS ?accion=ping, ya muerto).
         //   Cada 30s normal · cada 5s si offline (recuperación rápida).
         //   1 fallo  → estado RECONECTANDO (amarillo, NO bloquea ventas).
         //   2 fallos → OFFLINE confirmado (rojo, ventas a cola).
@@ -8355,13 +8356,14 @@
         let _pingTimer    = null;
         let _pingFailCount = 0;
         async function _pingHeartbeat() {
-            if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
             if (_pingTimer) { clearTimeout(_pingTimer); _pingTimer = null; }
             const wasOffline = offlineMode.value;
             try {
                 const ctrl = new AbortController();
                 const tid  = setTimeout(() => ctrl.abort(), PING_TIMEOUT_MS);
-                const r = await fetch(`${API_URL}?accion=ping&t=${Date.now()}`, { signal: ctrl.signal, cache: 'no-store' });
+                // GET al health de GoTrue (backend real) con apikey → 200 con body mínimo.
+                const r = await fetch(`${SUPABASE_URL}/auth/v1/health`, { headers: { 'apikey': SUPABASE_ANON_KEY }, signal: ctrl.signal, cache: 'no-store' });
                 clearTimeout(tid);
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 // ── SUCCESS ──

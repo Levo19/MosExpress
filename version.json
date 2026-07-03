@@ -1,4 +1,4 @@
 {
- "version": "2.8.141",
- "build": "2.8.141 (ultimas 3 lecturas GAS de ME migradas CERO-GAS): detalle_venta -> mos.me_detalle_venta (gate relajado SQL 333 para aceptar token ME app=mosExpress; 2 call-sites, lee data.items||data.data.items); estado_cajas -> me.estado_cajas() (Content-Profile me, body {}); cobros_asignados_cajero -> me.cobros_asignados_cajero (SQL 332, nueva RPC, enriquece itemsOriginal+vendedor, shape {status:success,cobros}). Sin GAS en el path de lecturas ME (queda solo ping, endpoint muerto sin consumidor)."
+ "version": "2.8.142",
+ "build": "2.8.142 (ULTIMO rastro GAS de ME eliminado): heartbeat de conectividad _pingHeartbeat repuntado de ${API_URL}?accion=ping (GAS, muerto) a Supabase GoTrue health (${SUPABASE_URL}/auth/v1/health con apikey -> 200). ME ya no hace NINGUN fetch a API_URL: 0 lecturas GAS, 0 ping GAS. Cero-GAS total en el path de lecturas+conectividad de ME."
 }
