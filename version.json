@@ -1,1 +1,1 @@
-{"version":"2.8.150","build":"2.8.150 (CERO-FALLBACK punto 2d): device-auth.js v1.0.25 gate de arranque SOLO directo (verify+heartbeat, fail-closed sin GAS) + _mintTokenSB solo Edge mint-me (sin fallback GAS MINT_TOKEN). Auth 100% Supabase."}
+{"version":"2.8.151","build":"2.8.151 (CERO-GAS membrete boot): getLotesAdhesivoHistorial -> mos.adhesivo_lotes_historial + diagnosticoTriggerLotes -> mos.adhesivo_lotes_diag (SQL 338) via DeviceAuth.rpc en membrete-modal. 2 de 3 GAS del boot eliminadas."}
