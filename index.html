@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.140';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.141';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15624,8 +15624,15 @@
                 modalAdminCobrar.value = true;
                 // Cargar cajas abiertas
                 try {
-                    const r = await fetch(`${API_URL}?accion=estado_cajas`);
-                    const j = await r.json();
+                    // [cero-GAS/cero-fallback] estado de cajas 100% Supabase (me.estado_cajas, Content-Profile 'me',
+                    // sin args → body {}). Devuelve { kpis, abiertas:[...] }. Ante error → cajas=[] (no romper).
+                    const _tk = await _mintTokenSB();
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/estado_cajas`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: '{}'
+                    }, 8000);
+                    const j = await r.json().catch(() => null);
                     const cajas = (j?.data?.cajas || j?.abiertas || []).filter(c => c.estado === 'ABIERTA' || c.activa);
                     adminCobrarEstado.value.cajas = cajas.map(c => ({
                         idCaja:   c.idCaja || c.ID_Caja || '',
@@ -16096,9 +16103,19 @@
                     }
                 } catch (_) { /* cae a GAS */ }
                 if (!d) {
-                    // [v2.5.56] Timeout 15s — el polling no debe colgar la app si GAS lentea
-                    const r = await _meFetchTimeout(`${API_URL}?accion=cobros_asignados_cajero&cajaId=${encodeURIComponent(idCajaActual.value)}`, {}, 15000);
-                    d = await r.json();
+                    // [cero-GAS/cero-fallback] cobros ASIGNADO de la caja 100% Supabase (me.cobros_asignados_cajero,
+                    // Content-Profile 'me'). Devuelve { status:'success', cobros:[...] } (misma forma que el GAS,
+                    // enriquecido con items/vendedor del ticket). Timeout 15s; ante error → lista vacía segura.
+                    try {
+                        const _tk = await _mintTokenSB();
+                        const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/cobros_asignados_cajero`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: { cajaId: idCajaActual.value } })
+                        }, 15000);
+                        const _dd = await r.json().catch(() => null);
+                        d = (_dd && _dd.status === 'success') ? _dd : { status: 'success', cobros: [] };
+                    } catch (_) { d = { status: 'success', cobros: [] }; }
                 }
                 if (d && d.status === 'success') {
                     const esPrimerPoll = _primerPollCobros;
@@ -19170,11 +19187,19 @@
             if (!venta.id_venta_gas || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             venta.loadingItems = true;
             try {
-                const resp = await fetch(`${API_URL}?accion=detalle_venta&id_venta=${encodeURIComponent(venta.id_venta_gas)}`);
-                const data = await resp.json();
-                if (data.status === 'success') {
+                // [cero-GAS/cero-fallback] detalle del ticket 100% Supabase (mos.me_detalle_venta, Content-Profile 'mos').
+                // Devuelve { ok, encontrado, data:{ ..., items:[...] } }; items también expuesto plano por tolerancia.
+                const _tk = await _mintTokenSB();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/me_detalle_venta`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idVenta: venta.id_venta_gas } })
+                }, 8000);
+                const data = await r.json().catch(() => null);
+                const _items = data && (Array.isArray(data.items) ? data.items : (data.data && Array.isArray(data.data.items) ? data.data.items : null));
+                if (Array.isArray(_items)) {
                     if (!venta.raw_data) venta.raw_data = {};
-                    venta.raw_data.items = data.items || [];
+                    venta.raw_data.items = _items;
                 }
             } catch(e) { /* silencioso, se muestra "Sin detalle" */ }
             venta.loadingItems = false;
@@ -19255,10 +19280,17 @@
             let items = (ventaLocal.raw_data && ventaLocal.raw_data.items) ? ventaLocal.raw_data.items : [];
             if (items.length === 0 && ventaLocal.id_venta_gas && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 try {
-                    const resp = await fetch(`${API_URL}?accion=detalle_venta&id_venta=${encodeURIComponent(ventaLocal.id_venta_gas)}`);
-                    const data = await resp.json();
-                    if (data.status === 'success' && data.items.length > 0) {
-                        items = data.items;
+                    // [cero-GAS/cero-fallback] detalle 100% Supabase (mos.me_detalle_venta, Content-Profile 'mos').
+                    const _tk = await _mintTokenSB();
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/me_detalle_venta`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: { idVenta: ventaLocal.id_venta_gas } })
+                    }, 8000);
+                    const data = await r.json().catch(() => null);
+                    const _items = data && (Array.isArray(data.items) ? data.items : (data.data && Array.isArray(data.data.items) ? data.data.items : null));
+                    if (Array.isArray(_items) && _items.length > 0) {
+                        items = _items;
                         // Cachear para reimpresioes futuras sin red
                         if (ventaLocal.raw_data) ventaLocal.raw_data.items = items;
                     }

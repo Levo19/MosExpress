@@ -1,4 +1,4 @@
 {
- "version": "2.8.140",
- "build": "2.8.140 (device_state CERO-GAS): snapshot de recovery migrado PAREJO (read+write) a Supabase. _syncDeviceStateRemoto (write cada 60s) -> mos.set_device_state; getDeviceStateProxy (read en boot) -> mos.get_device_state (SQL 331, tabla mos.device_state). Sin GAS. Ultima lectura GAS de ME migrada (queda solo ping, endpoint muerto sin consumidor)."
+ "version": "2.8.141",
+ "build": "2.8.141 (ultimas 3 lecturas GAS de ME migradas CERO-GAS): detalle_venta -> mos.me_detalle_venta (gate relajado SQL 333 para aceptar token ME app=mosExpress; 2 call-sites, lee data.items||data.data.items); estado_cajas -> me.estado_cajas() (Content-Profile me, body {}); cobros_asignados_cajero -> me.cobros_asignados_cajero (SQL 332, nueva RPC, enriquece itemsOriginal+vendedor, shape {status:success,cobros}). Sin GAS en el path de lecturas ME (queda solo ping, endpoint muerto sin consumidor)."
 }
