@@ -1,4 +1,4 @@
 {
- "version": "2.8.136",
- "build": "2.8.136 (venta cliente CERO-GAS): neutralizado _mirrorVentaAsync -> el espejo per-venta a la Hoja ya no POSTea a GAS. La venta ya esta en Supabase (crear_venta_directa); el backstop reconciliarDirectasSheets (10min) mantiene la Hoja solo como respaldo. Cierre/vista/reportes leen Supabase. Junto al heartbeat (2.8.135), el cliente de venta de ME queda cero-GAS."
+ "version": "2.8.137",
+ "build": "2.8.137 (caja-estado + guias + stock + traslados CERO-GAS): 8 lecturas migradas de GAS a RPCs Supabase directas. Caja: retomar_caja_device/caja_activa_zona/cajero_activo(x2, helper compartido)/cajeros_activos_todos -> me.* nuevas (SQL 329, read-only, gate jwt_app, crons cierran zombis). Guias: listar_guias/detalle_guia(x2)/traslados_entrantes -> me.zona_* (existian). Stock: stock_zonas -> me.zona_stock. Cero-fallback. Contrato guias/stock: status->ok."
 }

@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.136';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.137';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8517,10 +8517,8 @@
                 } else if (res.mensaje && res.mensaje.includes('turno activo')) {
                     // Ya existe una caja abierta en la zona → adoptar ese ID
                     try {
-                        const zona = encodeURIComponent(config.value.zona || '');
-                        const reqCaj = await fetch(`${API_URL}?accion=cajero_activo&zona=${zona}`);
-                        const resCaj = await reqCaj.json();
-                        if (resCaj.status === 'success' && resCaj.activo && resCaj.idCaja) {
+                        const resCaj = await _meCajeroActivoZona(config.value.zona || '');
+                        if (resCaj && resCaj.activo && resCaj.idCaja) {
                             idCajaActual.value = resCaj.idCaja;
                             lsSet('mosexpress_caja_activa', JSON.stringify({
                                 idCaja: resCaj.idCaja, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
@@ -11696,9 +11694,8 @@
             if (!zona || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             if (!silent) wizardVerificando.value = true;
             try {
-                const r = await fetch(`${API_URL}?accion=cajero_activo&zona=${encodeURIComponent(zona)}`);
-                const d = await r.json();
-                wizardCajeroOcupado.value = d.status === 'success' && d.activo;
+                const d = await _meCajeroActivoZona(zona);
+                wizardCajeroOcupado.value = !!(d && d.status === 'success' && d.activo);
                 cajeroWizardInfo.value = wizardCajeroOcupado.value ? { vendedor: d.vendedor, idCaja: d.idCaja } : null;
                 if (wizardCajeroOcupado.value) configWizard.value.esCajero = false;
             } catch(e) {
@@ -11887,9 +11884,17 @@
         const _wizCargarCajerosActivos = async () => {
             try {
                 if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
-                const r = await fetch(`${API_URL}?accion=cajeros_activos_todos`);
-                const d = await r.json();
-                if (d.status === 'success' && d.porZona) {
+                // [cero-GAS] cajeros activos por zona directo a Supabase. Mismo shape {status,porZona}.
+                // Ante error/sin token → no tocar wizCajerosActivosPorZona.
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/cajeros_activos_todos`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {} })
+                }, 8000);
+                const d = await r.json().catch(() => null);
+                if (r.ok && d && d.status === 'success' && d.porZona) {
                     wizCajerosActivosPorZona.value = d.porZona;
                 }
             } catch(e) {}
@@ -12977,10 +12982,17 @@
                         return;
                     }
                 } catch(eDS) { console.warn('[boot] getDeviceState falló:', eDS?.message || eDS); }
-                // Fallback: si no había snapshot remoto, pedir retoma con PIN admin
-                const r = await fetch(`${API_URL}?accion=retomar_caja_device&deviceId=${encodeURIComponent(id)}`);
-                const d = await r.json();
-                if (d && d.status === 'success' && d.encontrada) {
+                // [cero-GAS] retoma de caja por device directo a Supabase. Mismo shape.
+                // Ante error/sin token → NO setear cajaDetectadaBackend (estado seguro).
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/retomar_caja_device`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { deviceId: id } })
+                }, 8000);
+                const d = await r.json().catch(() => null);
+                if (r.ok && d && d.status === 'success' && d.encontrada) {
                     cajaDetectadaBackend.value = {
                         idCaja:   d.idCaja,
                         vendedor: d.vendedor,
@@ -16513,6 +16525,14 @@
             if (!d || d.status !== 'success') throw new Error('cerrar_caja: ' + ((d && d.error) || 'fallo'));
             return d;
         };
+        // [cero-GAS] Cajero activo por zona directo a Supabase. Devuelve
+        // {status:'success',activo,vendedor,idCaja,desde} o null (= no activo).
+        const _meCajeroActivoZona = async (zona) => {
+          try { const tk = await _mintTokenSB(); if (!tk) return null;
+            const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/cajero_activo`, { method:'POST', headers:{'apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+tk,'Content-Profile':'me','Content-Type':'application/json'}, body: JSON.stringify({p:{zona:String(zona||'')}}) }, 8000);
+            const d = await r.json().catch(()=>null); return (r.ok && d && d.status==='success') ? d : null;
+          } catch(e){ return null; }
+        };
         // [FIX cierre POR CAJA 2026-07-03] Arqueo caja-scoped desde el server (me.datos_turno por id_caja).
         // Es lo MISMO que calcula me.cerrar_caja al cerrar → el preview del modal coincide EXACTO con el cierre
         // real. Reemplaza ventasZona (filtra por prefijo de correlativo = cross-zona, traía plata de otra caja)
@@ -19287,9 +19307,17 @@
             if (offlineMode.value) return;
             const estadoPrevio = cajeroActivoEnZona.value; // snapshot para detectar transición
             try {
-                const r = await fetch(`${API_URL}?accion=caja_activa_zona&zona=${encodeURIComponent(config.value.zona)}`);
-                const d = await r.json();
-                if (d && d.ok && d.data) {
+                // [cero-GAS] caja activa por zona directo a Supabase. Mismo shape {ok,data:{...}}.
+                // Ante error/sin token → return (mantener último estado conocido).
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/caja_activa_zona`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { zona: config.value.zona } })
+                }, 8000);
+                const d = await r.json().catch(() => null);
+                if (r.ok && d && d.ok && d.data) {
                     if (d.data.hayCaja) {
                         const _eraBloqueado = (estadoPrevio === false);   // [v2.8.41] transición sin-caja → con-caja
                         cajeroActivoEnZona.value = {
@@ -19333,15 +19361,23 @@
         const verificarTrasladosEntrantes = async () => {
             if (!config.value.zona || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             try {
-                const r = await fetch(`${API_URL}?accion=traslados_entrantes&zona=${encodeURIComponent(config.value.zona)}&desde=${trasladosUltimoCheck.value}`);
-                const d = await r.json();
-                if (d.status === 'success' && d.traslados.length > 0) {
+                // [cero-GAS] traslados entrantes directo a Supabase. Contrato: {ok:true,traslados:[...]}.
+                const tk = await _mintTokenSB();
+                if (tk) {
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_traslados_entrantes`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { zona: config.value.zona, desde: String(trasladosUltimoCheck.value || '') } })
+                }, 8000);
+                const d = await r.json().catch(() => null);
+                if (r.ok && d && d.ok === true && Array.isArray(d.traslados) && d.traslados.length > 0) {
                     d.traslados.forEach(t => {
                         if (!trasladosPendientes.value.find(p => p.id_guia === t.id_guia)) {
                             trasladosPendientes.value.unshift(t);
                             agregarToast('Traslado recibido', `Mercadería de ${t.origen} — ${t.id_guia}`);
                         }
                     });
+                }
                 }
                 trasladosUltimoCheck.value = Date.now();
             } catch(e) {}
@@ -19362,12 +19398,20 @@
             if (cached) { try { stockZonas.value = JSON.parse(cached); } catch(e) {} }
             if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             try {
-                const r = await fetch(`${API_URL}?accion=stock_zonas`);
-                const d = await r.json();
-                if (d.status === 'success') {
-                    stockZonas.value = d.stock;
-                    // [v2.7.8] Persistir vía lsSet — autocompacta a Cantidad>0 si quota tight
-                    lsSet('mosexpress_stock_zonas', JSON.stringify(d.stock));
+                // [cero-GAS] stock por zonas directo a Supabase. Contrato: {ok:true,stock:[...]}.
+                const tk = await _mintTokenSB();
+                if (tk) {
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_stock`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: {} })
+                    }, 8000);
+                    const d = await r.json().catch(() => null);
+                    if (r.ok && d && d.ok === true && Array.isArray(d.stock)) {
+                        stockZonas.value = d.stock;
+                        // [v2.7.8] Persistir vía lsSet — autocompacta a Cantidad>0 si quota tight
+                        lsSet('mosexpress_stock_zonas', JSON.stringify(d.stock));
+                    }
                 }
             } catch(e) { console.warn('Error cargando stock zonas', e); }
         };
@@ -20075,11 +20119,19 @@
             // Spinner solo si no hay nada que mostrar
             if (!guiaHistorial.value.length) guiaHistorialCargando.value = true;
             try {
-                const r = await fetch(`${API_URL}?accion=listar_guias&zona=${encodeURIComponent(guiaZona.value)}`);
-                const d = await r.json();
-                if (d.status === 'success') {
-                    guiaHistorial.value = _mergeGuiasHistorial(d.guias);   // [v2.8.39] merge-guard
-                    localStorage.setItem(cacheKey, JSON.stringify(guiaHistorial.value));
+                // [cero-GAS] listar guías directo a Supabase. OJO contrato: {ok:true,guias:[...]}.
+                const tk = await _mintTokenSB();
+                if (tk) {
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_guias_listar`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: { zona: guiaZona.value } })
+                    }, 8000);
+                    const d = await r.json().catch(() => null);
+                    if (r.ok && d && d.ok === true && Array.isArray(d.guias)) {
+                        guiaHistorial.value = _mergeGuiasHistorial(d.guias);   // [v2.8.39] merge-guard
+                        localStorage.setItem(cacheKey, JSON.stringify(guiaHistorial.value));
+                    }
                 }
             } catch(e) { /* usa cache */ }
             guiaHistorialCargando.value = false;
@@ -20090,9 +20142,17 @@
             guiaDetallando.value = guia;
             guiaDetalle.value = [];
             try {
-                const r = await fetch(`${API_URL}?accion=detalle_guia&id_guia=${encodeURIComponent(guia.id_guia)}`);
-                const d = await r.json();
-                if (d.status === 'success') guiaDetalle.value = d.items;
+                // [cero-GAS] detalle de guía directo a Supabase. Contrato: {ok:true,items:[...]}.
+                const tk = await _mintTokenSB();
+                if (tk) {
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_guia_detalle`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: { idGuia: guia.id_guia } })
+                    }, 8000);
+                    const d = await r.json().catch(() => null);
+                    if (r.ok && d && d.ok === true && Array.isArray(d.items)) guiaDetalle.value = d.items;
+                }
             } catch(e) {}
         };
 
@@ -20396,10 +20456,19 @@
             let items = guiaDetalle.value;
             if (!items.length || guiaDetallando.value?.id_guia !== guia.id_guia) {
                 try {
-                    const r = await fetch(`${API_URL}?accion=detalle_guia&id_guia=${encodeURIComponent(guia.id_guia)}`);
-                    const d = await r.json();
-                    items = d.status === 'success' ? d.items : [];
-                } catch(e) {}
+                    // [cero-GAS] detalle de guía directo a Supabase. Contrato: {ok:true,items:[...]}.
+                    const tk = await _mintTokenSB();
+                    items = [];
+                    if (tk) {
+                        const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_guia_detalle`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: { idGuia: guia.id_guia } })
+                        }, 8000);
+                        const d = await r.json().catch(() => null);
+                        items = (r.ok && d && d.ok === true && Array.isArray(d.items)) ? d.items : [];
+                    }
+                } catch(e) { items = []; }
             }
             const esSalida = guia.tipo.indexOf('SALIDA') === 0;
             const tipoLabel = {
