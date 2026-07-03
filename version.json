@@ -1,4 +1,4 @@
 {
- "version": "2.8.142",
- "build": "2.8.142 (ULTIMO rastro GAS de ME eliminado): heartbeat de conectividad _pingHeartbeat repuntado de ${API_URL}?accion=ping (GAS, muerto) a Supabase GoTrue health (${SUPABASE_URL}/auth/v1/health con apikey -> 200). ME ya no hace NINGUN fetch a API_URL: 0 lecturas GAS, 0 ping GAS. Cero-GAS total en el path de lecturas+conectividad de ME."
+ "version": "2.8.143",
+ "build": "2.8.143 (CERO-GAS auth · extensor horario): extensor-horario.js v1.0.2 llama la RPC directa mos.extender_horario_dispositivo (SQL 334, vía DeviceAuth.rpc, Content-Profile mos, anon-callable, gate=bcrypt clave admin) en vez de POST a GAS extenderHorarioDispositivo. device-auth.js v1.0.24 expone DeviceAuth.rpc()+sbConfig(). Pins ?v= bumpeados. Sin fallback GAS."
 }
