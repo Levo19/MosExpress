@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.148';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.149';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -16891,12 +16891,11 @@
                     if (d && typeof d.ok !== 'undefined') return { ok:true, data:{ autorizado:!!d.autorizado, error:d.error||'',
                         validadoPor:d.validado_por||'', idPersonal:d.id_personal||'', nombre:d.nombre||'', rol:d.rol||'', nivel:d.nivel } };
                 }
-            } catch(_) { /* → GAS kill-switch */ }
-            try {
-                const r = await fetch((typeof MOS_GAS_URL!=='undefined' && MOS_GAS_URL) || localStorage.getItem('mosexpress_mos_url') || '', {
-                    method:'POST', body: JSON.stringify({ action:'verificarClaveAdmin', ...params }) });
-                return await r.json();
-            } catch(e) { return null; }
+            } catch(_) {}
+            // [CERO-GAS / CERO-FALLBACK] Sin fallback GAS: si el directo (mos.verificar_clave_admin) falla,
+            // devuelve null → el caller bloquea con "No se pudo verificar — reintenta" (fail-closed: nunca
+            // autoriza por error de red). La RPC ya tiene bcrypt + lockout + auditoría server-side.
+            return null;
         };
 
         // ─────────────────────────────────────────────────────────────────────────────────────────
