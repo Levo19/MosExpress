@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.132';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.133';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -16878,52 +16878,47 @@
 
         const cargarVentasZona = async () => {
             if (!config.value.estacion) return;
+            // [FIX vista POR CAJA 2026-07-03] El cajero solo ve los tickets de SU caja = su ZONA + su HORARIO
+            // (desde su apertura) + su ID_CAJA. Fuente: me.datos_turno(id_caja) (server, caja-scoped) — reemplaza
+            // ventas_hoy_zona, que filtraba por PREFIJO de correlativo y traía tickets de OTRA zona/caja (con
+            // correlativos solapados). Así, si entra otro cajero con otra caja, NO se mezclan los tickets.
+            const _idCaja = idCajaActual.value || '';
+            if (!_idCaja) { ventasZona.value = []; return; }
             cargandoZona.value = true;
-            const est = config.value.estacion;
-            const prefijos = [est.Serie_Nota, est.Serie_Boleta, est.Serie_Factura].filter(Boolean).join(',');
-            const desdeParam = sessionStartTime.value ? `&desde=${encodeURIComponent(sessionStartTime.value)}` : '';
             try {
-                let data = null;
-                // [Fase 2] lectura DIRECTA a Supabase (flag local OFF por defecto), con fallback TRANSPARENTE a GAS
-                if (lecturaDirectaSupabase()) {
-                    try { data = await _ventasZonaDirecto(prefijos, sessionStartTime.value || null); }
-                    catch(eD) { console.warn('[lectura directa] fallback a GAS:', eD && eD.message); data = null; }
-                }
-                if (!data) {
-                    const res = await fetch(`${API_URL}?accion=ventas_hoy_zona&prefijos=${encodeURIComponent(prefijos)}${desdeParam}`);
-                    const rawText = await res.text();
-                    try { data = JSON.parse(rawText); } catch(pe) { throw new Error('Respuesta no JSON: ' + rawText.substring(0, 120)); }
-                }
-                if (!data || !Array.isArray(data.ventas)) throw new Error('Respuesta inesperada del servidor');
-                if (data.status === 'success') {
-                    ventasZona.value = data.ventas.map(v => {
-                        return {
-                            id: v.id_venta,
-                            tipo: v.tipo_doc || '',
-                            correlativo: v.correlativo,
-                            total: parseFloat(v.total) || 0,
-                            timestamp: new Date(v.fecha).getTime(),
-                            cliente_doc: v.cliente_doc || '',
-                            cliente_nombre: v.cliente_nombre || 'Genérico',
-                            expanded: false,
-                            raw_data: { auth: { vendedor: v.vendedor }, header: { metodo: v.forma_pago || '', tipoDoc: v.tipo_doc || '' }, items: [] },
-                            syncStatus: v.status === 'COMPLETADO' ? 'synced' : 'pending',
-                            cobrado: v.forma_pago !== 'POR_COBRAR' && v.forma_pago !== 'ANULADO' && v.forma_pago !== 'CREDITO' && !!v.forma_pago,
-                            anulada: v.forma_pago === 'ANULADO',
-                            credito: v.forma_pago === 'CREDITO',
-                            obs: String(v.obs || ''),
-                            id_venta_gas: v.id_venta,
-                            ref_local: v.ref_local || ''
-                        };
-                    }).sort((a, b) => (b.timestamp - a.timestamp)
-                        // [fix orden] desempate por correlativo cuando caen en el MISMO segundo (la fecha se
-                        // guarda al segundo) → el cajero ve la secuencia sin huecos. numeric:true compara 001618>001617.
-                        || String(b.correlativo || '').localeCompare(String(a.correlativo || ''), undefined, { numeric: true }));
-                    agregarToast('Zona actualizada', `${ventasZona.value.length} tickets cargados`);
-                }
+                const dt  = await _datosTurnoDirecto(_idCaja);
+                const tks = (dt && Array.isArray(dt.tickets)) ? dt.tickets : [];
+                const _hoy = new Date();
+                ventasZona.value = tks.map(t => {
+                    const metodo = String(t.metodo || '');
+                    let ts = 0;
+                    try { const p = String(t.hora || '').split(':'); const d = new Date(_hoy); d.setHours(parseInt(p[0],10)||0, parseInt(p[1],10)||0, 0, 0); ts = d.getTime(); } catch(_){}
+                    return {
+                        id: t.idVenta,
+                        tipo: t.tipoDoc || '',
+                        correlativo: t.correlativo,
+                        total: parseFloat(t.total) || 0,
+                        timestamp: ts,
+                        hora: t.hora || '',
+                        cliente_doc: t.clienteDoc || '',
+                        cliente_nombre: t.clienteNom || 'Genérico',
+                        expanded: false,
+                        raw_data: { auth: { vendedor: t.vendedor }, header: { metodo: metodo, tipoDoc: t.tipoDoc || '' }, items: Array.isArray(t.items) ? t.items : [] },
+                        syncStatus: 'synced',
+                        cobrado: metodo !== 'POR_COBRAR' && metodo !== 'ANULADO' && metodo !== 'CREDITO' && !!metodo,
+                        anulada: metodo === 'ANULADO' || t.estado === 'ANULADO',
+                        credito: metodo === 'CREDITO',
+                        obs: String(t.obs || ''),
+                        id_venta_gas: t.idVenta,
+                        id_caja: _idCaja,
+                        ref_local: ''
+                    };
+                }).sort((a, b) => (b.timestamp - a.timestamp)
+                    || String(b.correlativo || '').localeCompare(String(a.correlativo || ''), undefined, { numeric: true }));
+                agregarToast('Caja actualizada', `${ventasZona.value.length} ticket(s) de tu caja`);
             } catch(e) {
-                console.error('cargarVentasZona error:', e);
-                agregarToast('Error zona', e.message || 'Sin conexión con el servidor');
+                // No vaciar ni caer a la fuente cruzada: ante fallo de red, conservamos lo que había.
+                console.warn('cargarVentasZona (datos_turno) error:', e && e.message);
             }
             cargandoZona.value = false;
         };

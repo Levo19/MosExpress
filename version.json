@@ -1,4 +1,4 @@
 {
- "version": "2.8.132",
- "build": "2.8.132 (FIX cierre arqueo POR CAJA): el modal de cierre ahora lee me.datos_turno(id_caja) del server = EXACTO lo que cierra me.cerrar_caja por tu caja. Antes: ventasZona (por prefijo de correlativo) mostraba plata de otra caja/zona; el intento previo con cobradosEnSesion mostraba 0 (no veia ventas EFECTIVO directas). Ahora muestra tu monto real. Fallback local sin red. Incluye guard SQL 327 + auto-update fix (2.8.131)."
+ "version": "2.8.133",
+ "build": "2.8.133 (FIX vista POR CAJA): la lista de tickets del cajero ahora sale de me.datos_turno(id_caja) = solo TU caja (tu zona + tu horario desde apertura + tu id_caja). Antes usaba ventas_hoy_zona (filtra por prefijo de correlativo) -> mostraba tickets de otra zona/caja (boletas de otro cajero). Si entra otro cajero con otra caja, ya no se mezclan. Trae items para reimpresion. Sin fuente cruzada; ante fallo de red conserva lo previo."
 }
