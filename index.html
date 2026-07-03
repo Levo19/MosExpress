@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.133';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.134';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12739,12 +12739,23 @@
 
         const actualizarVentasZonaSilencioso = async () => {
             if (!config.value.estacion || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
-            const est = config.value.estacion;
-            const prefijos = [est.Serie_Nota, est.Serie_Boleta, est.Serie_Factura].filter(Boolean).join(',');
-            const desdeParam = sessionStartTime.value ? `&desde=${encodeURIComponent(sessionStartTime.value)}` : '';
+            // [FIX vista POR CAJA 2026-07-03] Poller de la vista: fuente = me.datos_turno(id_caja) (solo TU caja
+            // = zona + horario desde apertura + id_caja), NO ventas_hoy_zona (filtra por PREFIJO de correlativo →
+            // traía tickets de OTRA zona/caja, p.ej. boletas BBB1 de otro cajero por serie compartida). Adaptamos
+            // al shape que espera el merge de abajo (v.id_venta, v.forma_pago, ...) sin tocar esa lógica.
+            const _idCajaP = idCajaActual.value || '';
+            if (!_idCajaP) return;
             try {
-                const res = await fetch(`${API_URL}?accion=ventas_hoy_zona&prefijos=${encodeURIComponent(prefijos)}${desdeParam}`);
-                const data = await res.json();
+                const _hoyISO = new Date().toISOString().slice(0, 10);
+                const dt  = await _datosTurnoDirecto(_idCajaP);
+                const _tks = (dt && Array.isArray(dt.tickets)) ? dt.tickets : [];
+                const data = { status: 'success', ventas: _tks.map(t => ({
+                    id_venta: t.idVenta, tipo_doc: t.tipoDoc || '', correlativo: t.correlativo,
+                    total: t.total, fecha: _hoyISO + 'T' + String(t.hora || '00:00') + ':00',
+                    cliente_doc: t.clienteDoc || '', cliente_nombre: t.clienteNom || 'Generico',
+                    forma_pago: t.metodo || '', status: t.estado || 'COMPLETADO',
+                    vendedor: t.vendedor, obs: t.obs || '', ref_local: ''
+                })) };
                 if (data.status !== 'success') return;
 
                 const idsActuales = new Set(ventasZona.value.map(v => v.id));
