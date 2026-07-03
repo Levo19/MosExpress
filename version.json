@@ -1,1 +1,1 @@
-{"version":"2.8.145","build":"2.8.145 (CERO-GAS auth ola 2): registrarPermisosDispositivo/marcarWizardMostrado/reportarQuotaDispositivo -> RPCs mos.* (SQL 335) via DeviceAuth.rpc. Boot ME sin esas 3 llamadas GAS."}
+{"version":"2.8.146","build":"2.8.146 (CERO-GAS auth ola 3): seguridad-modal getSeguridadAlertas -> RPC mos.seguridad_alertas (SQL 336) + getDispositivos -> mos.listar_dispositivos, via DeviceAuth.rpc. Badge+modal de alertas sin GAS. Pin seguridad-modal 2.7.73."}
