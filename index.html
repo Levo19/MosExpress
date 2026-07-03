@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.135';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.136';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -16626,12 +16626,10 @@
         };
         // Espeja la venta a Sheets (cierre/SUNAT cuadran). Fire-and-forget; reconciliarDirectasSheets es el backstop.
         const _mirrorVentaAsync = (ventaBase, idVenta, correlativo, nf) => {
-            try {
-                const body = Object.assign({}, ventaBase, { tipoEvento:'MIRROR_VENTA', idVenta: idVenta, correlativo: correlativo });
-                // [CPE-directo] si es boleta/factura, llevar el resultado NF (estado/hash/enlace) al mirror
-                if (nf) { body.nf_estado = nf.nf_estado || ''; body.nf_hash = nf.nf_hash || ''; body.nf_enlace = nf.nf_enlace || ''; }
-                fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) }).catch(()=>{});
-            } catch(_) {}
+            // [CERO-GAS · teardown 2026-07-03] El espejo per-venta a la Hoja YA NO va a GAS. La venta ya quedó
+            // en Supabase (crear_venta_directa) y el CPE en las Edges; el backstop server-side
+            // reconciliarDirectasSheets (cada 10min) mantiene la Hoja SOLO como respaldo. Cierre, vista y
+            // reportes leen Supabase (no la Hoja). No-op: saca el POST a GAS de cada venta (cliente cero-GAS).
         };
         // [Fase 2] Emite el CPE (boleta/factura) DIRECTO a SUNAT vía la Edge Function emitir-cpe (token NubeFact
         // en secret). Mismo data+correlativo que el path GAS. Devuelve {ok,hash,enlace,qrString,aceptada,...}.
