@@ -1,4 +1,4 @@
 {
- "version": "2.8.134",
- "build": "2.8.134 (FIX vista poller): el poller de 3s tambien leia ventas_hoy_zona (GAS, cross-zona por prefijo de correlativo -> re-metia boletas de otro cajero/zona cada 3s, pisando el fix). Ahora el poller Y cargarVentasZona leen me.datos_turno(id_caja) = solo TU caja (zona+horario+id_caja). Cero-GAS, cero-fallback. _ventasZonaDirecto quedo sin uso."
+ "version": "2.8.135",
+ "build": "2.8.135 (heartbeat CERO-GAS): el ping de sesion por venta ya no va a GAS (registrarSesionDispositivo). Ahora POST directo a mos.registrar_sesion (SQL 328, anon) que mantiene vivo el acceso ACTIVA (accesos_dispositivos.ultima_conexion = panel conectados) + ultima_zona/estacion/vendedor del dispositivo. Fire-and-forget, no bloquea la venta."
 }

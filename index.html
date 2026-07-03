@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.134';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.135';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -18779,15 +18779,15 @@
            // caído o lento.
            // ─────────────────────────────────────────────────────────────────
 
-           // Heartbeat MOS — fire-and-forget, no bloquea nada
+           // [CERO-GAS] Heartbeat de sesión DIRECTO a Supabase (mos.registrar_sesion, anon) — antes pingaba GAS
+           // en cada venta. Fire-and-forget (no bloquea ni puede romper la venta). Solo actualiza ultima_* del
+           // dispositivo (personal del día); no crea ni cambia estado/autorización.
            try {
-               const hbUrl = MOS_GAS_URL + '?action=registrarSesionDispositivo'
-                   + '&ID_Dispositivo=' + encodeURIComponent(deviceId.value || '')
-                   + '&app=mosExpress'
-                   + '&vendedor=' + encodeURIComponent(config.value.vendedor || '')
-                   + '&idZona=' + encodeURIComponent(_est.Zona_ID || '')
-                   + '&idEstacion=' + encodeURIComponent(_est.idEstacion || '');
-               fetch(hbUrl).catch(() => {});
+               fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_sesion`, {
+                   method: 'POST',
+                   headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ p: { deviceId: deviceId.value || '', vendedor: config.value.vendedor || '', idZona: (_est && _est.Zona_ID) || '', idEstacion: (_est && _est.idEstacion) || '' } })
+               }).catch(() => {});
            } catch(_) {}
 
            // ── Modo offline puro ─────────────────────────────────────────
