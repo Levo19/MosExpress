@@ -97,45 +97,22 @@ function _alertaLeerCaja(ss, idCaja) {
 
 // ── Calcula efectivo actual: montoInicial + EFE_ventas + INGRESOS - EGRESOS ──
 // Solo cuenta lo que toca caja física (no virtuales).
+// [CERO-GAS · Etapa 4] Efectivo actual vía RPC me.alerta_calcular_efectivo (SQL 326):
+// monto_inicial(me.cajas) + EFE(ventas no ANULADO, parte EFE de MIXTO) + INGRESO - EGRESO.
+// Ya no escanea VENTAS_CABECERA/MOVIMIENTOS_EXTRA de la Hoja. Sin fallback a la Hoja
+// (directriz cero-GAS): si la RPC falla, devuelve el monto inicial (bandera 0, no falsa
+// alerta) — la alerta es nice-to-have y el caller ya va en try/catch. Firma preservada.
 function _alertaCalcularEfectivo(ss, idCaja, montoInicial) {
-  var total = parseFloat(montoInicial) || 0;
-
-  // Ventas EFECTIVO o parte EFE de MIXTO
-  var vSheet = ss.getSheetByName('VENTAS_CABECERA');
-  if (vSheet) {
-    var vd = vSheet.getDataRange().getValues();
-    for (var v = 1; v < vd.length; v++) {
-      if (String(vd[v][10]) !== String(idCaja)) continue;
-      var estado = String(vd[v][12] || '');
-      if (estado === 'ANULADO') continue;
-      var metodo = String(vd[v][8] || '').toUpperCase();
-      var monto  = parseFloat(vd[v][6]) || 0;
-      if (metodo === 'EFECTIVO') {
-        total += monto;
-      } else if (metodo.indexOf('MIXTO') === 0) {
-        // MIXTO|EFE:X|VIR:Y → contar solo la parte EFE
-        var efeM = metodo.match(/EFE:([\d.]+)/i);
-        if (efeM) total += parseFloat(efeM[1]) || 0;
-      }
-      // POR_COBRAR, CREDITO, VIRTUAL → no tocan caja física
+  try {
+    var r = _sbRpc('me', 'alerta_calcular_efectivo', { p_id_caja: String(idCaja) });
+    if (r && r.ok && r.data && r.data.efectivo != null) {
+      return Math.round((parseFloat(r.data.efectivo) || 0) * 100) / 100;
     }
+    Logger.log('[AlertaEfectivo] RPC efectivo falló: ' + (r && r.error));
+  } catch (e) {
+    Logger.log('[AlertaEfectivo] RPC efectivo excepción: ' + e.message);
   }
-
-  // Extras: INGRESO suma, EGRESO resta (solo efectivo, sin _VIRTUAL)
-  var eSheet = ss.getSheetByName('MOVIMIENTOS_EXTRA');
-  if (eSheet) {
-    var ed = eSheet.getDataRange().getValues();
-    for (var e = 1; e < ed.length; e++) {
-      if (String(ed[e][1]) !== String(idCaja)) continue;
-      var tipo  = String(ed[e][3] || '');
-      var monto = parseFloat(ed[e][4]) || 0;
-      if (tipo === 'INGRESO')      total += monto;
-      else if (tipo === 'EGRESO')  total -= monto;
-      // INGRESO_VIRTUAL / EGRESO_VIRTUAL no tocan caja física
-    }
-  }
-
-  return Math.round(total * 100) / 100;
+  return Math.round((parseFloat(montoInicial) || 0) * 100) / 100;
 }
 
 // ── Hoja CAJA_ALERTAS_EFECTIVO ──────────────────────────────

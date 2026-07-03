@@ -766,104 +766,40 @@ function limpiarVentasHuerfanas() {
 // ============================================================
 // [v2.5.47] Endpoints para Centro Tributario (consumidos por MOS)
 // ============================================================
+// [CERO-GAS · Etapa 4] Agregados IGV/ventas/CPE del mes vía RPC me.tributario_ventas_mes
+// (SQL 326) sobre la sombra. TZ Lima + redondeo IGV por fila (fiscal). Sin fallback a la Hoja.
 function tributarioVentasMes(mes, anio) {
   mes = parseInt(mes, 10); anio = parseInt(anio, 10);
   if (!mes || !anio) { var h = new Date(); mes = h.getMonth()+1; anio = h.getFullYear(); }
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('VENTAS_CABECERA');
-  if (!sheet) return generarRespuestaError('VENTAS_CABECERA no encontrada');
-  var data = sheet.getDataRange().getValues();
-  var hdrs = data[0].map(function(h){ return String(h).trim(); });
-  var idxFecha = hdrs.indexOf('Fecha');
-  var idxTotal = hdrs.indexOf('Total');
-  var idxTipo  = hdrs.indexOf('Tipo_Doc');
-  var idxFP    = hdrs.indexOf('FormaPago');
-  var idxNFE   = hdrs.indexOf('NF_Estado');
-  var idxEstE  = hdrs.indexOf('Estado_Envio');
-
-  var totalVentas = 0;
-  var totalIGVEmitido = 0;
-  var cpeTotal = 0, cpeEmitidos = 0, cpePendientes = 0, cpeErrores = 0, cpeAnulados = 0;
-
-  for (var i = 1; i < data.length; i++) {
-    var f = data[i][idxFecha];
-    var d = f instanceof Date ? f : new Date(f);
-    if (isNaN(d.getTime())) continue;
-    if (d.getFullYear() !== anio || (d.getMonth() + 1) !== mes) continue;
-
-    var tipo = String(data[i][idxTipo] || '');
-    var fp   = String(data[i][idxFP] || '');
-    var nfe  = String(data[i][idxNFE] || '');
-    var ee   = String(data[i][idxEstE] || '');
-    if (ee === 'HUERFANA_LIMPIADA') continue;
-    if (fp === 'ANULADO') continue;
-
-    var total = parseFloat(data[i][idxTotal]) || 0;
-    if (tipo === 'BOLETA' || tipo === 'FACTURA') {
-      cpeTotal++;
-      totalVentas += total;
-      // IGV emitido: total / 1.18 * 0.18 (asumiendo todo gravado por simplicidad)
-      var igvAprox = Math.round((total - (total / 1.18)) * 100) / 100;
-      totalIGVEmitido += igvAprox;
-      if (nfe === 'EMITIDO')              cpeEmitidos++;
-      else if (nfe === 'RECHAZADO_SUNAT') cpeErrores++;
-      else if (nfe === 'ERROR')           cpeErrores++;
-      else if (nfe === 'PENDIENTE' || nfe === '' || nfe === 'NA') cpePendientes++;
+  try {
+    var r = _sbRpc('me', 'tributario_ventas_mes', { p_mes: mes, p_anio: anio });
+    if (r && r.ok && r.data && r.data.status === 'success') {
+      return ContentService.createTextOutput(JSON.stringify(r.data))
+        .setMimeType(ContentService.MimeType.JSON);
     }
-    // NOTA_DE_VENTA suma a ventas pero NO a IGV ni a CPE
-    if (tipo === 'NOTA_DE_VENTA' && fp !== 'POR_COBRAR' && fp !== 'CREDITO') {
-      totalVentas += total;
-    }
+    Logger.log('[tributarioVentasMes] RPC falló: ' + (r && r.error));
+  } catch (e) {
+    Logger.log('[tributarioVentasMes] RPC excepción: ' + e.message);
   }
-  return ContentService.createTextOutput(JSON.stringify({
-    status: 'success',
-    mes: mes, anio: anio,
-    totalVentas:    Math.round(totalVentas * 100) / 100,
-    totalIGVEmitido: Math.round(totalIGVEmitido * 100) / 100,
-    cpeTotal: cpeTotal,
-    cpeEmitidos: cpeEmitidos,
-    cpePendientes: cpePendientes,
-    cpeErrores: cpeErrores,
-    cpeAnulados: cpeAnulados
-  })).setMimeType(ContentService.MimeType.JSON);
+  return generarRespuestaError('RPC tributario_ventas_mes no disponible');
 }
 
+// [CERO-GAS · Etapa 4] Lista BOLETA/FACTURA del mes vía RPC me.tributario_cpe_mes (SQL 326)
+// sobre la sombra. TZ Lima, DESC por fecha, fecha ISO (toISOString). Sin fallback a la Hoja.
 function tributarioCPEMes(mes, anio) {
   mes = parseInt(mes, 10); anio = parseInt(anio, 10);
   if (!mes || !anio) { var h = new Date(); mes = h.getMonth()+1; anio = h.getFullYear(); }
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('VENTAS_CABECERA');
-  if (!sheet) return generarRespuestaError('VENTAS_CABECERA no encontrada');
-  var data = sheet.getDataRange().getValues();
-  var hdrs = data[0].map(function(h){ return String(h).trim(); });
-  var H = {};
-  hdrs.forEach(function(h, i) { H[h] = i; });
-
-  var lista = [];
-  for (var i = 1; i < data.length; i++) {
-    var f = data[i][H.Fecha];
-    var d = f instanceof Date ? f : new Date(f);
-    if (isNaN(d.getTime())) continue;
-    if (d.getFullYear() !== anio || (d.getMonth() + 1) !== mes) continue;
-    var tipo = String(data[i][H.Tipo_Doc] || '');
-    if (tipo !== 'BOLETA' && tipo !== 'FACTURA') continue;
-    var ee = String(data[i][H.Estado_Envio] || '');
-    if (ee === 'HUERFANA_LIMPIADA') continue;
-
-    lista.push({
-      idVenta:     String(data[i][H.ID_Venta] || ''),
-      fecha:       d.toISOString(),
-      correlativo: String(data[i][H.Correlativo] || ''),
-      tipo:        tipo,
-      cliente:     String(data[i][H.Cliente_Nombre] || ''),
-      clienteDoc:  String(data[i][H.Cliente_Doc] || ''),
-      total:       parseFloat(data[i][H.Total]) || 0,
-      formaPago:   String(data[i][H.FormaPago] || ''),
-      nfEstado:    String(data[i][H.NF_Estado] || ''),
-      nfHash:      String(data[i][H.NF_Hash] || ''),
-      nfEnlace:    String(data[i][H.NF_Enlace] || '')
-    });
+  try {
+    var r = _sbRpc('me', 'tributario_cpe_mes', { p_mes: mes, p_anio: anio });
+    if (r && r.ok && r.data && r.data.status === 'success') {
+      return ContentService.createTextOutput(JSON.stringify(r.data))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    Logger.log('[tributarioCPEMes] RPC falló: ' + (r && r.error));
+  } catch (e) {
+    Logger.log('[tributarioCPEMes] RPC excepción: ' + e.message);
   }
-  lista.sort(function(a, b) { return new Date(b.fecha) - new Date(a.fecha); });
-  return ContentService.createTextOutput(JSON.stringify({ status: 'success', cpe: lista })).setMimeType(ContentService.MimeType.JSON);
+  return generarRespuestaError('RPC tributario_cpe_mes no disponible');
 }
 
 function tributarioReintentarCPE(idVenta) {
