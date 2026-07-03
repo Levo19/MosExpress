@@ -1,1 +1,1 @@
-{"version":"2.8.152","build":"2.8.152 (CERO-GAS membrete completo): getMembretesMePendientes/marcarMembreteMeImpreso/ignorarMembreteMe -> RPCs mos.membretes_me_* (SQL 339, tabla+hook en publicar_precio best-effort). Las 3 GAS del boot de ME migradas + alertas de precio cero-GAS."}
+{"version":"2.8.153","build":"2.8.153 (CERO-GAS push fase1): notificarInicioSesionVendedor -> Edge push con audiencia:{roles admin/master} (helper _pushEdge, anti-spam 30min localStorage). RPC push_tokens_para dedup por device (SQL 341b). Sin GAS."}

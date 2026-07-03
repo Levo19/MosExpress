@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.152';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.153';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13190,23 +13190,20 @@
             lsSet('mosexpress_session_date', new Date().toDateString());
             _cargarAuditHoy();
 
-            // Notificar a master+admin que ingresó este vendedor (push)
-            // Idempotente: el GAS no manda push si ya estaba activo en últimos 30 min.
-            // esCajero=true → la push aquí se omite (la push de apertura de caja
-            // ya cubre el evento). esCajero=false → push de "🛍 vendedor".
+            // [CERO-GAS] Push "vendedor conectado" a master+admin vía Edge `push` (antes GAS
+            // notificarInicioSesionVendedor). esCajero=true → se omite (la apertura de caja ya avisa).
+            // Anti-spam: no repetir <30min por dispositivo (equivale al dedup por sesión del GAS).
             try {
-                fetch(MOS_GAS_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'notificarInicioSesionVendedor',
-                        nombre: config.value.vendedor,
-                        appOrigen: 'mosExpress',
-                        deviceId: deviceId.value || '',
-                        estacion: config.value.estacion?.Estacion_Nombre || '',
-                        zona: config.value.zona || '',
-                        esCajero: !!esCajero
-                    })
-                }).catch(() => {});
+                if (!esCajero) {
+                    const _k = 'me_login_push_ts', _last = parseInt(localStorage.getItem(_k) || '0', 10);
+                    if (Date.now() - _last >= 30 * 60 * 1000) {
+                        localStorage.setItem(_k, String(Date.now()));
+                        _pushEdge({ roles: ['MASTER', 'ADMINISTRADOR', 'ADMIN'] },
+                            '🛍 Vendedor conectado',
+                            (config.value.vendedor || 'Vendedor') + ' ingresó' + (config.value.zona ? ' · ' + config.value.zona : ''),
+                            { tipo: 'login_vendedor' });
+                    }
+                }
             } catch(_) {}
 
             if (esCajero) {
@@ -16832,6 +16829,19 @@
                 return d.token;
             }
             throw new Error('mint-me: ' + ((d && d.error) || 'sin token'));
+        };
+
+        // [CERO-GAS push] Envía un push a una AUDIENCIA vía Edge `push` (resuelve tokens de mos.push_tokens
+        // server-side). Reemplaza los fetch a GAS que disparaban notificaciones. Fire-and-forget (sin fallback GAS).
+        const _pushEdge = async (audiencia, titulo, cuerpo, data) => {
+            try {
+                const tk = await _mintTokenSB();
+                await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/push`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ op: 'send', audiencia: audiencia, title: titulo, body: cuerpo, data: data || null })
+                }, 8000);
+            } catch(_) { /* informativo, no bloquea */ }
         };
 
         // [#6 SUNAT cero-GAS] Lookup DNI/RUC: Edge `consultar-documento` (claim app='mosExpress') si el flag
