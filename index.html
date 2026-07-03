@@ -13443,22 +13443,13 @@
                  return { efe: 0, vir: total }; // método desconocido → virtual
              };
 
-             // --- Totales: ventasZona (GAS, autoritativo) con fallback a cobradosEnSesion (offline) ---
-             const _startTs  = sessionStartTime.value ? new Date(sessionStartTime.value).getTime() : 0;
-             const _tksTurno = ventasZona.value.filter(v => v.timestamp >= _startTs);
+             // [FIX money-crítico 2026-07-03] Totales del cierre POR CAJA (no por zona).
+             // NO usamos ventasZona: se carga por PREFIJO de serie de correlativo (16836) y la RPC filtra por
+             // correlativo → con series solapadas entre zonas traía dinero de OTRA caja abierta (bug del S/ ajeno).
+             // Usamos cobradosEnSesion = tickets cobrados en ESTE turno/caja (caja-scoped). El arqueo
+             // AUTORITATIVO lo recalcula me.cerrar_caja server-side por id_caja (montoFinal=null) → el server manda.
              let tEfectivo = 0, tVirtual = 0;
-             if (_tksTurno.length > 0) {
-                 // Online normal: ventasZona tiene datos del turno — fuente autoritativa
-                 _tksTurno.filter(v => !v.anulada).forEach(v => {
-                     const metodo = v.cobradoMetodo || v.raw_data?.header?.metodo || '';
-                     const { efe, vir } = _parseMetodo(metodo, v.total);
-                     tEfectivo += efe;
-                     tVirtual  += vir;
-                 });
-             } else {
-                 // Offline o recarga sin datos: fallback a cobradosEnSesion (localStorage)
-                 cobradosEnSesion.value.forEach(c => { tEfectivo += c.efectivo || 0; tVirtual += c.virtual || 0; });
-             }
+             cobradosEnSesion.value.forEach(c => { tEfectivo += c.efectivo || 0; tVirtual += c.virtual || 0; });
              tEfectivo = parseFloat(tEfectivo.toFixed(2));
              tVirtual  = parseFloat(tVirtual.toFixed(2));
 
@@ -13472,12 +13463,12 @@
              // tVirtualFinal incluye ventas virtuales + extras virtuales
              const tVirtualFinal = parseFloat((tVirtual + tExtrasIngresoVirtual - tExtrasEgresoVirtual).toFixed(2));
 
-             // --- Tickets POR_COBRAR sin cobrar → anular (los CREDITO NO se anulan) ---
-             const idsAnular = ventasZona.value
-                 .filter(v => !v.cobrado && !v.anulada && !v.credito)
-                 .map(v => v.id_venta_gas);
-             const ticketsCredito = ventasZona.value.filter(v => v.credito);
-             const tCreditoTotal  = ticketsCredito.reduce((s, v) => s + v.total, 0);
+             // [FIX money-crítico 2026-07-03] NO derivamos de ventasZona (filtra por correlativo, cross-zona).
+             // Los POR_COBRAR de ESTA caja los anula me.cerrar_caja server-side por id_caja (ids_anular=null);
+             // los CREDITO de la caja quedan pendientes (no se anulan). No mostramos conteos cross-zona (engañaban).
+             const idsAnular = [];
+             const ticketsCredito = [];
+             const tCreditoTotal  = 0;
 
              // --- Desglose por vendedor ---
              const porVendedor = {};
@@ -13492,11 +13483,11 @@
              const ultimoCobro = cobradosEnSesion.value.length ? cobradosEnSesion.value[cobradosEnSesion.value.length - 1].correlativo : '-';
              const horaApertura = sessionStartTime.value ? new Date(sessionStartTime.value).toLocaleString() : '-';
 
-             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtualFinal.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nNo cobrados a anular: ${idsAnular.length}\nEn crédito (no se anulan): ${ticketsCredito.length}`;
+             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtualFinal.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nLos POR_COBRAR de tu caja se anulan al cerrar.`;
              if(!await _meModalConfirm(`¿Cerrar Turno?\n\n${resumen}`, { titulo: 'Cerrar turno', okText: 'Cerrar turno' })) return;
 
 
-             if(!await _meModalConfirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\nCréditos       : ${ticketsCredito.length} ticket(s) — S/ ${tCreditoTotal.toFixed(2)}\nPor anular     : ${idsAnular.length} ticket(s)\n\nSe abrirá el reporte del turno.`, { warning: true, titulo: 'Confirmar cierre', okText: 'Cerrar caja' })) return;
+             if(!await _meModalConfirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\n\nSolo se cierra TU caja (${_idCaja.slice(-6)}). Los tickets POR_COBRAR de tu caja se anulan; los de otra zona NO se tocan.\n\nSe abrirá el reporte del turno.`, { warning: true, titulo: 'Confirmar cierre', okText: 'Cerrar caja' })) return;
 
              // Abrir ventana ANTES del primer await — único momento en que el browser
              // la acepta sin popup-blocker (sigue en contexto del gesto del usuario)
@@ -13541,7 +13532,12 @@
                              // desde la DB (apertura + efectivo ventas + INGRESO − EGRESO de me.movimientos_extra,
                              // que INCLUYE los cobros asignados cobrados directo). El arqueo LOCAL (extrasMovimientos)
                              // NO ve esos ingresos → daba montoFinal=0 y la caja cerraba en 0. Ahora la RPC manda.
-                             const rd = await _cerrarCajaDirecto(_idCaja, null, idsAnular, 'CERRADA');
+                             // [FIX money-crítico 2026-07-03] ids_anular=null → me.cerrar_caja auto-anula
+                             // SOLO los POR_COBRAR de ESTA caja (where id_caja=v_id), NUNCA los de otra zona.
+                             // NO usamos idsAnular del frontend: viene de ventasZona, que filtra por PREFIJO de
+                             // correlativo (no por caja) → con series solapadas entre zonas incluía tickets de
+                             // OTRA caja abierta. montoFinal=null ya recalcula el arqueo autoritativo por id_caja.
+                             const rd = await _cerrarCajaDirecto(_idCaja, null, null, 'CERRADA');
                              if (rd && rd.status === 'success') {
                                  cierreOk = true;
                                  resCierre = rd;

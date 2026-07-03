@@ -1,4 +1,4 @@
 {
- "version": "2.8.129",
- "build": "2.8.129 (cierre CERO-FALLBACK): con ME_CIERRE_DIRECTO ON el cierre de caja ya NO cae a GAS. Si me.cerrar_caja (arqueo autoritativo Supabase) falla, muestra error y NO cierra la caja (money-safe, no cierra sobre Hoja vieja) en vez de reintentar por GAS. Aritmetica del arqueo intacta. Parte del corte de ventas a Supabase-primario (2026-07-03)."
+ "version": "2.8.130",
+ "build": "2.8.130 (FIX money-critico cierre por CAJA): el cierre ya NO usa ventasZona (filtra por prefijo de correlativo -> con series solapadas entre zonas traia tickets/plata de OTRA caja). Ahora: totales del modal desde cobradosEnSesion (tu turno/caja), ids_anular=null -> me.cerrar_caja auto-anula SOLO POR_COBRAR de tu id_caja, arqueo autoritativo server-side por caja. + guard server-side (SQL 327): me.cerrar_caja NUNCA anula POR_COBRAR de otra caja aunque el cliente mande IDs cross-zona. + cierre cero-fallback (no cae a GAS). Protege caja abierta de otra zona."
 }
