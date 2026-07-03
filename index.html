@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.126';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.127';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -5624,15 +5624,26 @@
                         <button @click="adminConvSetTipo('FACTURA')" :class="adminConvEstado.tipo === 'FACTURA' ? 'bg-purple-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📋 Factura (RUC)</button>
                     </div>
                 </div>
-                <!-- Doc + buscar -->
+                <!-- Buscar cliente: frecuentes (nombre/DNI/RUC) + SUNAT/RENIEC -->
                 <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">{{ adminConvEstado.tipo === 'BOLETA' ? 'DNI (8) o RUC (11)' : 'RUC (11 dígitos)' }}</label>
+                    <label class="block text-[10px] text-gray-400 mb-0.5">Cliente — busca por nombre, DNI (8) o RUC (11)</label>
                     <div class="flex gap-2">
-                        <input v-model="adminConvEstado.doc" @input="adminConvEstado.clienteOK = false" type="text" maxlength="11" inputmode="numeric"
-                               class="flex-1 p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
+                        <input v-model="adminConvEstado.doc" @input="adminConvEstado.clienteOK = false" type="text" inputmode="text" autocomplete="off" placeholder="Nombre, DNI o RUC…"
+                               class="flex-1 p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
                         <button @click="adminBuscarCliente"
-                                :disabled="adminConvEstado.tipo === 'BOLETA' ? adminConvEstado.doc.length !== 8 : adminConvEstado.doc.length !== 11"
-                                class="px-4 bg-amber-500 disabled:bg-gray-200 text-white font-black text-xs rounded-xl active:scale-95">🔎 Buscar</button>
+                                :disabled="!(adminConvEstado.doc.length === 8 || adminConvEstado.doc.length === 11)"
+                                class="px-4 bg-gray-800 disabled:bg-gray-200 text-emerald-400 disabled:text-gray-300 font-black text-xs rounded-xl active:scale-95">🔎 SUNAT</button>
+                    </div>
+                    <!-- Sugerencias de clientes frecuentes (mismo buscador que la venta) -->
+                    <div v-if="convSugerencias.length" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto">
+                      <div v-for="c in convSugerencias" :key="c.Documento" @click="convElegirCliente(c)"
+                           class="px-3 py-2.5 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-100 last:border-0 transition-colors">
+                        <div class="flex justify-between items-center gap-2">
+                          <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre || c.Nombre_RazonSocial }}</span>
+                          <span class="text-[10px] text-gray-600 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full font-bold">{{ c.Documento }}</span>
+                        </div>
+                        <div v-if="c.Direccion" class="text-[10px] text-gray-400 mt-0.5 truncate">📍 {{ c.Direccion }}</div>
+                      </div>
                     </div>
                 </div>
                 <!-- Nombre -->
@@ -5645,11 +5656,7 @@
                     <label class="block text-[10px] text-gray-400 mb-0.5">Dirección fiscal <span class="text-red-500">*</span></label>
                     <input v-model="adminConvEstado.direccion" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
                 </div>
-                <!-- Serie -->
-                <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">Serie</label>
-                    <input v-model="adminConvEstado.serie" type="text" :placeholder="adminConvEstado.tipo === 'BOLETA' ? 'B001' : 'F001'" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
-                </div>
+                <!-- (serie eliminada: la deriva la RPC por la zona de emisión de la NV — el vendedor no la toca) -->
 
                 <!-- [Reglas SUNAT en vivo · conversión NV→CPE] -->
                 <div v-if="cpeReglasConv.visible" class="rounded-xl border-2 px-3 py-2 transition-all duration-300"
@@ -5672,7 +5679,7 @@
                 </div>
             </div>
             <button @click="adminConfirmarConvertir"
-                    :disabled="adminProcesando || !adminConvEstado.serie.trim() || (adminConvEstado.tipo === 'FACTURA' && (adminConvEstado.doc.length !== 11 || !adminConvEstado.nombre.trim() || !adminConvEstado.direccion.trim())) || (adminConvEstado.tipo === 'BOLETA' && (ticketParaAdmin && ticketParaAdmin.total || 0) > 700 && (!(adminConvEstado.doc.length === 8 || adminConvEstado.doc.length === 11) || !adminConvEstado.nombre.trim()))"
+                    :disabled="adminProcesando || (adminConvEstado.tipo === 'FACTURA' && (adminConvEstado.doc.length !== 11 || !adminConvEstado.nombre.trim() || !adminConvEstado.direccion.trim())) || (adminConvEstado.tipo === 'BOLETA' && (ticketParaAdmin && ticketParaAdmin.total || 0) > 700 && (!(adminConvEstado.doc.length === 8 || adminConvEstado.doc.length === 11) || !adminConvEstado.nombre.trim()))"
                     class="mt-3 w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 shrink-0">
                 <svg v-if="adminProcesando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                 {{ adminProcesando ? 'EMITIENDO...' : '📤 Emitir CPE en SUNAT' }}
@@ -8132,6 +8139,48 @@
             const t = ticketParaAdmin.value || {};
             return _cpeReglas(e.tipo, (t.total || 0), e.doc, false, e.nombre, e.direccion, (t.raw_data && t.raw_data.header && t.raw_data.header.metodo) || '');
         });
+        // [Tema1] buscador de frecuentes para el modal Convertir NV→CPE (aislado; NO toca el estado de venta).
+        const _frecuentesMatch = (q) => {
+            q = String(q || '').trim().toLowerCase();
+            if (!q || q.length < 2) return [];
+            const tokens = q.split(/\s+/).filter(t => t.length >= 1);
+            if (!tokens.length) return [];
+            const lista = (db.value.CLIENTES_FRECUENTES || []);
+            const scored = [];
+            for (const c of lista) {
+                const docRaw = String(c.Documento == null ? '' : c.Documento).trim().toLowerCase();
+                const docDigits = docRaw.replace(/\D/g, '');
+                const doc = (docDigits.length === 7) ? ('0' + docDigits) : (docDigits || docRaw);
+                const nom = String(c.Nombre || c.Nombre_RazonSocial || '').toLowerCase();
+                const dir = String(c.Direccion || '').toLowerCase();
+                let score = 0, matchesAll = true;
+                for (const t of tokens) {
+                    const esNum = /^\d+$/.test(t); let s = 0;
+                    if (esNum) { if (doc.startsWith(t)) s += 10; if (nom.includes(t)) s += 2; }
+                    else { if (nom.startsWith(t)) s += 5; else if (nom.includes(t)) s += 3; if (doc.startsWith(t)) s += 1; }
+                    if (dir.includes(t)) s += 1;
+                    if (s === 0) { matchesAll = false; break; }
+                    score += s;
+                }
+                if (matchesAll) scored.push({ c, score });
+            }
+            scored.sort((a, b) => b.score - a.score);
+            return scored.slice(0, 6).map(s => s.c);
+        };
+        const convSugerencias = computed(() => _frecuentesMatch(adminConvEstado.value.doc));
+        const convElegirCliente = (c) => {
+            const _nombre = String(c.Nombre || c.Nombre_RazonSocial || '').trim();
+            let _doc = String(c.Documento == null ? '' : c.Documento).trim();
+            const _dd = _doc.replace(/\D/g, '');
+            if (_dd.length === 7) _doc = '0' + _dd;
+            adminConvEstado.value.doc = _doc;
+            adminConvEstado.value.nombre = _nombre;
+            adminConvEstado.value.direccion = String(c.Direccion || '');
+            adminConvEstado.value.clienteOK = true;
+            // si el doc es RUC (11) y el tipo es BOLETA, sugerir factura queda a criterio del admin (no forzamos)
+            try { playBeepNameMatch?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate(30); } catch(_){}
+        };
 
         // Stock map: "Cod_Barras_ZonaID" → cantidad (para lookup rápido)
         const stockMap = computed(() => {
@@ -15601,29 +15650,23 @@
             modalAdminAcc.value = false;
             _pinAdminThen('CONVERTIR_NV_A_CPE_DESDE_LISTA', venta.correlativo || venta.id, () => {
                 ticketParaAdmin.value = venta;
-                // [serie por zona] auto-llenar la serie desde la estación del cajero (su zona) — cada zona
-                // tiene su seriado. El cajero convierte tickets de SU zona → su Serie_Boleta/Factura es la
-                // correcta. Queda editable como override; el RPC además deriva de la zona de la NV (red de seguridad).
-                const _est = config.value.estacion || {};
+                // [Tema1] Regla SUNAT: boleta > S/700 exige cliente identificado → si el monto supera 700,
+                // NO copiamos el cliente de la NV (obligamos a poner uno con DNI/RUC vía el buscador). Si es
+                // ≤ 700, conservamos el cliente de la NV (VARIOS ok). La serie ya NO se teclea: la deriva la RPC
+                // por la zona de emisión de la NV (y el confirm la deriva de la estación como respaldo).
+                const _mayor700 = (Number(venta.total) || 0) > 700;
                 adminConvEstado.value = {
                     tipo: 'BOLETA',
-                    doc: venta.cliente_doc || '',
-                    nombre: venta.cliente_nombre || '',
+                    doc: _mayor700 ? '' : (venta.cliente_doc || ''),
+                    nombre: _mayor700 ? '' : (venta.cliente_nombre || ''),
                     direccion: '',
-                    serie: _est.Serie_Boleta || '',
-                    _sB: _est.Serie_Boleta || '',
-                    _sF: _est.Serie_Factura || '',
                     clienteOK: false
                 };
                 modalAdminConv.value = true;
             });
         };
 
-        // [serie por zona] al alternar BOLETA/FACTURA, poner la serie de ESE tipo para la zona del cajero.
-        const adminConvSetTipo = (t) => {
-            adminConvEstado.value.tipo = t;
-            adminConvEstado.value.serie = (t === 'FACTURA' ? adminConvEstado.value._sF : adminConvEstado.value._sB) || '';
-        };
+        const adminConvSetTipo = (t) => { adminConvEstado.value.tipo = t; };  // la serie la deriva la RPC por zona
 
         const adminBuscarCliente = async () => {
             const doc = (adminConvEstado.value.doc || '').trim();
@@ -15648,18 +15691,60 @@
             if (!await _meModalConfirm(`¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
             adminProcesando.value = true;
             try {
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                    tipoEvento:        'CONVERTIR_NV_A_CPE',
-                    idVenta:           venta.id_venta_gas,
-                    tipoDocNuevo:      e.tipo,
-                    serieNueva:        e.serie.trim(),
-                    clienteDoc:        e.doc.trim(),
-                    clienteNombre:     e.nombre.trim(),
-                    clienteDireccion:  e.direccion.trim(),
-                    auth:              { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
-                    adminAuth:         adminAuthCache.value
-                })});
-                const j = await r.json();
+                // [Tema1] serie DERIVADA de la estación (zona) del cajero — el vendedor ya no la teclea.
+                const _estC = config.value.estacion || {};
+                const _serieAuto = e.tipo === 'FACTURA' ? (_estC.Serie_Factura || 'F001') : (_estC.Serie_Boleta || 'B001');
+                const j = await (async () => {
+                    // [cero-GAS] intento directo me.convertir_nv_cpe (emite CPE + anula NV, atómico en Supabase).
+                    // FAC_DESACTIVADO/_OFF/APP_NO_AUTORIZADA/sin token/HTTP no-2xx/excepción → GAS. Hoy fac inerte
+                    // → devuelve FAC_DESACTIVADO SIN emitir → cae a GAS limpio. Error de negocio → se muestra.
+                    try {
+                        const _tk = await _mintTokenSB();
+                        if (_tk) {
+                            const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/convertir_nv_cpe`, {
+                                method: 'POST',
+                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ p: {
+                                    idVentaNV: venta.id_venta_gas, tipoDocNuevo: e.tipo, serieNueva: _serieAuto,
+                                    clienteDoc: e.doc.trim(), clienteNombre: e.nombre.trim(), clienteDireccion: e.direccion.trim(),
+                                    usuario: config.value.vendedor, rol: 'CAJERO'
+                                } })
+                            }, 25000);
+                            const _dd = await _rr.json().catch(() => null);
+                            if (_rr.ok && _dd) {
+                                if (_dd.ok === true) return { status: 'success', correlativo: _dd.correlativoNuevo, via: 'directo' };
+                                const _e = String(_dd.error || '');
+                                if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA' && _e !== 'FAC_DESACTIVADO')
+                                    return { status: 'error', mensaje: _e || 'no convertido' };
+                            }
+                        }
+                    } catch (_) { /* cae a GAS */ }
+                    // [hardening fiscal] si el RPC YA convirtió (NV = ANULADO_CONVERSION) pese a perder la
+                    // respuesta → NO llamar a GAS (evita DOBLE emisión de CPE en SUNAT).
+                    try {
+                        const _tk2 = await _mintTokenSB();
+                        if (_tk2) {
+                            const _vr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/venta_estado_lectura`, {
+                                method: 'POST', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk2, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ p_id_venta: venta.id_venta_gas })
+                            }, 6000);
+                            const _vd = await _vr.json().catch(() => null);
+                            if (_vr.ok && _vd && _vd.ok === true && /^ANULADO/i.test(String(_vd.forma_pago || ''))) return { status: 'success', via: 'directo-verificado' };
+                        }
+                    } catch (_) {}
+                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
+                        tipoEvento:        'CONVERTIR_NV_A_CPE',
+                        idVenta:           venta.id_venta_gas,
+                        tipoDocNuevo:      e.tipo,
+                        serieNueva:        _serieAuto,
+                        clienteDoc:        e.doc.trim(),
+                        clienteNombre:     e.nombre.trim(),
+                        clienteDireccion:  e.direccion.trim(),
+                        auth:              { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
+                        adminAuth:         adminAuthCache.value
+                    })});
+                    return await r.json();
+                })();
                 if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
                 modalAdminConv.value = false;
                 ticketParaAdmin.value = null;
@@ -20656,7 +20741,7 @@
           modalAdminAcc, ticketParaAdmin, abrirAccionesAdmin,
           adminPuedeCobrar, adminPuedeConvertir, adminPuedeBajaCPE, adminPuedeEditarCliente,
           modalAdminCobrar, adminCobrarEstado, adminAbrirCobrarCredito, adminConfirmarCobrar,
-          modalAdminConv, adminConvEstado, adminAbrirConvertir, adminConvSetTipo, adminBuscarCliente, adminConfirmarConvertir,
+          modalAdminConv, adminConvEstado, adminAbrirConvertir, adminConvSetTipo, adminBuscarCliente, adminConfirmarConvertir, convSugerencias, convElegirCliente,
           modalAdminBaja, adminBajaEstado, adminAbrirBajaCPE, adminConfirmarBaja,
           modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminEditCliBuscar, adminConfirmarEditarCliente,
           adminProcesando, reimpAuto, lsSet,

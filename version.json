@@ -1,4 +1,4 @@
 {
- "version": "2.8.126",
+ "version": "2.8.127",
  "build": "2.8.123 (CPE validaciones SUNAT): POS avisa bancarizacion (>=S/2000 en efectivo pide medio bancario, Ley 28194); modal Convertir NV->CPE relajado -> boleta <=S/700 permite VARIOS (sin doc), >700 exige DNI/RUC+nombre, acepta RUC; factura exige RUC+razon social+direccion. Mismas reglas enforced server-side en fac.emitir_cpe (paridad ME/MOS)."
 }
