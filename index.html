@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.127';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.128';   // ⚠ bumpear junto con sw.js + version.json
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15705,7 +15705,7 @@
                                 method: 'POST',
                                 headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ p: {
-                                    idVentaNV: venta.id_venta_gas, tipoDocNuevo: e.tipo, serieNueva: _serieAuto,
+                                    idVentaNV: venta.id_venta_gas, tipoDocNuevo: e.tipo, serieNueva: '',
                                     clienteDoc: e.doc.trim(), clienteNombre: e.nombre.trim(), clienteDireccion: e.direccion.trim(),
                                     usuario: config.value.vendedor, rol: 'CAJERO'
                                 } })
