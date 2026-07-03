@@ -108,6 +108,18 @@ function cut6_estado_fuentes() {
   return r;
 }
 
+// 8 — Flipea a Supabase los 3 últimos endpoints forzados a Sheets (FUENTE_DATOS_OFF). Post-corte la sombra
+// es la verdad (cobros/créditos ya son Supabase-directo). Reversible: desactivarUnoME('<endpoint>').
+// Correr, VERIFICAR la app (cajas/cobros/créditos se ven bien), y RECIÉN cut7.
+function cut8_flip_restantes() {
+  reactivarUnoME('estado_cajas');
+  reactivarUnoME('cobros_en_vuelo');
+  reactivarUnoME('creditos_pendientes');
+  var r = estadoFuenteDatosME();
+  Logger.log('FLIP_RESTANTES => ' + JSON.stringify(r));
+  return r;
+}
+
 // 7 — Apagar el backstop (trigger reconciliarDirectasSheets 10min) = la Hoja de VENTAS deja de actualizarse
 // (queda archivo histórico). Correr SOLO tras confirmar (cut6) que nada lee la Hoja en vivo. Reversible:
 // re-instalar con instalarTriggerReconciliacionDirectas().
