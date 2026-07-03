@@ -127,95 +127,25 @@ function _nombrePorHora(h) {
 }
 
 // ── topProductosHoy ────────────────────────────────────────────
-// Devuelve los SKU más vendidos hoy desde VENTAS_CABECERA + VENTAS_DETALLE.
-// Si hoy aún no hay ventas, hace fallback a los últimos 7 días.
-// Frontend cruza el SKU con el catálogo descargado para obtener nombre/precio/etc.
+// [CERO-GAS · Migración Sheet→Supabase] Los SKU más vendidos ahora vienen 100%
+// de la sombra Supabase vía la RPC me.radio_ventas (SQL 325) — YA NO se lee la
+// Hoja VENTAS_CABECERA/DETALLE. Misma forma de salida que antes; el frontend
+// (radio.html/radioProductos) sólo usa sku + vendidos + skus_de_la_tienda.
+// Sin fallback a la Hoja (directriz cero-GAS): si la RPC falla, devuelve vacío
+// y el radio muestra el catálogo sin conteos (degradación limpia, no error).
 //
-// VENTAS_CABECERA cols: 0=ID_Venta 1=Fecha 6=Total 8=FormaPago 12=Estado_Envio
-// VENTAS_DETALLE  cols: 0=ID_Venta 1=SKU 2=Nombre 3=Cantidad 4=Precio 5=Subtotal 6=Cod_Barras
+// Reglas espejadas server-side (325): excluye ANULADO/HUERFANA_LIMPIADA, día de
+// negocio en TZ Lima, top 20 de hoy (o 7d si hoy vacío), skus 30d (o alguna vez).
 function topProductosHoy() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var shCab = ss.getSheetByName('VENTAS_CABECERA');
-  var shDet = ss.getSheetByName('VENTAS_DETALLE');
-  if (!shCab || !shDet) return generarRespuestaError('Hojas de ventas no encontradas');
-
-  var tz   = Session.getScriptTimeZone();
-  var hoy  = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  var hace7 = new Date();
-  hace7.setDate(hace7.getDate() - 7);
-  var hace7Str = Utilities.formatDate(hace7, tz, 'yyyy-MM-dd');
-  var hace30 = new Date();
-  hace30.setDate(hace30.getDate() - 30);
-  var hace30Str = Utilities.formatDate(hace30, tz, 'yyyy-MM-dd');
-
-  var cabData = shCab.getDataRange().getValues();
-  var ventasHoy = {}, ventas7d = {}, ventas30d = {}, ventasNoAnuladas = {};
-  for (var v = 1; v < cabData.length; v++) {
-    var fechaRaw = cabData[v][1];
-    if (!fechaRaw) continue;
-    var fechaStr = (fechaRaw instanceof Date)
-      ? Utilities.formatDate(fechaRaw, tz, 'yyyy-MM-dd')
-      : String(fechaRaw).substr(0, 10);
-    var estado = String(cabData[v][12] || 'COMPLETADO');
-    if (estado === 'ANULADO') continue;
-    var idVenta = String(cabData[v][0] || '');
-    if (!idVenta) continue;
-    ventasNoAnuladas[idVenta] = true;
-    if (fechaStr === hoy)      ventasHoy[idVenta] = true;
-    if (fechaStr >= hace7Str)  ventas7d[idVenta]  = true;
-    if (fechaStr >= hace30Str) ventas30d[idVenta] = true;
-  }
-
-  // Agregar cantidades por SKU + recolectar todos los SKUs que esta tienda
-  // ha vendido alguna vez (filtro vital para el radio: NO mostrar productos
-  // del MOS master que esta tienda no sale en su catálogo activo).
-  var detData = shDet.getDataRange().getValues();
-  var sumHoy = {}, sumNombreHoy = {};
-  var sum7d  = {}, sumNombre7d  = {};
-  var skus30d = {};        // SKUs vendidos en los últimos 30 días (filtro principal)
-  var skusAlguna = {};     // SKUs vendidos alguna vez (fallback si 30d vacío)
-  for (var d = 1; d < detData.length; d++) {
-    var idV    = String(detData[d][0] || '');
-    var sku    = String(detData[d][1] || '').trim();
-    var nombre = String(detData[d][2] || '');
-    var qty    = parseFloat(detData[d][3]) || 0;
-    if (!sku || qty <= 0) continue;
-    if (!ventasNoAnuladas[idV]) continue;
-    skusAlguna[sku] = true;
-    if (ventas30d[idV]) skus30d[sku] = true;
-    if (ventasHoy[idV]) {
-      sumHoy[sku] = (sumHoy[sku] || 0) + qty;
-      sumNombreHoy[sku] = nombre;
-    }
-    if (ventas7d[idV]) {
-      sum7d[sku] = (sum7d[sku] || 0) + qty;
-      sumNombre7d[sku] = nombre;
-    }
-  }
-
-  // Filtro principal: lo vendido en últimos 30d. Si está vacío, fallback a "alguna vez".
-  var skusKeys = Object.keys(skus30d).length ? skus30d : skusAlguna;
-
-  var hoyArr = Object.keys(sumHoy).map(function(sku) {
-    return { sku: sku, nombre: sumNombreHoy[sku], vendidos: sumHoy[sku] };
-  }).sort(function(a, b) { return b.vendidos - a.vendidos; });
-
-  var fallback = false;
-  if (!hoyArr.length) {
-    fallback = true;
-    hoyArr = Object.keys(sum7d).map(function(sku) {
-      return { sku: sku, nombre: sumNombre7d[sku], vendidos: sum7d[sku] };
-    }).sort(function(a, b) { return b.vendidos - a.vendidos; });
-  }
-
-  return ContentService.createTextOutput(JSON.stringify({
-    status: 'ok',
-    fecha:  hoy,
-    es_fallback_7d: fallback,
-    productos: hoyArr.slice(0, 20),
-    skus_de_la_tienda: Object.keys(skusKeys),
-    rango_filtro: Object.keys(skus30d).length ? '30d' : 'alguna_vez'
-  })).setMimeType(ContentService.MimeType.JSON);
+  var vacio = { status: 'ok', fecha: '', es_fallback_7d: false,
+                productos: [], skus_de_la_tienda: [], rango_filtro: '30d' };
+  var out = vacio;
+  try {
+    var r = _sbRpc('me', 'radio_ventas', {});
+    if (r && r.ok && r.data && r.data.status === 'ok') out = r.data;
+  } catch (e) { out = vacio; }
+  return ContentService.createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ── setupRadioSheet ────────────────────────────────────────────
