@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.149';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.150';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1412,7 +1412,7 @@
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.24"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.25"></script>
   <script src="https://levo19.github.io/MOS/assets/auth/extensor-horario.js?v=1.0.2"></script>
   <script src="https://levo19.github.io/MOS/assets/adhesivo/preview.js?v=1.1.0"></script>
   <script>
@@ -16819,26 +16819,19 @@
         const _mintTokenSB = async () => {
             const now = Math.floor(Date.now()/1000);
             if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
-            // 1) Edge mint-me (camino directo Supabase, cero GAS)
-            try {
-                const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/mint-me`, {
-                    method:'POST',
-                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
-                    body: JSON.stringify({ deviceId: deviceId.value })
-                }, 6000);
-                const d = await res.json().catch(() => null);
-                if (res.ok && d && d.ok === true && d.token) {
-                    _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 1800);
-                    return d.token;
-                }
-            } catch(_) { /* → GAS kill-switch */ }
-            // 2) Fallback GAS MINT_TOKEN (kill-switch; timeout 6s para no colgar la cadena directa)
-            const res = await _meFetchTimeout(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
-                body: JSON.stringify({ tipoEvento:'MINT_TOKEN', deviceId: deviceId.value }) }, 6000);
-            const d = await res.json();
-            if (!d || !d.ok || !d.token) throw new Error('mint-token: ' + ((d && d.error) || 'sin token'));
-            _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 300);
-            return d.token;
+            // [CERO-GAS / CERO-FALLBACK] Solo Edge mint-me (Supabase). Sin fallback GAS MINT_TOKEN: si el Edge
+            // falla, throw → el caller lo maneja (fail-closed; no se acuña token por otra vía).
+            const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/mint-me`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
+                body: JSON.stringify({ deviceId: deviceId.value })
+            }, 6000);
+            const d = await res.json().catch(() => null);
+            if (res.ok && d && d.ok === true && d.token) {
+                _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 1800);
+                return d.token;
+            }
+            throw new Error('mint-me: ' + ((d && d.error) || 'sin token'));
         };
 
         // [#6 SUNAT cero-GAS] Lookup DNI/RUC: Edge `consultar-documento` (claim app='mosExpress') si el flag
