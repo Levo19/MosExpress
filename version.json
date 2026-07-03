@@ -1,4 +1,4 @@
 {
- "version": "2.8.130",
- "build": "2.8.130 (FIX money-critico cierre por CAJA): el cierre ya NO usa ventasZona (filtra por prefijo de correlativo -> con series solapadas entre zonas traia tickets/plata de OTRA caja). Ahora: totales del modal desde cobradosEnSesion (tu turno/caja), ids_anular=null -> me.cerrar_caja auto-anula SOLO POR_COBRAR de tu id_caja, arqueo autoritativo server-side por caja. + guard server-side (SQL 327): me.cerrar_caja NUNCA anula POR_COBRAR de otra caja aunque el cliente mande IDs cross-zona. + cierre cero-fallback (no cae a GAS). Protege caja abierta de otra zona."
+ "version": "2.8.131",
+ "build": "2.8.131 (FIX auto-update): (1) el auto-update comparaba server-vs-server -> nunca detectaba bundle viejo; ahora baseline = version del BUNDLE (V) con loop-guard (max 3 intentos, luego pide refresco manual, sin bucle). (2) V del bundle no se bumpeaba (quedaba 2.8.128) -> banner siempre erraba; ahora V=2.8.131. (3) timeout de install del SW 15s->45s para cachear el index.html de 1.3MB en conexion lenta. (4) fallback de recarga 3s->8s. Incluye el fix money-critico del cierre POR CAJA (2.8.130) + guard SQL 327."
 }

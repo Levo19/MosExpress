@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.128';   // ⚠ bumpear junto con sw.js + version.json
+      var V = '2.8.131';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1256,7 +1256,11 @@
     // normal se atrasa horas/días. Este check fuerza la actualización
     // sin opción del usuario cuando detecta que la versión del bundle
     // local difiere de la versión publicada en version.json.
-    let _APP_VERSION = null; // se setea al cargar version.json la 1ra vez
+    // [FIX 2026-07-03] baseline = versión del BUNDLE cargado (V), no la del server. Antes se inicializaba
+    // con el version.json del server → comparaba server-vs-server y NUNCA detectaba que el bundle era viejo
+    // (por eso "no actualizaba solo" aunque el banner sí avisaba). Ahora detecta bundle-viejo y fuerza update,
+    // con loop-guard (máx 3 intentos) para no dejar la app en bucle si la conexión no baja el 1.3MB.
+    let _APP_VERSION = (typeof V !== 'undefined' && V) ? V : null;
     let _forceUpdateTriggered = false;
 
     async function _checkForcedUpdate() {
@@ -1267,10 +1271,14 @@
         const j = await r.json();
         if (!j || !j.version) return;
         if (_APP_VERSION === null) {
-          _APP_VERSION = j.version; // primera carga — guarda referencia
+          _APP_VERSION = j.version; // fallback si V no estaba en scope
           return;
         }
-        if (j.version !== _APP_VERSION) {
+        if (j.version === _APP_VERSION) {
+          try { sessionStorage.removeItem('me_upd_att'); } catch(_){}  // versiones coinciden → reset contador
+          return;
+        }
+        {
           // [banner ME] NO recargar MID-VENTA. Si hay venta en curso (procesando/cobrando), mostrar un banner
           // SUAVE (no bloqueante) y DIFERIR: no setear _forceUpdateTriggered → reintenta en el próximo check
           // (3min / visibilitychange), cuando la venta ya terminó. (_preCheckVersion ya bloquea INICIAR una venta nueva.)
@@ -1286,6 +1294,19 @@
             return;
           }
           const _bnr = document.getElementById('meUpdBanner'); if (_bnr) _bnr.remove();
+          // [loop-guard conexión lenta] Si tras 3 recargas el bundle sigue viejo (el SW no logra bajar el
+          // 1.3MB), dejamos de recargar en bucle y mostramos instrucciones manuales (app usable, sin loop).
+          let _att = 0; try { _att = parseInt(sessionStorage.getItem('me_upd_att') || '0', 10) || 0; } catch(_){}
+          if (_att >= 3) {
+            const el2 = document.getElementById('meUpdateOverlay');
+            if (el2) {
+              el2.classList.add('visible');
+              const s2 = el2.querySelector('.me-upd-sub');
+              if (s2) s2.innerHTML = 'No se pudo auto-actualizar (conexión lenta).<br>Cierra TODAS las pestañas de la app y reábrela, o borra caché del sitio.';
+            }
+            return;
+          }
+          try { sessionStorage.setItem('me_upd_att', String(_att + 1)); } catch(_){}
           _forceUpdateTriggered = true;
           // Mostrar overlay no-dismissable
           const el = document.getElementById('meUpdateOverlay');
@@ -1296,10 +1317,11 @@
           }
           // Marcar resync de catálogo post-reload
           try { localStorage.setItem('mosexpress_force_resync', '1'); } catch(e) {}
-          // Intentar update SW + skipWaiting
+          // Intentar update SW + skipWaiting (cachea el bundle nuevo con timeout de install largo)
           if (window._SWCheck) { try { await window._SWCheck(); } catch(e) {} }
-          // Forzar recarga si el SW no disparó controllerchange en 3s
-          setTimeout(() => { location.reload(true); }, 3000);
+          // Fallback: forzar recarga si el SW no disparó controllerchange. 8s da tiempo al install del 1.3MB
+          // en conexión lenta (antes 3s → recargaba ANTES de que el bundle nuevo estuviera cacheado).
+          setTimeout(() => { location.reload(true); }, 8000);
         }
       } catch(e) {}
     }
