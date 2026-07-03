@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.144';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.145';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -2276,9 +2276,8 @@
       if (window._ME_WIZARD_FORZADO) {
         try {
           const id = localStorage.getItem('mosexpress_deviceId') || '';
-          fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
-            method:'POST', body: JSON.stringify({ action:'marcarWizardMostrado', deviceId:id })
-          });
+          // [CERO-GAS] marcarWizardMostrado → RPC mos.marcar_wizard_mostrado (via DeviceAuth.rpc).
+          if (window.DeviceAuth && typeof DeviceAuth.rpc === 'function') DeviceAuth.rpc('marcar_wizard_mostrado', { deviceId: id });
         } catch(_){}
         window._ME_WIZARD_FORZADO = false;
       }
@@ -2400,10 +2399,10 @@
                       : (window._ME_INSTALL_PROMPT ? 'prompt' : 'unsupported');
         perms.storage = await _pedirPersistentStorageME();
         _mePermsHooked = true;
-        await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
-          method:'POST',
-          body: JSON.stringify({ action:'registrarPermisosDispositivo', deviceId:id, permisos:perms })
-        });
+        // [CERO-GAS] registrarPermisosDispositivo → RPC mos.registrar_permisos_dispositivo (via DeviceAuth.rpc).
+        if (window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
+          await DeviceAuth.rpc('registrar_permisos_dispositivo', { deviceId: id, permisos: perms });
+        }
       } catch(_){}
     }
     window._reportarPermisosME = _reportarPermisosME;
@@ -6778,16 +6777,12 @@
               const pendCount = (() => {
                 try { return JSON.parse(localStorage.getItem('pending_sales') || '[]').length; } catch(_) { return 0; }
               })();
-              fetch(window.MOS_GAS_URL || '', {
-                method: 'POST',
-                body: JSON.stringify({
-                  action: 'reportarQuotaDispositivo',
-                  deviceId: devId, vendedor: vendedor,
-                  ts: new Date().toISOString(),
-                  pendingSales: pendCount,
-                  totalKeys: localStorage.length
-                })
-              }).catch(() => {});
+              // [CERO-GAS] reportarQuotaDispositivo → RPC mos.reportar_quota_dispositivo (via DeviceAuth.rpc).
+              if (window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
+                DeviceAuth.rpc('reportar_quota_dispositivo', {
+                  deviceId: devId, vendedor: vendedor, pendingSales: pendCount, totalKeys: localStorage.length
+                }).catch(() => {});
+              }
               localStorage.setItem('mosexpress_quota_reportada', hoy);
             } catch(_) {}
           };

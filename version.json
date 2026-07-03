@@ -1,1 +1,1 @@
-{"version":"2.8.144","build":"2.8.144 (CERO-GAS auth ola 1): consultarEstadoDispositivo (boot _autoTrigger + polling aprobacion) -> RPC mos.consultar_estado_dispositivo via DeviceAuth.rpc. seguridad-modal pin 2.7.72. Sin GAS."}
+{"version":"2.8.145","build":"2.8.145 (CERO-GAS auth ola 2): registrarPermisosDispositivo/marcarWizardMostrado/reportarQuotaDispositivo -> RPCs mos.* (SQL 335) via DeviceAuth.rpc. Boot ME sin esas 3 llamadas GAS."}
