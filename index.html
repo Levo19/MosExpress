@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.143';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.144';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -42,7 +42,7 @@
        ?v= bump fuerza refresh cuando cambia el módulo. -->
   <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.43.344"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
-  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.71"></script>
+  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.7.72"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -2419,9 +2419,9 @@
       let forzado = false;
       try {
         const id = localStorage.getItem('mosexpress_deviceId') || '';
-        if (id) {
-          const r2 = await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec?action=consultarEstadoDispositivo&deviceId=' + encodeURIComponent(id));
-          const j = await r2.json();
+        if (id && window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
+          // [CERO-GAS] consultarEstadoDispositivo → RPC mos.consultar_estado_dispositivo (via DeviceAuth.rpc).
+          const j = await DeviceAuth.rpc('consultar_estado_dispositivo', { deviceId: id });
           if (j?.data?.forzar_wizard) { forzado = true; window._ME_WIZARD_FORZADO = true; }
         }
       } catch(_){}
@@ -9351,10 +9351,8 @@
            if (_intervalAprobacion) return;
            _intervalAprobacion = setInterval(async () => {
                try {
-                   // Consultar estado (también actualiza heartbeat → master ve actividad en vivo)
-                   const url = `${MOS_GAS_URL}?action=consultarEstadoDispositivo&deviceId=${encodeURIComponent(deviceId.value)}`;
-                   const r = await fetch(url);
-                   const j = await r.json();
+                   // [CERO-GAS] consultarEstadoDispositivo → RPC mos.consultar_estado_dispositivo (via DeviceAuth.rpc).
+                   const j = await DeviceAuth.rpc('consultar_estado_dispositivo', { deviceId: deviceId.value });
                    if (j?.ok && j.data?.estado === 'ACTIVO') {
                        clearInterval(_intervalAprobacion);
                        _intervalAprobacion = null;
