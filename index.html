@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.131';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.132';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13465,25 +13465,37 @@
                  return { efe: 0, vir: total }; // método desconocido → virtual
              };
 
-             // [FIX money-crítico 2026-07-03] Totales del cierre POR CAJA (no por zona).
-             // NO usamos ventasZona: se carga por PREFIJO de serie de correlativo (16836) y la RPC filtra por
-             // correlativo → con series solapadas entre zonas traía dinero de OTRA caja abierta (bug del S/ ajeno).
-             // Usamos cobradosEnSesion = tickets cobrados en ESTE turno/caja (caja-scoped). El arqueo
-             // AUTORITATIVO lo recalcula me.cerrar_caja server-side por id_caja (montoFinal=null) → el server manda.
-             let tEfectivo = 0, tVirtual = 0;
-             cobradosEnSesion.value.forEach(c => { tEfectivo += c.efectivo || 0; tVirtual += c.virtual || 0; });
-             tEfectivo = parseFloat(tEfectivo.toFixed(2));
-             tVirtual  = parseFloat(tVirtual.toFixed(2));
-
-             // --- Extras del turno (ingresos suman, egresos restan) ---
-             const tExtrasIngreso        = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO'         ? parseFloat(e.monto) : 0), 0);
-             const tExtrasIngresoVirtual = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO_VIRTUAL'  ? parseFloat(e.monto) : 0), 0);
-             const tExtrasEgreso         = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO'           ? parseFloat(e.monto) : 0), 0);
-             const tExtrasEgresoVirtual  = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO_VIRTUAL'   ? parseFloat(e.monto) : 0), 0);
-             // montoFinal solo incluye efectivo (extras virtuales no tocan la caja física)
-             const montoFinal = montoAperturaMemoria.value + tEfectivo + tExtrasIngreso - tExtrasEgreso;
-             // tVirtualFinal incluye ventas virtuales + extras virtuales
-             const tVirtualFinal = parseFloat((tVirtual + tExtrasIngresoVirtual - tExtrasEgresoVirtual).toFixed(2));
+             // [FIX money-crítico 2026-07-03] Arqueo del cierre POR CAJA desde el server (me.datos_turno por
+             // id_caja) = EXACTAMENTE lo que calcula me.cerrar_caja al cerrar → el modal muestra lo que se cierra.
+             // Antes: ventasZona (filtra por prefijo de correlativo) traía plata de OTRA caja abierta (S/ ajeno);
+             // cobradosEnSesion no incluía las ventas EFECTIVO directas (mostraba 0). Fallback local sin red.
+             let tEfectivo = 0, tVirtual = 0, tExtrasIngreso = 0, tExtrasEgreso = 0,
+                 tExtrasIngresoVirtual = 0, tExtrasEgresoVirtual = 0, montoFinal = 0, tVirtualFinal = 0;
+             let _dtT = null;
+             try { const _dt = await _datosTurnoDirecto(_idCaja); _dtT = (_dt && _dt.totales) ? _dt.totales : null; }
+             catch(e) { console.warn('[cierre] datos_turno falló, uso local:', e && e.message); }
+             if (_dtT) {
+                 tEfectivo             = parseFloat(_dtT.efectivo)             || 0;
+                 tVirtual              = parseFloat(_dtT.virtual)              || 0;
+                 tExtrasIngreso        = parseFloat(_dtT.extrasIngreso)        || 0;
+                 tExtrasEgreso         = parseFloat(_dtT.extrasEgreso)         || 0;
+                 tExtrasIngresoVirtual = parseFloat(_dtT.extrasIngresoVirtual) || 0;
+                 tExtrasEgresoVirtual  = parseFloat(_dtT.extrasEgresoVirtual)  || 0;
+                 montoFinal            = parseFloat(_dtT.montoFinalEfe)        || 0;   // apertura + efectivo + extras (autoritativo)
+                 tVirtualFinal         = parseFloat((_dtT.virtualFinal != null ? _dtT.virtualFinal : (tVirtual + tExtrasIngresoVirtual - tExtrasEgresoVirtual)) || 0);
+             } else {
+                 cobradosEnSesion.value.forEach(c => { tEfectivo += c.efectivo || 0; tVirtual += c.virtual || 0; });
+                 tExtrasIngreso        = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO'         ? parseFloat(e.monto) : 0), 0);
+                 tExtrasIngresoVirtual = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'INGRESO_VIRTUAL'  ? parseFloat(e.monto) : 0), 0);
+                 tExtrasEgreso         = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO'           ? parseFloat(e.monto) : 0), 0);
+                 tExtrasEgresoVirtual  = extrasMovimientos.value.reduce((s, e) => s + (e.tipo === 'EGRESO_VIRTUAL'   ? parseFloat(e.monto) : 0), 0);
+                 montoFinal            = montoAperturaMemoria.value + tEfectivo + tExtrasIngreso - tExtrasEgreso;
+                 tVirtualFinal         = parseFloat((tVirtual + tExtrasIngresoVirtual - tExtrasEgresoVirtual).toFixed(2));
+             }
+             tEfectivo  = parseFloat(tEfectivo.toFixed(2));
+             tVirtual   = parseFloat(tVirtual.toFixed(2));
+             montoFinal = parseFloat(montoFinal.toFixed(2));
+             tVirtualFinal = parseFloat(tVirtualFinal.toFixed(2));
 
              // [FIX money-crítico 2026-07-03] NO derivamos de ventasZona (filtra por correlativo, cross-zona).
              // Los POR_COBRAR de ESTA caja los anula me.cerrar_caja server-side por id_caja (ids_anular=null);
@@ -16489,6 +16501,23 @@
             const d = await res.json();
             if (!d || d.status !== 'success') throw new Error('cerrar_caja: ' + ((d && d.error) || 'fallo'));
             return d;
+        };
+        // [FIX cierre POR CAJA 2026-07-03] Arqueo caja-scoped desde el server (me.datos_turno por id_caja).
+        // Es lo MISMO que calcula me.cerrar_caja al cerrar → el preview del modal coincide EXACTO con el cierre
+        // real. Reemplaza ventasZona (filtra por prefijo de correlativo = cross-zona, traía plata de otra caja)
+        // y cobradosEnSesion (no incluye ventas EFECTIVO directas → mostraba 0). Devuelve {caja, totales, ...}.
+        const _datosTurnoDirecto = async (idCaja) => {
+            const token = await _mintTokenSB();
+            if (!token) throw new Error('sin token');
+            const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/datos_turno`, {
+                method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p_id_caja: idCaja })
+            }, 8000);
+            if (!res.ok) throw new Error('datos_turno HTTP ' + res.status);
+            const d = await res.json();
+            if (!d || d.ok !== true || !d.data) throw new Error('datos_turno: ' + ((d && d.error) || 'fallo'));
+            return d.data;
         };
         // [hardening cobro cero-GAS] ¿la venta SIGUE pendiente de cobro? Lee forma_pago directo de Supabase.
         //   true  = sigue CREDITO/POR_COBRAR (el directo NO aplicó → hay que ir a GAS)

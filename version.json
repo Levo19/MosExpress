@@ -1,4 +1,4 @@
 {
- "version": "2.8.131",
- "build": "2.8.131 (FIX auto-update): (1) el auto-update comparaba server-vs-server -> nunca detectaba bundle viejo; ahora baseline = version del BUNDLE (V) con loop-guard (max 3 intentos, luego pide refresco manual, sin bucle). (2) V del bundle no se bumpeaba (quedaba 2.8.128) -> banner siempre erraba; ahora V=2.8.131. (3) timeout de install del SW 15s->45s para cachear el index.html de 1.3MB en conexion lenta. (4) fallback de recarga 3s->8s. Incluye el fix money-critico del cierre POR CAJA (2.8.130) + guard SQL 327."
+ "version": "2.8.132",
+ "build": "2.8.132 (FIX cierre arqueo POR CAJA): el modal de cierre ahora lee me.datos_turno(id_caja) del server = EXACTO lo que cierra me.cerrar_caja por tu caja. Antes: ventasZona (por prefijo de correlativo) mostraba plata de otra caja/zona; el intento previo con cobradosEnSesion mostraba 0 (no veia ventas EFECTIVO directas). Ahora muestra tu monto real. Fallback local sin red. Incluye guard SQL 327 + auto-update fix (2.8.131)."
 }
