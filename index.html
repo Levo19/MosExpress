@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.137';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.138';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -16813,27 +16813,29 @@
         // consultar_cliente ({status,nombre,documento,tipo,fuente,direccion,codigo}) → los 3 call-sites no
         // cambian su consumo. Solo se entra al Edge con doc de largo válido (8/11) — un doc incompleto cae a
         // GAS, que conserva su respuesta 'validacion'. Éxito/not_found legítimo se sirve; error de infra → GAS.
+        // [CERO-GAS] Lookup DNI/RUC 100% Supabase: validación de tipoDoc LOCAL (el GAS solo servía para conservar
+        // el hint 'validacion' de FACTURA) + Edge consultar-documento (cachea el hit en me.clientes_frecuentes).
+        // Cero-fallback: si la Edge no responde, se pide ingreso manual (no se cae a GAS).
         const _meBuscarClienteDoc = async (doc, tipoDoc) => {
             const docN = String(doc || '').replace(/\D/g, '');
-            // [fix] FACTURA con doc != 11 → NO ir al Edge (resuelve como DNI); caer a GAS conserva el hint
-            // 'validacion' ("FACTURA requiere RUC de 11 dígitos"). El Edge no conoce tipoDoc.
-            const _facturaCorta = (String(tipoDoc || '').toUpperCase() === 'FACTURA' && docN.length !== 11);
-            if (_flagOn('MOS_SUNAT_EDGE', 'me_sunat_edge') && !_facturaCorta && (docN.length === 8 || docN.length === 11)) {
-                try {
-                    const token = await _mintTokenSB();
-                    if (token) {
-                        const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/consultar-documento`, {
-                            method:'POST',
-                            headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
-                            body: JSON.stringify({ doc: docN })
-                        }, 15000);
-                        const d = await res.json().catch(() => null);
-                        if (d && (d.status === 'success' || d.status === 'not_found')) return d;
-                    }
-                } catch(_) { /* → GAS red de seguridad */ }
-            }
-            const r = await fetch(`${API_URL}?accion=consultar_cliente&doc=${encodeURIComponent(doc)}${tipoDoc ? ('&tipoDoc=' + encodeURIComponent(tipoDoc)) : ''}`);
-            return await r.json();
+            const tD = String(tipoDoc || '').toUpperCase();
+            if (tD === 'FACTURA' && docN.length !== 11)
+                return { status:'validacion', codigo:'FACTURA_NO_RUC', message:'FACTURA requiere RUC de 11 dígitos. Recibido: ' + docN.length + ' dígitos.' };
+            if (docN.length !== 8 && docN.length !== 11)
+                return { status:'validacion', codigo:'LONGITUD_INVALIDA', message:'Documento inválido: DNI = 8 dígitos, RUC = 11. Recibido: ' + docN.length + '.' };
+            try {
+                const token = await _mintTokenSB();
+                if (token) {
+                    const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/consultar-documento`, {
+                        method:'POST',
+                        headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+                        body: JSON.stringify({ doc: docN })
+                    }, 15000);
+                    const d = await res.json().catch(() => null);
+                    if (d && (d.status === 'success' || d.status === 'not_found' || d.status === 'error')) return d;
+                }
+            } catch(_) { /* cero-fallback: sin GAS */ }
+            return { status:'error', codigo:'LOOKUP_NO_DISPONIBLE', message:'No se pudo consultar el documento. Ingresa el nombre manualmente.' };
         };
 
         // [AUTH F1] Verificación de clave admin Supabase-first: RPC central mos.verificar_clave_admin

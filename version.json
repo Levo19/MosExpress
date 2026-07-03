@@ -1,4 +1,4 @@
 {
- "version": "2.8.137",
- "build": "2.8.137 (caja-estado + guias + stock + traslados CERO-GAS): 8 lecturas migradas de GAS a RPCs Supabase directas. Caja: retomar_caja_device/caja_activa_zona/cajero_activo(x2, helper compartido)/cajeros_activos_todos -> me.* nuevas (SQL 329, read-only, gate jwt_app, crons cierran zombis). Guias: listar_guias/detalle_guia(x2)/traslados_entrantes -> me.zona_* (existian). Stock: stock_zonas -> me.zona_stock. Cero-fallback. Contrato guias/stock: status->ok."
+ "version": "2.8.138",
+ "build": "2.8.138 (consultar_cliente CERO-GAS): lookup DNI/RUC 100% Supabase. Validacion tipoDoc (FACTURA=RUC 11) al frontend + Edge consultar-documento. Sin fallback GAS: si la Edge no responde, ingreso manual."
 }
