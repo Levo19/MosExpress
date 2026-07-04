@@ -240,16 +240,8 @@ function procesarAperturaCaja(data) {
     });
   } catch (eDW) { Logger.log('[dualWrite caja apertura] ' + (eDW && eDW.message)); }
 
-  // Notificar a admins/master en MOS — solo a ellos, no al cajero mismo
-  try {
-    var horaStr = Utilities.formatDate(new Date(), _tz, 'HH:mm');
-    _notificarMOS(
-      '🛒 ' + (data.vendedor || 'Cajero') + ' aperturó caja',
-      (data.estacion || data.zona || '') + ' · ' + horaStr,
-      data.vendedor || null,
-      'ME_CAJA_APERTURA'
-    );
-  } catch(eP) { Logger.log('Push apertura caja: ' + eP.message); }
+  // [CERO-GAS #6] Push apertura MOVIDO a trigger Supabase me.cajas (SQL 353 tg_me_caja_push_ins).
+  // El GAS ya NO pushea (evita doble). El trigger cubre TODOS los paths (RPC directo + fallback dualWrite).
 
   return ContentService.createTextOutput(JSON.stringify({
     status: "success", idCaja: idCaja,
@@ -692,7 +684,8 @@ function _cerrarCajaAtomicoCore(opts) {
       var detalle = opts.esForzado
         ? (String((opts.adminAuth && opts.adminAuth.nombre) || 'admin') + ' · S/ ' + montoFinal.toFixed(2) + (idsAnulados.length ? ' · ' + idsAnulados.length + ' tickets ANULADOS' : ''))
         : (cajaVendedor + (cajaZona ? ' · ' + cajaZona : '') + ' · S/ ' + montoFinal.toFixed(2));
-      _notificarMOS(titulo, detalle, cajaVendedor, opts.esForzado ? 'ME_CAJA_CIERRE_FORZADO' : 'ME_CAJA_CIERRE');
+      // [CERO-GAS #7] Push cierre MOVIDO a trigger Supabase me.cajas (SQL 353 tg_me_caja_push_upd). GAS ya no pushea el cierre.
+      // (El aviso de tickets ANULADOS de abajo sigue por ahora — depende de idsAnulados calculado en GAS.)
       // [v2.6.0] Notificación separada cuando hubo POR_COBRAR anulados en el cierre.
       // El admin debería poder revisar cuáles fueron y, si alguno era crédito real,
       // re-emitirlo o aprobar antes del próximo cierre.

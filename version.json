@@ -1,1 +1,1 @@
-{"version":"2.8.153","build":"2.8.153 (CERO-GAS push fase1): notificarInicioSesionVendedor -> Edge push con audiencia:{roles admin/master} (helper _pushEdge, anti-spam 30min localStorage). RPC push_tokens_para dedup por device (SQL 341b). Sin GAS."}
+{"version":"2.8.154","build":"2.8.154 (CERO-GAS seguridad-modal): init pushAudiencia hook (Edge audiencia) para desbloqueo/cierre-extendido."}
