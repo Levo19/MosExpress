@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.156';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.157';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -14961,51 +14961,9 @@
                     console.log('[Push ME] token registrado en Supabase ✅');
                 } catch(eSB) { console.warn('[Push ME] registro Supabase falló:', eSB?.message); }
 
-                // Registrar en MOS GAS con usuario + deviceId
-                try {
-                    await fetch(MOS_GAS_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            action: 'registrarPushToken',
-                            token,
-                            usuario:    config.value.vendedor,
-                            appOrigen:  'mosExpress',
-                            deviceId:   devIdReg,
-                            dispositivo: (config.value.estacion?.Estacion_Nombre || 'MosExpress') + ' · ' + navigator.userAgent.substring(0, 80)
-                        })
-                    });
-                    console.log('[Push ME] token registrado en GAS ✅');
-                } catch(eReg) {
-                    console.warn('[Push ME] registro POST falló:', eReg?.message);
-                }
+                // [CERO-GAS] Registro de push token 100% Supabase (registrar_push_token RPC, arriba). Se eliminó
+                // el dual-write GAS `registrarPushToken` + el verify GAS `verificarMiTokenRegistrado`. Best-effort.
                 _pushTokenRegistrado = true;
-
-                // [v2.7.18] Auto-verify 8s después + retry si no quedó registrado
-                setTimeout(async () => {
-                    try {
-                        const verifUrl = MOS_GAS_URL + '?action=verificarMiTokenRegistrado&deviceId=' + encodeURIComponent(devIdReg);
-                        const vr = await fetch(verifUrl);
-                        const vj = await vr.json();
-                        const registrado = vj?.data?.registrado || vj?.registrado;
-                        if (!registrado) {
-                            console.warn('[Push ME] token NO está en backend tras 8s · retry');
-                            agregarToast('⚠ Notificaciones', 'Re-registrando…', 'warn', 4000);
-                            fetch(MOS_GAS_URL, {
-                                method: 'POST',
-                                body: JSON.stringify({
-                                    action: 'registrarPushToken',
-                                    token,
-                                    usuario:    config.value.vendedor,
-                                    appOrigen:  'mosExpress',
-                                    deviceId:   devIdReg,
-                                    dispositivo: 'mosExpress retry · ' + navigator.userAgent.substring(0, 60)
-                                })
-                            }).catch(() => {});
-                        } else {
-                            console.log('[Push ME] token verificado ✅ (' + (vj?.data?.tokens || 1) + ' activo/s)');
-                        }
-                    } catch(eV) { console.warn('[Push ME] verify token falló:', eV?.message); }
-                }, 8000);
             } catch(e) {
                 console.warn('[Push] init error:', e?.message);
             }
