@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.155';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.156';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1412,7 +1412,7 @@
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.25"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.26"></script>
   <script src="https://levo19.github.io/MOS/assets/auth/extensor-horario.js?v=1.0.2"></script>
   <script src="https://levo19.github.io/MOS/assets/adhesivo/preview.js?v=1.1.0"></script>
   <script>
@@ -7212,21 +7212,23 @@
           if (!/^\d{8}$/.test(clave)) { actInSituErr.value = 'La clave debe ser 8 dígitos numéricos'; return; }
           actInSituBusy.value = true;
           try {
-            const r = await fetch(MOS_GAS_URL, {
+            // [CORTE GAS B5] Aprobación in-situ 100% Supabase (mos.aprobar_dispositivo, anon — el device aún está
+            // PENDING, sin token; mismo mecanismo que device-auth._aprobarViaDirecto). Cero-GAS/cero-fallback.
+            const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/aprobar_dispositivo`, {
               method: 'POST',
-              body: JSON.stringify({
-                action: 'aprobarDispositivoEnSitu',
-                deviceId: deviceId.value,
-                nombreEquipo: actInSituNombre.value || ('ME ' + new Date().toISOString()),
+              headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+              body: JSON.stringify({ p: {
+                id_dispositivo: deviceId.value,
                 app: 'mosExpress',
-                userAgent: (navigator.userAgent || '').substring(0, 200),
-                claveAdmin: clave
-              })
+                clave_admin: clave,
+                nombre_equipo: actInSituNombre.value || ('ME ' + new Date().toISOString()),
+                es_reactivar: false
+              } })
             });
-            const j = await r.json();
-            if (!j.ok) { actInSituErr.value = j.error || 'Error de conexión'; actInSituBusy.value = false; return; }
-            if (!j.data?.autorizado) {
-              actInSituErr.value = j.data?.error || 'Clave incorrecta';
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j) { actInSituErr.value = 'Error de conexión'; actInSituBusy.value = false; return; }
+            if (!j.autorizado) {
+              actInSituErr.value = j.error || 'Clave incorrecta';
               actInSituBusy.value = false; return;
             }
             // ✓ Aprobado
@@ -17092,27 +17094,34 @@
             } else if (te === 'CREDITAR_VENTA') {
                 rpc = 'creditar_venta_directo';
                 body = { p: { idVenta: payload.idVenta, obs: payload.obs || '', usuario: config.value.vendedor } };
+            } else if (te === 'ANULACION') {
+                // [CORTE GAS B3] Anulación individual 100% Supabase (me.anular_venta_directo, SQL 360). El payload
+                // del POS trae `ventaId` (no idVenta). Atómico + idempotente (repone stock + descuenta pickup).
+                rpc = 'anular_venta_directo';
+                body = { p: { idVenta: payload.ventaId, usuario: config.value.vendedor || '', motivo: payload.motivo || '' } };
             }
+            // [CERO-GAS/CERO-FALLBACK] Los 3 tipoEvento de dinero (cobrar/creditar/anular) tienen RPC directo.
+            // Red caída/timeout → THROW → _enviarMutacionDinero encola y reintenta el DIRECTO (nunca GAS).
+            // Error de negocio/flag OFF/HTTP → {status:'error'} → el ticket vuelve a su estado real (no GAS).
             if (rpc) {
+                const _tk = await _mintTokenSB();
+                if (!_tk) throw new Error('Sin token de dispositivo');   // encola: reintenta al mintear
+                let _rr, _dd;
                 try {
-                    const _tk = await _mintTokenSB();
-                    if (_tk) {
-                        const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
-                            method: 'POST',
-                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body)
-                        }, 15000);
-                        const _dd = await _rr.json().catch(() => null);
-                        if (_rr.ok && _dd) {
-                            if (_dd.ok === true) return { status: 'success', via: 'directo' };
-                            const _e = String(_dd.error || '');
-                            if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA') return { status: 'error', mensaje: _e };
-                        }
-                    }
-                } catch (_) { /* cae a GAS */ }
+                    _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    }, 15000);
+                    _dd = await _rr.json().catch(() => null);
+                } catch (eNet) {
+                    throw eNet;   // red/timeout → propagar para encolar (idempotente en el server)
+                }
+                if (_rr.ok && _dd && _dd.ok === true) return { status: 'success', via: 'directo' };
+                return { status: 'error', mensaje: String((_dd && _dd.error) || ('HTTP ' + (_rr && _rr.status))) };
             }
-            const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-            return await r.json();
+            // tipoEvento sin ruta directa: no debería ocurrir. Propagar (antes caía a GAS, ya eliminado).
+            throw new Error('tipoEvento sin ruta directa: ' + te);
         };
         const _enviarMutacionDinero = (payload, ventaLocalId, onReject) => {
             _postMutacionDinero(payload)
@@ -19926,9 +19935,21 @@
                     try {
                         const ctrl = new AbortController();
                         const tid  = setTimeout(() => ctrl.abort(), 25000);
-                        const res  = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
+                        // [CORTE GAS B4] Registrar guía 100% Supabase (me.registrar_guia_directo, SQL 361). Modelo
+                        // ciclo ABIERTA (manual → metadata sin stock; cierre aplica el saldo) o legacy inmediato,
+                        // decidido server-side. Idempotente por idGuia. Cero-GAS: sin fallback a API_URL.
+                        const _tk = await _mintTokenSB();
+                        if (!_tk) { clearTimeout(tid); throw new Error('sin token de dispositivo'); }
+                        const res  = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_guia_directo`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: payload }), signal: ctrl.signal
+                        });
                         clearTimeout(tid);
-                        const d = await res.json();
+                        const _raw = await res.json().catch(() => null);
+                        const d = (_raw && _raw.ok === true)
+                            ? { status: 'success', idGuia: _raw.idGuia, idGuiaEntrada: _raw.idGuiaEntrada, estado: _raw.estado }
+                            : { status: 'error', mensaje: (_raw && _raw.error) || ('HTTP ' + res.status) };
                         if (d.status === 'success') {
                             exito = true;
                             // [v2.8.39] Reconciliar la guía optimista local con el idGuia + estado REAL

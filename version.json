@@ -1,1 +1,1 @@
-{"version":"2.8.155","build":"2.8.155: seguridad-modal cero-GAS device auth-writes (in-situ/desbloqueo via RPC con clave)."}
+{"version":"2.8.156","build":"2.8.156 (corte GAS B3+B4+B5): anulacion (me.anular_venta_directo), registrar guia (me.registrar_guia_directo, modelo ciclo ABIERTA), y aprobacion in-situ (mos.aprobar_dispositivo anon) 100% Supabase cero-fallback."}
