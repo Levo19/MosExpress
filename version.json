@@ -1,1 +1,1 @@
-{"version":"2.8.163","build":"2.8.163 (kill-GAS): bump modulos compartidos seguridad/membrete (verificarHorario->resolver_horario_personal; getEstadoLoteAdhesivo->adhesivo_lote_estado). Cero-GAS."}
+{"version":"2.8.164","build":"2.8.164 (review 500x fixes ME): C1 sincronizarDatos try/finally (cola ya no se congela), C2 pending_sales persiste SIEMPRE (no re-envia venta duplicada), C3/A1 guards reentrada apertura/cierre (no doble caja/doble Z), C4 confirmarMoneda MIXTO validado (no EFE negativo), B1 procesarPago feedback si falta efectivo."}

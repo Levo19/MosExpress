@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.163';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.164';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -10043,6 +10043,7 @@
            lsSet('_mos_syncing', String(Date.now()));
            isSyncing.value = true;
            let exitos = 0;
+           try {   // [FIX 500x C1] todo el cuerpo en try/finally → liberar mutex+flag pase lo que pase (antes se congelaba la cola)
            // [v2.5.45] Filtrar ventas corruptas ANTES de enviarlas — evita
            // generar filas "undefined-XXX" en VENTAS_CABECERA.
            const corruptas = pendingSales.value.filter(v => !_esVentaValidaParaSync(v.raw_data));
@@ -10260,8 +10261,10 @@
                }
            }
 
+           // [FIX 500x C2] persistir pending_sales SIEMPRE (las ramas fantasma/rechazo remueven ventas de la cola;
+           // sin persistir, al recargar se re-cargan y re-envían → fila de dinero DUPLICADA por GAS, que no dedupea).
+           lsSet('pending_sales', JSON.stringify(pendingSales.value));
            if (exitos > 0) {
-               lsSet('pending_sales', JSON.stringify(pendingSales.value));
                lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                playSyncOK();
                ultimosSincronizados.value = ventasAProcesar.map(v => v.id);
@@ -10270,8 +10273,11 @@
                agregarToast('✓ Sincronización', `${exitos} comprobante(s) subidos`,
                             reimprimirCola.length > 0 ? 'success' : 'info');
            }
-           localStorage.removeItem('_mos_syncing');
-           isSyncing.value = false;
+           } finally {
+               // [FIX 500x C1] SIEMPRE liberar el mutex + flag (antes lineal → un throw dejaba isSyncing=true toda la sesión).
+               localStorage.removeItem('_mos_syncing');
+               isSyncing.value = false;
+           }
            // [c · 500x-2] tras sincronizar, refrescar el listado del vendedor desde Supabase (estado fresco)
            if (!config.value.esCajero && exitos > 0) { try { cargarVentasVendedor(); } catch(_){} }
 
@@ -13222,6 +13228,8 @@
         };
 
         const iniciarTurno = async () => {
+            // [FIX 500x C3] guard de reentrada: doble-tap/reload durante el await abría DOS cajas ABIERTAS.
+            if (procesandoCaja.value) return;
             // Guard: cajero ocupado no puede entrar como cajero
             if (wizardCajeroOcupado.value && configWizard.value.esCajero) {
                 agregarToast('Acceso bloqueado', 'Ya hay un cajero activo en esta zona. Entra como vendedor.');
@@ -13549,6 +13557,8 @@
 
 
         const cerrarCaja = async () => {
+             // [FIX 500x A1] guard de reentrada: doble-tap abría dos ventanas turno.html (doble Ticket-Z) y doble cierre.
+             if (procesandoCierre.value) return;
              // PRE-CHECK de versión: si la PWA tiene código viejo, bloquear el
              // cierre y forzar reload. Evita generar guías duplicadas, montos
              // mal calculados u otros bugs ya corregidos en versiones posteriores.
@@ -15442,13 +15452,20 @@
         };
         const confirmarMoneda = async () => {
             if (!ticketParaMoneda.value) return;
-            procesandoMoneda.value = true;
             const venta = ticketParaMoneda.value;
             let metodoFinal = pagoMoneda.value.metodo;
             if (pagoMoneda.value.metodo === 'MIXTO') {
-                const efeNeto = parseFloat((venta.total - (pagoMoneda.value.montoVirtual || 0)).toFixed(2));
-                metodoFinal = `MIXTO (VIR:${parseFloat(pagoMoneda.value.montoVirtual).toFixed(2)}/EFE:${efeNeto.toFixed(2)})`;
+                const vir = parseFloat(pagoMoneda.value.montoVirtual);
+                // [FIX 500x C4] validar 0 ≤ vir ≤ total: sin esto vir vacío→VIR:NaN y vir>total→EFE negativo
+                // persistido → el arqueo Z resta efectivo fantasma y la caja descuadra.
+                if (isNaN(vir) || vir < 0 || vir > venta.total + 0.001) {
+                    agregarToast('Monto inválido', 'El monto virtual debe estar entre 0 y el total', 'warning');
+                    return;
+                }
+                const efeNeto = parseFloat((venta.total - vir).toFixed(2));
+                metodoFinal = `MIXTO (VIR:${vir.toFixed(2)}/EFE:${efeNeto.toFixed(2)})`;
             }
+            procesandoMoneda.value = true;
             // Actualizar localmente
             const idx = ventasZona.value.findIndex(v => v.id === venta.id);
             const _prevMoneda = idx !== -1 ? { cobrado: ventasZona.value[idx].cobrado, metodo: ventasZona.value[idx].raw_data.header.metodo, cobradoMetodo: ventasZona.value[idx].cobradoMetodo, credito: ventasZona.value[idx].credito } : null;
@@ -18427,7 +18444,8 @@
         };
         const _procesarPagoImpl = async () => {
            if (!carrito.value.length) return agregarToast('Carrito vacío', 'Agrega productos antes de cobrar.');
-           if (vuelto.value < 0) return;
+           // [FIX 500x B1] antes era return silencioso (el cajero confirmaba y no pasaba nada) → dar feedback.
+           if (vuelto.value < 0) { try { playBeepError(); } catch(_){} return agregarToast('Falta efectivo', 'El monto recibido no cubre el total.', 'warning'); }
            // [v2.7.4] PRE-VALIDACIÓN AGRESIVA (zero-latency):
            //   • Cache <30s → asume OK, cero llamada a GAS (no añade latencia)
            //   • Cache stale (>30s) → revalidación rápida 1.5s timeout
