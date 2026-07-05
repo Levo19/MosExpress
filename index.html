@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.161';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.162';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1907,20 +1907,17 @@
       }
       if (btn) { btn.disabled = true; btn.textContent = 'Validando...'; }
       try {
-        // Llamar al GAS de MOS (verificarClaveAdmin) — la URL viene de localStorage MOS_GAS_URL
-        // o del config; por simplicidad busca window.MOS_GAS_URL si está definida.
-        const mosUrl = window.MOS_GAS_URL || (window.config && window.config.value && window.config.value.mosUrl) || '';
-        if (!mosUrl) {
-          if (err) err.textContent = 'MOS_GAS_URL no configurada — pídelo al master';
+        // [cero-GAS] valida por RPC mos.verificar_clave_admin vía DeviceAuth.rpc (global, anon-callable,
+        // Content-Profile mos, bcrypt+cascada+auditoría server-side). Antes: POST a MOS_GAS_URL.
+        if (!(window.DeviceAuth && DeviceAuth.rpc)) {
+          if (err) err.textContent = 'Auth no disponible — recarga la app';
           return;
         }
-        // [FIX scope] Este overlay corre TOP-LEVEL (fuera del closure Vue donde vive _verifClaveAdminME) →
-        // referenciarlo daba "_verifClaveAdminME is not defined". Validamos por GAS directo (mosUrl ya está acá),
-        // tolerante al shape ({autorizado} o {data:{autorizado}}).
-        const _res = await fetch(mosUrl, { method: 'POST', body: JSON.stringify({
-          action: 'verificarClaveAdmin', clave: clave, accion: 'DESBLOQUEO_HORARIO_ME',
-          appOrigen: 'MosExpress', detalle: 'Habilitación operativa 1 hora pasado el horario' }) });
-        const j0 = await _res.json().catch(() => null);
+        // DeviceAuth.rpc envía {p:{...}} → usamos el wrapper jsonb mos.verificar_clave_admin_p (SQL 388).
+        const j0 = await DeviceAuth.rpc('verificar_clave_admin_p', {
+          clave: clave, accion: 'DESBLOQUEO_HORARIO_ME', app: 'mosExpress',
+          detalle: 'Habilitación operativa 1 hora pasado el horario'
+        });
         const _autorizado = !!(j0 && (j0.autorizado || (j0.data && j0.data.autorizado)));
         if (!_autorizado) {
           if (err) err.textContent = (j0 && ((j0.data && j0.data.error) || j0.error)) || 'Clave incorrecta';
@@ -8493,7 +8490,7 @@
         const _intentarRegistrarCajaLocal = async () => {
             const idActual = idCajaActual.value || '';
             if (!idActual.startsWith('CAJA-LOCAL-')) return; // ya tiene ID real, nada que hacer
-            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            if (offlineMode.value) return;
             if (!config.value.completado) return;
 
             // Recuperar payload guardado al abrir caja
@@ -8505,7 +8502,6 @@
             if (!payload) {
                 // Reconstruir desde config si no se guardó
                 payload = {
-                    tipoEvento: 'APERTURA_CAJA',
                     vendedor:   config.value.vendedor,
                     estacion:   config.value.estacion?.Estacion_Nombre || config.value.estacion || '',
                     montoInicial: montoAperturaMemoria.value || 0,
@@ -8515,32 +8511,22 @@
             }
 
             try {
-                const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                const res = await req.json();
-                if (res.status === 'success') {
-                    const realId = res.idCaja;
-                    idCajaActual.value = realId;
+                // [cero-GAS] reusa _abrirCajaDirecto (RPC me.abrir_caja). El caso "turno activo" lo maneja la RPC
+                // (dedup:true con la idCaja existente) → ya no hace falta el string-match ni _meCajeroActivoZona.
+                const d = await _abrirCajaDirecto({
+                    vendedor: payload.vendedor, estacion: payload.estacion, montoInicial: payload.montoInicial,
+                    zona: payload.zona, printNodeId: payload.printNodeId
+                });
+                if (d && d.status === 'success' && d.idCaja) {
+                    idCajaActual.value = d.idCaja;
                     lsSet('mosexpress_caja_activa', JSON.stringify({
-                        idCaja: realId, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
+                        idCaja: d.idCaja, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
                     }));
                     localStorage.removeItem('mosexpress_caja_payload');
-                    agregarToast('Caja registrada', 'El turno quedó registrado en el sistema (' + realId + ')');
-                } else if (res.mensaje && res.mensaje.includes('turno activo')) {
-                    // Ya existe una caja abierta en la zona → adoptar ese ID
-                    try {
-                        const resCaj = await _meCajeroActivoZona(config.value.zona || '');
-                        if (resCaj && resCaj.activo && resCaj.idCaja) {
-                            idCajaActual.value = resCaj.idCaja;
-                            lsSet('mosexpress_caja_activa', JSON.stringify({
-                                idCaja: resCaj.idCaja, monto: montoAperturaMemoria.value || 0, fecha: Date.now()
-                            }));
-                            localStorage.removeItem('mosexpress_caja_payload');
-                            agregarToast('Caja sincronizada', 'Se adoptó la caja activa en la zona (' + resCaj.idCaja + ')');
-                        }
-                    } catch(e2) { /* reintentará */ }
+                    agregarToast(d.dedup ? 'Caja sincronizada' : 'Caja registrada',
+                        'El turno quedó en el sistema (' + d.idCaja + ')');
                 }
-                // Si GAS devuelve otro error, se reintentará en el próximo ciclo
-            } catch(e) { /* sin red, reintentará */ }
+            } catch(e) { /* sin red o RPC lanzó, reintentará en el próximo ciclo */ }
         };
 
         onMounted(() => {
@@ -13009,19 +12995,22 @@
         // PrintNode desconectado" (job se encola y nunca imprime).
         // Devuelve { online: bool, state, computerState, nombre, computer, mensaje }
         const verificarImpresoraPN = async (printerId) => {
-          if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-            return { online: true, state: 'mock', nombre: 'mock', mensaje: 'OK' };
-          }
+          // [cero-GAS] Edge `printers` op:verify (relay PrintNode). Antes: GAS accion:verificarImpresora.
           try {
-            const resp = await fetch(API_URL, {
+            const tk = await _mintTokenSB();
+            const resp = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/printers`, {
               method: 'POST',
-              body: JSON.stringify({
-                accion: 'verificarImpresora',
-                printerId: printerId
-              })
-            });
+              headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (tk || SUPABASE_ANON_KEY), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ op: 'verify', printerId: printerId })
+            }, 8000);
             if (!resp.ok) return { online: false, state: 'http_error', mensaje: 'HTTP ' + resp.status };
-            return await resp.json();
+            const j = await resp.json().catch(() => null);
+            const d = (j && j.data) || {};
+            // map shape Edge → shape que el front espera
+            return {
+              online: !!d.online, state: d.state || 'unknown', computerState: d.computerState,
+              nombre: d.nombrePN || d.nombre, computer: d.computer, mensaje: d.reason || ''
+            };
           } catch (e) {
             return { online: false, state: 'network_error', mensaje: e.message || 'Sin red' };
           }
@@ -15283,19 +15272,15 @@
                     ? ('A ' + destinatarios.length + ' present' + (destinatarios.length === 1 ? 'e' : 'es'))
                     : 'Quedó guardado; se verá al conectarse', 'info', 5000);
                 msgEnviarAbierto.value = false;
-                // Disparar el FCM real vía GAS ME → MOS (fire-and-forget, tolerante a fallos)
+                // [cero-GAS] FCM real vía Edge `push` (op:send por audiencia de nombres → mos.push_tokens_para).
+                // Antes: GAS ME → MOS enviarPushUsuario. Fire-and-forget; el mensaje in-app ya se guardó por RPC.
                 if (destinatarios.length) {
-                    fetch(API_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            action: 'msg_push_destinatarios',
-                            destinatarios: destinatarios.map(x => ({ id_personal: x.id_personal, nombre: x.nombre, push_token: x.push_token })),
-                            titulo: String(f.titulo).trim(),
-                            cuerpo: String(f.cuerpo || '').trim(),
-                            prioridad: f.prioridad === 'alta' ? 'alta' : 'normal',
-                            mensajeId: mensajeId
-                        })
-                    }).catch(() => { /* in-app no depende del push */ });
+                    const _tit = (f.prioridad === 'alta' ? '⚠ ' : '') + String(f.titulo).trim();
+                    _pushEdge(
+                        { usuarios: destinatarios.map(x => String(x.nombre || '')).filter(Boolean) },
+                        _tit, String(f.cuerpo || '').trim(),
+                        { mensajeId, tipo: 'ME_MENSAJE' }
+                    );   // ya es try/catch interno, no bloquea
                 }
             } catch(e) {
                 playBeepError();
@@ -16849,14 +16834,10 @@
         };
         // Espeja el movimiento a Sheets (cierre cuadra + alerta efectivo). Fire-and-forget; la pasada de
         // movimientos en reconciliarDirectasSheets es el backstop si esto se pierde.
-        const _mirrorMovimientoAsync = (extra, idExtra) => {
-            try {
-                const body = { tipoEvento:'MIRROR_MOV', id_extra: idExtra, id_caja: idCajaActual.value || '',
-                    tipo: extra.tipo, monto: extra.monto, concepto: extra.concepto, obs: extra.obs,
-                    registrado_por: config.value.vendedor || '' };
-                fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) }).catch(()=>{});
-            } catch(_) {}
-        };
+        // [cero-GAS] NO-OP. El movimiento ya vive en me.movimientos_extra (persistido por _crearMovimientoDirecto,
+        // RPC me.crear_movimiento_directo) ANTES de esto. El espejo a Sheets solo existía porque el cierre GAS leía
+        // la Hoja; con el cierre directo (me.cerrar_caja) leyendo Supabase, el espejo sobra. Sin rastro a GAS.
+        const _mirrorMovimientoAsync = (_extra, _idExtra) => { /* dato ya en Supabase; nada que espejar */ };
         // [CERO-GAS auth] Acuña el JWT de dispositivo ME por la Edge `mint-me` (Supabase, claim app='mosExpress',
         // valida deviceId contra mos.dispositivos server-side). GAS MINT_TOKEN queda solo como kill-switch ante
         // fallo/timeout de la Edge. Cachea hasta ~30s antes de exp. Un solo helper → ~17 call-sites heredan el cambio.
