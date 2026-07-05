@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.159';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.160';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -7710,24 +7710,27 @@
           if (usr) {
             const noVistas = etiqsPendientes.value.filter(e => !e._vistoPorMi);
             noVistas.forEach(e => {
-              fetch(MOS_GAS_URL, {
-                method: 'POST',
-                body: JSON.stringify({ action: 'marcarVistoEtiqueta', idEtiq: e.idEtiq, usuario: usr })
-              }).catch(() => {});
+              _etiqMarcarSB({ accion: 'visto', idEtiq: e.idEtiq, usuario: usr }).catch(() => {});
               e._vistoPorMi = true;
             });
           }
         }
 
+        // [NIVEL 4 corte-GAS] Marcado de etiquetas 100% Supabase (mos.etiqueta_marcar, SQL 373). Sin GAS.
+        const _etiqMarcarSB = async (body) => {
+          const _tk = await _mintTokenSB();
+          const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/etiqueta_marcar`, {
+            method: 'POST',
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p: body })
+          }, 10000);
+          return await r.json().catch(() => null);
+        };
         async function etiqMarcarPegada(idEtiq) {
           etiqsProcesando.value = true;
           try {
             const usr = config.value.vendedor || '';
-            const res = await fetch(MOS_GAS_URL, {
-              method: 'POST',
-              body: JSON.stringify({ action: 'marcarPegadaEtiqueta', idEtiq, usuario: usr })
-            });
-            const d = await res.json();
+            const d = await _etiqMarcarSB({ accion: 'pegada', idEtiq, usuario: usr });
             if (d && d.ok) {
               etiqsPendientes.value = etiqsPendientes.value.filter(x => x.idEtiq !== idEtiq);
               agregarToast('Marcada como pegada', 'OK');
@@ -7742,14 +7745,10 @@
           try {
             const usr = config.value.vendedor || '';
             const ids = etiqsPendientes.value.map(e => e.idEtiq);
-            const res = await fetch(MOS_GAS_URL, {
-              method: 'POST',
-              body: JSON.stringify({ action: 'marcarPegadasBatch', idEtiqs: ids, usuario: usr })
-            });
-            const d = await res.json();
+            const d = await _etiqMarcarSB({ accion: 'pegadas_batch', idEtiqs: ids, usuario: usr });
             if (d && d.ok) {
               etiqsPendientes.value = [];
-              agregarToast('Pegadas', (d.data && d.data.pegadas) + ' etiquetas marcadas');
+              agregarToast('Pegadas', (d.filas || ids.length) + ' etiquetas marcadas');
               etiqsModalAbierto.value = false;
               playBeepOK();
             }
@@ -9632,8 +9631,14 @@
         const _cargarConfigMos = async () => {
             try {
                 if (offlineMode.value) return;
-                const r = await fetch(MOS_GAS_URL + '?action=getConfig');
-                const j = await r.json();
+                // [NIVEL 4 corte-GAS] CONFIG_MOS 100% Supabase (mos.config_me, SQL 374). Sin GAS.
+                const _tk = await _mintTokenSB();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/config_me`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                }, 10000);
+                const j = await r.json().catch(() => null);
                 if (j && j.ok && j.data) {
                     mosConfig.value = j.data;
                     localStorage.setItem('mosexpress_mos_config', JSON.stringify(j.data));
@@ -20121,39 +20126,26 @@
                         items:               itemsDevolucion,
                         notaGeneral:         payload.observacion || ''
                     };
-                    console.log('[devolucion WH] enviando a MOS bridge', { url: MOS_GAS_URL, body: bodyDev });
-                    fetch(MOS_GAS_URL, {
-                        method: 'POST',
-                        body:   JSON.stringify(bodyDev)
-                    }).then(r => {
-                        console.log('[devolucion WH] HTTP status:', r.status);
-                        return r.text();  // text primero para ver respuesta cruda
-                    }).then(rawText => {
-                        console.log('[devolucion WH] respuesta cruda:', rawText.substring(0, 500));
-                        let d;
-                        try { d = JSON.parse(rawText); } catch(_) {
-                            agregarToast('⚠ MOS devolvió HTML',
-                                'El bridge MOS no respondió JSON · revisa consola', 'warning', 8000);
-                            return;
+                    // [NIVEL 4 corte-GAS] Devolución a WH 100% Supabase (mos.crear_devolucion_zona, SQL 374 → wh.devoluciones_zona). Sin bridge GAS.
+                    (async () => {
+                        try {
+                            const _tk = await _mintTokenSB();
+                            const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/crear_devolucion_zona`, {
+                                method: 'POST',
+                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ p: bodyDev })
+                            }, 12000);
+                            const d = await r.json().catch(() => null);
+                            if (d && d.ok) {
+                                try { playVentaOK?.(); } catch(_){}
+                                agregarToast('📦 Devolución enviada a almacén', 'ID: ' + (d.data?.idDevolucion || '?'), 'success', 5000);
+                            } else {
+                                agregarToast('⚠ Almacén rechazó', 'Guía ME OK · WH: ' + ((d && d.error) || '?'), 'warning', 10000);
+                            }
+                        } catch(e) {
+                            agregarToast('⚠ Sin red para avisar almacén', 'Guía ME OK · WH no notificado', 'warning', 8000);
                         }
-                        console.log('[devolucion WH] respuesta parseada:', d);
-                        if (d && d.ok) {
-                            try { playVentaOK?.(); } catch(_){}
-                            agregarToast('📦 Devolución enviada a almacén',
-                                'ID devolución: ' + (d.data?.idDevolucion || '?') +
-                                ' · Hoja DEVOLUCIONES_ZONA en WH',
-                                'success', 5000);
-                        } else {
-                            agregarToast('⚠ Bridge WH rechazó',
-                                'Guía registrada en ME pero WH dice: ' + (d?.error || JSON.stringify(d).substring(0, 100)),
-                                'warning', 10000);
-                        }
-                    }).catch(e => {
-                        console.error('[devolucion WH bridge] fail:', e.message, e);
-                        agregarToast('⚠ Sin red para avisar almacén',
-                            'Guía ME OK · WH no notificado · revisa consola: ' + e.message,
-                            'warning', 8000);
-                    });
+                    })();
                 } catch(eDev) {
                     console.error('[devolucion WH] fatal:', eDev);
                     agregarToast('⚠ Error fatal devolución',

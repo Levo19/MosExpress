@@ -1,1 +1,1 @@
-{"version":"2.8.159","build":"2.8.159 (corte GAS NIVEL 2 fiscal): baja CPE SUNAT 100% Supabase (Edge emitir-cpe op=baja -> NubeFact generar_anulacion) + editar cliente de venta (me.editar_cliente). Cero-GAS."}
+{"version":"2.8.160","build":"2.8.160 (corte GAS NIVEL 4): etiquetas marcar (pegada/visto/batch -> mos.etiqueta_marcar 373), CONFIG_MOS (mos.config_me 374), devolucion a WH (mos.crear_devolucion_zona 374 -> wh.devoluciones_zona). Cero-GAS."}
