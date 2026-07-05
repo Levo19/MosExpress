@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.160';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.161';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -7505,31 +7505,26 @@
                     // (col Estacion + PrintNode_ID) para que el flujo cobro/ingreso
                     // proveedor/cierre Z apunte a la nueva impresora.
                     if (config.value.esCajero && cajaAbierta.value && idCajaActual.value &&
-                        !idCajaActual.value.startsWith('CAJA-LOCAL-') &&
-                        API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
+                        !idCajaActual.value.startsWith('CAJA-LOCAL-')) {
+                        // [cero-GAS] persiste el cambio en me.cajas vía RPC me.cambiar_impresora_caja (SQL 384).
                         try {
-                            const resp = await fetch(API_URL, {
+                            const _tk = await _mintTokenSB();
+                            const resp = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/cambiar_impresora_caja`, {
                                 method: 'POST',
-                                body: JSON.stringify({
-                                    tipoEvento: 'CAMBIO_IMPRESORA_CAJA',
+                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ p: {
                                     idCaja: idCajaActual.value,
                                     estacionNombre: estNueva.Estacion_Nombre,
-                                    printNodeId: String(estNueva.PrintNode_ID || ''),
-                                    motivo: 'Cambio admin desde ME',
-                                    adminAuth: {
-                                        nombre: String((resultadoAuth && resultadoAuth.validadoPor) || ''),
-                                        rol:    String((resultadoAuth && resultadoAuth.rol) || 'ADMIN'),
-                                        via:    'PIN_8DIG'
-                                    }
-                                })
-                            });
-                            const j = await resp.json();
-                            if (j.status !== 'success') {
-                                throw new Error(j.mensaje || 'No se pudo actualizar la caja');
+                                    printnodeId: String(estNueva.PrintNode_ID || '')
+                                } })
+                            }, 10000);
+                            const j = await resp.json().catch(() => null);
+                            if (!j || j.status !== 'success') {
+                                throw new Error((j && j.mensaje) || 'No se pudo actualizar la caja');
                             }
                         } catch(eCaja) {
                             agregarToast('⚠ Caja no actualizada',
-                                'La impresora se cambió localmente pero la hoja CAJAS no se actualizó: ' + (eCaja.message || ''),
+                                'La impresora se cambió localmente pero la caja no se actualizó: ' + (eCaja.message || ''),
                                 'warning');
                         }
                     }
@@ -7761,14 +7756,13 @@
           try {
             const printerId = config.value.estacion && config.value.estacion.PrintNode_ID;
             if (!printerId) { agregarToast('Sin impresora', 'Configura PrintNode'); etiqsProcesando.value = false; return; }
-            const usr = config.value.vendedor || '';
-            const res = await fetch(MOS_GAS_URL, {
-              method: 'POST',
-              body: JSON.stringify({ action: 'reimprimirEtiqueta', idEtiq, printerId, usuario: usr })
-            });
-            const d = await res.json();
-            if (d && d.ok) { agregarToast('Reimprimiendo', 'Job ' + (d.data && d.data.jobId)); playBeepOK(); }
-            else { agregarToast('Error', d && d.error); }
+            const e = (etiqsPendientes.value || []).find(x => x.idEtiq === idEtiq);
+            if (!e) { agregarToast('No encontrada', 'La etiqueta ya no está en la lista'); etiqsProcesando.value = false; return; }
+            // [cero-GAS] arma el ESC/POS client-side + Edge `imprimir` (antes: MOS_GAS_URL reimprimirEtiqueta).
+            const b64 = b64ESC(_etiqEscpos(e));
+            const d = await _imprimirDirectoPN(printerId, 'Reimpresión ' + String(e.descripcion || ''), b64);
+            if (d && d.status === 'success') { agregarToast('Reimprimiendo', 'Job ' + (d.printJobId || '')); playBeepOK(); }
+            else { agregarToast('Error', 'Impresión rechazada'); }
           } catch(e) { agregarToast('Error', e.message); }
           etiqsProcesando.value = false;
         }
@@ -10335,6 +10329,26 @@
         const b64ESC = str => {
             const s = str.normalize('NFD').split('').filter(c => c.charCodeAt(0) <= 0xFF && (c.charCodeAt(0) < 0x0300 || c.charCodeAt(0) > 0x036F)).join('');
             return btoa(s);
+        };
+
+        // [cero-GAS] Etiqueta de precio ESC/POS (port fiel de Etiquetas.gs _etiqGenerarESCPOS). 80mm:
+        // nombre bold alto-doble (wrap 24) + barcode Code128 (codigoBarra||skuBase) + precio doble alto+ancho.
+        const _etiqEscpos = (e) => {
+            const MAX_N = 24;
+            const desc = String(e.descripcion || '').toUpperCase();
+            const n1 = desc.substring(0, MAX_N);
+            const n2 = desc.length > MAX_N ? desc.substring(MAX_N, MAX_N * 2) : '';
+            const codigo = String(e.codigoBarra || e.skuBase || '');
+            const precio = parseFloat(e.precioNuevo) || 0;
+            const bLen = String.fromCharCode(codigo.length);
+            return '\x1b\x40' + '\x1b\x33\x10' + '\x1b\x61\x01'
+                + '\x1b\x45\x01' + '\x1b\x21\x10' + n1 + '\n' + (n2 ? n2 + '\n' : '')
+                + '\x1b\x21\x00' + '\x1b\x45\x00'
+                + '\x1d\x68\x30' + '\x1d\x77\x02' + '\x1d\x48\x02' + '\x1d\x66\x00' + '\x1d\x6b\x49'
+                + bLen + codigo + '\n'
+                + '\x1b\x21\x30' + '\x1b\x45\x01' + 'S/ ' + precio.toFixed(2) + '\n'
+                + '\x1b\x21\x00' + '\x1b\x45\x00'
+                + '\x07' + '\x1d\x56\x42\x00';
         };
 
         // Genera bloque ESC/POS para imprimir un QR Code con el texto dado

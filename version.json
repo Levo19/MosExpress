@@ -1,1 +1,1 @@
-{"version":"2.8.160","build":"2.8.160 (corte GAS NIVEL 4): etiquetas marcar (pegada/visto/batch -> mos.etiqueta_marcar 373), CONFIG_MOS (mos.config_me 374), devolucion a WH (mos.crear_devolucion_zona 374 -> wh.devoluciones_zona). Cero-GAS."}
+{"version":"2.8.161","build":"2.8.161 (kill-GAS ME): CAMBIO_IMPRESORA_CAJA -> me.cambiar_impresora_caja (SQL 384); reimprimirEtiqueta -> ESC/POS client-side + Edge imprimir (b64ESC + _etiqEscpos port de Etiquetas.gs). Batch auto-print ya estaba neutralizado. Cero-GAS."}
