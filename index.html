@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.157';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.158';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -10126,6 +10126,71 @@
                        }
                        continue;
                    }
+                   // [NIVEL 0 · CERO-GAS] Ítem SIN sello `direct` (legacy o CPE encolado por timeout/infra). Con
+                   // escritura directa ON se drena DIRECTO a Supabase — NUNCA a GAS: CPE (boleta/factura) por
+                   // _crearCPEDirecto (emite a NubeFact por la Edge, idempotente por ref_local); NV por
+                   // _crearVentaDirecta. Así, borrado el GAS, la cola offline drena sin clavarse.
+                   if (escrituraDirectaSupabase()) {
+                       const _td = String(venta.raw_data?.header?.tipoDoc || '').toUpperCase();
+                       const _esCPE = (_td === 'BOLETA' || _td === 'FACTURA');
+                       // [fix #A] Si es CPE pero CPE-directo está OFF, NO ghostear (sería una boleta/factura cobrada
+                       // sin registro fiscal): dejar el ítem EN COLA para reintentar cuando el flag prenda. Nunca GAS.
+                       if (_esCPE && !cpeDirectoSupabase()) { exito = true; continue; }
+                       try {
+                           const rd = _esCPE ? await _crearCPEDirecto(venta.raw_data, venta.id)
+                                             : await _crearVentaDirecta(venta.raw_data, venta.id);
+                           pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                           const hIdx = ventasHoy.value.findIndex(v => v.id === venta.id);
+                           if (hIdx > -1) {
+                               const tk = ventasHoy.value[hIdx];
+                               tk.syncStatus = 'synced'; tk.raw_data.status = 'synced';
+                               tk.correlativo = rd.correlativo; tk.id_venta_gas = rd.id_venta || tk.id_venta_gas;
+                               if (_esCPE && rd.nfEstado) {
+                                   tk.nfEstado = rd.nfEstado;
+                                   if (rd.nfData && rd.nfData.hash)     tk.nfHash     = rd.nfData.hash;
+                                   if (rd.nfData && rd.nfData.enlace)   tk.nfEnlace   = rd.nfData.enlace;
+                                   if (rd.nfData && rd.nfData.qrString) tk.nfQrString = rd.nfData.qrString;
+                                   if (reimpAuto.value && rd.nfEstado === 'EMITIDO') reimprimirCola.push(tk);
+                               }
+                           }
+                           try { _mirrorVentaAsync(venta.raw_data, rd.id_venta, rd.correlativo, _esCPE ? rd.nf : undefined); } catch(_){}
+                           exitos++; exito = true;
+                       } catch (eX) {
+                           const mX = String(eX && eX.message || '');
+                           if (/CAJA_NO_ABIERTA/.test(mX) || /crear_venta_directa:\s/.test(mX) || /crear_cpe_directo:\s/.test(mX)) {
+                               // negocio determinístico (caja cerrada / validación / rechazo CPE) → no reintentar; fantasma.
+                               pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                               const hF = ventasHoy.value.findIndex(v => v.id === venta.id);
+                               if (hF > -1) ventasHoy.value[hF].syncStatus = 'fantasma';
+                               // [fix #B] Persistir al PANEL de fantasmas (no solo el chip) — dinero cobrado sin
+                               // registro que el admin debe re-registrar. Espeja las otras dos ramas.
+                               try {
+                                   const _fant = JSON.parse(lsGet('mosexpress_ventas_fantasma') || '[]');
+                                   _fant.unshift({ id: venta.id, ts: Date.now(),
+                                       vendedor: venta.raw_data?.header?.vendedor || venta.raw_data?.auth?.vendedor || config.value.vendedor,
+                                       zona: config.value.zona, total: parseFloat(venta.raw_data?.header?.total) || 0,
+                                       metodo: venta.raw_data?.header?.metodo || '',
+                                       motivo: /CAJA_NO_ABIERTA/.test(mX) ? 'CAJA_CERRADA_AL_SINCRONIZAR' : 'RECHAZO_VALIDACION',
+                                       mensaje: mX, impreso: true });
+                                   lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fant.slice(0, 50)));
+                                   ventasFantasma.value = _fant.slice(0, 50);
+                               } catch(_){}
+                               lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                               lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
+                               try { playBeepError?.(); } catch(_){}
+                               agregarToast('⚠ Venta NO registrada',
+                                   (venta.raw_data?.header?.total ? 'S/ ' + venta.raw_data.header.total + ' · ' : '') +
+                                   'rechazada por el backend. Revísala en el panel de fantasmas.', 'error');
+                               exito = true;
+                           } else {
+                               intentos++;   // infra → reintento con backoff (nunca GAS)
+                               if (intentos < 3) await new Promise(r => setTimeout(r, Math.pow(2, intentos) * 1000));
+                           }
+                       }
+                       continue;
+                   }
+                   // [legacy] Path GAS — INALCANZABLE con escritura directa ON (guard arriba). Se conserva solo
+                   // como respaldo si el flag estuviera OFF; se elimina con el corte total de GAS.
                    try {
                        const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(venta.raw_data) });
                        const res = await req.json();
@@ -13069,16 +13134,14 @@
             retomandoCaja.value = true;
             pinRetomaError.value = '';
             try {
-                const r = await fetch(API_URL, {
+                // [NIVEL 1 corte-GAS] Retoma con PIN 100% Supabase (me.confirmar_retoma_caja, SQL 364). Sin GAS.
+                const _tk = await _mintTokenSB();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/confirmar_retoma_caja`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        tipoEvento: 'CONFIRMAR_RETOMA_CAJA',
-                        deviceId:   id,
-                        claveAdmin: clave
-                    })
-                });
-                const d = await r.json();
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { deviceId: id, claveAdmin: clave } })
+                }, 12000);
+                const d = await r.json().catch(() => null);
                 if (!d || d.status !== 'success' || !d.autorizado) {
                     pinRetomaError.value = (d && d.mensaje) || 'Clave incorrecta';
                     retomandoCaja.value = false;
@@ -13900,16 +13963,14 @@
             desbloqueoCargando.value = true;
             desbloqueoError.value = '';
             try {
-                const r = await fetch(MOS_GAS_URL, {
+                // [NIVEL 1 corte-GAS] Desbloqueo 100% Supabase (mos.desbloquear_usuario_temporal, SQL 363). Sin GAS.
+                const _tk = await _mintTokenSB();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/desbloquear_usuario_temporal`, {
                     method: 'POST',
-                    body: JSON.stringify({
-                        action: 'desbloquearUsuarioTemporal',
-                        nombre: config.value.vendedor,
-                        appOrigen: 'mosExpress',
-                        claveAdmin: clave
-                    })
-                });
-                const j = await r.json();
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { nombre: config.value.vendedor, appOrigen: 'mosExpress', claveAdmin: clave } })
+                }, 12000);
+                const j = await r.json().catch(() => null);
                 if (!j || !j.ok) { desbloqueoError.value = j?.error || 'Error de conexión'; return; }
                 if (!j.data?.autorizado) { desbloqueoError.value = j.data?.error || 'Clave incorrecta'; desbloqueoPin.value = ''; return; }
                 // Aprobado
@@ -20711,15 +20772,18 @@
             item.estado = 'guardando';
             _guardarAuditHoy(); // persiste localmente de inmediato
             try {
-                const payload = {
-                    tipoEvento: 'REGISTRAR_AUDITORIA',
-                    vendedor: config.value.vendedor,
-                    zona: auditZona.value,
-                    items: [{ cod_barras: String(item.cod_barras), cantSistema: item.cantSistema, cantReal: contado }]
-                };
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                const d = await r.json();
-                if (d.status === 'success') {
+                // [NIVEL 1 corte-GAS] Auditoría 100% Supabase (me.registrar_auditoria, SQL 365). SET stock + registro. Sin GAS.
+                const _tk = await _mintTokenSB();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/registrar_auditoria`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {
+                        vendedor: config.value.vendedor, zona: auditZona.value,
+                        items: [{ cod_barras: String(item.cod_barras), cantSistema: item.cantSistema, cantReal: contado }]
+                    } })
+                }, 12000);
+                const d = await r.json().catch(() => null);
+                if (d && d.status === 'success') {
                     item.estado = 'guardado';
                     // Actualizar stock local con la cantidad final
                     const cantFinal = contado;

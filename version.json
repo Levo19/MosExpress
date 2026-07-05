@@ -1,1 +1,1 @@
-{"version":"2.8.157","build":"2.8.157 (limpieza corte GAS 🟡): push token cero-GAS — removido dual-write GAS registrarPushToken + verify GAS verificarMiTokenRegistrado (el registro directo a Supabase registrar_push_token ya lo hace). Best-effort."}
+{"version":"2.8.158","build":"2.8.158 (corte GAS N0+N1): cola offline drena directo (CPE/NV, sin GAS) + panel fantasmas. Desbloqueo temporal (mos.desbloquear_usuario_temporal), retoma caja con PIN (me.confirmar_retoma_caja), auditoria de stock (me.registrar_auditoria) 100% Supabase."}
