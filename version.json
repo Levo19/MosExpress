@@ -1,1 +1,1 @@
-{"version":"2.8.158","build":"2.8.158 (corte GAS N0+N1): cola offline drena directo (CPE/NV, sin GAS) + panel fantasmas. Desbloqueo temporal (mos.desbloquear_usuario_temporal), retoma caja con PIN (me.confirmar_retoma_caja), auditoria de stock (me.registrar_auditoria) 100% Supabase."}
+{"version":"2.8.159","build":"2.8.159 (corte GAS NIVEL 2 fiscal): baja CPE SUNAT 100% Supabase (Edge emitir-cpe op=baja -> NubeFact generar_anulacion) + editar cliente de venta (me.editar_cliente). Cero-GAS."}

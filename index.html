@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.158';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.159';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15877,15 +15877,15 @@
             if (!await _meModalConfirm(`¿Comunicar baja del ${venta.tipo} ${venta.correlativo} a SUNAT?\n\nEsta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
             adminProcesando.value = true;
             try {
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                    tipoEvento: 'BAJA_CPE',
-                    idVenta:    venta.id_venta_gas,
-                    motivo:     motivo,
-                    auth:       { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
-                    adminAuth:  adminAuthCache.value
-                })});
-                const j = await r.json();
-                if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
+                // [NIVEL 2 corte-GAS] Baja CPE SUNAT 100% Supabase (Edge emitir-cpe op=baja → NubeFact generar_anulacion). Sin GAS.
+                const _tk = await _mintTokenSB();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/emitir-cpe`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ operacion: 'baja', idVenta: venta.id_venta_gas, motivo: motivo })
+                }, 20000);
+                const j = await r.json().catch(() => null);
+                if (!j || j.status !== 'success') throw new Error((j && (j.error || j.mensaje)) || 'Error en backend');
                 modalAdminBaja.value = false;
                 ticketParaAdmin.value = null;
                 agregarToast('✓ Baja enviada', j?.nuevoEstado || 'aceptada', 'success');
@@ -15938,18 +15938,23 @@
             if (e.motivo.trim().length < 3) { agregarToast('Error', 'Motivo obligatorio'); return; }
             adminProcesando.value = true;
             try {
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                    tipoEvento:        'EDITAR_CLIENTE_VENTA',
-                    idVenta:           venta.id_venta_gas,
-                    clienteDoc:        e.doc.trim(),
-                    clienteNombre:     e.nombre.trim(),
-                    clienteDireccion:  e.direccion.trim(),
-                    motivo:            e.motivo.trim(),
-                    auth:              { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
-                    adminAuth:         adminAuthCache.value
-                })});
-                const j = await r.json();
-                if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
+                // [NIVEL 2 corte-GAS] Editar cliente de venta 100% Supabase (me.editar_cliente, SQL 271). Sin GAS.
+                const _tk = await _mintTokenSB();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/editar_cliente`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {
+                        idVenta:          venta.id_venta_gas,
+                        clienteDoc:       e.doc.trim(),
+                        clienteNombre:    e.nombre.trim(),
+                        clienteDireccion: e.direccion.trim(),
+                        motivo:           e.motivo.trim(),
+                        usuario:          config.value.vendedor, rol: 'CAJERO',
+                        autorizadoPor:    adminAuthCache.value
+                    } })
+                }, 15000);
+                const j = await r.json().catch(() => null);
+                if (!j || j.ok !== true) throw new Error((j && (j.error || j.mensaje)) || 'Error en backend');
                 // Actualizar local
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
                 if (idx !== -1) {
