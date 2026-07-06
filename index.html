@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.164';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.165';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12113,6 +12113,7 @@
         // Overlays vanilla (no tocan Vue). Fail-safe: cualquier error se traga → el POS sigue.
         // ══════════════════════════════════════════════════════════════════
         let _extPollReq = null, _extPollPpal = null, _extShownAppr = {}, _extApprCooldown = {}, _extPedirAbierto = false, _extApprAbierto = false;
+        const _extEsExtension = ref(false);   // [v2] este equipo es una EXTENSIÓN (oculta "Cerrar sesión", muestra badge)
         let _notaTimer = null, _notaSesionTs = 0, _notaLocal = '', _notaEditando = false, _notaOff = false, _notaPulso = false, _notaOv = null;
         const _extRpc = async (fn, body) => {
             try {
@@ -12196,11 +12197,71 @@
                     if (done) return;
                     const st = await _extRpc('extension_estado', { idReq: res.idReq, deviceId: dev });
                     if (!st || !st.ok) return;
-                    if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
+                    // [v2 QR] el principal aceptó y emitió QR → dejar de esperar y ABRIR LA CÁMARA a escanear.
+                    if (st.estado === 'QR') {
+                        done = true; if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; }
+                        _extEscanearQR(res.idReq, dev, ov);
+                    }
+                    else if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
                     else if (st.estado === 'RECHAZADA' || st.estado === 'EXPIRADA' || st.estado === 'NO_ENCONTRADA') { _extHaptic([80]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = st.estado === 'EXPIRADA' ? 'Expiró — reintentá' : 'Rechazado'; w.style.color = '#ef4444'; } setTimeout(cerrar, 1400); }
                 } catch (e) { /* fail-safe */ }
-            }, 3000);
+            }, 2500);
             setTimeout(() => { if (!done) cerrar(); }, 130000);
+        };
+        // ── [v2 QR] LADO SOLICITANTE: escanear el QR que muestra el principal (reusa html5-qrcode) ──
+        let _extQrScanner = null;
+        const _extPararScanner = async () => { try { if (_extQrScanner) { await _extQrScanner.stop(); _extQrScanner.clear(); } } catch (e) {} _extQrScanner = null; };
+        const _extEscanearQR = (idReq, dev, ov) => {
+            try {
+                const card = ov.querySelector('._extCard');
+                if (card) card.innerHTML = `
+                    <div class="_extBeamLine"></div>
+                    <div style="text-align:center">
+                        <div style="font-weight:800;color:#e2e8f0;font-size:16px">📷 Escaneá el código</div>
+                        <div style="color:#94a3b8;font-size:12px;margin:4px 0 10px">Apuntá al QR que muestra el equipo principal.</div>
+                        <div id="_extCam" style="width:240px;height:240px;margin:0 auto;border-radius:14px;overflow:hidden;background:#0b1220"></div>
+                        <div id="_extScanMsg" style="color:#64748b;font-size:11px;margin-top:8px">Buscando código…</div>
+                        <button class="_extBtn _extBtnNo" id="_extScanX" style="margin-top:12px;width:100%">Cancelar</button>
+                    </div>`;
+                const msg = ov.querySelector('#_extScanMsg');
+                const cerrarScan = async () => { await _extPararScanner(); _extPedirAbierto = false; try { ov.remove(); } catch (e) {} };
+                const xBtn = ov.querySelector('#_extScanX'); if (xBtn) xBtn.onclick = () => { _extRpc('rechazar_extension', { idReq }); cerrarScan(); };
+                if (typeof Html5Qrcode === 'undefined') { if (msg) { msg.textContent = 'No se pudo abrir la cámara'; msg.style.color = '#ef4444'; } return; }
+                let canjeando = false;
+                _extQrScanner = new Html5Qrcode('_extCam', { verbose: false });
+                _extQrScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, async (txt) => {
+                    try {
+                        if (canjeando) return;
+                        const m = String(txt || '').match(/^EXTQR:([^:]+):([A-Za-z0-9]+)$/);
+                        if (!m || m[1] !== idReq) { if (msg) msg.textContent = 'Ese no es el código correcto…'; return; }  // otro QR
+                        canjeando = true; _extHaptic([15]); if (msg) { msg.textContent = 'Vinculando…'; msg.style.color = '#38bdf8'; }
+                        const r = await _extRpc('extension_canjear_qr', { idReq, qrToken: m[2], deviceId: dev, pushToken: (_pushTokenActual || '') });
+                        if (r && r.ok && r.data) {
+                            await _extPararScanner(); _extHaptic([10, 30, 10]); _extBurst(ov);
+                            if (msg) { msg.textContent = '✓ ¡Sos extensión de ' + (r.data.nombre || '') + '!'; msg.style.color = '#10b981'; }
+                            setTimeout(() => { try { ov.remove(); } catch (e) {} _extAplicarSesionExtension(r.data); }, 900);
+                        } else {
+                            canjeando = false;   // token rotó/venció → el principal ya emitió otro; seguir escaneando
+                            if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? 'Código vencido, apuntá otra vez…' : 'Reintentá el escaneo…'; msg.style.color = '#f59e0b'; }
+                        }
+                    } catch (e) { canjeando = false; }
+                }, () => { /* no-match frame, ignorar */ }).catch(() => { if (msg) { msg.textContent = 'Permití la cámara para escanear'; msg.style.color = '#ef4444'; } });
+                setTimeout(() => { if (_extQrScanner) cerrarScan(); }, 120000);   // auto-cierre 2 min
+            } catch (e) { /* fail-safe: el POS sigue */ }
+        };
+        // aplica la sesión heredada: la extensión JALA nombre/rol/zona (no editables), elige impresora en el wizard.
+        const _extAplicarSesionExtension = (data) => {
+            try {
+                _extEsExtension.value = true;   // marca reactiva: oculta "Cerrar sesión", muestra badge
+                configWizard.value.vendedor = data.nombre || configWizard.value.vendedor;
+                configWizard.value.zona     = data.zona || configWizard.value.zona;
+                configWizard.value.esCajero = (String(data.rol || '').toUpperCase() === 'CAJERO');
+                configWizard.value.esExtension = true;
+                localStorage.setItem('mosexpress_es_extension', JSON.stringify({ idDia: data.idDia, principal: data.principalDeviceId, nombre: data.nombre, ts: Date.now() }));
+                // llevar al paso de ESTACIÓN (impresora) del wizard — lo único editable de una extensión
+                try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch (e) {}
+                agregarToast('🔗 Extensión creada', 'Elegí tu impresora y listo · el equipo principal manda', 'success', 6000);
+            } catch (e) { /* fail-safe */ }
         };
         // ── LADO PRINCIPAL: detecta pedidos y muestra aprobar (hold-to-confirm) ──
         const _extPrincipalTick = async () => {
@@ -12239,15 +12300,49 @@
                 const confirmar = async () => {
                     if (confirming) return; confirming = true;                       // [100x #6] no doble aprobación
                     try {
-                        _extHaptic([15, 20, 25, 20, 40]); if (okTxt) okTxt.textContent = 'Aceptando…';
-                        const r = await _extRpc('aprobar_extension', { idReq: req.idReq, codigo: req.codigo, deviceId: dev });
-                        if (r && r.ok) { if (okTxt) okTxt.textContent = '✓ Vinculado'; _extHaptic([10, 30, 10]); _extBurst(ov); setTimeout(cerrar, 900); }
-                        else { if (okTxt) okTxt.textContent = 'No se pudo'; _extHaptic([80]); _extApprCooldown[req.idReq] = Date.now() + 20000; setTimeout(cerrar, 1200); }   // cooldown, no borrar guard
+                        _extHaptic([15, 20, 25, 20, 40]); if (okTxt) okTxt.textContent = 'Generando código…';
+                        // [v2 QR] aceptar = EMITIR el QR (rota cada 80s). El vínculo real ocurre cuando el otro escanea.
+                        const r = await _extRpc('extension_qr_emitir', { idReq: req.idReq, codigo: req.codigo, deviceId: dev });
+                        if (r && r.ok && r.qrPayload) { _extHaptic([10, 30, 10]); _extMostrarQR(ov, req, r.qrPayload); }
+                        else { if (okTxt) okTxt.textContent = 'No se pudo'; _extHaptic([80]); _extApprCooldown[req.idReq] = Date.now() + 20000; setTimeout(cerrar, 1200); }
                     } catch (e) { _extApprCooldown[req.idReq] = Date.now() + 20000; setTimeout(cerrar, 1200); }
                 };
                 okBtn.addEventListener('mousedown', start); okBtn.addEventListener('touchstart', (e) => { e.preventDefault(); start(); }, { passive: false });
                 okBtn.addEventListener('mouseup', stop); okBtn.addEventListener('mouseleave', stop); okBtn.addEventListener('touchend', stop); okBtn.addEventListener('touchcancel', stop);
             } catch (e) { /* fail-safe: el POS sigue */ }
+        };
+        // [v2 QR] el principal MUESTRA el QR (imagen qrserver, sin GAS) con countdown + rotación cada 80s +
+        // detección de escaneo. El vínculo real lo hace el otro al escanear (extension_canjear_qr).
+        const _extMostrarQR = (ov, req, payload) => {
+            try {
+                const dev = _extDevId();
+                const qrImg = (pp) => `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=6&data=${encodeURIComponent(pp)}`;
+                const card = ov.querySelector('._extCard');
+                if (card) card.innerHTML = `
+                    <div class="_extBeamLine"></div>
+                    <div style="text-align:center">
+                        <div style="font-weight:800;color:#e2e8f0;font-size:16px">🔗 Mostrale este código a</div>
+                        <div style="color:#38bdf8;font-weight:800;font-size:16px">${_extEsc(req.nombre || 'el equipo nuevo')}</div>
+                        <div style="color:#94a3b8;font-size:12px;margin:4px 0 10px">Que lo escanee con la cámara de su equipo.</div>
+                        <img id="_extQrImg" src="${qrImg(payload)}" alt="QR" style="width:220px;height:220px;border-radius:14px;background:#fff;padding:6px" />
+                        <div id="_extQrMsg" style="color:#64748b;font-size:11px;margin-top:8px">Se renueva en <span id="_extQrCd">80</span>s…</div>
+                        <button class="_extBtn _extBtnNo" id="_extQrX" style="margin-top:12px;width:100%">Cancelar</button>
+                    </div>`;
+                let cd = 80, rotT = null, pollT = null, cerrado = false;
+                const cerrar = () => { if (cerrado) return; cerrado = true; if (rotT) clearInterval(rotT); if (pollT) clearInterval(pollT); try { ov.remove(); } catch (e) {} };
+                const xBtn = ov.querySelector('#_extQrX'); if (xBtn) xBtn.onclick = () => { _extRpc('rechazar_extension', { idReq: req.idReq }); cerrar(); };
+                const cdEl = ov.querySelector('#_extQrCd'), imgEl = ov.querySelector('#_extQrImg');
+                rotT = setInterval(async () => {
+                    cd -= 1; if (cdEl) cdEl.textContent = String(Math.max(0, cd));
+                    if (cd <= 0) { cd = 80; const r2 = await _extRpc('extension_qr_emitir', { idReq: req.idReq, codigo: req.codigo, deviceId: dev }); if (r2 && r2.ok && r2.qrPayload && imgEl) imgEl.src = qrImg(r2.qrPayload); }
+                }, 1000);
+                pollT = setInterval(async () => {
+                    const st = await _extRpc('extension_estado', { idReq: req.idReq });
+                    if (st && st.ok && st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const m = ov.querySelector('#_extQrMsg'); if (m) { m.textContent = '✓ ¡Equipo vinculado!'; m.style.color = '#10b981'; } setTimeout(cerrar, 1200); }
+                    else if (st && st.ok && (st.estado === 'EXPIRADA' || st.estado === 'RECHAZADA')) cerrar();
+                }, 3000);
+                setTimeout(cerrar, 300000);   // 5 min máx
+            } catch (e) { /* fail-safe */ }
         };
         // ── NOTA COMPARTIDA de sesión (principal ↔ companion, 100% Supabase) ──
         const _notaCtx = () => { const cw = config.value; if (!cw || !cw.completado || !cw.zona || !cw.vendedor) return null; const dev = _extDevId(); if (!dev) return null; return { nombre: cw.vendedor, zona: cw.zona, deviceId: dev }; };
@@ -12314,7 +12409,9 @@
         }
         const _notaIniciar = () => { if (_notaTimer) clearInterval(_notaTimer); _notaTick(); _notaTimer = setInterval(_notaTick, 8000); };
         const _notaDetener = () => { if (_notaTimer) { clearInterval(_notaTimer); _notaTimer = null; } _notaQuitarFab(); if (_notaOv) { try { _notaOv.remove(); } catch (e) {} _notaOv = null; } _notaSesionTs = 0; _notaLocal = ''; _notaEditando = false; };
-        const _extIniciar = () => { _extPedir(); if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); _notaIniciar(); };
+        // [v2] registrar este equipo como PRINCIPAL de su sesión (para saber quién autoriza + la cascada de logout).
+        const _extRegistrarPrincipal = () => { try { const cw = config.value; const dev = _extDevId(); if (_extEsExtension.value || !cw || !cw.completado || !cw.zona || !cw.vendedor || !dev) return; _extRpc('extension_registrar_principal', { nombre: cw.vendedor, zona: cw.zona, deviceId: dev, rol: cw.esCajero ? 'cajero' : 'vendedor', pushToken: (_pushTokenActual || '') }); } catch (e) {} };
+        const _extIniciar = () => { _extPedir(); _extRegistrarPrincipal(); if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); _notaIniciar(); };
         const _extDetener = () => { if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; } if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; } _extShownAppr = {}; _extPedirAbierto = false; _notaDetener(); };
 
         // ── Métodos de navegación ──
@@ -17290,6 +17387,8 @@
              // [v2.8.12] Capturar identidad ANTES de resetear config (la necesita la baja de presencia).
              const _idSalida = String(config.value.idPersonal || '').trim();
              const _nombreSalida = String(config.value.vendedor || '').trim();
+             // [v2 extensión] cascada: si soy el PRINCIPAL, forzar logout de todas mis extensiones. Fire-and-forget.
+             try { if (!_extEsExtension.value) _extRpc('extension_cerrar_cascada', { nombre: _nombreSalida, zona: String(config.value.zona || '') }); } catch (e) {}
              clearInterval(_intervalVendedorCajeroCheck);
              _intervalVendedorCajeroCheck = null;
              ventasHoy.value = [];
