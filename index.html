@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.165';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.166';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3594,7 +3594,9 @@
                                 <span v-if="cantTicketsTurno > 0" class="ml-1.5">· 🧾 {{ cantTicketsTurno }} mis tickets</span>
                             </p>
                         </div>
-                        <button @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
+                        <!-- [v2 extensión] badge cuando este equipo es EXTENSIÓN (el cerrar es exclusivo del principal) -->
+                        <div v-if="_extEsExtension" class="bg-sky-50 text-sky-700 font-black text-[11px] px-3 py-2.5 rounded-xl border border-sky-200 flex items-center shrink-0">🔗 Extensión · cierra el principal</div>
+                        <button v-else @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
                             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                             CERRAR
                         </button>
@@ -12258,6 +12260,7 @@
                 configWizard.value.esCajero = (String(data.rol || '').toUpperCase() === 'CAJERO');
                 configWizard.value.esExtension = true;
                 localStorage.setItem('mosexpress_es_extension', JSON.stringify({ idDia: data.idDia, principal: data.principalDeviceId, nombre: data.nombre, ts: Date.now() }));
+                try { _extVigilarCierre(); } catch (e) {}   // empieza a vigilar el cierre del principal
                 // llevar al paso de ESTACIÓN (impresora) del wizard — lo único editable de una extensión
                 try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch (e) {}
                 agregarToast('🔗 Extensión creada', 'Elegí tu impresora y listo · el equipo principal manda', 'success', 6000);
@@ -12411,8 +12414,35 @@
         const _notaDetener = () => { if (_notaTimer) { clearInterval(_notaTimer); _notaTimer = null; } _notaQuitarFab(); if (_notaOv) { try { _notaOv.remove(); } catch (e) {} _notaOv = null; } _notaSesionTs = 0; _notaLocal = ''; _notaEditando = false; };
         // [v2] registrar este equipo como PRINCIPAL de su sesión (para saber quién autoriza + la cascada de logout).
         const _extRegistrarPrincipal = () => { try { const cw = config.value; const dev = _extDevId(); if (_extEsExtension.value || !cw || !cw.completado || !cw.zona || !cw.vendedor || !dev) return; _extRpc('extension_registrar_principal', { nombre: cw.vendedor, zona: cw.zona, deviceId: dev, rol: cw.esCajero ? 'cajero' : 'vendedor', pushToken: (_pushTokenActual || '') }); } catch (e) {} };
-        const _extIniciar = () => { _extPedir(); _extRegistrarPrincipal(); if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); _notaIniciar(); };
-        const _extDetener = () => { if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; } if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; } _extShownAppr = {}; _extPedirAbierto = false; _notaDetener(); };
+        // [v2 CRÍTICO-1] la EXTENSIÓN vigila su acceso: si el principal cerró la sesión (accesos CERRADA / sesión
+        // no ACTIVA), se autodesloguea. Self-contained (no depende de forzar_logout, que ningún cliente honra).
+        let _extCierreTimer = null;
+        const _extInfoExt = () => { try { return JSON.parse(localStorage.getItem('mosexpress_es_extension') || 'null'); } catch (e) { return null; } };
+        const _extVigilarCierre = () => {
+            try {
+                if (_extCierreTimer) clearInterval(_extCierreTimer);
+                const info = _extInfoExt(); if (!info || !info.idDia) return;
+                _extEsExtension.value = true;
+                _extCierreTimer = setInterval(async () => {
+                    try {
+                        const r = await _extRpc('extension_debe_cerrar', { idDia: info.idDia, deviceId: _extDevId() });
+                        if (r && r.ok && r.debeCerrar) {
+                            clearInterval(_extCierreTimer); _extCierreTimer = null; _extEsExtension.value = false;
+                            localStorage.removeItem('mosexpress_es_extension'); localStorage.removeItem('mosexpress_config');
+                            try { agregarToast('🔒 Turno cerrado', 'El equipo principal cerró la sesión.', 'info', 4000); } catch (e) {}
+                            setTimeout(() => location.reload(), 1500);
+                        }
+                    } catch (e) { /* fail-safe */ }
+                }, 15000);
+            } catch (e) {}
+        };
+        const _extIniciar = () => {
+            // Si YA soy extensión (link previo o restaurado en boot): NO auto-pido ni me registro como principal; solo vigilo el cierre.
+            if (_extInfoExt()) { _extEsExtension.value = true; _extVigilarCierre(); _notaIniciar(); return; }
+            _extPedir(); _extRegistrarPrincipal();
+            if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); _notaIniciar();
+        };
+        const _extDetener = () => { if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; } if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; } if (_extCierreTimer) { clearInterval(_extCierreTimer); _extCierreTimer = null; } _extShownAppr = {}; _extPedirAbierto = false; _notaDetener(); };
 
         // ── Métodos de navegación ──
         // [v2.8.9] Flujo rediseñado (4→3 pasos): 1 ¿Quién? · 2 Zona viva (elige
@@ -20954,7 +20984,7 @@
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
           // scannerFocused (animación del logo inerte — escrituras iban al ctx no-reactivo)
           resetearCajero, horaActual, scannerFocused,
-          procesandoCierre, cerrarCaja, cerrarSesion,
+          procesandoCierre, cerrarCaja, cerrarSesion, _extEsExtension,
           bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago, cpeReglas, cpeReglasConv,
           iniciarTurno, cambiarModulo, toggleCamara,
