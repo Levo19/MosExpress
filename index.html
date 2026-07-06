@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.166';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.167';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -34,7 +34,32 @@
     }
   </script>
   <script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js"></script>
+  <script>
+    // [FIX pantalla-blanca móvil] Vue es CRÍTICO: si unpkg no cargó (red móvil/DNS/CDN caído), la app hace
+    // white-screen al destructurar `Vue`. Respaldo SÍNCRONO desde jsdelivr (document.write bloquea hasta cargar).
+    if (typeof Vue === 'undefined') { document.write('<script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"><\/script>'); }
+  </script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript"></script>
+  <script>
+    // html5-qrcode NO es crítico (solo el escaneo de extensión); igual damos respaldo.
+    if (typeof Html5Qrcode === 'undefined') { document.write('<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"><\/script>'); }
+  </script>
+  <script>
+    // [FIX pantalla-blanca móvil] Red-de-seguridad: si tras 4s Vue sigue sin cargar (ambos CDN caídos / sin red),
+    // mostrar un aviso con "Reintentar" en vez de dejar la pantalla en BLANCO (la app nunca monta sin Vue).
+    window.addEventListener('DOMContentLoaded', function () {
+      setTimeout(function () {
+        try {
+          if (typeof Vue === 'undefined' && !document.getElementById('da-fatal-fallback') && !document.getElementById('_meCdnFail')) {
+            var f = document.createElement('div'); f.id = '_meCdnFail';
+            f.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
+            f.innerHTML = '<div style="font-size:64px">📶</div><h2 style="margin:10px 0 6px;font-size:20px">No se pudo cargar la app</h2><p style="color:#94a3b8;max-width:420px;margin:0 0 20px;font-size:14px;line-height:1.5">Parece que no bajó una parte por tu conexión. Reintentá; si sigue en blanco, borrá los datos del sitio y reabrí.</p><button onclick="location.reload()" style="padding:12px 24px;border-radius:12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;border:0;font-size:15px">🔄 Reintentar</button>';
+            document.documentElement.appendChild(f);
+          }
+        } catch (e) {}
+      }, 4000);
+    });
+  </script>
   <!-- Firebase compat para Push Notifications -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
