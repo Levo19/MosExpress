@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.167';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.168';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -45,19 +45,30 @@
     if (typeof Html5Qrcode === 'undefined') { document.write('<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"><\/script>'); }
   </script>
   <script>
-    // [FIX pantalla-blanca móvil] Red-de-seguridad: si tras 4s Vue sigue sin cargar (ambos CDN caídos / sin red),
-    // mostrar un aviso con "Reintentar" en vez de dejar la pantalla en BLANCO (la app nunca monta sin Vue).
+    // [FIX pantalla-blanca móvil · AUTO-SANACIÓN] Si tras 3.5s Vue sigue sin cargar (el SW pudo cachear un Vue
+    // CORRUPTO en una instalación con red flaky → white-screen permanente), auto-reparar: desregistrar el SW +
+    // borrar SOLO la Cache API (NO toca localStorage → el UUID del dispositivo SE CONSERVA) y recargar UNA vez.
+    // Si tras la recarga aún falla, recién ahí mostramos "Reintentar". Se repara solo con la última versión.
     window.addEventListener('DOMContentLoaded', function () {
       setTimeout(function () {
         try {
-          if (typeof Vue === 'undefined' && !document.getElementById('da-fatal-fallback') && !document.getElementById('_meCdnFail')) {
-            var f = document.createElement('div'); f.id = '_meCdnFail';
-            f.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
-            f.innerHTML = '<div style="font-size:64px">📶</div><h2 style="margin:10px 0 6px;font-size:20px">No se pudo cargar la app</h2><p style="color:#94a3b8;max-width:420px;margin:0 0 20px;font-size:14px;line-height:1.5">Parece que no bajó una parte por tu conexión. Reintentá; si sigue en blanco, borrá los datos del sitio y reabrí.</p><button onclick="location.reload()" style="padding:12px 24px;border-radius:12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;border:0;font-size:15px">🔄 Reintentar</button>';
-            document.documentElement.appendChild(f);
+          if (typeof Vue !== 'undefined' || document.getElementById('da-fatal-fallback')) return;   // OK, o ya hay fatal
+          var yaSano = null; try { yaSano = sessionStorage.getItem('_meAutoHeal'); } catch (e) {}
+          if (!yaSano) {
+            try { sessionStorage.setItem('_meAutoHeal', '1'); } catch (e) {}
+            var jobs = [];
+            try { if ('serviceWorker' in navigator) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }).catch(function () {})); } catch (e) {}
+            try { if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }).catch(function () {})); } catch (e) {}
+            Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+            return;   // recargando con caché limpia → Vue baja fresco; el UUID (localStorage) intacto
           }
+          if (document.getElementById('_meCdnFail')) return;
+          var f = document.createElement('div'); f.id = '_meCdnFail';
+          f.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
+          f.innerHTML = '<div style="font-size:64px">📶</div><h2 style="margin:10px 0 6px;font-size:20px">No se pudo cargar la app</h2><p style="color:#94a3b8;max-width:420px;margin:0 0 20px;font-size:14px;line-height:1.5">Revisá tu conexión a internet y tocá Reintentar. (Tus datos y sesión están a salvo.)</p><button onclick="try{sessionStorage.removeItem(\'_meAutoHeal\')}catch(e){};location.reload()" style="padding:12px 24px;border-radius:12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;border:0;font-size:15px">🔄 Reintentar</button>';
+          document.documentElement.appendChild(f);
         } catch (e) {}
-      }, 4000);
+      }, 3500);
     });
   </script>
   <!-- Firebase compat para Push Notifications -->
