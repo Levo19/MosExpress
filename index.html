@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.169';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.170';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8182,7 +8182,10 @@
             if (tipo === 'FACTURA') {
                 items.push({ label: 'RUC de 11 dígitos', ok: /^\d{11}$/.test(doc), req: true });
                 items.push({ label: 'Razón social', ok: !!nombre, req: true });
-                items.push({ label: 'Dirección fiscal', ok: !!dir, req: true });
+                // Dirección fiscal: SOLO obligatoria para persona JURÍDICA (RUC '20…'). Persona natural
+                // (RUC 10/15/17) no tiene domicilio fiscal público → SUNAT la acepta sin dirección, así
+                // que no la mostramos como requisito ni bloquea la emisión. Mismo criterio que el server (397).
+                if (/^20\d{9}$/.test(doc)) items.push({ label: 'Dirección fiscal', ok: !!dir, req: true });
             } else { // BOLETA
                 if (total > 700) {
                     items.push({ label: 'Identificar cliente (DNI/RUC/CE) — boleta > S/700', ok: idOk, req: true });
@@ -13955,6 +13958,29 @@
                      }
                  }
 
+                 // [FIX turno.html cold-start] Pre-calentar el Edge y dejar un token minteado para el
+                 // reporte del turno (mismo origen levo19.github.io → localStorage compartido). turno.html
+                 // lo lee y SALTA su propio mint, y datos_turno queda caliente → sin el warning "Sin
+                 // conexión con Supabase" del primer load. Fire-and-forget: no bloquea la navegación.
+                 try {
+                   const _devId = localStorage.getItem('mosexpress_deviceId') || 'turno-viewer';
+                   fetch(`${SUPABASE_URL}/functions/v1/mint-mos`, {
+                     method: 'POST', headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ deviceId: _devId })
+                   }).then(r => r.json()).then(md => {
+                     if (md && md.ok && md.token) {
+                       try { localStorage.setItem('mos_turno_token', JSON.stringify({ token: md.token, ts: Date.now() })); } catch(_){}
+                       try {
+                         fetch(`${SUPABASE_URL}/rest/v1/rpc/datos_turno`, {
+                           method: 'POST',
+                           headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + md.token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                           body: JSON.stringify({ p_id_caja: _idCaja })
+                         }).catch(()=>{});
+                       } catch(_){}
+                     }
+                   }).catch(()=>{});
+                 } catch(_){}
+
                  // Navegar la ventana ya reservada al reporte del turno.
                  // turno.html con autoprint=1 imprime el Ticket Z vía PrintNode.
                  if (_turnoWin && !_turnoWin.closed) {
@@ -18706,9 +18732,12 @@
                    agregarToast('⚠ RUC inválido', 'FACTURA requiere RUC de 11 dígitos (no admite VARIOS).');
                    return;
                }
-               if (!String(pago.value.direccionCliente || '').trim()) {
+               // Dirección fiscal: obligatoria SOLO para persona jurídica (RUC '20…'). Persona natural
+               // (RUC 10/15/17) se factura sin dirección (SUNAT no publica su domicilio fiscal). Mismo
+               // criterio que el server (fac.emitir_cpe, 397): no bloquea la emisión.
+               if (/^20\d{9}$/.test(pago.value.docCliente) && !String(pago.value.direccionCliente || '').trim()) {
                    try { playBeepError?.(); } catch(_){}
-                   agregarToast('⚠ Falta dirección', 'FACTURA requiere dirección fiscal. Reintenta la búsqueda del RUC.');
+                   agregarToast('⚠ Falta dirección', 'La factura a empresa (RUC 20) requiere dirección fiscal. Reintenta la búsqueda del RUC.');
                    return;
                }
            }
