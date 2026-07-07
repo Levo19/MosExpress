@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.179';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.180';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3586,7 +3586,7 @@
                             REIMPR
                         </button>
                         <!-- [v2 extensión] un 2º equipo NO cierra la caja — solo el PRINCIPAL. Badge en vez del botón. -->
-                        <div v-if="_extEsExtension" class="flex-1 bg-sky-500/20 text-sky-100 font-black text-[10px] px-2 py-3 rounded-xl border border-sky-300/40 flex items-center justify-center text-center leading-tight">🔗 Extensión<br>cierra el principal</div>
+                        <div v-if="extEsExtension" class="flex-1 bg-sky-500/20 text-sky-100 font-black text-[10px] px-2 py-3 rounded-xl border border-sky-300/40 flex items-center justify-center text-center leading-tight">🔗 Extensión<br>cierra el principal</div>
                         <button v-else @click="cerrarCaja" :disabled="procesandoCierre" class="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                             <svg v-if="procesandoCierre" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                             <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
@@ -3662,7 +3662,7 @@
                             </p>
                         </div>
                         <!-- [v2 extensión] badge cuando este equipo es EXTENSIÓN (el cerrar es exclusivo del principal) -->
-                        <div v-if="_extEsExtension" class="bg-sky-50 text-sky-700 font-black text-[11px] px-3 py-2.5 rounded-xl border border-sky-200 flex items-center shrink-0">🔗 Extensión · cierra el principal</div>
+                        <div v-if="extEsExtension" class="bg-sky-50 text-sky-700 font-black text-[11px] px-3 py-2.5 rounded-xl border border-sky-200 flex items-center shrink-0">🔗 Extensión · cierra el principal</div>
                         <button v-else @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
                             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                             CERRAR
@@ -21179,7 +21179,10 @@
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
           // scannerFocused (animación del logo inerte — escrituras iban al ctx no-reactivo)
           resetearCajero, horaActual, scannerFocused,
-          procesandoCierre, cerrarCaja, cerrarSesion, _extEsExtension,
+          procesandoCierre, cerrarCaja, cerrarSesion,
+          // [FIX pantalla blanca] alias SIN guion bajo: Vue 3 NO expone al template las claves con "_" →
+          // usar _extEsExtension en el template daba ReferenceError → throw en el render → pantalla blanca.
+          extEsExtension: _extEsExtension,
           bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago, cpeReglas, cpeReglasConv,
           iniciarTurno, cambiarModulo, toggleCamara,
