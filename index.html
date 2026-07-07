@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.174';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.175';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1113,6 +1113,9 @@
         if (cdNum) cdNum.textContent = secs;
         if (secs > 0 && secs <= 5) { try { MeSfx.tickUrgent(); } catch(_){} }
         if (secs <= 0) {
+          // [100x M5] NO recargar a mitad de una venta/cobro (__ME_BUSY__): esperar a que termine.
+          // El contador se queda en pausa y aplica apenas la venta cierra (próximo tick con !busy).
+          if (window.__ME_BUSY__) { secs = 0; if (cdNum) cdNum.textContent = '⏸'; return; }
           clearInterval(_meAutoCdInterval); _meAutoCdInterval = null;
           _meAutoCdActive = false;
           window._applyMeUpdate();
@@ -12193,6 +12196,9 @@
         // Overlays vanilla (no tocan Vue). Fail-safe: cualquier error se traga → el POS sigue.
         // ══════════════════════════════════════════════════════════════════
         let _extPollReq = null, _extPollPpal = null, _extShownAppr = {}, _extApprCooldown = {}, _extPedirAbierto = false, _extApprAbierto = false;
+        // [100x review] cierre del overlay ACTIVO del lado principal (aprobación → QR reusan el mismo ov, secuencial):
+        // lo registra cada overlay para que _extDetener pueda cerrarlo (timers rotT/pollT/autoT) al cerrar sesión.
+        let _extOverlayPplCerrar = null;
         const _extEsExtension = ref(false);   // [v2] este equipo es una EXTENSIÓN (oculta "Cerrar sesión", muestra badge)
         let _notaTimer = null, _notaSesionTs = 0, _notaLocal = '', _notaEditando = false, _notaOff = false, _notaPulso = false, _notaOv = null;
         const _extRpc = async (fn, body) => {
@@ -12361,6 +12367,7 @@
             try {
                 _extEsExtension.value = true;   // marca reactiva: oculta "Cerrar sesión", muestra badge
                 extModo.value = false;          // [fix] salir del modo picker (ya se ató) → no re-mostrar avatares
+                _extPedirAbierto = false;       // [100x C1] liberar el guard (si algo falla luego, se puede reintentar sin recargar)
                 // [fix zona→impresora] Normalizar la zona heredada contra ZONAS_CONFIG (evita que un mismatch de
                 // formato mayúsc/guion deje estacionesFiltradas VACÍA → el Paso 3 mostraría "Sin cajas · elegir
                 // otra tienda", que se ve como "pedir zona"). Con la zona exacta, el Paso 3 muestra las impresoras.
@@ -12409,9 +12416,10 @@
                         </div>
                     </div>`);
                 let cerrado = false, autoT = null, confirming = false;
-                const cerrar = () => { if (cerrado) return; cerrado = true; _extApprAbierto = false; if (autoT) clearTimeout(autoT); try { ov.remove(); } catch (e) {} };
+                const cerrar = () => { if (cerrado) return; cerrado = true; _extApprAbierto = false; delete _extShownAppr[req.idReq]; if (_extOverlayPplCerrar === cerrar) _extOverlayPplCerrar = null; if (autoT) clearTimeout(autoT); try { ov.remove(); } catch (e) {} };
+                _extOverlayPplCerrar = cerrar;   // [100x A2] _extDetener puede cerrarlo
                 // [100x #8] auto-cierre alineado al TTL del backend (2 min) → no bloquea la pantalla para siempre
-                autoT = setTimeout(() => { delete _extShownAppr[req.idReq]; cerrar(); }, 115000);
+                autoT = setTimeout(() => cerrar(), 115000);
                 ov.querySelector('#_extRej').onclick = () => { _extHaptic([80]); _extRpc('rechazar_extension', { idReq: req.idReq }); cerrar(); };
                 ov.querySelector('#_extOk').onclick = async () => {
                     if (confirming) return; confirming = true;                       // no doble emisión
@@ -12444,7 +12452,10 @@
                         <button class="_extBtn _extBtnNo" id="_extQrX" style="margin-top:12px;width:100%">Cancelar</button>
                     </div>`;
                 let cd = 80, rotT = null, pollT = null, cerrado = false;
-                const cerrar = () => { if (cerrado) return; cerrado = true; if (rotT) clearInterval(rotT); if (pollT) clearInterval(pollT); try { ov.remove(); } catch (e) {} };
+                // [100x A3] al cerrar el QR, liberar _extApprAbierto + _extShownAppr → un 2º pedido pendiente se
+                // muestra enseguida (antes quedaba bloqueado hasta el auto-cierre de 115s del overlay viejo).
+                const cerrar = () => { if (cerrado) return; cerrado = true; _extApprAbierto = false; delete _extShownAppr[req.idReq]; if (_extOverlayPplCerrar === cerrar) _extOverlayPplCerrar = null; if (rotT) clearInterval(rotT); if (pollT) clearInterval(pollT); try { ov.remove(); } catch (e) {} };
+                _extOverlayPplCerrar = cerrar;   // [100x A2] _extDetener puede cerrarlo (mata rotT/pollT)
                 const xBtn = ov.querySelector('#_extQrX'); if (xBtn) xBtn.onclick = () => { _extRpc('rechazar_extension', { idReq: req.idReq }); cerrar(); };
                 const cdEl = ov.querySelector('#_extQrCd'), imgEl = ov.querySelector('#_extQrImg');
                 rotT = setInterval(async () => {
@@ -12556,7 +12567,15 @@
             _extPedir(); _extRegistrarPrincipal();
             if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 2000); _notaIniciar();   // [fix QR-demora] 5s→2s: el principal ve el pedido y muestra el QR más rápido
         };
-        const _extDetener = () => { if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; } if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; } if (_extCierreTimer) { clearInterval(_extCierreTimer); _extCierreTimer = null; } _extShownAppr = {}; _extPedirAbierto = false; _notaDetener(); };
+        const _extDetener = () => {
+            if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; }
+            if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; }
+            if (_extCierreTimer) { clearInterval(_extCierreTimer); _extCierreTimer = null; }
+            // [100x A1/A2] liberar cámara (permiso/LED) + cerrar el overlay QR/aprobación con sus timers rotT/pollT/autoT.
+            try { _extPararScanner(); } catch (e) {}
+            try { if (_extOverlayPplCerrar) _extOverlayPplCerrar(); } catch (e) {}
+            _extShownAppr = {}; _extPedirAbierto = false; _extApprAbierto = false; _notaDetener();
+        };
 
         // ── Métodos de navegación ──
         // [v2.8.9] Flujo rediseñado (4→3 pasos): 1 ¿Quién? · 2 Zona viva (elige
