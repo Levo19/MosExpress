@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.171';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.172';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3243,20 +3243,25 @@
             <p v-if="!dbCargada" class="text-[10px] text-gray-400 text-center mt-2 italic">
               El catálogo se descarga del servidor. Verifica tu conexión.
             </p>
-            <!-- [v2 avatar-tap] 2º equipo: atar este equipo a un compañero conectado, sin abrir otra caja -->
+            <!-- [v2 avatar-tap] 2º equipo: lleva al Paso 2 y ahí tocás a tu compañero conectado -->
             <div v-if="dbCargada" class="mt-4 pt-3 border-t border-gray-100">
-              <button @click="extAbrirPicker()"
+              <button @click="wizEntrarModoExtension()"
                       class="w-full bg-gradient-to-br from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-black text-sm py-2.5 rounded-2xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
                 📲 Este es mi 2º equipo → escanear QR
               </button>
-              <p class="text-[10px] text-sky-600 text-center mt-1.5 font-semibold">Atalo a la sesión de un compañero, sin abrir otra caja</p>
+              <p class="text-[10px] text-sky-600 text-center mt-1.5 font-semibold">Elegí a tu compañero conectado, sin abrir otra caja</p>
             </div>
           </div>
 
           <!-- ═══ PASO 2 · ZONA = TIENDA VIVA (fusiona zona + rol + monto) ═══ -->
           <div v-else-if="wizStep === 2">
-            <button @click="wizPrevStep" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
-            <p class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">¿En qué tienda entras?</p>
+            <button @click="wizSalirModoExtension(); wizPrevStep()" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
+            <!-- [v2 avatar-tap] Banner "modo 2º equipo": tocá a tu compañero conectado -->
+            <div v-if="extModo" class="mb-3 p-3 rounded-2xl bg-gradient-to-br from-sky-50 to-sky-100 border-2 border-sky-300">
+              <p class="text-[11px] font-black text-sky-700 flex items-center gap-1.5">🔗 Este es tu 2º equipo</p>
+              <p class="text-xs text-sky-800 font-semibold mt-0.5">Tocá el avatar de tu compañero <b>🟢 conectado</b> para atar este equipo a su sesión — sin abrir otra caja.</p>
+            </div>
+            <p v-else class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">¿En qué tienda entras?</p>
 
             <!-- Sin zonas (catálogo no cargado) -->
             <div v-if="!wizZonasInfo.length" class="text-center py-8 px-4">
@@ -3286,10 +3291,12 @@
                   {{ zInfo.cantEstaciones }} caja{{ zInfo.cantEstaciones !== 1 ? 's' : '' }}
                 </p>
 
-                <!-- Quién está dentro -->
+                <!-- Quién está dentro (en modo 2º equipo, los avatares son TOCABLES para atarse) -->
                 <div v-if="zInfo.dentro > 0" class="flex flex-wrap items-end gap-3 mt-2.5 ml-1">
                   <!-- Cajero con corona + glow -->
-                  <div v-if="zInfo.cajeroActivo" class="wiz-cajero-chip rounded-xl px-2.5 pt-3 pb-1.5 flex flex-col items-center min-w-[68px]">
+                  <div v-if="zInfo.cajeroActivo"
+                       @click="extModo && wizExtTocar(zInfo.cajeroNombre, zInfo.zona, 'cajero')"
+                       :class="['wiz-cajero-chip rounded-xl px-2.5 pt-3 pb-1.5 flex flex-col items-center min-w-[68px]', extModo ? 'ring-2 ring-sky-400 cursor-pointer active:scale-95 transition-transform' : '']">
                     <span class="wiz-corona">👑</span>
                     <div class="wiz-silueta wiz-silueta-mid wiz-avatar-cajero" :style="{ background: zInfo.cajeroColor }">
                       <span>{{ zInfo.cajeroIniciales }}</span>
@@ -3298,16 +3305,20 @@
                     <p class="text-[8px] text-amber-600 leading-none">{{ zInfo.cajeroDesde || 'cajero' }}</p>
                   </div>
                   <!-- Vendedores con avatar azul -->
-                  <div v-for="v in zInfo.vendedores" :key="v.nombre" class="flex flex-col items-center min-w-[54px]">
+                  <div v-for="v in zInfo.vendedores" :key="v.nombre"
+                       @click="extModo && wizExtTocar(v.nombre, zInfo.zona, 'vendedor')"
+                       :class="['flex flex-col items-center min-w-[54px] p-1 rounded-xl', extModo ? 'ring-2 ring-sky-400 cursor-pointer active:scale-95 transition-transform' : '']">
                     <div class="wiz-silueta wiz-silueta-mid" :style="{ background: v.color }">
                       <span>{{ v.iniciales }}</span>
                     </div>
                     <p class="text-[10px] font-bold text-gray-600 mt-1 truncate max-w-[52px] text-center">{{ (v.nombre || '').split(' ')[0] }}</p>
+                    <p class="text-[8px] text-emerald-500 font-bold leading-none">🟢 en línea</p>
                   </div>
                 </div>
-                <p v-else class="text-[11px] text-gray-400 italic mt-2 ml-1">Nadie dentro todavía — sé el primero</p>
+                <p v-else class="text-[11px] text-gray-400 italic mt-2 ml-1">{{ extModo ? 'Nadie conectado en esta tienda todavía' : 'Nadie dentro todavía — sé el primero' }}</p>
 
-                <!-- Botones de rol -->
+                <!-- Botones de rol (ocultos en modo 2º equipo: ahí no se abre sesión nueva, se ata a una existente) -->
+                <template v-if="!extModo">
                 <div class="grid grid-cols-2 gap-2 mt-3">
                   <button @click="wizZonaToggleCajero(zInfo)"
                           :class="['py-2.5 rounded-xl font-black text-xs text-white flex items-center justify-center gap-1 transition-all',
@@ -3323,6 +3334,7 @@
                 <p v-if="zInfo.cajeroActivo" class="text-[10px] text-gray-400 mt-1.5 text-center leading-snug">
                   Ya hay cajero. Entra como vendedor para sumarte.
                 </p>
+                </template>
 
                 <!-- Panel INLINE de monto (al tocar +Cajero, zona libre) -->
                 <div v-if="wizZonaExpandida === zInfo.zona && !zInfo.cajeroActivo" class="mt-3 pt-3 border-t border-amber-100 wiz-card-anim">
@@ -11988,7 +12000,9 @@
                 let cajeroNombre = '', cajeroDesde = '';
                 if (pres && pres.cajero) {
                     cajeroNombre = pres.cajero.nombre || '';
-                    cajeroDesde  = _wizHaceTexto(pres.cajero.desde);
+                    // La RPC ya filtra por pulso <90s → quien aparece está EN VIVO. Antes mostrábamos la
+                    // hora de apertura de caja (ej. "hace 4h30") y parecía viejo/no-real-time. Ahora "en línea".
+                    cajeroDesde  = '🟢 en línea';
                 } else {
                     const cg = wizCajerosActivosPorZona.value[z];
                     if (cg) { cajeroNombre = cg.vendedor || cg.nombre || ''; cajeroDesde = _wizHaceTexto(cg.desde); }
@@ -12218,15 +12232,6 @@
             ._notaFab .dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#38bdf8;border:2px solid #0f172a;display:none}
             ._notaFab.pulso .dot{display:block}
             ._notaTa{width:100%;min-height:96px;background:#0b1220;border:1px solid #1e293b;border-radius:12px;color:#e2e8f0;padding:12px;font-size:15px;resize:none;outline:none}
-            ._extPickGrid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:14px 0 4px;max-height:260px;overflow-y:auto}
-            ._extPickAv{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;width:74px;transition:transform .12s}
-            ._extPickAv:active{transform:scale(.92)}
-            ._extPickCirc{position:relative;width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px;box-shadow:0 0 0 3px rgba(56,189,248,.35),0 4px 10px rgba(0,0,0,.4)}
-            ._extPickCrown{position:absolute;top:-12px;font-size:15px}
-            ._extPickNom{font-size:11px;font-weight:800;color:#e2e8f0;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-            ._extPickZona{font-size:9px;color:#64748b;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-            ._extEntry{margin-top:12px;width:100%;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:14px;padding:12px;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 8px 18px -6px rgba(14,165,233,.6);display:flex;align-items:center;justify-content:center;gap:8px}
-            ._extEntryHint{font-size:10px;color:#0369a1;text-align:center;margin-top:6px;font-weight:700}
             `;
             document.head.appendChild(s);
         };
@@ -12288,47 +12293,20 @@
             }, 2500);
             setTimeout(() => { if (!done) cerrar(); }, 130000);
         };
-        // ── [v2 avatar-tap] PICKER: "¿A quién conecto este 2º equipo?" — lista los operadores conectados
-        // AHORA (presencia fresca <90s, sin fantasmas) → tocás uno → _extPedir(nombre,zona) → código → QR. ──
-        const _extIniciales = (n) => (String(n || '').trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?');
-        const _extAbrirPicker = () => {
-            _extCssOnce();
-            const pres = (typeof wizPresenciaPorZona !== 'undefined' && wizPresenciaPorZona.value) || {};
-            const lista = [];
-            for (const z in pres) {
-                const zi = pres[z] || {};
-                const zona = zi.zona_id || z;
-                const zonaNombre = zi.zona_nombre || zona;
-                if (zi.cajero && zi.cajero.nombre) lista.push({ nombre: zi.cajero.nombre, zona, zonaNombre, rol: 'cajero' });
-                (zi.vendedores || []).forEach(v => { if (v && v.nombre) lista.push({ nombre: v.nombre, zona, zonaNombre, rol: 'vendedor' }); });
-            }
-            const color = (typeof _wizColorParaUser === 'function') ? _wizColorParaUser : (() => '#0ea5e9');
-            const cuerpo = lista.length
-                ? `<div class="_extPickGrid">${lista.map((p, i) => `
-                    <div class="_extPickAv" data-i="${i}">
-                      <div class="_extPickCirc" style="background:${color(p.nombre)}">${p.rol === 'cajero' ? '<span class="_extPickCrown">👑</span>' : ''}${_extEsc(_extIniciales(p.nombre))}</div>
-                      <div class="_extPickNom">${_extEsc((p.nombre || '').split(' ')[0])}</div>
-                      <div class="_extPickZona">${_extEsc(p.zonaNombre)}</div>
-                    </div>`).join('')}</div>`
-                : `<div style="text-align:center;color:#64748b;font-size:12px;padding:16px 4px">Nadie conectado ahora mismo.<br>Pedile a tu compañero que abra su sesión primero.</div>`;
-            const ov = _extOverlay(`
-                <div style="text-align:center">
-                    <div style="font-size:30px">📲</div>
-                    <div style="font-weight:800;color:#f1f5f9;font-size:16px;margin-top:4px">¿A quién conecto este equipo?</div>
-                    <div style="color:#94a3b8;font-size:12px;margin-top:3px">Tocá a tu compañero — solo salen los <b style="color:#34d399">activos ahora</b>.</div>
-                    ${cuerpo}
-                    <button class="_extBtn _extBtnNo" id="_extPickCancel" style="margin-top:12px;width:100%">Cancelar</button>
-                </div>`);
-            try { ov.querySelector('#_extPickCancel').onclick = () => { try { ov.remove(); } catch (e) {} }; } catch (e) {}
-            ov.querySelectorAll('._extPickAv').forEach(el => {
-                el.onclick = () => {
-                    const p = lista[parseInt(el.getAttribute('data-i'), 10)];
-                    if (!p) return;
-                    _extHaptic([30, 40, 30]);
-                    try { ov.remove(); } catch (e) {}
-                    _extPedir(p.nombre, p.zona, p.rol);
-                };
-            });
+        // ── [v2 avatar-tap] MODO EXTENSIÓN en el Paso 2: el botón "2º equipo" lleva al Paso 2 (la MISMA
+        // vista de tiendas/avatares en vivo, sin modal aparte → no rompe el wizard). Ahí tocás a tu
+        // compañero CONECTADO para atar este equipo a su sesión (sin abrir otra caja). ──
+        const extModo = ref(false);
+        const wizEntrarModoExtension = () => {
+            extModo.value = true;
+            try { _wizIniciarPollingPresencia(); } catch (e) {}   // presencia fresca en vivo desde ya
+            try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 2; } catch (e) {}
+        };
+        const wizSalirModoExtension = () => { extModo.value = false; };
+        const wizExtTocar = (nombre, zona, rol) => {
+            if (!extModo.value || !nombre || !zona) return;
+            _extHaptic([30, 40, 30]);
+            _extPedir(nombre, zona, rol || 'vendedor');
         };
         // ── [v2 QR] LADO SOLICITANTE: escanear el QR que muestra el principal (reusa html5-qrcode) ──
         let _extQrScanner = null;
@@ -21202,8 +21180,8 @@
           // [v2.8.9] Zona viva (rediseño login)
           wizZonaExpandida, wizZonaShake, wizZonaToggleCajero, wizZonaConfirmCajero, wizZonaAddVendedor,
           wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
-          // [v2 avatar-tap] picker "2º equipo → escanear QR" (alias sin "_": Vue no expone claves con guion bajo al template)
-          extAbrirPicker: _extAbrirPicker,
+          // [v2 avatar-tap] modo extensión: botón "2º equipo" → Paso 2 → tocar avatar del compañero
+          extModo, wizEntrarModoExtension, wizSalirModoExtension, wizExtTocar,
           wizTutorial, wizTutorialNext, wizTutorialClose, wizTutorialOpen,
           // [v2.5.40] Chip impresora live + cambio impresora
           meImpresoraEstado, meImpresoraIcon, meImpresoraEstadoLabel, meImpresoraClass,
