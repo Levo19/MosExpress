@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.177';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.178';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -21367,17 +21367,26 @@
       // (config, ventas, extensión, caja, cachés de estado) se limpia → wizard limpio, sin perder el UUID.
       var _KEEP = /(deviceid|device_id|fcm|push|token_fcm|notif_perm|permis)/i;
       function _resetSuave() {
-        try {
-          var borrar = [];
-          for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && !_KEEP.test(k)) borrar.push(k); }
-          borrar.forEach(function (k) { try { localStorage.removeItem(k); } catch (_) {} });
-        } catch (_) {}
-        // Limpiar también el caché del SW (por si sirve código viejo), preservando IndexedDB (catálogo) y localStorage-UUID.
+        // [respeta datos locales] Escalonado:
+        //  · 1er intento (gentil): NO se toca localStorage → tu sesión/config/ventas se conservan. Solo se
+        //    limpia el caché del SW + se desregistra + recarga. Cura los crashes por código viejo/CDN SIN
+        //    perder datos (el 99% de los casos, ahora que el render ya no lanza por dato malo).
+        //  · 2º intento (el problema persiste tras recargar): recién ahí se limpia el config de sesión
+        //    PRESERVANDO deviceId + permisos + push → y la caja ABIERTA se recupera sola vía
+        //    retomar_caja_device (fix 401). Así nunca se pierde el trabajo: la caja sigue en el servidor.
+        var n = 0; try { n = (parseInt(sessionStorage.getItem('me_recover_n') || '0', 10) || 0) + 1; sessionStorage.setItem('me_recover_n', String(n)); } catch (_) { n = 1; }
+        if (n >= 2) {
+          try {
+            var borrar = [];
+            for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && !_KEEP.test(k)) borrar.push(k); }
+            borrar.forEach(function (k) { try { localStorage.removeItem(k); } catch (_) {} });
+          } catch (_) {}
+        }
         var fin = function () { try { location.reload(); } catch (_) {} };
-        try {
-          if (window.caches && caches.keys) { caches.keys().then(function (ks) { return Promise.all(ks.map(function (x) { return caches.delete(x); })); }).then(fin, fin); }
-          else fin();
-        } catch (_) { fin(); }
+        var tasks = [];
+        try { if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (x) { return caches.delete(x); })); })); } catch (_) {}
+        try { if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) tasks.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (_) {}
+        Promise.all(tasks).then(fin, fin);
       }
       function _mostrarRecuperacion(motivo) {
         if (_recoverMostrado || document.getElementById('meRecoverOverlay')) return;
@@ -21399,7 +21408,8 @@
         try { var a = document.getElementById('app'); return !!a && a.childElementCount === 0 && String(a.textContent || '').trim().length === 0; } catch (_) { return false; }
       }
       // 1) Watchdog: a los 8s del montaje, si el #app sigue vacío → recuperación (el render raíz falló).
-      setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('Pantalla en blanco detectada al iniciar.'); }, 8000);
+      //    Si cargó bien, resetea el contador de escalación (un problema futuro vuelve a empezar en "gentil").
+      setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('Pantalla en blanco detectada al iniciar.'); else { try { sessionStorage.removeItem('me_recover_n'); } catch (_) {} } }, 8000);
       // 2) Error global temprano: si tras el error el #app está vacío, es un crash de arranque → recuperación.
       window.addEventListener('error', function (e) {
         setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('Error al iniciar: ' + String((e && e.message) || '').slice(0, 90)); }, 150);
