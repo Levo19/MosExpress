@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.178';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.179';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -21338,7 +21338,9 @@
       try { console.error('[Vue error]', info, err); } catch(_){}
       // [anti-pantalla-blanca] Si el error dejó el #app vacío (throw en el render raíz), mostrar la pantalla
       // de recuperación a nivel <body> (el #toastContainer no existiría). No molesta si la UI sigue viva.
-      try { setTimeout(function(){ if (window._meAppEnBlanco && window._meAppEnBlanco() && window._meMostrarRecuperacion) window._meMostrarRecuperacion('Error de interfaz: ' + String((err && err.message) || '').slice(0,80)); }, 200); } catch(_){}
+      // Delay largo (3s) + doble chequeo: solo si el #app SIGUE vacío pasado ese tiempo (crash real y
+      // persistente), no por un error transitorio durante la carga. Evita el falso positivo.
+      try { setTimeout(function(){ if (window._meAppEnBlanco && window._meAppEnBlanco() && window._meMostrarRecuperacion) window._meMostrarRecuperacion('Error de interfaz: ' + String((err && err.message) || '').slice(0,80)); }, 3000); } catch(_){}
       try {
         const errMsg = String((err && err.message) || err || 'error desconocido').substring(0, 120);
         const cont = document.getElementById('toastContainer');
@@ -21407,16 +21409,12 @@
       function _appEnBlanco() {
         try { var a = document.getElementById('app'); return !!a && a.childElementCount === 0 && String(a.textContent || '').trim().length === 0; } catch (_) { return false; }
       }
-      // 1) Watchdog: a los 8s del montaje, si el #app sigue vacío → recuperación (el render raíz falló).
-      //    Si cargó bien, resetea el contador de escalación (un problema futuro vuelve a empezar en "gentil").
-      setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('Pantalla en blanco detectada al iniciar.'); else { try { sessionStorage.removeItem('me_recover_n'); } catch (_) {} } }, 8000);
-      // 2) Error global temprano: si tras el error el #app está vacío, es un crash de arranque → recuperación.
-      window.addEventListener('error', function (e) {
-        setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('Error al iniciar: ' + String((e && e.message) || '').slice(0, 90)); }, 150);
-      });
-      window.addEventListener('unhandledrejection', function () {
-        setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('La app no terminó de cargar.'); }, 150);
-      });
+      // ⚠️ El disparo de la pantalla de recuperación es EXCLUSIVO del errorHandler de Vue (más arriba): solo
+      //    aparece ante un CRASH REAL del render que dejó el #app vacío. NO hay watchdog por tiempo ni por
+      //    error global: daban FALSOS POSITIVOS en cargas lentas (durante device-auth / descarga de catálogo
+      //    el #app está vacío un rato SIN estar crasheado → salía la pantalla de reparación sin necesidad,
+      //    incluso en Windows). Acá solo reseteamos el contador de escalación cuando la app YA cargó bien.
+      setTimeout(function () { try { if (!_appEnBlanco()) sessionStorage.removeItem('me_recover_n'); } catch (_) {} }, 12000);
     })();
   </script>
 </body>
