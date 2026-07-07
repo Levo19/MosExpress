@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.173';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.174';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -835,13 +835,16 @@
       position:fixed;bottom:calc(80px + env(safe-area-inset-bottom, 0px));
       left:50%;transform:translateX(-50%) translateY(180px);
       z-index:9997;width:calc(100% - 32px);max-width:420px;
-      transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+      transition:transform .45s cubic-bezier(.34,1.56,.64,1), opacity .3s ease, visibility .3s;
       pointer-events:none;
+      /* [fix banner-atorado] opacity+visibility además del transform → cuando NO está .visible NUNCA queda
+         un pedazo visible (antes, con solo translateY, en algunos móviles asomaba un sliver del banner). */
+      opacity:0; visibility:hidden;
     }
     @media (min-width: 1024px) {
       #meUpdateBanner { bottom:24px; }
     }
-    #meUpdateBanner.visible { transform:translateX(-50%) translateY(0);pointer-events:all; }
+    #meUpdateBanner.visible { transform:translateX(-50%) translateY(0);pointer-events:all;opacity:1;visibility:visible; }
     .me-upd-banner-inner {
       background:linear-gradient(135deg,#0f172a,#1e293b);
       border:1px solid #3b82f6;border-radius:16px;padding:12px 16px;
@@ -12218,8 +12221,8 @@
             @keyframes _extBurst{0%{transform:scale(0);opacity:.9}70%{opacity:.35}100%{transform:scale(2.4);opacity:0}}
             @keyframes _notaPulseK{0%,100%{box-shadow:0 6px 20px rgba(0,0,0,.4)}50%{box-shadow:0 0 0 4px rgba(56,189,248,.5),0 6px 24px rgba(56,189,248,.4)}}
             @keyframes _extSpin{to{transform:rotate(360deg)}}
-            ._extBk{position:fixed;inset:0;background:rgba(2,6,23,.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px}
-            ._extCard{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:22px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:_extIn .3s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden}
+            ._extBk{position:fixed;inset:0;background:rgba(2,6,23,.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+            ._extCard{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:22px;max-width:340px;width:100%;margin:auto;max-height:calc(100vh - 40px);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:_extIn .3s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden}
             ._extBeamLine{position:absolute;top:0;height:2px;width:35%;background:linear-gradient(90deg,transparent,#38bdf8,transparent);animation:_extBeam 1.6s ease-in-out infinite}
             ._extCode{font-size:34px;font-weight:800;letter-spacing:10px;color:#38bdf8;text-align:center;margin:10px 0;font-variant-numeric:tabular-nums}
             ._extCode span{display:inline-block;animation:_extRoll .5s cubic-bezier(.2,.9,.3,1.3) both}
@@ -12294,7 +12297,7 @@
                     else if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
                     else if (st.estado === 'RECHAZADA' || st.estado === 'EXPIRADA' || st.estado === 'NO_ENCONTRADA') { _extHaptic([80]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = st.estado === 'EXPIRADA' ? 'Expiró — reintentá' : 'Rechazado'; w.style.color = '#ef4444'; } setTimeout(cerrar, 1400); }
                 } catch (e) { /* fail-safe */ }
-            }, 2500);
+            }, 1500);   // [fix QR-demora] 2.5s→1.5s: la cámara se abre más rápido apenas el principal emite el QR
             setTimeout(() => { if (!done) cerrar(); }, 130000);
         };
         // ── [v2 avatar-tap] MODO EXTENSIÓN en el Paso 2: el botón "2º equipo" lleva al Paso 2 (la MISMA
@@ -12357,13 +12360,25 @@
         const _extAplicarSesionExtension = (data) => {
             try {
                 _extEsExtension.value = true;   // marca reactiva: oculta "Cerrar sesión", muestra badge
+                extModo.value = false;          // [fix] salir del modo picker (ya se ató) → no re-mostrar avatares
+                // [fix zona→impresora] Normalizar la zona heredada contra ZONAS_CONFIG (evita que un mismatch de
+                // formato mayúsc/guion deje estacionesFiltradas VACÍA → el Paso 3 mostraría "Sin cajas · elegir
+                // otra tienda", que se ve como "pedir zona"). Con la zona exacta, el Paso 3 muestra las impresoras.
+                let zonaHer = data.zona || configWizard.value.zona || '';
+                try {
+                    const norm = s => String(s || '').toUpperCase().replace(/[\s_\-]/g, '');
+                    const zc = (db.value.ZONAS_CONFIG || []);
+                    const m = zc.find(z => norm(z.Zona_ID) === norm(zonaHer)) || zc.find(z => norm(z.Zona_Nombre || z.Zona || '') === norm(zonaHer));
+                    if (m && m.Zona_ID) zonaHer = m.Zona_ID;
+                } catch (e) {}
                 configWizard.value.vendedor = data.nombre || configWizard.value.vendedor;
-                configWizard.value.zona     = data.zona || configWizard.value.zona;
+                configWizard.value.zona     = zonaHer;
                 configWizard.value.esCajero = (String(data.rol || '').toUpperCase() === 'CAJERO');
                 configWizard.value.esExtension = true;
                 localStorage.setItem('mosexpress_es_extension', JSON.stringify({ idDia: data.idDia, principal: data.principalDeviceId, nombre: data.nombre, ts: Date.now() }));
                 try { _extVigilarCierre(); } catch (e) {}   // empieza a vigilar el cierre del principal
                 // llevar al paso de ESTACIÓN (impresora) del wizard — lo único editable de una extensión
+                // (puede elegir la MISMA impresora del principal u otra). Zona y rol se heredan (no editables).
                 try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch (e) {}
                 agregarToast('🔗 Extensión creada', 'Elegí tu impresora y listo · el equipo principal manda', 'success', 6000);
             } catch (e) { /* fail-safe */ }
@@ -12424,7 +12439,7 @@
                         <div style="font-weight:800;color:#e2e8f0;font-size:16px">🔗 Mostrale este código a</div>
                         <div style="color:#38bdf8;font-weight:800;font-size:16px">${_extEsc(req.nombre || 'el equipo nuevo')}</div>
                         <div style="color:#94a3b8;font-size:12px;margin:4px 0 10px">Que lo escanee con la cámara de su equipo.</div>
-                        <img id="_extQrImg" src="${qrImg(payload)}" alt="QR" style="width:220px;height:220px;border-radius:14px;background:#fff;padding:6px" />
+                        <img id="_extQrImg" src="${qrImg(payload)}" alt="QR" style="width:220px;height:220px;border-radius:14px;background:#fff;padding:6px;display:block;margin:0 auto" />
                         <div id="_extQrMsg" style="color:#64748b;font-size:11px;margin-top:8px">Se renueva en <span id="_extQrCd">80</span>s…</div>
                         <button class="_extBtn _extBtnNo" id="_extQrX" style="margin-top:12px;width:100%">Cancelar</button>
                     </div>`;
@@ -12436,11 +12451,13 @@
                     cd -= 1; if (cdEl) cdEl.textContent = String(Math.max(0, cd));
                     if (cd <= 0) { cd = 80; const r2 = await _extRpc('extension_qr_emitir', { idReq: req.idReq, codigo: req.codigo, deviceId: dev }); if (r2 && r2.ok && r2.qrPayload && imgEl) imgEl.src = qrImg(r2.qrPayload); }
                 }, 1000);
+                // [fix ocultar-instantáneo] 3s→1.2s: apenas el 2º equipo escanea (canjear → APROBADA), el
+                // principal lo detecta casi al instante y cierra el QR (antes tardaba hasta 3s + 1.2s).
                 pollT = setInterval(async () => {
                     const st = await _extRpc('extension_estado', { idReq: req.idReq });
-                    if (st && st.ok && st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const m = ov.querySelector('#_extQrMsg'); if (m) { m.textContent = '✓ ¡Equipo vinculado!'; m.style.color = '#10b981'; } setTimeout(cerrar, 1200); }
+                    if (st && st.ok && st.estado === 'APROBADA') { if (pollT) { clearInterval(pollT); pollT = null; } if (rotT) { clearInterval(rotT); rotT = null; } _extHaptic([10, 30, 10]); _extBurst(ov); const m = ov.querySelector('#_extQrMsg'); if (m) { m.textContent = '✓ ¡Equipo vinculado!'; m.style.color = '#10b981'; } setTimeout(cerrar, 500); }
                     else if (st && st.ok && (st.estado === 'EXPIRADA' || st.estado === 'RECHAZADA')) cerrar();
-                }, 3000);
+                }, 1200);
                 setTimeout(cerrar, 300000);   // 5 min máx
             } catch (e) { /* fail-safe */ }
         };
@@ -12537,7 +12554,7 @@
             // Si YA soy extensión (link previo o restaurado en boot): NO auto-pido ni me registro como principal; solo vigilo el cierre.
             if (_extInfoExt()) { _extEsExtension.value = true; _extVigilarCierre(); _notaIniciar(); return; }
             _extPedir(); _extRegistrarPrincipal();
-            if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 5000); _notaIniciar();
+            if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 2000); _notaIniciar();   // [fix QR-demora] 5s→2s: el principal ve el pedido y muestra el QR más rápido
         };
         const _extDetener = () => { if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; } if (_extPollPpal) { clearInterval(_extPollPpal); _extPollPpal = null; } if (_extCierreTimer) { clearInterval(_extCierreTimer); _extCierreTimer = null; } _extShownAppr = {}; _extPedirAbierto = false; _notaDetener(); };
 
