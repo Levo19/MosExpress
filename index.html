@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.170';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.171';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3243,6 +3243,14 @@
             <p v-if="!dbCargada" class="text-[10px] text-gray-400 text-center mt-2 italic">
               El catálogo se descarga del servidor. Verifica tu conexión.
             </p>
+            <!-- [v2 avatar-tap] 2º equipo: atar este equipo a un compañero conectado, sin abrir otra caja -->
+            <div v-if="dbCargada" class="mt-4 pt-3 border-t border-gray-100">
+              <button @click="extAbrirPicker()"
+                      class="w-full bg-gradient-to-br from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-black text-sm py-2.5 rounded-2xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
+                📲 Este es mi 2º equipo → escanear QR
+              </button>
+              <p class="text-[10px] text-sky-600 text-center mt-1.5 font-semibold">Atalo a la sesión de un compañero, sin abrir otra caja</p>
+            </div>
           </div>
 
           <!-- ═══ PASO 2 · ZONA = TIENDA VIVA (fusiona zona + rol + monto) ═══ -->
@@ -12117,7 +12125,9 @@
             _wizRegistrarPresencia();
             try { _extIniciar(); } catch (e) {}   // [companion] ¿2º device? + poll principal
             if (_wizHeartbeatTimer) clearInterval(_wizHeartbeatTimer);
-            _wizHeartbeatTimer = setInterval(_wizRegistrarPresencia, 60000);
+            // 30s (antes 60s): mantiene al cajero "vivo" bajo la ventana de recencia de 90s de la RPC
+            // presencia_por_zona → nada de coronas fantasma y desaparición rápida al irse.
+            _wizHeartbeatTimer = setInterval(_wizRegistrarPresencia, 30000);
         };
         const _wizDetenerHeartbeat = () => {
             if (_wizHeartbeatTimer) { clearInterval(_wizHeartbeatTimer); _wizHeartbeatTimer = null; }
@@ -12208,6 +12218,15 @@
             ._notaFab .dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#38bdf8;border:2px solid #0f172a;display:none}
             ._notaFab.pulso .dot{display:block}
             ._notaTa{width:100%;min-height:96px;background:#0b1220;border:1px solid #1e293b;border-radius:12px;color:#e2e8f0;padding:12px;font-size:15px;resize:none;outline:none}
+            ._extPickGrid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:14px 0 4px;max-height:260px;overflow-y:auto}
+            ._extPickAv{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;width:74px;transition:transform .12s}
+            ._extPickAv:active{transform:scale(.92)}
+            ._extPickCirc{position:relative;width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px;box-shadow:0 0 0 3px rgba(56,189,248,.35),0 4px 10px rgba(0,0,0,.4)}
+            ._extPickCrown{position:absolute;top:-12px;font-size:15px}
+            ._extPickNom{font-size:11px;font-weight:800;color:#e2e8f0;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+            ._extPickZona{font-size:9px;color:#64748b;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+            ._extEntry{margin-top:12px;width:100%;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:14px;padding:12px;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 8px 18px -6px rgba(14,165,233,.6);display:flex;align-items:center;justify-content:center;gap:8px}
+            ._extEntryHint{font-size:10px;color:#0369a1;text-align:center;margin-top:6px;font-weight:700}
             `;
             document.head.appendChild(s);
         };
@@ -12224,12 +12243,20 @@
         // [§9.1] ráfaga de éxito sobre la card (al vincular)
         const _extBurst = (ov) => { try { const c = ov.querySelector('._extCard'); if (!c) return; const b = document.createElement('div'); b.className = '_extBurst'; c.appendChild(b); setTimeout(() => { try { b.remove(); } catch (e) {} }, 850); } catch (e) {} };
         // ── LADO SOLICITANTE (2º dispositivo): pide extensión y espera aprobación ──
-        const _extPedir = async () => {
+        const _extPedir = async (nombreArg, zonaArg, rolArg) => {
             if (_extPedirAbierto) return;                  // [100x #5a] no re-abrir/duplicar
-            const cw = config.value; if (!cw || !cw.completado || !cw.zona || !cw.vendedor) return;
+            // Dos modos: (a) auto-detect (sin args) usa la sesión propia ya completada; (b) picker de
+            // "2º equipo" (con args) ata este equipo a un compañero elegido por avatar, SIN requerir
+            // que este equipo haya completado su propio login.
+            let nombre, zona, rol, manual = false;
+            if (nombreArg && zonaArg) { nombre = nombreArg; zona = zonaArg; rol = rolArg || 'vendedor'; manual = true; }
+            else { const cw = config.value; if (!cw || !cw.completado || !cw.zona || !cw.vendedor) return; nombre = cw.vendedor; zona = cw.zona; rol = cw.esCajero ? 'cajero' : 'vendedor'; }
             const dev = _extDevId(); if (!dev) return;
-            const res = await _extRpc('pedir_extension', { nombre: cw.vendedor, zona: cw.zona, deviceId: dev, rol: cw.esCajero ? 'cajero' : 'vendedor', pushToken: (_pushTokenActual || '') });
-            if (!res || !res.ok || !res.needsApproval || !res.idReq) return;   // 1er device / ya atado / off → nada
+            const res = await _extRpc('pedir_extension', { nombre, zona, deviceId: dev, rol, pushToken: (_pushTokenActual || '') });
+            if (!res || !res.ok || !res.needsApproval || !res.idReq) {   // 1er device / ya atado / off → nada
+                if (manual) { try { agregarToast('Sin sesión para atar', 'Ese compañero no tiene una sesión activa para vincular ahora mismo.', 'warning'); } catch(e) {} }
+                return;
+            }
             _extPedirAbierto = true;
             _extHaptic([40, 60, 40]);
             const ov = _extOverlay(`
@@ -12260,6 +12287,48 @@
                 } catch (e) { /* fail-safe */ }
             }, 2500);
             setTimeout(() => { if (!done) cerrar(); }, 130000);
+        };
+        // ── [v2 avatar-tap] PICKER: "¿A quién conecto este 2º equipo?" — lista los operadores conectados
+        // AHORA (presencia fresca <90s, sin fantasmas) → tocás uno → _extPedir(nombre,zona) → código → QR. ──
+        const _extIniciales = (n) => (String(n || '').trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?');
+        const _extAbrirPicker = () => {
+            _extCssOnce();
+            const pres = (typeof wizPresenciaPorZona !== 'undefined' && wizPresenciaPorZona.value) || {};
+            const lista = [];
+            for (const z in pres) {
+                const zi = pres[z] || {};
+                const zona = zi.zona_id || z;
+                const zonaNombre = zi.zona_nombre || zona;
+                if (zi.cajero && zi.cajero.nombre) lista.push({ nombre: zi.cajero.nombre, zona, zonaNombre, rol: 'cajero' });
+                (zi.vendedores || []).forEach(v => { if (v && v.nombre) lista.push({ nombre: v.nombre, zona, zonaNombre, rol: 'vendedor' }); });
+            }
+            const color = (typeof _wizColorParaUser === 'function') ? _wizColorParaUser : (() => '#0ea5e9');
+            const cuerpo = lista.length
+                ? `<div class="_extPickGrid">${lista.map((p, i) => `
+                    <div class="_extPickAv" data-i="${i}">
+                      <div class="_extPickCirc" style="background:${color(p.nombre)}">${p.rol === 'cajero' ? '<span class="_extPickCrown">👑</span>' : ''}${_extEsc(_extIniciales(p.nombre))}</div>
+                      <div class="_extPickNom">${_extEsc((p.nombre || '').split(' ')[0])}</div>
+                      <div class="_extPickZona">${_extEsc(p.zonaNombre)}</div>
+                    </div>`).join('')}</div>`
+                : `<div style="text-align:center;color:#64748b;font-size:12px;padding:16px 4px">Nadie conectado ahora mismo.<br>Pedile a tu compañero que abra su sesión primero.</div>`;
+            const ov = _extOverlay(`
+                <div style="text-align:center">
+                    <div style="font-size:30px">📲</div>
+                    <div style="font-weight:800;color:#f1f5f9;font-size:16px;margin-top:4px">¿A quién conecto este equipo?</div>
+                    <div style="color:#94a3b8;font-size:12px;margin-top:3px">Tocá a tu compañero — solo salen los <b style="color:#34d399">activos ahora</b>.</div>
+                    ${cuerpo}
+                    <button class="_extBtn _extBtnNo" id="_extPickCancel" style="margin-top:12px;width:100%">Cancelar</button>
+                </div>`);
+            try { ov.querySelector('#_extPickCancel').onclick = () => { try { ov.remove(); } catch (e) {} }; } catch (e) {}
+            ov.querySelectorAll('._extPickAv').forEach(el => {
+                el.onclick = () => {
+                    const p = lista[parseInt(el.getAttribute('data-i'), 10)];
+                    if (!p) return;
+                    _extHaptic([30, 40, 30]);
+                    try { ov.remove(); } catch (e) {}
+                    _extPedir(p.nombre, p.zona, p.rol);
+                };
+            });
         };
         // ── [v2 QR] LADO SOLICITANTE: escanear el QR que muestra el principal (reusa html5-qrcode) ──
         let _extQrScanner = null;
@@ -12975,6 +13044,10 @@
             wizTutorialCheckShow();
             // Cajeros activos (1 fetch para todas las zonas)
             _wizCargarCajerosActivos();
+            // [presencia instantánea] Arrancar el polling de presencia YA al abrir la página (no esperar
+            // al Paso 2) → quién está conectado se ve al instante y el picker de "2º equipo" tiene datos
+            // frescos desde el Paso 1. Sin fantasmas (la RPC filtra por pulso <90s).
+            if (!config.value.completado) { try { _wizIniciarPollingPresencia(); } catch(e) {} }
             // Impresoras de todas las zonas — esperar a que catálogo esté para tener IDs
             const _intentarImpresoras = (intentos = 0) => {
                 if (db.value.ZONAS_CONFIG && db.value.ZONAS_CONFIG.length) {
@@ -21129,6 +21202,8 @@
           // [v2.8.9] Zona viva (rediseño login)
           wizZonaExpandida, wizZonaShake, wizZonaToggleCajero, wizZonaConfirmCajero, wizZonaAddVendedor,
           wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
+          // [v2 avatar-tap] picker "2º equipo → escanear QR" (alias sin "_": Vue no expone claves con guion bajo al template)
+          extAbrirPicker: _extAbrirPicker,
           wizTutorial, wizTutorialNext, wizTutorialClose, wizTutorialOpen,
           // [v2.5.40] Chip impresora live + cambio impresora
           meImpresoraEstado, meImpresoraIcon, meImpresoraEstadoLabel, meImpresoraClass,
