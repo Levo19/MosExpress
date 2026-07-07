@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.172';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.173';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12217,6 +12217,7 @@
             @keyframes _extRoll{0%{opacity:0;transform:translateY(-16px) scale(.7)}60%{opacity:1}100%{opacity:1;transform:none}}
             @keyframes _extBurst{0%{transform:scale(0);opacity:.9}70%{opacity:.35}100%{transform:scale(2.4);opacity:0}}
             @keyframes _notaPulseK{0%,100%{box-shadow:0 6px 20px rgba(0,0,0,.4)}50%{box-shadow:0 0 0 4px rgba(56,189,248,.5),0 6px 24px rgba(56,189,248,.4)}}
+            @keyframes _extSpin{to{transform:rotate(360deg)}}
             ._extBk{position:fixed;inset:0;background:rgba(2,6,23,.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px}
             ._extCard{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:22px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:_extIn .3s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden}
             ._extBeamLine{position:absolute;top:0;height:2px;width:35%;background:linear-gradient(90deg,transparent,#38bdf8,transparent);animation:_extBeam 1.6s ease-in-out infinite}
@@ -12264,13 +12265,16 @@
             }
             _extPedirAbierto = true;
             _extHaptic([40, 60, 40]);
+            // [v2 QR estilo WhatsApp] Sin código: el 2º equipo espera a que el principal muestre el QR y
+            // la cámara se abre SOLA para escanearlo. Escanear el QR (tener ambos equipos a la mano) es la
+            // verificación — no hace falta tipear/verificar un código.
             const ov = _extOverlay(`
                 <div style="text-align:center">
-                    <div style="font-size:34px">🔗</div>
-                    <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Vincular este equipo</div>
-                    <div style="color:#94a3b8;font-size:12px;margin-top:4px">Mostrá este código en tu equipo principal y aprobá ahí.</div>
-                    <div class="_extCode">${_extCodeHtml(res.codigo)}</div>
-                    <div style="color:#64748b;font-size:11px" id="_extWait">Esperando aprobación…</div>
+                    <div style="font-size:34px">📷</div>
+                    <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Conectando con ${_extEsc(nombre)}</div>
+                    <div style="color:#94a3b8;font-size:12px;margin-top:6px">En el equipo de <b style="color:#38bdf8">${_extEsc(nombre)}</b> tocá <b>“📲 Mostrar QR”</b>. La cámara se abre sola apenas aparezca.</div>
+                    <div style="margin:16px auto;width:40px;height:40px;border:3px solid #1e293b;border-top-color:#38bdf8;border-radius:50%;animation:_extSpin .8s linear infinite"></div>
+                    <div style="color:#64748b;font-size:11px" id="_extWait">Esperando el QR…</div>
                     <button class="_extBtn _extBtnNo" id="_extCancel" style="margin-top:14px;width:100%">Cancelar</button>
                 </div>`);
             let done = false;
@@ -12376,40 +12380,35 @@
                 if (_extApprCooldown[req.idReq] && Date.now() < _extApprCooldown[req.idReq]) return;   // [100x #5b] no storm
                 _extShownAppr[req.idReq] = true; _extApprAbierto = true;
                 _extHaptic([40, 60, 40]);
+                // [v2 QR estilo WhatsApp] un solo toque "Mostrar QR" (sin código ni hold): mostrar el QR
+                // y que el 2º equipo lo escanee ES la verificación (hay que tener ambos equipos a la mano).
                 const ov = _extOverlay(`
                     <div style="text-align:center">
-                        <div style="font-size:34px">🔗</div>
-                        <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Un equipo quiere entrar como</div>
+                        <div style="font-size:34px">📲</div>
+                        <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Un 2º equipo quiere conectarse</div>
                         <div style="color:#38bdf8;font-weight:800;font-size:18px">${_extEsc(req.nombre || 'este usuario')}</div>
-                        <div style="color:#94a3b8;font-size:12px;margin-top:6px">Verificá que el código coincida:</div>
-                        <div class="_extCode">${_extCodeHtml(req.codigo)}</div>
+                        <div style="color:#94a3b8;font-size:12px;margin-top:6px">Mostrá el QR para que tu otro equipo lo escanee y quede vinculado.</div>
                         <div style="display:flex;gap:10px;margin-top:14px">
-                            <button class="_extBtn _extBtnNo" id="_extRej">Rechazar</button>
-                            <button class="_extBtn _extBtnOk" id="_extOk"><span id="_extOkTxt">Mantené para aceptar</span>
-                                <svg class="_extRing" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="302" stroke-dashoffset="302" id="_extRingC" style="opacity:.6;transform:rotate(-90deg);transform-origin:center"/></svg>
-                            </button>
+                            <button class="_extBtn _extBtnNo" id="_extRej">Ahora no</button>
+                            <button class="_extBtn _extBtnOk" id="_extOk">📲 Mostrar QR</button>
                         </div>
                     </div>`);
-                let cerrado = false, autoT = null, holdT = null, prog = 0, confirming = false;
-                const cerrar = () => { if (cerrado) return; cerrado = true; _extApprAbierto = false; if (autoT) clearTimeout(autoT); if (holdT) { clearInterval(holdT); holdT = null; } try { ov.remove(); } catch (e) {} };
+                let cerrado = false, autoT = null, confirming = false;
+                const cerrar = () => { if (cerrado) return; cerrado = true; _extApprAbierto = false; if (autoT) clearTimeout(autoT); try { ov.remove(); } catch (e) {} };
                 // [100x #8] auto-cierre alineado al TTL del backend (2 min) → no bloquea la pantalla para siempre
                 autoT = setTimeout(() => { delete _extShownAppr[req.idReq]; cerrar(); }, 115000);
                 ov.querySelector('#_extRej').onclick = () => { _extHaptic([80]); _extRpc('rechazar_extension', { idReq: req.idReq }); cerrar(); };
-                const ring = ov.querySelector('#_extRingC'); const okTxt = ov.querySelector('#_extOkTxt'); const okBtn = ov.querySelector('#_extOk');
-                const start = () => { if (holdT || confirming) return; _extHaptic([15]); holdT = setInterval(() => { prog += 100 / 8; if (ring) ring.style.strokeDashoffset = String(302 - 302 * Math.min(1, prog / 100)); if (prog >= 100) { clearInterval(holdT); holdT = null; confirmar(); } }, 100); };
-                const stop = () => { if (holdT) { clearInterval(holdT); holdT = null; } prog = 0; if (ring) ring.style.strokeDashoffset = '302'; };
-                const confirmar = async () => {
-                    if (confirming) return; confirming = true;                       // [100x #6] no doble aprobación
+                ov.querySelector('#_extOk').onclick = async () => {
+                    if (confirming) return; confirming = true;                       // no doble emisión
+                    const okBtn = ov.querySelector('#_extOk'); if (okBtn) okBtn.textContent = 'Generando QR…';
                     try {
-                        _extHaptic([15, 20, 25, 20, 40]); if (okTxt) okTxt.textContent = 'Generando código…';
-                        // [v2 QR] aceptar = EMITIR el QR (rota cada 80s). El vínculo real ocurre cuando el otro escanea.
+                        _extHaptic([10, 30, 10]);
+                        // aceptar = EMITIR el QR (rota cada 80s). El vínculo real ocurre cuando el otro escanea.
                         const r = await _extRpc('extension_qr_emitir', { idReq: req.idReq, codigo: req.codigo, deviceId: dev });
-                        if (r && r.ok && r.qrPayload) { _extHaptic([10, 30, 10]); _extMostrarQR(ov, req, r.qrPayload); }
-                        else { if (okTxt) okTxt.textContent = 'No se pudo'; _extHaptic([80]); _extApprCooldown[req.idReq] = Date.now() + 20000; setTimeout(cerrar, 1200); }
-                    } catch (e) { _extApprCooldown[req.idReq] = Date.now() + 20000; setTimeout(cerrar, 1200); }
+                        if (r && r.ok && r.qrPayload) { _extMostrarQR(ov, req, r.qrPayload); }
+                        else { confirming = false; if (okBtn) okBtn.textContent = '📲 Mostrar QR'; _extHaptic([80]); }
+                    } catch (e) { confirming = false; if (okBtn) okBtn.textContent = '📲 Mostrar QR'; }
                 };
-                okBtn.addEventListener('mousedown', start); okBtn.addEventListener('touchstart', (e) => { e.preventDefault(); start(); }, { passive: false });
-                okBtn.addEventListener('mouseup', stop); okBtn.addEventListener('mouseleave', stop); okBtn.addEventListener('touchend', stop); okBtn.addEventListener('touchcancel', stop);
             } catch (e) { /* fail-safe: el POS sigue */ }
         };
         // [v2 QR] el principal MUESTRA el QR (imagen qrserver, sin GAS) con countdown + rotación cada 80s +
