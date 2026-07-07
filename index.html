@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.168';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.169';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9949,11 +9949,20 @@
 
         const _arrancarPollerCatalogo = () => {
             if (_catVerPollTimer) return;
-            // ~50s con la app visible. El propio _chequearVersionCatalogo hace early-return en background.
-            _catVerPollTimer = setInterval(() => { _chequearVersionCatalogo(); }, 50 * 1000);
+            // Poller ADAPTATIVO (auto-reprogramado). El realtime (WS a catalogo_meta) es el camino
+            // instantáneo; este poller es la red de seguridad para el equipo donde el WS está caído
+            // (CDN bloqueado, wss:// filtrado, socket dormido). Si el canal NO está suscrito → 20s
+            // (baja la latencia peor-caso a la mitad). Si el canal está vivo → 45s (solo respaldo).
+            // El propio _chequearVersionCatalogo hace early-return en background y difiere si hay venta.
+            const _tick = () => {
+                try { _chequearVersionCatalogo(); } catch(_) {}
+                const ms = _RT_CAT.subscribed ? 45 * 1000 : 20 * 1000;
+                _catVerPollTimer = setTimeout(_tick, ms);
+            };
+            _catVerPollTimer = setTimeout(_tick, _RT_CAT.subscribed ? 45 * 1000 : 20 * 1000);
         };
         const _detenerPollerCatalogo = () => {
-            if (_catVerPollTimer) { clearInterval(_catVerPollTimer); _catVerPollTimer = null; }
+            if (_catVerPollTimer) { clearTimeout(_catVerPollTimer); _catVerPollTimer = null; }
         };
 
         // ─────────────────────────────────────────────────────────────────────────────────────────
@@ -9977,6 +9986,7 @@
             client:    null,   // RealtimeClient
             channel:   null,   // canal de postgres_changes
             starting:  false,  // guard anti-reentrada del arranque
+            subscribed:false,  // canal SUBSCRIBED? → el poller adaptativo acelera si está caído
             libPromise:null,   // promesa de import del cliente (1 sola vez)
             listeners: false,  // listeners visible/focus/online ya cableados
             gen:       0       // [anti-orphan] generación: _detener la incrementa → un arranque en vuelo se aborta tras sus awaits
@@ -10025,6 +10035,8 @@
                 );
                 channel.subscribe((status) => {
                     try { console.log('[Realtime] canal catalogo_meta:', status); } catch(_) {}
+                    // Marca de salud del canal → el poller adaptativo acelera si el realtime está caído.
+                    _RT_CAT.subscribed = (status === 'SUBSCRIBED');
                     // Al (re)suscribir, resync por si perdimos un UPDATE mientras el WS dormía.
                     // Money-safe: pasa por el mismo núcleo que el poller (no re-descarga si no subió).
                     if (status === 'SUBSCRIBED') {
