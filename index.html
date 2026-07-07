@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.176';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.177';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3739,7 +3739,7 @@
                                 </div>
                             </div>
                             <div class="flex items-center space-x-2 shrink-0 ml-3">
-                               <div class="font-black text-xl" :class="venta.anulada ? 'line-through text-gray-400' : ''">S/ {{ venta.total.toFixed(2) }}</div>
+                               <div class="font-black text-xl" :class="venta.anulada ? 'line-through text-gray-400' : ''">S/ {{ Number(venta.total || 0).toFixed(2) }}</div>
                                <svg class="w-5 h-5 text-gray-400 transform transition-transform" :class="{'rotate-180': venta.expanded}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                             </div>
                         </div>
@@ -3922,7 +3922,7 @@
                             </div>
                             <div class="p-2.5 flex-1 flex flex-col justify-between bg-white">
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
-                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ prod.precio.toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
+                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
                                <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : ' uds') : 'Sin stock' }}</span>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
@@ -3964,7 +3964,7 @@
                              <span v-if="item.enCombo" class="text-amber-600 text-[9px] font-bold ml-1">[combo]</span>
                            </h3>
                            <div v-if="item.ahorroPromo > 0" class="inline-flex items-center mt-1 bg-red-50 text-red-600 text-[9px] font-black px-1.5 py-0.5 rounded border border-red-100 uppercase">★ Ahorro S/ {{ item.ahorroPromo.toFixed(2) }}</div>
-                           <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ item.precioUnitario.toFixed(2) }} {{ esGranel(item) ? '/ kg' : 'ud.' }}</div>
+                           <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ Number(item.precioUnitario || 0).toFixed(2) }} {{ esGranel(item) ? '/ kg' : 'ud.' }}</div>
                            <!-- [v2.5.50] Badge segmento aplicado (solo si granel con tramo activo) -->
                            <div v-if="item.segmentoAplicado"
                                 class="inline-flex items-center mt-1 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider"
@@ -3975,7 +3975,7 @@
                            </div>
                          </div>
                          <div class="flex flex-col items-end shrink-0 pl-2 relative">
-                           <span class="font-black text-gray-800">S/ {{ item.subtotal.toFixed(2) }}</span>
+                           <span class="font-black text-gray-800">S/ {{ Number(item.subtotal || 0).toFixed(2) }}</span>
                            <!-- GRANEL: input de gramos + atajos -->
                            <template v-if="esGranel(item)">
                              <div class="flex items-center mt-1 gap-1">
@@ -9126,8 +9126,13 @@
                   const zonaMock = _parsed.zona === 'ZONA_MOCK_FALLBACK';
                   const printerMock = String(_parsed.estacion && _parsed.estacion.PrintNode_ID || '') === '123'
                                    && (_parsed.estacion && _parsed.estacion.Estacion_Nombre) === 'Caja Default';
-                  if (zonaMock || printerMock) {
-                      console.warn('[ME] config con datos MOCK_FALLBACK detectada — limpiando');
+                  // [fix pantalla-blanca] sesión a MEDIO formar: completada pero SIN estación válida (ej. una
+                  // extensión cuya zona heredada no matcheó ZONAS_CONFIG → se persistió estacion:null). Limpiar
+                  // → reaparece el wizard (recupera el equipo SIN borrar datos ni el UUID) en vez de arrancar
+                  // en un estado inconsistente que antes derivaba en pantalla blanca.
+                  const estacionInvalida = !!_parsed.completado && (!_parsed.estacion || typeof _parsed.estacion !== 'object' || !_parsed.estacion.Estacion_Nombre);
+                  if (zonaMock || printerMock || estacionInvalida) {
+                      console.warn('[ME] config inválida (mock o sin estación) — limpiando, reaparece el wizard');
                       localStorage.removeItem('mosexpress_config');
                       try { agregarToast && agregarToast('⚠ Configuración inválida', 'Re-configura zona y caja con datos del servidor', 'warning'); } catch(_) {}
                       // No setear config.value — wizard se abrirá
@@ -13503,6 +13508,14 @@
         const iniciarTurno = async () => {
             // [FIX 500x C3] guard de reentrada: doble-tap/reload durante el await abría DOS cajas ABIERTAS.
             if (procesandoCaja.value) return;
+            // [fix pantalla-blanca · CAUSA DE ORIGEN] NO abrir turno sin una estación (impresora) válida. Antes,
+            // una extensión cuya zona no matcheaba ZONAS_CONFIG llegaba acá con estacion=null y se persistía
+            // config.completado=true + estacion=null → sesión a medio formar que derivaba en pantalla blanca.
+            if (!configWizard.value.estacion || typeof configWizard.value.estacion !== 'object' || !configWizard.value.estacion.Estacion_Nombre) {
+                try { agregarToast('Elegí una caja', 'Falta seleccionar la impresora/caja para abrir el turno.', 'warning'); } catch(_){}
+                try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch(_){}
+                return;
+            }
             // Guard: cajero ocupado no puede entrar como cajero
             if (wizardCajeroOcupado.value && configWizard.value.esCajero) {
                 agregarToast('Acceso bloqueado', 'Ya hay un cajero activo en esta zona. Entra como vendedor.');
@@ -21323,6 +21336,9 @@
     // capturamos, logueamos y avisamos al user con toast en vez de crashear.
     app.config.errorHandler = (err, instance, info) => {
       try { console.error('[Vue error]', info, err); } catch(_){}
+      // [anti-pantalla-blanca] Si el error dejó el #app vacío (throw en el render raíz), mostrar la pantalla
+      // de recuperación a nivel <body> (el #toastContainer no existiría). No molesta si la UI sigue viva.
+      try { setTimeout(function(){ if (window._meAppEnBlanco && window._meAppEnBlanco() && window._meMostrarRecuperacion) window._meMostrarRecuperacion('Error de interfaz: ' + String((err && err.message) || '').slice(0,80)); }, 200); } catch(_){}
       try {
         const errMsg = String((err && err.message) || err || 'error desconocido').substring(0, 120);
         const cont = document.getElementById('toastContainer');
@@ -21336,6 +21352,62 @@
       } catch(_){}
     };
     app.mount('#app');
+
+    // ════════════════════════════════════════════════════════════════════════════════════════════════
+    // [RED DE SEGURIDAD · anti-pantalla-blanca] Un throw en el render RAÍZ de Vue deja el #app VACÍO
+    // (aunque el setup ya corrió), y como el #toastContainer vive dentro del #app, el error queda
+    // SILENCIOSO = pantalla blanca. Este watchdog vive a nivel <body> (fuera del #app): si detecta el
+    // #app en blanco, muestra una pantalla de RECUPERACIÓN con un RESET SUAVE que limpia el estado de
+    // sesión/app PERO PRESERVA el UUID del dispositivo + permisos + push (no hay que borrar datos del
+    // sitio ni re-autorizar). Garantiza que un problema de arranque NUNCA más se vea como pantalla blanca.
+    // ════════════════════════════════════════════════════════════════════════════════════════════════
+    (function () {
+      var _recoverMostrado = false;
+      // Claves que se CONSERVAN en el reset suave (identidad del equipo + permisos + push). Todo lo demás
+      // (config, ventas, extensión, caja, cachés de estado) se limpia → wizard limpio, sin perder el UUID.
+      var _KEEP = /(deviceid|device_id|fcm|push|token_fcm|notif_perm|permis)/i;
+      function _resetSuave() {
+        try {
+          var borrar = [];
+          for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && !_KEEP.test(k)) borrar.push(k); }
+          borrar.forEach(function (k) { try { localStorage.removeItem(k); } catch (_) {} });
+        } catch (_) {}
+        // Limpiar también el caché del SW (por si sirve código viejo), preservando IndexedDB (catálogo) y localStorage-UUID.
+        var fin = function () { try { location.reload(); } catch (_) {} };
+        try {
+          if (window.caches && caches.keys) { caches.keys().then(function (ks) { return Promise.all(ks.map(function (x) { return caches.delete(x); })); }).then(fin, fin); }
+          else fin();
+        } catch (_) { fin(); }
+      }
+      function _mostrarRecuperacion(motivo) {
+        if (_recoverMostrado || document.getElementById('meRecoverOverlay')) return;
+        _recoverMostrado = true;
+        var d = document.createElement('div');
+        d.id = 'meRecoverOverlay';
+        d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:linear-gradient(160deg,#0f172a,#1e293b);color:#e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
+        d.innerHTML =
+          '<div style="font-size:46px">🛠️</div>' +
+          '<div style="font-size:19px;font-weight:900;margin-top:12px">La app no cargó bien</div>' +
+          '<div style="font-size:13px;color:#94a3b8;margin-top:8px;max-width:320px;line-height:1.55">Se repara al instante <b>sin perder tus datos</b> ni volver a pedir permisos. El identificador del equipo se conserva.</div>' +
+          '<button id="meRecoverBtn" style="margin-top:24px;background:#10b981;color:#fff;border:none;border-radius:14px;padding:15px 30px;font-size:16px;font-weight:900;box-shadow:0 10px 24px rgba(16,185,129,.45);cursor:pointer">Reparar y reabrir</button>' +
+          '<div style="font-size:10px;color:#475569;margin-top:18px;max-width:300px">' + (motivo || '') + '</div>';
+        document.body.appendChild(d);
+        var b = document.getElementById('meRecoverBtn'); if (b) b.onclick = _resetSuave;
+      }
+      try { window._meMostrarRecuperacion = _mostrarRecuperacion; window._meAppEnBlanco = _appEnBlanco; } catch (_) {}
+      function _appEnBlanco() {
+        try { var a = document.getElementById('app'); return !!a && a.childElementCount === 0 && String(a.textContent || '').trim().length === 0; } catch (_) { return false; }
+      }
+      // 1) Watchdog: a los 8s del montaje, si el #app sigue vacío → recuperación (el render raíz falló).
+      setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('Pantalla en blanco detectada al iniciar.'); }, 8000);
+      // 2) Error global temprano: si tras el error el #app está vacío, es un crash de arranque → recuperación.
+      window.addEventListener('error', function (e) {
+        setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('Error al iniciar: ' + String((e && e.message) || '').slice(0, 90)); }, 150);
+      });
+      window.addEventListener('unhandledrejection', function () {
+        setTimeout(function () { if (_appEnBlanco()) _mostrarRecuperacion('La app no terminó de cargar.'); }, 150);
+      });
+    })();
   </script>
 </body>
 </html>
