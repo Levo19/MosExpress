@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.183';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.184';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12152,6 +12152,29 @@
                 });
             } catch (e) { /* fire-and-forget */ }
         };
+        // [fix #3 · extras unificados] Cargar TODOS los extras de la CAJA desde el backend (me.movimientos_extra_caja,
+        // SQL 403) → el principal y la extensión ven los MISMOS extras. Antes cada equipo mostraba solo su
+        // localStorage local (por eso el cierre sumaba bien —lee el backend— pero la vista no coincidía). Cero-GAS.
+        let _extrasPollTimer = null;
+        const _cargarExtrasCaja = async () => {
+            try {
+                const idc = idCajaActual.value;
+                if (!idc || String(idc).startsWith('CAJA-LOCAL-') || offlineMode.value) return;
+                const tk = await _mintTokenSB(); if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/movimientos_extra_caja`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idCaja: idc } })
+                }, 8000);
+                const j = await r.json().catch(() => null);
+                if (!j || j.ok !== true || !Array.isArray(j.data)) return;
+                extrasMovimientos.value = j.data.map(e => ({
+                    id: e.id, tipo: e.tipo, monto: parseFloat(e.monto) || 0, concepto: e.concepto || '',
+                    obs: e.obs || '', timestamp: e.timestamp || 0, registradoPor: e.registradoPor || '', dispositivoId: e.dispositivoId || ''
+                }));
+                try { lsSet('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value)); } catch(_){}
+            } catch (e) { /* fail-safe: se queda con lo local */ }
+        };
         const _wizIniciarHeartbeat = () => {
             _wizRegistrarPresencia();
             try { _extIniciar(); } catch (e) {}   // [companion] ¿2º device? + poll principal
@@ -12159,9 +12182,14 @@
             // 30s (antes 60s): mantiene al cajero "vivo" bajo la ventana de recencia de 90s de la RPC
             // presencia_por_zona → nada de coronas fantasma y desaparición rápida al irse.
             _wizHeartbeatTimer = setInterval(_wizRegistrarPresencia, 30000);
+            // [fix #3] extras de la caja en vivo desde el backend (ambos equipos) + poll cada 12s.
+            try { _cargarExtrasCaja(); } catch (e) {}
+            if (_extrasPollTimer) clearInterval(_extrasPollTimer);
+            _extrasPollTimer = setInterval(() => { try { if (document.visibilityState === 'visible') _cargarExtrasCaja(); } catch (e) {} }, 12000);
         };
         const _wizDetenerHeartbeat = () => {
             if (_wizHeartbeatTimer) { clearInterval(_wizHeartbeatTimer); _wizHeartbeatTimer = null; }
+            if (_extrasPollTimer) { clearInterval(_extrasPollTimer); _extrasPollTimer = null; }
             try { _extDetener(); } catch (e) {}   // [companion]
         };
         // ── [v2.8.12] Baja EXPLÍCITA de presencia (cerrar sesión / cerrar caja). ──
@@ -12574,6 +12602,11 @@
                             ['mosexpress_es_extension','mosexpress_config','mosexpress_session_date','mosexpress_caja_activa',
                              'mosexpress_caja_payload','mosexpress_session_start','mosexpress_ventas_hoy','mosexpress_extras_sesion',
                              'mosexpress_cobrados_sesion'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+                            // [fix #2] Marca one-shot para que el próximo boot NO restaure la sesión desde el
+                            // snapshot server-side (get_device_state) — esa restauración devolvía el config cerrado
+                            // → el 2º equipo quedaba en "Abriendo tu caja..." (caja ya CERRADA). Con esto arranca
+                            // limpio en el Paso 1 del wizard, como el principal.
+                            try { localStorage.setItem('mosexpress_no_recovery', '1'); } catch(_){}
                             try { agregarToast('🔒 Turno cerrado', 'El equipo principal cerró la sesión.', 'info', 4000); } catch (e) {}
                             setTimeout(() => location.reload(), 1500);
                         }
@@ -13345,6 +13378,9 @@
                 const id = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
                 if (!id) return;
                 if (config.value.completado) return;
+                // [fix #2] One-shot: si venimos de un cierre en cascada (2º equipo), NO restaurar la sesión
+                // desde el snapshot (get_device_state) ni ofrecer retoma → arranca limpio en el wizard Paso 1.
+                try { if (localStorage.getItem('mosexpress_no_recovery') === '1') { localStorage.removeItem('mosexpress_no_recovery'); return; } } catch(_){}
                 // [v2.5.55] Paso intermedio: ANTES de pedir retoma con PIN admin,
                 // intentar recovery silencioso desde DEVICE_STATE en MOS. Si la
                 // PWA perdió localStorage Y IDB, pero el último snapshot remoto
@@ -16868,8 +16904,10 @@
                     })});
                 }
             } catch(e) { /* guardar local igualmente */ }
-            extrasMovimientos.value.push(extra);
+            extrasMovimientos.value.push(extra);   // optimista inmediato
             try { lsSet('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value)); } catch(_){}   // [Lote3-C · M8-FE] lsSet+try anti-cuota
+            // [fix #3] reconciliar con el backend → trae TODOS los extras de la caja (los míos + los del otro equipo).
+            try { _cargarExtrasCaja(); } catch(_){}
             nuevoExtra.value = { tipo: 'EGRESO', monto: '', concepto: '', obs: '', virtual: false };
             modalExtra.value = false;
             procesandoExtra.value = false;
