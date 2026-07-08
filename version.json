@@ -1,1 +1,1 @@
-{"version":"2.8.188","build":"2.8.188 (corte-GAS F1): refresca el módulo compartido seguridad-modal.js (extensión de horario ahora 100% Supabase). Sin cambios en ME propio."}
+{"version":"2.8.189","build":"2.8.189 (corte-GAS F4 espia): chunks de audio/video del espia (subirChunkAudio/espiaSubirChunk) -> Edge espia-chunk (Storage bucket espia) en vez de Drive/GAS. Signaling ya era RPC. Pipeline verificado E2E."}

