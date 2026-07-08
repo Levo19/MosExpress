@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.180';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.181';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -21339,11 +21339,6 @@
     // capturamos, logueamos y avisamos al user con toast en vez de crashear.
     app.config.errorHandler = (err, instance, info) => {
       try { console.error('[Vue error]', info, err); } catch(_){}
-      // [anti-pantalla-blanca] Si el error dejó el #app vacío (throw en el render raíz), mostrar la pantalla
-      // de recuperación a nivel <body> (el #toastContainer no existiría). No molesta si la UI sigue viva.
-      // Delay largo (3s) + doble chequeo: solo si el #app SIGUE vacío pasado ese tiempo (crash real y
-      // persistente), no por un error transitorio durante la carga. Evita el falso positivo.
-      try { setTimeout(function(){ if (window._meAppEnBlanco && window._meAppEnBlanco() && window._meMostrarRecuperacion) window._meMostrarRecuperacion('Error de interfaz: ' + String((err && err.message) || '').slice(0,80)); }, 3000); } catch(_){}
       try {
         const errMsg = String((err && err.message) || err || 'error desconocido').substring(0, 120);
         const cont = document.getElementById('toastContainer');
@@ -21357,68 +21352,6 @@
       } catch(_){}
     };
     app.mount('#app');
-
-    // ════════════════════════════════════════════════════════════════════════════════════════════════
-    // [RED DE SEGURIDAD · anti-pantalla-blanca] Un throw en el render RAÍZ de Vue deja el #app VACÍO
-    // (aunque el setup ya corrió), y como el #toastContainer vive dentro del #app, el error queda
-    // SILENCIOSO = pantalla blanca. Este watchdog vive a nivel <body> (fuera del #app): si detecta el
-    // #app en blanco, muestra una pantalla de RECUPERACIÓN con un RESET SUAVE que limpia el estado de
-    // sesión/app PERO PRESERVA el UUID del dispositivo + permisos + push (no hay que borrar datos del
-    // sitio ni re-autorizar). Garantiza que un problema de arranque NUNCA más se vea como pantalla blanca.
-    // ════════════════════════════════════════════════════════════════════════════════════════════════
-    (function () {
-      var _recoverMostrado = false;
-      // Claves que se CONSERVAN en el reset suave (identidad del equipo + permisos + push). Todo lo demás
-      // (config, ventas, extensión, caja, cachés de estado) se limpia → wizard limpio, sin perder el UUID.
-      var _KEEP = /(deviceid|device_id|fcm|push|token_fcm|notif_perm|permis)/i;
-      function _resetSuave() {
-        // [respeta datos locales] Escalonado:
-        //  · 1er intento (gentil): NO se toca localStorage → tu sesión/config/ventas se conservan. Solo se
-        //    limpia el caché del SW + se desregistra + recarga. Cura los crashes por código viejo/CDN SIN
-        //    perder datos (el 99% de los casos, ahora que el render ya no lanza por dato malo).
-        //  · 2º intento (el problema persiste tras recargar): recién ahí se limpia el config de sesión
-        //    PRESERVANDO deviceId + permisos + push → y la caja ABIERTA se recupera sola vía
-        //    retomar_caja_device (fix 401). Así nunca se pierde el trabajo: la caja sigue en el servidor.
-        var n = 0; try { n = (parseInt(sessionStorage.getItem('me_recover_n') || '0', 10) || 0) + 1; sessionStorage.setItem('me_recover_n', String(n)); } catch (_) { n = 1; }
-        if (n >= 2) {
-          try {
-            var borrar = [];
-            for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && !_KEEP.test(k)) borrar.push(k); }
-            borrar.forEach(function (k) { try { localStorage.removeItem(k); } catch (_) {} });
-          } catch (_) {}
-        }
-        var fin = function () { try { location.reload(); } catch (_) {} };
-        var tasks = [];
-        try { if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (x) { return caches.delete(x); })); })); } catch (_) {}
-        try { if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) tasks.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (_) {}
-        Promise.all(tasks).then(fin, fin);
-      }
-      function _mostrarRecuperacion(motivo) {
-        if (_recoverMostrado || document.getElementById('meRecoverOverlay')) return;
-        _recoverMostrado = true;
-        var d = document.createElement('div');
-        d.id = 'meRecoverOverlay';
-        d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:linear-gradient(160deg,#0f172a,#1e293b);color:#e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
-        d.innerHTML =
-          '<div style="font-size:46px">🛠️</div>' +
-          '<div style="font-size:19px;font-weight:900;margin-top:12px">La app no cargó bien</div>' +
-          '<div style="font-size:13px;color:#94a3b8;margin-top:8px;max-width:320px;line-height:1.55">Se repara al instante <b>sin perder tus datos</b> ni volver a pedir permisos. El identificador del equipo se conserva.</div>' +
-          '<button id="meRecoverBtn" style="margin-top:24px;background:#10b981;color:#fff;border:none;border-radius:14px;padding:15px 30px;font-size:16px;font-weight:900;box-shadow:0 10px 24px rgba(16,185,129,.45);cursor:pointer">Reparar y reabrir</button>' +
-          '<div style="font-size:10px;color:#475569;margin-top:18px;max-width:300px">' + (motivo || '') + '</div>';
-        document.body.appendChild(d);
-        var b = document.getElementById('meRecoverBtn'); if (b) b.onclick = _resetSuave;
-      }
-      try { window._meMostrarRecuperacion = _mostrarRecuperacion; window._meAppEnBlanco = _appEnBlanco; } catch (_) {}
-      function _appEnBlanco() {
-        try { var a = document.getElementById('app'); return !!a && a.childElementCount === 0 && String(a.textContent || '').trim().length === 0; } catch (_) { return false; }
-      }
-      // ⚠️ El disparo de la pantalla de recuperación es EXCLUSIVO del errorHandler de Vue (más arriba): solo
-      //    aparece ante un CRASH REAL del render que dejó el #app vacío. NO hay watchdog por tiempo ni por
-      //    error global: daban FALSOS POSITIVOS en cargas lentas (durante device-auth / descarga de catálogo
-      //    el #app está vacío un rato SIN estar crasheado → salía la pantalla de reparación sin necesidad,
-      //    incluso en Windows). Acá solo reseteamos el contador de escalación cuando la app YA cargó bien.
-      setTimeout(function () { try { if (!_appEnBlanco()) sessionStorage.removeItem('me_recover_n'); } catch (_) {} }, 12000);
-    })();
   </script>
 </body>
 </html>
