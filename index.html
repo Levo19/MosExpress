@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.184';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.185';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1667,6 +1667,89 @@
     @keyframes meKpiPulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,.4); }
       50%      { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       [rediseño POS] Módulo header compacto + animaciones hápticas.
+       Todo respeta prefers-reduced-motion (bloque al final desactiva).
+       ══════════════════════════════════════════════════════════════ */
+    .me-pos-hdr { position: relative; overflow: hidden; border-radius: 24px; }
+    /* punto "vivo" que respira — señal de sesión activa */
+    .me-live-dot { position: relative; width: 9px; height: 9px; border-radius: 999px; background: #34d399; flex-shrink: 0; }
+    .me-live-dot::after {
+      content: ''; position: absolute; inset: 0; border-radius: 999px; background: inherit;
+      animation: meLivePulse 2s ease-out infinite;
+    }
+    @keyframes meLivePulse {
+      0%   { transform: scale(1);   opacity: .7; }
+      70%  { transform: scale(3.2); opacity: 0; }
+      100% { transform: scale(3.2); opacity: 0; }
+    }
+    .me-live-dot.off  { background: #f87171; }
+    .me-live-dot.warn { background: #fbbf24; }
+    /* chip impresora */
+    .me-printer-chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+      border-radius: 999px; font-weight: 800; font-size: 11px; cursor: pointer;
+      transition: transform .15s ease, background .2s ease; border: 1px solid transparent;
+    }
+    .me-printer-chip:active { transform: scale(.94); }
+    .me-printer-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
+    .me-printer-dot.on   { background: #34d399; box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: mePrintPing 2.4s ease-out infinite; }
+    .me-printer-dot.warn { background: #fbbf24; }
+    .me-printer-dot.off  { background: #f87171; animation: mePrintBuzz .5s ease-in-out infinite; }
+    @keyframes mePrintPing { 0%{box-shadow:0 0 0 0 rgba(52,211,153,.55)} 70%{box-shadow:0 0 0 5px rgba(52,211,153,0)} 100%{box-shadow:0 0 0 5px rgba(52,211,153,0)} }
+    @keyframes mePrintBuzz { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-1px)} 75%{transform:translateX(1px)} }
+    /* acordeón de extras (saldo + lista) */
+    .me-acc { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .32s cubic-bezier(.4,0,.2,1); }
+    .me-acc.open { grid-template-rows: 1fr; }
+    .me-acc > .me-acc-in { overflow: hidden; }
+    .me-acc-chev { transition: transform .3s cubic-bezier(.4,0,.2,1); }
+    .me-acc-chev.open { transform: rotate(180deg); }
+    /* fila de botones del header — íconos + press */
+    .me-hdr-btn {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+      border-radius: 16px; padding: 9px 4px; font-weight: 900; font-size: 10px;
+      letter-spacing: .02em; transition: transform .13s ease, box-shadow .2s ease; border: none;
+    }
+    .me-hdr-btn:active { transform: scale(.92); }
+    .me-hdr-btn .ic { font-size: 17px; line-height: 1; }
+    /* count-up del saldo — leve subrayado al cambiar */
+    .me-countup { font-variant-numeric: tabular-nums; }
+    /* botones de ticket card */
+    .tk-btn { transition: transform .13s ease, box-shadow .2s ease; }
+    .tk-btn:active { transform: scale(.95); }
+    /* sello de éxito al cobrar */
+    .tk-cobrar.tk-ok { animation: tkOk .5s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes tkOk { 0%{transform:scale(1)} 40%{transform:scale(1.08)} 100%{transform:scale(1)} }
+    /* strikethrough al anular */
+    .tk-strike { position: relative; }
+    .tk-strike::after {
+      content:''; position:absolute; left:0; top:50%; height:2px; width:0; background:#ef4444;
+      animation: tkStrike .45s ease forwards;
+    }
+    @keyframes tkStrike { to { width:100%; } }
+    /* ticket nuevo entra deslizando */
+    .tk-enter { animation: tkEnter .38s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes tkEnter { 0%{opacity:0; transform:translateY(-10px) scale(.98)} 100%{opacity:1; transform:none} }
+    /* menú admin: bottom-sheet con stagger */
+    .me-sheet { animation: meSheetUp .3s cubic-bezier(.34,1.4,.64,1); transform-origin: bottom; }
+    @keyframes meSheetUp { 0%{opacity:0; transform:translateY(14px)} 100%{opacity:1; transform:none} }
+    .me-sheet-opt { animation: meOptIn .34s ease both; }
+    .me-sheet-opt:nth-child(1){animation-delay:.03s}.me-sheet-opt:nth-child(2){animation-delay:.07s}
+    .me-sheet-opt:nth-child(3){animation-delay:.11s}.me-sheet-opt:nth-child(4){animation-delay:.15s}
+    .me-sheet-opt:nth-child(5){animation-delay:.19s}.me-sheet-opt:nth-child(6){animation-delay:.23s}
+    @keyframes meOptIn { 0%{opacity:0; transform:translateX(-8px)} 100%{opacity:1; transform:none} }
+    .me-sheet-opt { transition: background .15s ease; }
+    .me-sheet-opt:active { background: rgba(0,0,0,.05); }
+    /* PIN shake ante error */
+    .me-shake { animation: meShake .4s cubic-bezier(.36,.07,.19,.97); }
+    @keyframes meShake { 10%,90%{transform:translateX(-1px)} 20%,80%{transform:translateX(2px)} 30%,50%,70%{transform:translateX(-4px)} 40%,60%{transform:translateX(4px)} }
+
+    @media (prefers-reduced-motion: reduce) {
+      .me-live-dot::after, .me-printer-dot.on, .me-printer-dot.off,
+      .tk-cobrar.tk-ok, .tk-strike::after, .tk-enter, .me-sheet, .me-sheet-opt, .me-shake { animation: none !important; }
+      .me-acc { transition: none; }
     }
 
     /* Tabs modernos pill con badge */
@@ -3504,105 +3587,79 @@
                   </div>
                 </div>
 
-                <!-- [v2.5.44] KPI cards prominentes — info NO MONETARIA del turno.
-                     Visible para cajero y vendedor. Click en cualquier card filtra/scrollea. -->
-                <div v-if="config.completado && (config.esCajero || !config.esCajero)" class="grid grid-cols-4 gap-2 mb-4">
-                  <button @click="tabCajaActivo='NOTAS'"
-                          class="me-kpi-card bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 hover:border-emerald-400">
-                    <span class="me-kpi-icon">🧾</span>
-                    <span class="me-kpi-num">{{ cantTicketsTurno }}</span>
-                    <span class="me-kpi-lbl">Tickets</span>
-                  </button>
-                  <div class="me-kpi-card bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 me-kpi-static">
-                    <span class="me-kpi-icon">⏱</span>
-                    <span class="me-kpi-num me-kpi-time">{{ tiempoTurnoTexto || '—' }}</span>
-                    <span class="me-kpi-lbl">Turno</span>
-                  </div>
-                  <button v-if="config.esCajero"
-                          @click="cantCobrosPendientesTurno > 0 && (modalCobrarAsignado = false)"
-                          class="me-kpi-card border-2"
-                          :class="cantCobrosPendientesTurno > 0
-                            ? 'bg-gradient-to-br from-amber-50 to-amber-100 border-amber-400 me-kpi-pulse'
-                            : 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200'">
-                    <span class="me-kpi-icon">✈</span>
-                    <span class="me-kpi-num" :class="cantCobrosPendientesTurno > 0 ? 'text-amber-700' : ''">{{ cantCobrosPendientesTurno }}</span>
-                    <span class="me-kpi-lbl">Por cobrar (asig.)</span>
-                  </button>
-                  <div v-else class="me-kpi-card bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 me-kpi-static">
-                    <span class="me-kpi-icon">📒</span>
-                    <span class="me-kpi-num text-blue-700">{{ cantPorCobrarTurno }}</span>
-                    <span class="me-kpi-lbl">Por cobrar</span>
-                  </div>
-                  <div class="me-kpi-card border-2"
-                       :class="cantAnuladosTurno > 0
-                         ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'
-                         : 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200'">
-                    <span class="me-kpi-icon">🚫</span>
-                    <span class="me-kpi-num" :class="cantAnuladosTurno > 0 ? 'text-red-700' : ''">{{ cantAnuladosTurno }}</span>
-                    <span class="me-kpi-lbl">Anulados</span>
-                  </div>
-                </div>
-
-                <!-- Header Cajero: info + botones apilados -->
-                <div v-if="config.esCajero" class="bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-5 rounded-3xl shadow-lg mb-6 relative overflow-hidden">
-                    <!-- Fila superior: caja activa + saldo -->
-                    <div class="flex justify-between items-start mb-4 relative z-10">
-                        <div>
-                            <p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">CAJA ACTIVA</p>
-                            <h2 class="text-xl font-black mt-0.5">{{ idCajaActual.startsWith('CAJA-LOCAL-') ? '⏳ Pendiente de registro' : idCajaActual }}</h2>
-                            <p class="text-emerald-300 text-xs mt-0.5 font-semibold">{{ config.vendedor }}</p>
-                            <!-- Aviso si el ID es LOCAL (no registrado en GAS aún) -->
-                            <div v-if="idCajaActual.startsWith('CAJA-LOCAL-')" class="mt-1.5 flex items-center gap-1 bg-amber-400 bg-opacity-30 border border-amber-300 border-opacity-60 rounded-lg px-2 py-1">
-                                <svg class="w-3 h-3 text-amber-200 animate-pulse shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
-                                <span class="text-amber-100 text-[10px] font-bold">Sin registrar en sistema · Reintentando cada 60s</span>
+                <!-- ═══════════════════════════════════════════════════════════
+                     [rediseño POS] Header CAJERO compacto: pulso vivo + nombre +
+                     hora + chip impresora. Saldo/extras en acordeón colapsable.
+                     Sin idCaja/label, sin dashboard KPI, sin REIMPR global.
+                     ═══════════════════════════════════════════════════════════ -->
+                <div v-if="config.esCajero" class="me-pos-hdr bg-gradient-to-br from-emerald-600 to-emerald-800 text-white p-4 shadow-lg mb-5">
+                    <!-- Fila 1: identidad viva + chip impresora -->
+                    <div class="flex items-center justify-between gap-3 relative z-10">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="me-live-dot" :class="conexionEstado==='OFFLINE' ? 'off' : conexionEstado==='RECONECTANDO' ? 'warn' : ''"></span>
+                            <div class="min-w-0">
+                                <h2 class="text-lg font-black leading-tight truncate">{{ config.vendedor }}</h2>
+                                <p class="text-emerald-200 text-[11px] font-bold tracking-wide">
+                                    Cajero · ⏱ {{ tiempoTurnoTexto || 'recién abierta' }}
+                                    <span v-if="cantTicketsTurno > 0">· 🧾 {{ cantTicketsTurno }}</span>
+                                </p>
                             </div>
                         </div>
-                        <div class="text-right">
-                            <p class="text-emerald-200 font-bold uppercase text-xs tracking-wider">SALDO INICIAL</p>
-                            <h2 class="text-2xl font-black mt-0.5">S/ {{ montoAperturaMemoria.toFixed(2) }}</h2>
-                            <!-- [v2.5.40] Info NO MONETARIA: tiempo de turno + ticket count -->
-                            <p class="text-emerald-200 text-[10px] font-bold mt-1.5 tracking-wider">
-                                ⏱ {{ tiempoTurnoTexto || 'recién abierta' }}
-                                <span v-if="cantTicketsTurno > 0" class="ml-1.5">· 🧾 {{ cantTicketsTurno }} tickets</span>
-                            </p>
+                        <div class="me-printer-chip bg-white/15 border-white/20 text-white shrink-0" @click="abrirModalImpresora()"
+                             :title="'Impresora: ' + (config.estacion ? config.estacion.Estacion_Nombre : '—') + ' · tocar para cambiar'">
+                            <span class="me-printer-dot" :class="conexionEstado==='OFFLINE' ? 'off' : conexionEstado==='RECONECTANDO' ? 'warn' : 'on'"></span>
+                            <span class="truncate max-w-[92px]">🖨 {{ config.estacion ? config.estacion.Estacion_Nombre.split(' ')[0] : '—' }}</span>
                         </div>
                     </div>
-                    <!-- Fila inferior: botones apilados -->
-                    <div class="flex gap-2 relative z-10">
-                        <button @click="abrirModoCajero" class="flex-1 bg-white text-emerald-700 font-black text-xs py-3 rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-1.5 border-2 border-white/80">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                            CAJERO
+
+                    <!-- Aviso caja LOCAL (no registrada aún) -->
+                    <div v-if="idCajaActual.startsWith('CAJA-LOCAL-')" class="mt-2.5 flex items-center gap-1 bg-amber-400/30 border border-amber-300/60 rounded-lg px-2 py-1 relative z-10">
+                        <svg class="w-3 h-3 text-amber-200 animate-pulse shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
+                        <span class="text-amber-100 text-[10px] font-bold">Sin registrar en sistema · Reintentando cada 60s</span>
+                    </div>
+
+                    <!-- Acordeón: saldo inicial + extras (colapsado por defecto) -->
+                    <button @click="posExtrasOpen = !posExtrasOpen; haptic(8)"
+                            class="mt-3 w-full flex items-center justify-between bg-black/20 rounded-xl px-3 py-2 relative z-10 active:scale-[.98] transition-transform">
+                        <span class="text-emerald-100 text-[11px] font-black uppercase tracking-wider">
+                            💰 Saldo inicial S/ <span class="me-countup">{{ montoAperturaMemoria.toFixed(2) }}</span>
+                            <span v-if="extrasMovimientos.length" class="ml-1 text-emerald-300">· {{ extrasMovimientos.length }} extra{{ extrasMovimientos.length===1?'':'s' }}</span>
+                        </span>
+                        <svg class="w-4 h-4 text-emerald-200 me-acc-chev" :class="{open: posExtrasOpen}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div class="me-acc relative z-10" :class="{open: posExtrasOpen}">
+                        <div class="me-acc-in">
+                            <div class="mt-2 bg-black/15 rounded-xl p-3">
+                                <div v-if="extrasMovimientos.length === 0" class="text-emerald-200/70 text-xs text-center py-1">Sin movimientos extra todavía</div>
+                                <div v-for="(ex, i) in extrasMovimientos" :key="ex.id || i" class="flex justify-between items-center text-xs mb-1.5 last:mb-0">
+                                    <span class="text-white font-semibold truncate flex-1">
+                                        {{ ex.concepto }}
+                                        <span v-if="ex.dispositivoId && ex.dispositivoId !== deviceId" class="text-sky-300 text-[9px] ml-1">🔗</span>
+                                    </span>
+                                    <span class="font-black ml-2 shrink-0" :class="ex.tipo.startsWith('INGRESO') ? 'text-emerald-300' : 'text-red-300'">
+                                        {{ ex.tipo.startsWith('INGRESO') ? '+' : '-' }} S/ {{ parseFloat(ex.monto).toFixed(2) }}
+                                        <span v-if="ex.tipo.endsWith('_VIRTUAL')" class="ml-0.5">📲</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fila de botones: Cajero · Extra · (Cerrar/Badge) — con íconos -->
+                    <div class="mt-3 grid grid-cols-3 gap-2 relative z-10">
+                        <button @click="haptic(12); abrirModoCajero()" class="me-hdr-btn bg-white text-emerald-700 shadow">
+                            <span class="ic">🧑‍💼</span>Cajero
                         </button>
-                        <button @click="modalExtra = true" class="flex-1 bg-amber-400 hover:bg-amber-300 text-amber-900 font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                            EXTRA
+                        <button @click="haptic(12); modalExtra = true" class="me-hdr-btn bg-amber-400 text-amber-900 shadow">
+                            <span class="ic">➕</span>Extra
                         </button>
-                        <!-- [v2.5.42] Reimprimir último ticket — atajo rápido para no expandir la lista -->
-                        <button @click="reimprimirUltimoTicket"
-                                :disabled="!ultimoTicketReimprimible"
-                                class="flex-1 bg-white/20 hover:bg-white/30 disabled:opacity-40 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5 border border-white/30"
-                                :title="ultimoTicketReimprimible ? 'Reimprimir ' + ultimoTicketReimprimible.correlativo : 'Sin tickets para reimprimir'">
-                            <span class="text-base">🧾</span>
-                            REIMPR
-                        </button>
-                        <!-- [v2 extensión] un 2º equipo NO cierra la caja — solo el PRINCIPAL. Badge en vez del botón. -->
-                        <div v-if="extEsExtension || config.esExtension" class="flex-1 bg-sky-500/20 text-sky-100 font-black text-[10px] px-2 py-3 rounded-xl border border-sky-300/40 flex items-center justify-center text-center leading-tight">🔗 Extensión<br>cierra el principal</div>
-                        <button v-else @click="cerrarCaja" :disabled="procesandoCierre" class="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                        <div v-if="extEsExtension || config.esExtension" class="me-hdr-btn bg-sky-500/25 text-sky-100 border border-sky-300/40 leading-tight text-center">
+                            <span class="ic">🔗</span>Extensión
+                        </div>
+                        <button v-else @click="haptic([10,40,10]); cerrarCaja()" :disabled="procesandoCierre" class="me-hdr-btn bg-red-500 text-white shadow disabled:opacity-60">
                             <svg v-if="procesandoCierre" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                            {{ procesandoCierre ? 'CERRANDO...' : 'CERRAR' }}
+                            <span v-else class="ic">🔒</span>{{ procesandoCierre ? '...' : 'Cerrar' }}
                         </button>
-                    </div>
-                    <!-- Mini-lista de extras del turno -->
-                    <div v-if="extrasMovimientos.length > 0" class="mt-3 bg-black/20 rounded-2xl p-3 relative z-10">
-                        <p class="text-emerald-200 text-[10px] font-black uppercase tracking-widest mb-2">Extras del turno</p>
-                        <div v-for="(ex, i) in extrasMovimientos" :key="i" class="flex justify-between items-center text-xs mb-1">
-                            <span class="text-white font-semibold truncate flex-1">{{ ex.concepto }}</span>
-                            <span class="font-black ml-2 shrink-0" :class="ex.tipo.startsWith('INGRESO') ? 'text-emerald-300' : 'text-red-300'">
-                                {{ ex.tipo.startsWith('INGRESO') ? '+' : '-' }} S/ {{ parseFloat(ex.monto).toFixed(2) }}
-                                <span v-if="ex.tipo.endsWith('_VIRTUAL')" class="text-indigo-300 text-xs ml-0.5">📲</span>
-                            </span>
-                        </div>
                     </div>
                 </div>
 
@@ -3650,26 +3707,32 @@
                 <!-- [v40.4] FIX: antes v-else se enlazaba al v-if de cobrosAsignados,
                      no al de esCajero. Resultado: cajero SIN cobros veía DOS botones
                      (CERRAR + CERRAR SESIÓN). Ahora v-if explícito: solo vendedores. -->
-                <div v-if="!config.esCajero" class="bg-gradient-to-br from-blue-700 to-blue-900 text-white p-5 rounded-3xl shadow-lg mb-6">
-                    <div class="flex justify-between items-start gap-4 mb-3">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-blue-200 font-bold uppercase text-xs tracking-wider">SESIÓN VENDEDOR</p>
-                            <h2 class="text-xl font-black mt-0.5">{{ config.vendedor }}</h2>
-                            <p class="text-blue-200 text-xs font-bold mt-0.5">{{ config.estacion ? config.estacion.Estacion_Nombre : '' }}</p>
-                            <p class="text-blue-200 text-[10px] font-bold mt-1.5 tracking-wider">
-                                ⏱ {{ tiempoTurnoTexto || 'recién abierta' }}
-                                <span v-if="cantTicketsTurno > 0" class="ml-1.5">· 🧾 {{ cantTicketsTurno }} mis tickets</span>
-                            </p>
+                <div v-if="!config.esCajero" class="me-pos-hdr bg-gradient-to-br from-blue-700 to-blue-900 text-white p-4 shadow-lg mb-5">
+                    <div class="flex items-center justify-between gap-3 relative z-10">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="me-live-dot" :class="conexionEstado==='OFFLINE' ? 'off' : conexionEstado==='RECONECTANDO' ? 'warn' : ''"></span>
+                            <div class="min-w-0">
+                                <h2 class="text-lg font-black leading-tight truncate">{{ config.vendedor }}</h2>
+                                <p class="text-blue-200 text-[11px] font-bold tracking-wide">
+                                    Vendedor · ⏱ {{ tiempoTurnoTexto || 'recién abierta' }}
+                                    <span v-if="cantTicketsTurno > 0">· 🧾 {{ cantTicketsTurno }}</span>
+                                </p>
+                            </div>
                         </div>
-                        <!-- [v2 extensión] badge cuando este equipo es EXTENSIÓN (el cerrar es exclusivo del principal) -->
-                        <div v-if="extEsExtension || config.esExtension" class="bg-sky-50 text-sky-700 font-black text-[11px] px-3 py-2.5 rounded-xl border border-sky-200 flex items-center shrink-0">🔗 Extensión · cierra el principal</div>
-                        <button v-else @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
-                            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                            CERRAR
-                        </button>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <div class="me-printer-chip bg-white/15 border-white/20 text-white" @click="abrirModalImpresora()"
+                                 :title="'Impresora: ' + (config.estacion ? config.estacion.Estacion_Nombre : '—') + ' · tocar para cambiar'">
+                                <span class="me-printer-dot" :class="conexionEstado==='OFFLINE' ? 'off' : conexionEstado==='RECONECTANDO' ? 'warn' : 'on'"></span>
+                                <span class="truncate max-w-[80px]">🖨 {{ config.estacion ? config.estacion.Estacion_Nombre.split(' ')[0] : '—' }}</span>
+                            </div>
+                            <div v-if="extEsExtension || config.esExtension" class="bg-sky-500/25 text-sky-100 font-black text-[10px] px-2.5 py-2 rounded-xl border border-sky-300/40 flex items-center leading-tight text-center">🔗<br>Extensión</div>
+                            <button v-else @click="haptic([10,40,10]); cerrarSesion()" class="me-hdr-btn bg-red-500 text-white shadow px-3">
+                                <span class="ic">🔒</span>Cerrar
+                            </button>
+                        </div>
                     </div>
                     <!-- [v2.5.40] Reglas claras para el vendedor: visibilidad de su rol -->
-                    <div class="bg-blue-950/40 border border-blue-400/30 rounded-xl p-2.5 text-[11px] leading-snug">
+                    <div class="mt-3 bg-blue-950/40 border border-blue-400/30 rounded-xl p-2.5 text-[11px] leading-snug relative z-10">
                         <p class="text-blue-100">
                             💡 Solo emites <strong>POR_COBRAR</strong>. El cajero cobra y cierra.
                             Para <strong>crédito</strong> necesitas autorización admin en el momento.
@@ -3768,44 +3831,32 @@
                                 </div>
                                 <div v-else class="text-xs text-gray-400 italic text-center py-2">Sin detalle de productos</div>
                             </div>
-                            <!-- Botones -->
-                            <div class="p-4 flex space-x-2 flex-wrap gap-2">
-                                <template v-if="config.esCajero">
-                                    <button @click="!venta.cobrado && !venta.anulada && abrirCobroPendiente(venta)"
+                            <!-- [rediseño] Acciones del USUARIO (sin clave) + UN botón "Autorizar" que agrupa todo lo admin -->
+                            <div class="p-4 pt-3">
+                                <div class="flex gap-2">
+                                    <!-- Cobrar (solo cajero) -->
+                                    <button v-if="config.esCajero"
+                                            @click="!venta.cobrado && !venta.anulada && (haptic(15), abrirCobroPendiente(venta))"
                                             :disabled="venta.cobrado || venta.anulada"
-                                            class="flex-1 min-w-[80px] font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors"
-                                            :class="venta.cobrado ? 'bg-emerald-100 text-emerald-700' : venta.anulada ? 'bg-gray-100 text-gray-400' : 'bg-posPrimary text-white shadow-md'">
-                                        {{ venta.cobrado ? '✓ Cobrado' : venta.credito ? 'Cobrar crédito' : 'Cobrar' }}
+                                            class="flex-1 font-black py-2.5 px-4 rounded-2xl text-sm active:scale-95 tk-btn transition-all flex items-center justify-center gap-1.5"
+                                            :class="venta.cobrado ? 'bg-emerald-100 text-emerald-700' : venta.anulada ? 'bg-gray-100 text-gray-400' : 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-md tk-cobrar'">
+                                        <span>{{ venta.cobrado ? '✓' : '💵' }}</span>{{ venta.cobrado ? 'Cobrado' : venta.credito ? 'Cobrar crédito' : 'Cobrar' }}
                                     </button>
-                                    <button v-if="!venta.cobrado && !venta.anulada && !venta.credito"
-                                            @click="abrirModalCredito(venta)"
-                                            class="flex-1 min-w-[80px] bg-orange-500 text-white font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors shadow-md">
-                                        Crédito
+                                    <!-- Imprimir (usuario) -->
+                                    <button @click="haptic(10); reimprimirTicket(venta)"
+                                            class="flex-1 font-black py-2.5 px-4 rounded-2xl text-sm active:scale-95 tk-btn transition-all bg-white border-2 border-slate-200 text-slate-600 flex items-center justify-center gap-1.5">
+                                        <span>🖨</span>Imprimir
                                     </button>
-                                    <button @click="!venta.anulada && anularVenta(venta)"
-                                            :disabled="venta.anulada"
-                                            class="flex-1 min-w-[80px] font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors"
-                                            :class="venta.anulada ? 'bg-red-100 text-red-400 border-2 border-red-200' : 'bg-white border-2 border-red-300 text-red-600 hover:bg-red-50'">
-                                        {{ venta.anulada ? '✕ Anulado' : 'Anular' }}
-                                    </button>
-                                    <button v-if="!venta.anulada"
-                                            @click="abrirModalMoneda(venta)"
-                                            class="flex-1 min-w-[80px] bg-amber-500 text-white font-bold py-2 px-4 rounded-xl text-sm active:scale-95 transition-colors shadow-md flex items-center justify-center gap-1"
-                                            title="Cambiar forma de pago">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                        Moneda
-                                    </button>
-                                </template>
-                                <button @click="reimprimirTicket(venta)" class="flex-1 min-w-[80px] bg-posSecondary text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center">
-                                    Imprimir
-                                </button>
-                                <!-- F3: Acciones admin (PIN admin gated) -->
-                                <button v-if="venta.id_venta_gas && !venta.anulada"
+                                </div>
+                                <!-- UN solo botón para todo lo que necesita admin (abre el menú agrupado; cada opción pide clave) -->
+                                <button v-if="!venta.anulada"
                                         @click="abrirAccionesAdmin(venta)"
-                                        class="flex-1 min-w-[80px] bg-gradient-to-br from-gray-700 to-gray-900 text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm active:scale-95 flex items-center justify-center gap-1"
-                                        title="Acciones que requieren autorización admin">
-                                    🔐 Admin
+                                        class="w-full mt-2 font-black py-2.5 px-4 rounded-2xl text-sm active:scale-95 tk-btn transition-all bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-md flex items-center justify-center gap-2 relative"
+                                        title="Anular, cambiar moneda, convertir a crédito/CPE, cambiar nombre — requieren autorización admin">
+                                    <span>🔐</span>Autorizar (admin)
+                                    <span class="absolute right-4 text-[10px] opacity-60 font-bold">ver opciones ▾</span>
                                 </button>
+                                <div v-else class="w-full mt-2 py-2.5 rounded-2xl text-sm bg-red-50 text-red-500 font-black text-center border-2 border-red-100">✕ Ticket anulado</div>
                             </div>
                         </div>
                     </div>
@@ -5571,7 +5622,7 @@
                 <!-- Cobrar crédito (POR_COBRAR / CREDITO) -->
                 <button v-if="adminPuedeCobrar(ticketParaAdmin)"
                         @click="adminAbrirCobrarCredito(ticketParaAdmin)"
-                        class="w-full flex items-center gap-3 p-3 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-200 rounded-xl text-left active:scale-95 transition-all">
+                        class="w-full flex items-center gap-3 p-3 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
                     <span class="text-2xl">💵</span>
                     <div class="flex-1 min-w-0">
                         <div class="font-black text-sm text-emerald-900">Cobrar deuda / pendiente</div>
@@ -5581,7 +5632,7 @@
                 <!-- Convertir NV → CPE -->
                 <button v-if="adminPuedeConvertir(ticketParaAdmin)"
                         @click="adminAbrirConvertir(ticketParaAdmin)"
-                        class="w-full flex items-center gap-3 p-3 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 rounded-xl text-left active:scale-95 transition-all">
+                        class="w-full flex items-center gap-3 p-3 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
                     <span class="text-2xl">📑</span>
                     <div class="flex-1 min-w-0">
                         <div class="font-black text-sm text-blue-900">Convertir NV → Boleta/Factura</div>
@@ -5591,7 +5642,7 @@
                 <!-- Editar cliente -->
                 <button v-if="adminPuedeEditarCliente(ticketParaAdmin)"
                         @click="adminAbrirEditarCliente(ticketParaAdmin)"
-                        class="w-full flex items-center gap-3 p-3 bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 rounded-xl text-left active:scale-95 transition-all">
+                        class="w-full flex items-center gap-3 p-3 bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
                     <span class="text-2xl">👤</span>
                     <div class="flex-1 min-w-0">
                         <div class="font-black text-sm text-indigo-900">Editar cliente</div>
@@ -5601,17 +5652,38 @@
                 <!-- Baja CPE -->
                 <button v-if="adminPuedeBajaCPE(ticketParaAdmin)"
                         @click="adminAbrirBajaCPE(ticketParaAdmin)"
-                        class="w-full flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 border-2 border-red-200 rounded-xl text-left active:scale-95 transition-all">
+                        class="w-full flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 border-2 border-red-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
                     <span class="text-2xl">📋</span>
                     <div class="flex-1 min-w-0">
                         <div class="font-black text-sm text-red-900">Baja del CPE (SUNAT)</div>
                         <div class="text-[10px] text-red-700 font-semibold">Comunicación de baja · irreversible</div>
                     </div>
                 </button>
+                <!-- [rediseño] Convertir a crédito (cambia el método a CRÉDITO) -->
+                <button v-if="!ticketParaAdmin.anulada && !ticketParaAdmin.cobrado && !ticketParaAdmin.credito"
+                        @click="modalAdminAcc=false; abrirModalCredito(ticketParaAdmin)"
+                        class="w-full flex items-center gap-3 p-3 bg-orange-50 hover:bg-orange-100 border-2 border-orange-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
+                    <span class="text-2xl">🔄</span>
+                    <div class="flex-1 min-w-0"><div class="font-black text-sm text-orange-900">Convertir a crédito</div><div class="text-[10px] text-orange-700 font-semibold">Cambia el método de pago a CRÉDITO</div></div>
+                </button>
+                <!-- [rediseño] Cambiar forma de pago -->
+                <button v-if="!ticketParaAdmin.anulada"
+                        @click="modalAdminAcc=false; abrirModalMoneda(ticketParaAdmin)"
+                        class="w-full flex items-center gap-3 p-3 bg-amber-50 hover:bg-amber-100 border-2 border-amber-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
+                    <span class="text-2xl">💱</span>
+                    <div class="flex-1 min-w-0"><div class="font-black text-sm text-amber-900">Cambiar forma de pago</div><div class="text-[10px] text-amber-700 font-semibold">Efectivo · virtual · mixto…</div></div>
+                </button>
+                <!-- [rediseño] Anular (NV) — para CPE es "Baja del CPE" de arriba -->
+                <button v-if="!ticketParaAdmin.anulada && !adminPuedeBajaCPE(ticketParaAdmin)"
+                        @click="modalAdminAcc=false; anularVenta(ticketParaAdmin)"
+                        class="w-full flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 border-2 border-red-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
+                    <span class="text-2xl">🚫</span>
+                    <div class="flex-1 min-w-0"><div class="font-black text-sm text-red-900">Anular ticket</div><div class="text-[10px] text-red-700 font-semibold">Anula la venta y repone el stock</div></div>
+                </button>
                 <!-- Sin opciones -->
-                <p v-if="!adminPuedeCobrar(ticketParaAdmin) && !adminPuedeConvertir(ticketParaAdmin) && !adminPuedeEditarCliente(ticketParaAdmin) && !adminPuedeBajaCPE(ticketParaAdmin)"
+                <p v-if="ticketParaAdmin.anulada"
                    class="text-center text-xs text-gray-400 italic py-4">
-                    Sin acciones admin disponibles para este ticket.
+                    Este ticket ya está anulado — sin acciones disponibles.
                 </p>
             </div>
         </div>
@@ -6046,6 +6118,36 @@
     </div>
 
     <!-- ===== MODAL: EXTRA DE CAJA (ingreso/egreso extra) ===== -->
+    <!-- [rediseño POS] Modal cambiar impresora — reusa estacionesFiltradas de la zona. Cero-GAS (solo local). -->
+    <div v-if="modalImpresora" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm" @click.self="modalImpresora=false">
+        <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[80vh] overflow-y-auto me-sheet">
+            <div class="flex justify-between items-center mb-1">
+                <h2 class="text-xl font-black text-gray-800 flex items-center gap-2">🖨 Impresora</h2>
+                <button @click="modalImpresora = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <p class="text-xs text-gray-500 font-semibold mb-4">Elegí a qué impresora salen tus tickets · se aplica al instante</p>
+            <div class="space-y-2">
+                <button v-for="est in estacionesFiltradas" :key="est.Estacion_Nombre || est.PrintNode_ID"
+                        @click="seleccionarImpresora(est)"
+                        class="me-sheet-opt w-full flex items-center gap-3 p-3 rounded-2xl border-2 text-left active:scale-[.98] transition-all"
+                        :class="config.estacion && config.estacion.Estacion_Nombre === est.Estacion_Nombre ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'">
+                    <span class="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0"
+                          :class="config.estacion && config.estacion.Estacion_Nombre === est.Estacion_Nombre ? 'bg-emerald-500 text-white' : 'bg-gray-100'">🖨</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-black text-gray-800 text-sm truncate">{{ est.Estacion_Nombre }}</div>
+                        <div class="text-[11px] text-gray-400 font-bold">PrintNode · {{ est.PrintNode_ID || 's/id' }}</div>
+                    </div>
+                    <span v-if="config.estacion && config.estacion.Estacion_Nombre === est.Estacion_Nombre" class="text-emerald-600 font-black text-sm">✓</span>
+                </button>
+                <div v-if="!estacionesFiltradas || estacionesFiltradas.length === 0" class="text-center text-gray-400 text-sm font-semibold py-6">
+                    No hay impresoras en esta zona.
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div v-if="modalExtra" class="fixed inset-0 bg-gray-900/75 z-50 flex flex-col justify-end backdrop-blur-sm">
         <div class="bg-white rounded-t-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
@@ -7069,6 +7171,17 @@
         // Eso evita disparar el modal "Retomar mi caja" cuando IDB ya tiene la data.
         const _hidratarSesionDesdeIDB = async () => {
             try {
+                // [fix #2 disp-2 "abriendo caja"] Si venimos de un cierre en cascada (2º equipo), NO rehidratar
+                //   desde IDB — ese snapshot es de la sesión YA cerrada. Antes esto revivía config.esCajero + una
+                //   caja_activa vieja; luego _verificarCajaServidor la marcaba cerrada (cajaAbierta=false) dejando
+                //   el limbo `esCajero && !cajaAbierta` = "Abriendo tu caja...". Purgamos el snapshot y NO consumimos
+                //   el flag (lo consume verificarCajaPorDeviceId, que arranca limpio en el wizard Paso 1).
+                try {
+                    if (localStorage.getItem('mosexpress_no_recovery') === '1') {
+                        try { await _idbCat.del('session_snapshot_v1'); } catch(_){}
+                        return false;
+                    }
+                } catch(_){}
                 const hayConfig = localStorage.getItem('mosexpress_config');
                 if (hayConfig) return false; // localStorage OK, no hace falta
                 const snap = await _idbCat.get('session_snapshot_v1');
@@ -7695,6 +7808,31 @@
         const modalExtra = ref(false);
         const procesandoExtra = ref(false);
         const nuevoExtra = ref({ tipo: 'EGRESO', monto: '', concepto: '', obs: '', virtual: false });
+        // [rediseño POS] acordeón del header (saldo + extras) + modal cambiar impresora
+        const posExtrasOpen = ref(false);
+        const modalImpresora = ref(false);
+        // Háptico global (respeta prefers-reduced-motion → el usuario que lo desactiva no siente buzz).
+        // ⚠️ SIN guión bajo: Vue 3 NO expone al template las claves que empiezan con `_` (causa ReferenceError
+        //    en render → pantalla blanca). El template lo llama como haptic(...).
+        const haptic = (pat) => {
+            try {
+                if (window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+                navigator.vibrate && navigator.vibrate(pat);
+            } catch (e) {}
+        };
+        // Abrir el selector de impresora (reusa estacionesFiltradas de la zona actual). Cero-GAS: solo local.
+        const abrirModalImpresora = () => { haptic(10); modalImpresora.value = true; };
+        // Cambiar la impresora/estación en caliente (persiste en config; NO reabre caja).
+        const seleccionarImpresora = (est) => {
+            try {
+                if (!est || !est.Estacion_Nombre) return;
+                config.value.estacion = est;
+                lsSet('mosexpress_config', JSON.stringify(config.value));
+                haptic([10, 30, 10]);
+                modalImpresora.value = false;
+                try { agregarToast('🖨 Impresora actualizada', est.Estacion_Nombre, 'success', 3000); } catch(_){}
+            } catch (e) {}
+        };
 
         // [v40.3] Cobros asignados por admin/master desde MOS
         const cobrosAsignados = ref([]);
@@ -9201,6 +9339,9 @@
                      try { window._meAcquireWakeLock && _meAcquireWakeLock(); } catch(_){}
                      // [v40.3] Iniciar polling de cobros asignados al recuperar caja
                      setTimeout(() => iniciarPollingCobros(), 1000);
+                     // [fix #3] extras de AMBOS equipos al instante (el heartbeat del boot corrió antes de tener
+                     //   idCaja → sin esto los extras tardaban hasta 12s en aparecer al recuperar la caja).
+                     try { _cargarExtrasCaja(); } catch(_){}
                      // [fix caja fantasma] verificar contra el server que la caja SIGA abierta (MOS pudo
                      // cerrarla forzado/auto). Si el server dice cerrada → limpia el estado local.
                      _verificarCajaServidor(cr.idCaja);
@@ -13367,6 +13508,19 @@
                     try { localStorage.removeItem('mosexpress_caja_activa'); } catch(_){}
                     try { extrasMovimientos.value = []; lsSet('mosexpress_extras_sesion', '[]'); } catch(_){}
                     try { if (_cobrosAsigPollTimer) { clearInterval(_cobrosAsigPollTimer); _cobrosAsigPollTimer = null; } } catch(_){}
+                    // [fix #2 disp-2 "abriendo caja"] Si soy CAJERO y la caja se cerró en el server, NO dejar
+                    //   `esCajero && !cajaAbierta` (limbo "Abriendo tu caja..."). Reset COMPLETO a wizard Paso 1,
+                    //   igual que el principal — para extensión (cascada) o para cualquier caja cerrada desde admin.
+                    if (config.value.esCajero) {
+                        config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+                        try { localStorage.removeItem('mosexpress_config'); } catch(_){}
+                        try { localStorage.removeItem('mosexpress_session_date'); } catch(_){}
+                        try { localStorage.removeItem('mosexpress_caja_payload'); } catch(_){}
+                        try { localStorage.removeItem('mosexpress_es_extension'); } catch(_){}
+                        try { await _idbCat.del('session_snapshot_v1'); } catch(_){}
+                        try { _extEsExtension.value = false; } catch(_){}
+                        try { wizStep.value = 1; } catch(_){}
+                    }
                     currentModule.value = 'CAJA';
                     try { agregarToast('🔒 Tu caja ya estaba cerrada', 'Se cerró desde administración. Abrí una nueva para vender.', 'warning'); } catch(_){}
                 }
@@ -15987,6 +16141,7 @@
 
         // Abrir el menú de acciones admin
         const abrirAccionesAdmin = (venta) => {
+            try { haptic([12, 40, 12]); } catch(_){}
             ticketParaAdmin.value = venta;
             modalAdminAcc.value = true;
         };
@@ -16874,37 +17029,28 @@
             // ve la fila en Sheets → no re-espeja → el cierre NO cuenta doble.
             const idExtra = 'EX-' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
             extra.id = idExtra;
-            let directoOK = false;
-            // Online + flag → RPC crear_movimiento_directo + mirror a Sheets. Si falla, cae al path GAS (transparente).
-            if (escrituraDirectaSupabase() && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                try {
-                    await _crearMovimientoDirecto(extra, idExtra);
-                    _mirrorMovimientoAsync(extra, idExtra);   // fire-and-forget; reconciliación = backstop
-                    directoOK = true;
-                } catch(eD) { console.warn('[mov directo] fallback a GAS:', eD && eD.message); directoOK = false; }
+            // [CERO-GAS] Persistencia ÚNICA y autoritativa: RPC me.crear_movimiento_directo (Supabase). Ya NO hay
+            //   espejo a Sheets ni fallback a GAS (EXTRA_CAJA eliminado). Money-safe: si el server no confirma,
+            //   NO fingimos que se guardó — avisamos y dejamos el modal abierto para reintentar (nada de extras
+            //   fantasma que el cierre no vería).
+            if (offlineMode.value) {
+                try { haptic([80]); } catch(_){}
+                agregarToast('📡 Sin conexión', 'No se puede registrar el movimiento extra ahora. Reintentá cuando vuelva la red.', 'warning');
+                procesandoExtra.value = false;
+                return;
             }
             try {
-                if (!directoOK && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                    await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                        tipoEvento: 'EXTRA_CAJA',
-                        cajaId: idCajaActual.value,
-                        idExtra: idExtra,   // [fix 20x] mismo id que el path directo = idempotencia cruzada
-                        tipo: extra.tipo, monto: extra.monto,
-                        concepto: extra.concepto, obs: extra.obs,
-                        registradoPor: config.value.vendedor,
-                        // [v40.3] payload estándar auth para que _audExtraerActor lo lea
-                        // y NO caiga al fallback "desconocido" en MOVIMIENTOS_EXTRA.
-                        auth: {
-                            vendedor: config.value.vendedor,
-                            estacion: (config.value.estacion || {}).Estacion_Nombre || '',
-                            deviceId: deviceId.value,
-                            esCajero: config.value.esCajero,
-                            rol:      config.value.esCajero ? 'CAJERO' : 'VENDEDOR'
-                        }
-                    })});
-                }
-            } catch(e) { /* guardar local igualmente */ }
-            extrasMovimientos.value.push(extra);   // optimista inmediato
+                await _crearMovimientoDirecto(extra, idExtra);
+            } catch (eD) {
+                console.warn('[mov extra] el server no confirmó:', eD && eD.message);
+                try { haptic([80, 40, 80]); } catch(_){}
+                agregarToast('⚠ Extra NO registrado', 'El servidor no confirmó el movimiento. Revisá la conexión y reintentá.', 'error');
+                procesandoExtra.value = false;
+                return;   // no cerrar modal · no push optimista → el usuario reintenta
+            }
+            // Confirmado en Supabase → reflejar al instante + reconciliar (trae los míos + los del otro equipo).
+            try { haptic([10, 30, 10]); } catch(_){}
+            extrasMovimientos.value.push(extra);   // optimista inmediato (se cuadra en el reconcile)
             try { lsSet('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value)); } catch(_){}   // [Lote3-C · M8-FE] lsSet+try anti-cuota
             // [fix #3] reconciliar con el backend → trae TODOS los extras de la caja (los míos + los del otro equipo).
             try { _cargarExtrasCaja(); } catch(_){}
@@ -21362,6 +21508,7 @@
           // F4 — Tutorial onboarding del botón Admin
           tutAdminVisto, tutAdminMarcarVisto,
           extrasMovimientos, modalExtra, procesandoExtra, nuevoExtra, registrarExtra,
+          posExtrasOpen, modalImpresora, abrirModalImpresora, seleccionarImpresora, haptic,
           // [Tarjeta de presentación]
           tarjetaModalAbierto, tarjetaEstado, tarjetaQRfallback, tarjetaTipoActual,
           abrirTarjetaModal, imprimirTarjeta,
