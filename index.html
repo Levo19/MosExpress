@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.182';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.183';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12567,7 +12567,13 @@
                         const r = await _extRpc('extension_debe_cerrar', { idDia: info.idDia, deviceId: _extDevId() });
                         if (r && r.ok && r.debeCerrar) {
                             clearInterval(_extCierreTimer); _extCierreTimer = null; _extEsExtension.value = false;
-                            localStorage.removeItem('mosexpress_es_extension'); localStorage.removeItem('mosexpress_config');
+                            // [fix #4] Limpieza COMPLETA del estado de sesión/caja antes de recargar. Antes solo
+                            //   borraba es_extension + config y dejaba mosexpress_caja_activa/payload viejos →
+                            //   al recargar el 2º equipo quedaba en "abriendo caja" (fantasma buscando una caja
+                            //   ya CERRADA). Ahora arranca limpio en el Paso 1 del wizard, como el principal.
+                            ['mosexpress_es_extension','mosexpress_config','mosexpress_session_date','mosexpress_caja_activa',
+                             'mosexpress_caja_payload','mosexpress_session_start','mosexpress_ventas_hoy','mosexpress_extras_sesion',
+                             'mosexpress_cobrados_sesion'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
                             try { agregarToast('🔒 Turno cerrado', 'El equipo principal cerró la sesión.', 'info', 4000); } catch (e) {}
                             setTimeout(() => location.reload(), 1500);
                         }
@@ -14166,13 +14172,11 @@
                  config.value.esCajero = false;
                  localStorage.removeItem('mosexpress_config');
                  localStorage.removeItem('mosexpress_session_date');
-                 // [v2.8.12] Cerrar CAJA = cierre explícito de turno → logout real: borrar
-                 // el fast-track ("Continuar tu turno") para que el cajero no reaparezca en
-                 // el login. (La caja ya está CERRADA en backend, así que tampoco vuelve por
-                 // el detector de caja por device.)
-                 try { localStorage.removeItem('mosexpress_ultimos_users'); } catch(_){}
+                 // [v2.8.12] Cerrar CAJA = cierre explícito → borrar SOLO el fast-track ("Continuar tu turno").
+                 // [fix #3] Los accesos rápidos (mosexpress_ultimos_users) SE CONSERVAN → el login vuelve a
+                 //   ofrecer los usuarios ya usados en este equipo para tipear rápido. (Antes se borraban.)
                  wizUltimoTurno.value = null;
-                 wizUltimosUsers.value = [];
+                 try { wizStep.value = 1; } catch(_){}   // [fix #1] el login reabre en el Paso 1 (nombre)
                  try { _wizDetenerHeartbeat(); } catch(_){}
                  // [v2.8.12] Baja INMEDIATA de presencia (no esperar el TTL de 2min).
                  try { _wizSalirPresencia(_idSalidaCaja, _nombreSalidaCaja); } catch(_){}
@@ -17625,13 +17629,11 @@
              localStorage.removeItem('mosexpress_caja_activa');
              localStorage.removeItem('mosexpress_caja_payload');
              localStorage.removeItem('mosexpress_session_start');
-             // [v2.8.12] CERRAR SESIÓN = logout REAL: borrar el fast-track ("Continuar tu
-             // turno") para que NO se re-ofrezca tras un cierre explícito. (Recargar la app
-             // con caja abierta sigue siendo válido: ahí restaura mosexpress_config y ni
-             // siquiera se muestra el wizard.) Limpiamos historial + el ref en vivo.
-             try { localStorage.removeItem('mosexpress_ultimos_users'); } catch(_){}
+             // [v2.8.12] CERRAR SESIÓN = borrar SOLO el fast-track ("Continuar tu turno") para que no se
+             // re-ofrezca tras un cierre explícito. [fix #3] Los accesos rápidos (mosexpress_ultimos_users)
+             // SE CONSERVAN → el login sigue ofreciendo los usuarios ya usados en este equipo.
              wizUltimoTurno.value = null;
-             wizUltimosUsers.value = [];
+             try { wizStep.value = 1; } catch(_){}   // [fix #1] el login reabre en el Paso 1 (nombre)
              try { _wizDetenerHeartbeat(); } catch(_){}
              // [v2.8.12] Baja INMEDIATA de presencia (no esperar el TTL de 2min).
              try { _wizSalirPresencia(_idSalida, _nombreSalida); } catch(_){}
