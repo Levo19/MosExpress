@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.181';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.182';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3586,7 +3586,7 @@
                             REIMPR
                         </button>
                         <!-- [v2 extensión] un 2º equipo NO cierra la caja — solo el PRINCIPAL. Badge en vez del botón. -->
-                        <div v-if="extEsExtension" class="flex-1 bg-sky-500/20 text-sky-100 font-black text-[10px] px-2 py-3 rounded-xl border border-sky-300/40 flex items-center justify-center text-center leading-tight">🔗 Extensión<br>cierra el principal</div>
+                        <div v-if="extEsExtension || config.esExtension" class="flex-1 bg-sky-500/20 text-sky-100 font-black text-[10px] px-2 py-3 rounded-xl border border-sky-300/40 flex items-center justify-center text-center leading-tight">🔗 Extensión<br>cierra el principal</div>
                         <button v-else @click="cerrarCaja" :disabled="procesandoCierre" class="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white font-black text-xs py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                             <svg v-if="procesandoCierre" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                             <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
@@ -3662,7 +3662,7 @@
                             </p>
                         </div>
                         <!-- [v2 extensión] badge cuando este equipo es EXTENSIÓN (el cerrar es exclusivo del principal) -->
-                        <div v-if="extEsExtension" class="bg-sky-50 text-sky-700 font-black text-[11px] px-3 py-2.5 rounded-xl border border-sky-200 flex items-center shrink-0">🔗 Extensión · cierra el principal</div>
+                        <div v-if="extEsExtension || config.esExtension" class="bg-sky-50 text-sky-700 font-black text-[11px] px-3 py-2.5 rounded-xl border border-sky-200 flex items-center shrink-0">🔗 Extensión · cierra el principal</div>
                         <button v-else @click="cerrarSesion" class="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-4 py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center shrink-0">
                             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                             CERRAR
@@ -13550,6 +13550,10 @@
                 zona:      configWizard.value.zona,
                 estacion:  configWizard.value.estacion,
                 esCajero,
+                // [fix badge extensión] persistir esExtension en config → el badge "🔗 Extensión · cierra el
+                // principal" sale confiable en cada arranque (antes solo dependía del ref _extEsExtension que
+                // podía quedar en false → el 2º equipo veía el botón CERRAR habilitado por error).
+                esExtension: !!configWizard.value.esExtension,
                 // [v2.7.47 FIX] Propagar rol e idPersonal para SeguridadSystem
                 rol:        String(configWizard.value.rol || 'VENDEDOR').toUpperCase(),
                 idPersonal: configWizard.value.idPersonal || ''
@@ -13846,7 +13850,7 @@
              // [FIX 500x A1] guard de reentrada: doble-tap abría dos ventanas turno.html (doble Ticket-Z) y doble cierre.
              if (procesandoCierre.value) return;
              // [v2 extensión] un 2º equipo (extensión) NO cierra la caja del principal. Bloqueo defensivo.
-             if (_extEsExtension.value) { try { agregarToast('🔗 Este es un 2º equipo', 'El cierre lo hace el equipo principal. Este equipo se cierra solo cuando el principal cierra.', 'info', 5000); } catch(e){} return; }
+             if (_extEsExtension.value || config.value.esExtension) { try { agregarToast('🔗 Este es un 2º equipo', 'El cierre lo hace el equipo principal. Este equipo se cierra solo cuando el principal cierra.', 'info', 5000); } catch(e){} return; }
              // PRE-CHECK de versión: si la PWA tiene código viejo, bloquear el
              // cierre y forzar reload. Evita generar guías duplicadas, montos
              // mal calculados u otros bugs ya corregidos en versiones posteriores.
@@ -17604,7 +17608,7 @@
         // Cierre de sesión para vendedores (sin caja)
         const cerrarSesion = async () => {
              // [v2 extensión] un 2º equipo no cierra la sesión — solo el principal (que cascadea a las extensiones).
-             if (_extEsExtension.value) { try { agregarToast('🔗 Este es un 2º equipo', 'El cierre lo hace el equipo principal.', 'info', 5000); } catch(e){} return; }
+             if (_extEsExtension.value || config.value.esExtension) { try { agregarToast('🔗 Este es un 2º equipo', 'El cierre lo hace el equipo principal.', 'info', 5000); } catch(e){} return; }
              if (!await _meModalConfirm(`¿Cerrar sesión de ${config.value.vendedor}?`, { warning: true, titulo: 'Cerrar sesión', okText: 'Cerrar sesión' })) return;
              // [v2.8.12] Capturar identidad ANTES de resetear config (la necesita la baja de presencia).
              const _idSalida = String(config.value.idPersonal || '').trim();
