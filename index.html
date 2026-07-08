@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.186';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.187';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3649,9 +3649,9 @@
                                         {{ ex.concepto }}
                                         <span v-if="ex.dispositivoId && ex.dispositivoId !== deviceId" class="text-sky-500 text-[9px] ml-1" title="registrado en el otro equipo">🔗</span>
                                     </span>
-                                    <span class="font-black ml-2 shrink-0" :class="ex.tipo.startsWith('INGRESO') ? 'text-emerald-600' : 'text-red-500'">
-                                        {{ ex.tipo.startsWith('INGRESO') ? '+' : '-' }} S/ {{ parseFloat(ex.monto).toFixed(2) }}
-                                        <span v-if="ex.tipo.endsWith('_VIRTUAL')" class="ml-0.5">📲</span>
+                                    <span class="font-black ml-2 shrink-0" :class="String(ex.tipo||'').startsWith('INGRESO') ? 'text-emerald-600' : 'text-red-500'">
+                                        {{ String(ex.tipo||'').startsWith('INGRESO') ? '+' : '-' }} S/ {{ (parseFloat(ex.monto)||0).toFixed(2) }}
+                                        <span v-if="String(ex.tipo||'').endsWith('_VIRTUAL')" class="ml-0.5">📲</span>
                                     </span>
                                 </div>
                             </div>
@@ -7271,7 +7271,6 @@
         // sonoro y voz "X soles, gracias por su compra" en todas las terminales.)
         const soundEnabled = ref(true);
         const voiceEnabled = ref(true);
-        const toggleVoice  = () => {}; // no-op (ya no se usa en UI)
 
         // Helpers TTS — Web Speech API (nativo, soporta es-PE / es-ES)
         let _voiceCache = null;
@@ -7997,26 +7996,10 @@
           const usr  = config.value.vendedor || '';
           if (!printerId || !zona) return;
           // [CERO-GAS] La impresión batch de etiquetas por zona pegaba a GAS imprimirBatchEtiquetasZona
-          // (302→404 = "letra roja" en consola; feature ya inoperante). Se neutraliza la llamada muerta.
-          // Para revivir el auto-print cero-GAS falta un Edge de impresión (PrintNode) para etiquetas de zona
-          // — la lista de pendientes sí quedó en Supabase (cargarEtiqsPendientes → mos.etiquetas_pendientes).
+          // (feature ya inoperante). Cuerpo GAS ELIMINADO (2026-07-08). Para revivir el auto-print cero-GAS
+          // falta un Edge de impresión (PrintNode) para etiquetas de zona — la lista de pendientes sí quedó
+          // en Supabase (cargarEtiqsPendientes → mos.etiquetas_pendientes).
           return;
-          try {
-            const res = await fetch(MOS_GAS_URL, {
-              method: 'POST',
-              body: JSON.stringify({
-                action: 'imprimirBatchEtiquetasZona',
-                idZona: zona, printerId, usuario: usr
-              })
-            });
-            const d = await res.json();
-            if (d && d.ok && d.data && d.data.impresas > 0) {
-              agregarToast('🏷 ' + d.data.impresas + ' etiqueta(s) impresas', 'Pégalas en los estantes');
-              playBeepOK();
-            }
-            etiqsAutoPrintHecho.value = true;
-            cargarEtiqsPendientes();  // refrescar lista para mostrar estado IMPRESA
-          } catch(e) { console.warn('[Etiq] autoprint:', e); }
         }
 
         // --- MÓDULO C: TOOLS ---
@@ -8518,21 +8501,8 @@
             const f = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
             return (f || []).filter(v => v.tipo === 'FACTURA').length;
         });
-        // [v2.5.42] Último ticket emitido (no anulado) — para atajo de reimprimir
-        const ultimoTicketReimprimible = computed(() => {
-            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
-            const list = (fuente || []).filter(v => !v.anulada);
-            return list.length > 0 ? list[0] : null; // ya viene ordenado más-reciente-primero
-        });
-        const reimprimirUltimoTicket = () => {
-            const t = ultimoTicketReimprimible.value;
-            if (!t) {
-                agregarToast('Sin tickets', 'No hay tickets para reimprimir', 'warning');
-                return;
-            }
-            try { playCashRing(); } catch(_){}
-            reimprimirTicket(t);
-        };
+        // [limpieza 2026-07-08] reimprimirUltimoTicket + ultimoTicketReimprimible ELIMINADOS:
+        // eran el atajo del botón REIMPR global, quitado en el rediseño del header (2.8.185).
 
         const vueltoCobro = computed(() => {
             if (!ventaCobrar.value) return 0;
@@ -9904,79 +9874,21 @@
         const _syncImpresorasFromProyectoMOS = async () => {
             try {
                 if (offlineMode.value) return;
-                // [CERO-GAS] El GAS getEstacionesParaApp está retirado (302→404 = "letra roja" en consola) y
-                // esta re-sincronización era redundante: PrintNode_ID/Series/Admin_PIN por estación ya llegan
-                // con el catálogo (mos.catalogo_pos_rls → ZONAS_CONFIG) al arranque. Sin fuente RPC equivalente
-                // que traiga impresora+series (mos.estaciones no las tiene), se neutraliza la llamada muerta.
-                return;
-                const url = MOS_GAS_URL + '?action=getEstacionesParaApp&appOrigen=mosExpress';
-                const r = await fetch(url);
-                const j = await r.json();
-                if (!j || !j.ok || !Array.isArray(j.data) || j.data.length === 0) return;
-
-                if (!Array.isArray(db.value.ZONAS_CONFIG)) db.value.ZONAS_CONFIG = [];
-
-                if (db.value.ZONAS_CONFIG.length === 0) {
-                    // ZONAS_CONFIG vacío → poblar entero desde ProyectoMOS_DB
-                    db.value.ZONAS_CONFIG = j.data.map(rmt => ({
-                        Zona_ID:         rmt.Zona_ID || '',
-                        Estacion_Nombre: rmt.Estacion_Nombre || '',
-                        idEstacion:      rmt.idEstacion || '',
-                        PrintNode_ID:    rmt.PrintNode_ID || '',
-                        Serie_Nota:      rmt.Serie_Nota || '',
-                        Serie_Boleta:    rmt.Serie_Boleta || '',
-                        Serie_Factura:   rmt.Serie_Factura || '',
-                        Admin_PIN:       rmt.Admin_PIN || ''
-                    }));
-                } else {
-                    // Override campos clave matcheando por idEstacion (único) — fallback
-                    // a Estacion_Nombre + Zona_ID (combinación única) para entradas
-                    // legacy sin idEstacion. NUNCA matchear por nombre solo: hay
-                    // estaciones con el mismo nombre en zonas distintas.
-                    db.value.ZONAS_CONFIG.forEach(z => {
-                        let remota = null;
-                        if (z.idEstacion) {
-                            remota = j.data.find(rmt => String(rmt.idEstacion) === String(z.idEstacion));
-                        }
-                        if (!remota) {
-                            remota = j.data.find(rmt =>
-                                String(rmt.Estacion_Nombre).trim().toUpperCase() ===
-                                String(z.Estacion_Nombre).trim().toUpperCase() &&
-                                String(rmt.Zona_ID).trim().toUpperCase() ===
-                                String(z.Zona_ID).trim().toUpperCase()
-                            );
-                        }
-                        if (!remota) return;
-                        if (remota.PrintNode_ID)  z.PrintNode_ID  = remota.PrintNode_ID;
-                        if (remota.idEstacion)    z.idEstacion    = remota.idEstacion;
-                        if (remota.Serie_Nota)    z.Serie_Nota    = remota.Serie_Nota;
-                        if (remota.Serie_Boleta)  z.Serie_Boleta  = remota.Serie_Boleta;
-                        if (remota.Serie_Factura) z.Serie_Factura = remota.Serie_Factura;
-                        if (remota.Admin_PIN)     z.Admin_PIN     = remota.Admin_PIN;
-                    });
-                }
-
-                // [series single-source] Superponer las series VIGENTES desde Supabase (la tabla que se edita
-                // en MOS) ANTES de persistir y de refrescar la estación → las cajas usan la MISMA serie que la
-                // emisión. Cierra el desajuste con la Hoja vieja (B001 vs BBB1). Tolerante.
+                // [CERO-GAS] El GAS getEstacionesParaApp está retirado: PrintNode_ID/Admin_PIN por estación ya
+                // llegan con el catálogo (mos.catalogo_pos_rls → ZONAS_CONFIG). Cuerpo GAS ELIMINADO (2026-07-08).
+                // [fix series huérfanas] Al neutralizar el cuerpo GAS, el overlay de SERIES VIGENTES desde Supabase
+                // (_overlaySeriesSupabase, single-source con la emisión CPE) quedó SIN caller y dejó de correr.
+                // Se recablea acá 100% Supabase: series frescas + persistir + refrescar la estación activa.
                 await _overlaySeriesSupabase();
-
-                // Persistir el catálogo (con ZONAS_CONFIG ya mutado) en IndexedDB
                 _guardarCatalogo(db.value).catch(() => {});
-
-                // Refrescar la estación activa si aplica — match por idEstacion o (nombre+zona)
                 if (config.value.estacion) {
                     const eAct = config.value.estacion;
                     let fresh = null;
-                    if (eAct.idEstacion) {
-                        fresh = db.value.ZONAS_CONFIG.find(z => String(z.idEstacion) === String(eAct.idEstacion));
-                    }
+                    if (eAct.idEstacion) fresh = (db.value.ZONAS_CONFIG || []).find(z => String(z.idEstacion) === String(eAct.idEstacion));
                     if (!fresh && eAct.Estacion_Nombre && eAct.Zona_ID) {
-                        fresh = db.value.ZONAS_CONFIG.find(z =>
-                            String(z.Estacion_Nombre).trim().toUpperCase() ===
-                            String(eAct.Estacion_Nombre).trim().toUpperCase() &&
-                            String(z.Zona_ID).trim().toUpperCase() ===
-                            String(eAct.Zona_ID).trim().toUpperCase());
+                        fresh = (db.value.ZONAS_CONFIG || []).find(z =>
+                            String(z.Estacion_Nombre).trim().toUpperCase() === String(eAct.Estacion_Nombre).trim().toUpperCase() &&
+                            String(z.Zona_ID).trim().toUpperCase() === String(eAct.Zona_ID).trim().toUpperCase());
                     }
                     if (fresh) {
                         config.value.estacion = { ...config.value.estacion, ...fresh };
@@ -9984,7 +9896,7 @@
                     }
                 }
             } catch(e) {
-                console.warn('No se pudo sincronizar estaciones desde ProyectoMOS_DB', e);
+                console.warn('No se pudo sincronizar estaciones/series', e);
             }
         };
 
@@ -21382,7 +21294,7 @@
           cajaAbierta, idCajaActual, montoAperturaMemoria, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
           ventasZona, cargandoZona, cargarVentasZona, cargarVentasVendedor, cobradosEnSesion, sessionStartTime, playCoinSound,
           soundEnabled, toggleSound,
-          voiceEnabled, toggleVoice,
+          voiceEnabled,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
@@ -21473,7 +21385,7 @@
           // [v2.5.40] Info no-monetaria del turno
           tiempoTurnoTexto, cantTicketsTurno, cantCobrosPendientesTurno,
           // [v2.5.42] Atajo reimprimir último ticket
-          ultimoTicketReimprimible, reimprimirUltimoTicket,
+
           // [v2.5.44] KPI cards + tabs modernos
           cantAnuladosTurno, cantPorCobrarTurno, cantCreditoTurno,
           conteoTodas, conteoNotas, conteoBoletas, conteoFacturas,
