@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.189';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.190';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -10224,19 +10224,32 @@
                    // legacy (sin direct) siguen por GAS hasta el go-live fiscal de Etapa 4.
                    if (venta.direct) {
                        try {
-                           const rd = await _crearVentaDirecta(venta.raw_data, venta.id);
+                           // [FIX pre-corte GAS 2026-07-08] Los CPE encolados (offline o infra) reintentan DIRECTO
+                           // vía _crearCPEDirecto (idempotente por ref_local — no re-mintea ni re-emite), igual que
+                           // las NV. Antes los CPE iban a la cola legacy → replay por GAS = boletas/facturas perdidas
+                           // al morir GAS. venta.cpe lo sella el productor (offline/infra del path CPE directo).
+                           const rd = venta.cpe ? await _crearCPEDirecto(venta.raw_data, venta.id)
+                                                : await _crearVentaDirecta(venta.raw_data, venta.id);
                            pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
                            const hIdxD = ventasHoy.value.findIndex(v => v.id === venta.id);
                            if (hIdxD > -1) {
                                const tkD = ventasHoy.value[hIdxD];
                                tkD.syncStatus = 'synced'; tkD.raw_data.status = 'synced';
                                tkD.correlativo = rd.correlativo; tkD.id_venta_gas = rd.id_venta || tkD.id_venta_gas;
+                               if (venta.cpe) {
+                                   if (rd.nfEstado)                       tkD.nfEstado   = rd.nfEstado;
+                                   if (rd.nfData && rd.nfData.hash)       tkD.nfHash     = rd.nfData.hash;
+                                   if (rd.nfData && rd.nfData.enlace)     tkD.nfEnlace   = rd.nfData.enlace;
+                                   if (rd.nfData && rd.nfData.qrString)   tkD.nfQrString = rd.nfData.qrString;
+                                   // F3: reimpresión con QR SUNAT tras el sync (mismo criterio que el path GAS).
+                                   if (reimpAuto.value && rd.nfEstado === 'EMITIDO') reimprimirCola.push(tkD);
+                               }
                            }
-                           try { _mirrorVentaAsync(venta.raw_data, rd.id_venta, rd.correlativo); } catch(_){}
+                           try { _mirrorVentaAsync(venta.raw_data, rd.id_venta, rd.correlativo, venta.cpe ? rd.nf : undefined); } catch(_){}
                            exitos++; exito = true;
                        } catch (eD) {
                            const mD = String(eD && eD.message || '');
-                           if (/CAJA_NO_ABIERTA/.test(mD) || /crear_venta_directa:\s/.test(mD)) {
+                           if (/CAJA_NO_ABIERTA/.test(mD) || /crear_venta_directa:\s/.test(mD) || /crear_cpe_directo:\s/.test(mD)) {
                                // negocio determinístico (caja cerrada / validación) → no reintentar; sacar + avisar.
                                pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
                                const hF = ventasHoy.value.findIndex(v => v.id === venta.id);
@@ -14501,26 +14514,6 @@
             espiaCerrarSesion: 'espia_cerrar_sesion'
         };
         async function _espiaCliPostMOS(accion, params) {
-            // [cero-GAS F4] Chunk de media (audio/video/screen) → Edge `espia-chunk` (Storage bucket espia). Antes GAS.
-            if (accion === 'espiaSubirChunk' || accion === 'subirChunkAudio') {
-                try {
-                    const tk = await _mintTokenSB(); if (!tk) return { ok: false };
-                    const pp = params || {};
-                    const tipo = pp.tipo || 'audio';
-                    const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/espia-chunk`, {
-                        method: 'POST',
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            deviceId: pp.deviceId || deviceId.value || 'unknown', tipo,
-                            ts: pp.ts || Date.now(), idx: pp.idx || 0,
-                            base64: pp.contenido || pp.audioBase64 || '', mime: pp.mimeType || (tipo === 'audio' ? 'audio/webm' : 'video/webm'),
-                            idSesion: pp.sesionId || pp.idSesion || (_espiaCli && _espiaCli.sesionId) || ''
-                        })
-                    }, 20000);
-                    const d = await res.json().catch(() => null);
-                    return d || { ok: false };
-                } catch (_) { return { ok: false }; }
-            }
             // Supabase-first: RPC mos.espia_* vía mint-me; mismo shape {ok,data}. Fallback GAS.
             const rpc = _ESPIA_RPC_ME[accion];
             if (rpc && window.ESPIA_DIRECTO !== false) {
@@ -14545,6 +14538,20 @@
                 const r = await fetch(MOS_GAS_URL, { method: 'POST', body: JSON.stringify(body) });
                 return await r.json();
             } catch(_) { return null; }
+        }
+
+        // [CERO-GAS F4] Sube un chunk de audio/video del espía a la Edge `espia-chunk` (Storage + registro), en vez
+        //   de a GAS→Drive. Token minteado (claim app). Fire-and-forget desde el caller.
+        async function _espiaSubirChunkEdge(idSesion, devId, tipo, idx, ts, b64, mime) {
+            try {
+                const tk = await _mintTokenSB(); if (!tk) return null;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/espia-chunk`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ idSesion: idSesion || '', deviceId: devId || '', tipo: tipo || 'audio', idx: idx || 0, ts: ts || Date.now(), mime: mime || '', audioBase64: b64 })
+                }, 12000);
+                return await r.json().catch(() => null);
+            } catch (_) { return null; }
         }
 
         function _espiaCliMostrarIndicador() {
@@ -15160,13 +15167,8 @@
                                 const blob = new Blob(chunks, { type: mime });
                                 const b64 = await _audioBlobToBase64(blob);
                                 if (b64.length > 0) {
-                                    await _espiaCliPostMOS('espiaSubirChunk', {
-                                        deviceId: deviceId.value || 'unknown',
-                                        tipo: tipoUpload,
-                                        ts: Date.now(),
-                                        contenido: b64,
-                                        sesionId: _espiaCli?.sesionId || ''
-                                    });
+                                    // [CERO-GAS F4] video chunk → Edge espia-chunk (Storage) en vez de GAS→Drive.
+                                    await _espiaSubirChunkEdge(_espiaCli?.sesionId || '', deviceId.value || 'unknown', 'video', 0, Date.now(), b64, mime);
                                 }
                             } catch(eUp) { console.warn('[espia upload]', eUp); }
                             chunks.length = 0;
@@ -15237,13 +15239,11 @@
             // Flush final ICE pendientes (best-effort, sin esperar mucho)
             if (ref._iceQueue?.length && ref.sesionId && ref.token) {
                 try {
-                    await fetch(MOS_GAS_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            action: 'espiaPushBatch',
-                            sesionId: ref.sesionId, lado: 'device', token: ref.token,
-                            ice: ref._iceQueue.map(c => ({ ice: c }))
-                        })
+                    // [FIX pre-corte GAS] flush final por el mapper Supabase-first (RPC espia_push_batch,
+                    // fallback GAS interno) — antes pegaba SOLO a GAS.
+                    await _espiaCliPostMOS('espiaPushBatch', {
+                        sesionId: ref.sesionId, lado: 'device', token: ref.token,
+                        ice: ref._iceQueue.map(c => ({ ice: c }))
                     });
                 } catch(_){}
             }
@@ -15297,11 +15297,8 @@
                     try {
                         const b64 = await _audioBlobToBase64(evt.data);
                         const idx = _audioChunkIdx++;
-                        // [cero-GAS F4] audio chunk → Edge `espia-chunk` (Storage) vía el helper unificado.
-                        await _espiaCliPostMOS('subirChunkAudio', {
-                            idSesion: _audioSesionId, deviceId: deviceId.value || 'unknown',
-                            tipo: 'audio', idx: idx, audioBase64: b64, mimeType: mimeType
-                        });
+                        // [CERO-GAS F4] audio chunk → Edge espia-chunk (Storage + registro) en vez de GAS→Drive.
+                        await _espiaSubirChunkEdge(_audioSesionId, deviceId.value || '', 'audio', idx, Date.now(), b64, mimeType);
                     } catch(e) { console.warn('[Audio] chunk falló:', e?.message); }
                 };
 
@@ -19363,10 +19360,13 @@
            // ── Modo offline puro ─────────────────────────────────────────
            if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                imprimirTicketVenta(correlativoLocal, false, null);
-               // [#1 cero-GAS] NV con escritura directa → direct:true: la cola reintenta DIRECTO a Supabase
-               // al reconectar (no GAS), idempotente por ref_local. CPE / NV-sin-flag siguen por GAS.
-               const _dirNV = escrituraDirectaSupabase() && tipoDocVenta === 'NOTA_DE_VENTA';
-               pendingSales.value.push(_dirNV ? { id: localId, raw_data: ventaBase, direct: true } : { id: localId, raw_data: ventaBase });
+               // [#1 cero-GAS + FIX pre-corte 2026-07-08] NV Y CPE con escritura directa → direct:true: la cola
+               // reintenta DIRECTO a Supabase al reconectar (no GAS), idempotente por ref_local. Los CPE llevan
+               // además cpe:true → el replay usa _crearCPEDirecto (emite + QR + reimpresión). Antes los CPE
+               // offline iban a la cola legacy→GAS = boletas/facturas perdidas al morir GAS.
+               const _esCPEOff = (tipoDocVenta === 'BOLETA' || tipoDocVenta === 'FACTURA');
+               const _dirOff = escrituraDirectaSupabase() && (tipoDocVenta === 'NOTA_DE_VENTA' || (_esCPEOff && cpeDirectoSupabase()));
+               pendingSales.value.push(_dirOff ? { id: localId, raw_data: ventaBase, direct: true, cpe: _esCPEOff } : { id: localId, raw_data: ventaBase });
                lsSet('pending_sales', JSON.stringify(pendingSales.value));
                // No toast — el cajero ya tiene su ticket (con LOCAL es esperado offline)
                return;
@@ -19471,11 +19471,19 @@
                        agregarToast('⚠ Comprobante rechazado', _msgCpe.replace(/^.*crear_cpe_directo:\s*/, ''), 'error', 6000);
                        return;   // NO GAS
                    }
-                   // INFRA (HTTP 5xx/timeout/sin token de la Edge): cae al path GAS, que dedupea por ref_local
-                   // (procesarVenta → _meVentaPorRefLocal) y con CORRELATIVO_SOURCE=supabase reusa el MISMO
-                   // idem_key=ref_local → no re-mintea ni re-emite. (CPE-direct infra-retry 100% cero-GAS = task #20.)
-                   console.warn('[CPE directo] infra → fallback a GAS (dedup por ref_local):', _msgCpe);
-                   // sigue al path GAS normal (sin return)
+                   // [FIX pre-corte GAS 2026-07-08 · cierra task #20] INFRA (HTTP 5xx/timeout/sin token de la
+                   // Edge): CERO-GAS → imprimir LOCAL + encolar para reintento DIRECTO CPE (direct+cpe). El replay
+                   // usa _crearCPEDirecto, idempotente por ref_local (mismo idem_key) → si la Edge SÍ había
+                   // emitido antes del timeout, dedupea (no re-mintea ni re-emite). Antes caía a GAS.
+                   console.info('[CPE directo] infra → cola directa CPE (cero-GAS):', _msgCpe);
+                   try { imprimirTicketVenta(correlativoLocal, false, null); } catch(_) {}
+                   const _yaEnColaC = pendingSales.value.some(v => v.id === localId);
+                   if (!_yaEnColaC) {
+                       pendingSales.value.push({ id: localId, raw_data: ventaBase, direct: true, cpe: true });
+                       lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                   }
+                   agregarToast('CPE en cola', 'Reintentando emisión directa (ticket impreso con correlativo local).', 'info', 3500);
+                   return;   // CERO-GAS: ya NO cae al path GAS
                }
            }
 
