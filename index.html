@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.190';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.191';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9280,10 +9280,44 @@
               } catch(_e) {}
               localStorage.removeItem('mosexpress_config');
           }
+          // [v2.8.191 P2/P3 cierre-día] DAY-GUARD de boot: una sesión local de un día
+          // ANTERIOR nunca sobrevive al arranque (regla del negocio: a las 11pm se
+          // cierra TODO; al día siguiente todos limpios). Sin esto, el equipo abría
+          // "logueado de ayer" (XF vendible al día siguiente) y el heartbeat re-creaba
+          // la fila del día / re-ataba la extensión de ayer sin aprobación.
+          // NO toca mosexpress_caja_activa: el bloque "caja de ayer" de más abajo la
+          // cierra server-side con arqueo real (mismo comportamiento de siempre).
+          // [review #6] Saneo previo: una marca de extensión de OTRO día (incluso a
+          // medio atar, sin config completada — QR escaneado pero wizard no terminado)
+          // se purga acá; si sobreviviera, el watcher de extensiones la tomaría por
+          // vigente y mataría a los 8s la sesión NUEVA que el usuario abra hoy.
+          try {
+              const _ei = JSON.parse(localStorage.getItem('mosexpress_es_extension') || 'null');
+              if (_ei && _ei.idDia && String(_ei.idDia).indexOf('LDIA-' + _meDiaLima().replace(/-/g, '')) !== 0) {
+                  localStorage.removeItem('mosexpress_es_extension');
+                  console.warn('[ME] Day-guard: marca de extensión de otro día purgada');
+              }
+          } catch(_) { try { localStorage.removeItem('mosexpress_es_extension'); } catch(__){} }
+          if (config.value.completado && !_meSesionEsDeHoy()) {
+              console.warn('[ME] Day-guard: sesión de otro día — reset a wizard');
+              ['mosexpress_es_extension','mosexpress_config','mosexpress_session_date','mosexpress_session_dia',
+               'mosexpress_session_start','mosexpress_caja_payload','mosexpress_extras_sesion',
+               'mosexpress_cobrados_sesion'].forEach(k => { try { localStorage.removeItem(k); } catch(_){} });
+              config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
+              try { _extEsExtension.value = false; } catch(_){}
+              try { agregarToast('🌙 Nuevo día', 'La sesión de ayer se cerró. Iniciá sesión para empezar el día.', 'info', 5000); } catch(_){}
+          }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
           // [v2.8.9] Reanudar el pulso de presencia si se restauró una sesión activa
           // (reload de la PWA con turno ya iniciado). Se detiene al cerrar sesión.
-          if (config.value.completado && config.value.vendedor) { try { _wizIniciarHeartbeat(); } catch(_){} }
+          // [v2.8.191] mosexpress_boot_es_login (one-shot): la retoma con PIN y el
+          // recovery de snapshot son logins explícitos → su 1er pulso lleva esLogin
+          // (el backend reabre la sesión del día si estaba cerrada).
+          if (config.value.completado && config.value.vendedor) {
+              const _bootLogin = localStorage.getItem('mosexpress_boot_es_login') === '1';
+              try { localStorage.removeItem('mosexpress_boot_es_login'); } catch(_){}
+              try { _wizIniciarHeartbeat(_bootLogin); } catch(_){}
+          }
 
           // [v2.5.51] Si la PWA perdió localStorage (no hay config completada)
           // pero el dispositivo tiene caja ABIERTA en backend, ofrecer retomar
@@ -12202,12 +12236,85 @@
             if (_wizPresenciaTimer) { clearInterval(_wizPresenciaTimer); _wizPresenciaTimer = null; }
         };
 
+        // ── [v2.8.191] Día de negocio SIEMPRE en TZ Perú (regla del ecosistema:
+        // espeja el backend, que corta el día en America/Lima). Un equipo con el
+        // reloj/TZ mal configurado ya no se auto-desloguea a mitad de jornada.
+        // 'mosexpress_session_dia' (Lima, YYYY-MM-DD) es la marca canónica; el
+        // viejo session_date (toDateString local) queda de fallback transicional. ──
+        const _meDiaLima = () => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date()); } catch(e) { return new Date().toISOString().slice(0,10); } };
+        const _meSesionEsDeHoy = () => {
+            try {
+                const dLima = localStorage.getItem('mosexpress_session_dia');
+                if (dLima) return dLima === _meDiaLima();
+                return localStorage.getItem('mosexpress_session_date') === new Date().toDateString();
+            } catch(e) { return true; }   // fail-open: ante duda no matar la sesión
+        };
+        // ── [v2.8.191 P3] Cierre de sesión FORZADO desde el heartbeat: el backend
+        // (registrar_presencia → debeCerrar) avisa que la sesión fue cerrada (cron
+        // 11pm / otro equipo / día nuevo) → limpiar TODO y volver al wizard Paso 1.
+        // Money-safe: si hay un cobro/cámara en curso NO interrumpe — el próximo
+        // pulso (30s) reintenta. Mismo patrón/llaves que el cierre en cascada de
+        // extensiones (fix #4), que ya está probado en producción. ──
+        let _meCierreForzadoPend = false;
+        const _meCerrarSesionForzada = (motivo) => {
+            try {
+                if (_meCierreForzadoPend) return;
+                if (modalPago.value || camaraAbierta.value) return;   // money-safe: reintenta en el próximo pulso
+                _meCierreForzadoPend = true;
+                try { _wizDetenerHeartbeat(); } catch(_){}
+                try { _wizSalirPresencia(); } catch(_){}
+                // [review #4] mosexpress_caja_activa NO se borra en un equipo PRINCIPAL:
+                // el boot la resuelve con dinero a salvo (caja de ayer → cierre server-side
+                // con arqueo real; caja de hoy → _verificarCajaServidor decide). Solo una
+                // EXTENSIÓN la borra (su "caja" es un espejo de la del principal).
+                const _esExt = (() => { try { return !!(config.value && config.value.esExtension) || !!JSON.parse(localStorage.getItem('mosexpress_es_extension') || 'null'); } catch(e) { return !!(config.value && config.value.esExtension); } })();
+                ['mosexpress_es_extension','mosexpress_config','mosexpress_session_date','mosexpress_session_dia',
+                 'mosexpress_caja_payload','mosexpress_session_start','mosexpress_ventas_hoy','mosexpress_extras_sesion',
+                 'mosexpress_cobrados_sesion'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_){} });
+                if (_esExt) { try { localStorage.removeItem('mosexpress_caja_activa'); } catch(_){} }
+                try { localStorage.setItem('mosexpress_no_recovery', '1'); } catch(_){}
+                // [review #3] invalidar TAMBIÉN los snapshots de recuperación (remoto + IDB):
+                // sin esto, cada reload posterior del mismo día los restauraba y el equipo
+                // entraba en ping-pong "sesión recuperada"/"turno cerrado". fechaSesion=''
+                // hace que el guard de recovery (fechaSesion===hoy) nunca restaure esto.
+                try { _idbCat.del('session_snapshot_v1'); } catch(_){}
+                try {
+                    (async () => {
+                        const did = localStorage.getItem('mosexpress_deviceId') || '';
+                        const tk = await _mintTokenSB(); if (!did || !tk) return;
+                        fetch(`${SUPABASE_URL}/rest/v1/rpc/set_device_state`, {
+                            method: 'POST', keepalive: true,   // sobrevive el reload
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p: { deviceId: did, app: 'ME', config: { completado: false }, cajaActiva: null, fechaSesion: '' } })
+                        }).catch(() => {});
+                    })();
+                } catch(_){}
+                try { agregarToast('🌙 Turno cerrado', motivo === 'cambio-dia'
+                    ? 'Empezó un nuevo día — iniciá sesión de nuevo.'
+                    : 'La sesión fue cerrada (cierre de las 11pm o desde otro equipo).', 'info', 4000); } catch(_){}
+                setTimeout(() => location.reload(), 1600);
+            } catch(e) { _meCierreForzadoPend = false; }
+        };
         // ── [v2.8.9] Pulso de presencia (heartbeat). Lo llama iniciarTurno al
-        // entrar y cada ~60s mientras el turno esté activo. fire-and-forget. ──
-        const _wizRegistrarPresencia = async () => {
+        // entrar (esLogin=true) y cada ~30s mientras el turno esté activo. ──
+        // [review #1] esLogin es PEGAJOSO hasta confirmarse: el pulso de login es el
+        // único que reabre/crea la fila del día en el backend — si ese fetch se pierde
+        // (red móvil, mint fallido), el siguiente pulso del interval REINTENTA como
+        // login en vez de recibir un debeCerrar injusto a los 30s de loguearse.
+        let _wizLoginPendiente = false;
+        const _wizRegistrarPresencia = async (esLogin) => {
             if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             const cw = config.value;
             if (!cw || !cw.completado || !cw.zona) return;
+            if (esLogin === true) _wizLoginPendiente = true;
+            const _login = _wizLoginPendiente;
+            // [v2.8.191 P3] guard de día VIVO (en TZ Perú): pestaña que cruza la
+            // medianoche o PC que despierta al día siguiente → cerrar localmente,
+            // NO pulsar (el pulso zombi era lo que re-creaba la fila del día nuevo).
+            if (!_login && !_meSesionEsDeHoy()) {
+                _meCerrarSesionForzada('cambio-dia');
+                return;
+            }
             // id_personal es obligatorio para el pulso; si no lo tenemos, usar el
             // nombre normalizado como identidad estable (la RPC dedupea por esta key).
             const idp = String(cw.idPersonal || '').trim() || ('NOID:' + String(cw.vendedor || '').trim().toLowerCase());
@@ -12219,7 +12326,9 @@
             const _pushTk = _pushTokenActual || '';
             try {
                 const token = await _mintTokenSB();
-                await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_presencia`, {
+                // [review #8i] con timeout (8s): sin él, en red colgada se apilaban
+                // pulsos en vuelo y un debeCerrar stale podía llegar tardísimo.
+                const _r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/registrar_presencia`, {
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
                     body: JSON.stringify({ p: {
@@ -12229,10 +12338,22 @@
                         estacion: cw.estacion?.Estacion_Nombre || '',
                         rol:      cw.esCajero ? 'cajero' : 'vendedor',
                         device_id:  String(_devId || ''),
-                        push_token: String(_pushTk || '')
+                        push_token: String(_pushTk || ''),
+                        // [v2.8.191 P2/P3] marcadores del cierre efectivo (SQL 415):
+                        // esLogin='1' desde el wizard/retoma (reabre/crea la fila del
+                        // día) y pegajoso hasta confirmar; sesionVigente marca "cliente
+                        // nuevo". Un backend viejo los ignora sin daño.
+                        esLogin:       _login ? '1' : '',
+                        sesionVigente: '1'
                     }})
-                });
-            } catch (e) { /* fire-and-forget */ }
+                }, 8000);
+                const _j = await _r.json().catch(() => null);
+                // login confirmado por el server → dejar de insistir con esLogin
+                if (_login && _r.ok && _j && _j.ok === true) _wizLoginPendiente = false;
+                // [v2.8.191 P3] el backend ordena cerrar (11pm / otro equipo / día
+                // nuevo) → cerrar acá mismo. Backend viejo: sin debeCerrar → no-op.
+                if (_j && _j.debeCerrar === true) _meCerrarSesionForzada('backend');
+            } catch (e) { /* fire-and-forget: si fue login, _wizLoginPendiente reintenta */ }
         };
         // [fix #3 · extras unificados] Cargar TODOS los extras de la CAJA desde el backend (me.movimientos_extra_caja,
         // SQL 403) → el principal y la extensión ven los MISMOS extras. Antes cada equipo mostraba solo su
@@ -12257,8 +12378,8 @@
                 try { lsSet('mosexpress_extras_sesion', JSON.stringify(extrasMovimientos.value)); } catch(_){}
             } catch (e) { /* fail-safe: se queda con lo local */ }
         };
-        const _wizIniciarHeartbeat = () => {
-            _wizRegistrarPresencia();
+        const _wizIniciarHeartbeat = (esLogin) => {
+            _wizRegistrarPresencia(esLogin === true);   // [v2.8.191] true SOLO desde el wizard (login explícito)
             try { _extIniciar(); } catch (e) {}   // [companion] ¿2º device? + poll principal
             if (_wizHeartbeatTimer) clearInterval(_wizHeartbeatTimer);
             // 30s (antes 60s): mantiene al cajero "vivo" bajo la ventana de recencia de 90s de la RPC
@@ -12390,7 +12511,17 @@
             const dev = _extDevId(); if (!dev) return;
             const res = await _extRpc('pedir_extension', { nombre, zona, deviceId: dev, rol, pushToken: (_pushTokenActual || '') });
             if (!res || !res.ok || !res.needsApproval || !res.idReq) {   // 1er device / ya atado / off → nada
-                if (manual) { try { agregarToast('Sin sesión para atar', 'Ese compañero no tiene una sesión activa para vincular ahora mismo.', 'warning'); } catch(e) {} }
+                // [v2.8.191 P1] mensajes HONESTOS por caso (antes un solo toast "no tiene
+                // sesión activa" mentía cuando en realidad este equipo YA estaba vinculado).
+                if (manual) { try {
+                    if (res && res.alreadyLinked) {
+                        agregarToast('🔗 Ya estás vinculado', 'Este equipo ya está atado a la sesión de ' + nombre + ' — no hace falta volver a vincular.', 'info');
+                    } else if (res && res.ok && !res.needsApproval) {
+                        agregarToast('Sin sesión para atar', nombre + ' no tiene una sesión activa hoy. Pedile que inicie sesión primero.', 'warning');
+                    } else {
+                        agregarToast('No se pudo vincular', (res && res.error) || 'Error de conexión — reintentá.', 'error');
+                    }
+                } catch(e) {} }
                 return;
             }
             _extPedirAbierto = true;
@@ -13507,6 +13638,11 @@
                             localStorage.setItem('mosexpress_caja_activa', JSON.stringify(snap.cajaActiva));
                         }
                         localStorage.setItem('mosexpress_session_date', snap.fechaSesion);
+                        // [v2.8.191 review #3] día Lima canónico. OJO: el recovery silencioso
+                        // NO es un login humano → NO lleva boot_es_login: si la sesión del día
+                        // está cerrada en el backend, el pulso recibirá debeCerrar y el equipo
+                        // vuelve al wizard (no se resucita una sesión cerrada por las 11pm).
+                        try { localStorage.setItem('mosexpress_session_dia', _meDiaLima()); } catch(_){}
                         console.log('[boot] Sesión recuperada desde DEVICE_STATE remoto (silent)');
                         agregarToast('🔄 Sesión recuperada', 'Bienvenido de vuelta ' + (snap.vendedor || ''), 'info');
                         setTimeout(() => location.reload(), 500);
@@ -13524,6 +13660,18 @@
                 }, 8000);
                 const d = await r.json().catch(() => null);
                 if (r.ok && d && d.status === 'success' && d.encontrada) {
+                    // [v2.8.191 review #7] una caja abierta de OTRO día (Lima) jamás se
+                    // ofrece para retomar (retomarla mezclaría las ventas de HOY en la
+                    // caja de ayer): se cierra directo con arqueo real server-side.
+                    try {
+                        const _fa = d.fechaApertura ? new Date(d.fechaApertura) : null;
+                        const _faLima = (_fa && !isNaN(_fa)) ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(_fa) : null;
+                        if (_faLima && _faLima !== _meDiaLima()) {
+                            if (cierreDirecto()) { _cerrarCajaDirecto(d.idCaja, null, null, 'CERRADA').catch(() => {}); }
+                            agregarToast('⚠ Caja de un día anterior', 'Se encontró una caja abierta de otro día y se cerró automáticamente. Avisa a tu supervisor si hubo inconvenientes.', 'warning');
+                            return;
+                        }
+                    } catch(_){}
                     cajaDetectadaBackend.value = {
                         idCaja:   d.idCaja,
                         vendedor: d.vendedor,
@@ -13595,7 +13743,11 @@
                     fecha:  Date.now()
                 }));
                 localStorage.setItem('mosexpress_session_date', new Date().toDateString());
+                localStorage.setItem('mosexpress_session_dia', _meDiaLima());   // [v2.8.191] día en TZ Perú
                 localStorage.setItem('mosexpress_session_start', new Date().toISOString());
+                // [v2.8.191] retoma autorizada por admin = login explícito → el 1er pulso
+                // tras el reload reabre la sesión del día si estaba cerrada.
+                try { localStorage.setItem('mosexpress_boot_es_login', '1'); } catch(_){}
                 // [v2.7.74 BUG CRÍTICO FIX] BLOQUE ELIMINADO:
                 //   if (d.estacion?.PrintNode_ID) {
                 //     localStorage.setItem('mosexpress_deviceId', String(d.estacion.PrintNode_ID));
@@ -13703,6 +13855,7 @@
             // [v2.5.32] lsSet con auto-recovery de quota (evita pantalla blanca)
             lsSet('mosexpress_config', JSON.stringify(config.value));
             lsSet('mosexpress_session_date', new Date().toDateString());
+            lsSet('mosexpress_session_dia', _meDiaLima());   // [v2.8.191] día de negocio en TZ Perú (canónico)
             _cargarAuditHoy();
 
             // [CERO-GAS] Push "vendedor conectado" a master+admin vía Edge `push` (antes GAS
@@ -13974,7 +14127,7 @@
             // [v2.8.9] Pulso de presencia: registrar entrada + heartbeat cada 60s
             // (alimenta la "tienda viva" del login de los demás dispositivos).
             wizZonaExpandida.value = null;
-            try { _wizIniciarHeartbeat(); } catch(_){}
+            try { _wizIniciarHeartbeat(true); } catch(_){}   // [v2.8.191] login explícito → esLogin (SQL 415 reabre/crea la fila del día)
 
             // Sincronizar catálogo (silencioso)
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
