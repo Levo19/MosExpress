@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.191';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.192';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4852,7 +4852,12 @@
                  <div v-else-if="pago.tipoDocClienteCE" class="space-y-2">
                    <div class="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2">
                      <span class="text-base shrink-0">🌎</span>
-                     <p class="text-[11px] text-indigo-700 font-bold leading-tight">Carné de Extranjería o Pasaporte (alfanumérico)</p>
+                     <p class="text-[11px] text-indigo-700 font-bold leading-tight flex-1">Se guarda en frecuentes · la próxima solo lo buscas</p>
+                     <!-- [v2.8.192] tipo SUNAT explícito: 4=CE · 7=Pasaporte (catálogo 06) -->
+                     <div class="flex bg-white rounded-full p-0.5 text-[10px] font-black shrink-0 border border-indigo-200">
+                       <button @click="ceTipoSel='4'" :class="ceTipoSel==='4' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2 py-1 rounded-full transition-all active:scale-95">Carné Ext.</button>
+                       <button @click="ceTipoSel='7'" :class="ceTipoSel==='7' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2 py-1 rounded-full transition-all active:scale-95">Pasaporte</button>
+                     </div>
                    </div>
                    <div class="relative">
                      <input v-model="pago.docCliente" type="text" inputmode="text" autocomplete="off" placeholder="N° de CE o Pasaporte"
@@ -8317,11 +8322,20 @@
             return pago.value.montoRecibido + (pago.value.montoVirtual || 0) - granTotal.value;
         });
 
+        // [v2.8.192 SUNAT] RUC REAL: 11 dígitos numéricos + prefijo válido (10/15/16/17/20).
+        // Norma catálogo 06: CE y Pasaporte llegan hasta 12 ALFANUMÉRICOS — un CE numérico de
+        // 11 dígitos pasaba el check de longitud y se disfrazaba de RUC → factura inválida.
+        const _esRucValido = (d) => /^(10|15|16|17|20)\d{9}$/.test(String(d || '').trim());
         const errorDocumento = computed(() => {
             const doc = String(pago.value.docCliente || '').trim();
             if (!doc) return '';
             // [v41] CE/Pasaporte tiene longitud variable → bypass validación estricta
-            if (pago.value.tipoDocClienteCE) return '';
+            // [v2.8.192] …EXCEPTO en FACTURA: SUNAT solo admite RUC. Antes este return
+            // saltaba TODA la validación y un cliente CE podía colarse a una factura.
+            if (pago.value.tipoDocClienteCE) {
+                if (pago.value.tipoDoc === 'FACTURA') return 'Cliente extranjero (CE/Pasaporte) no puede recibir FACTURA — SUNAT exige RUC';
+                return '';
+            }
             // [fix VARIOS] El doc '66666' = consumidor SIN documento (VARIOS). SUNAT lo permite en NV y en
             // BOLETA < S/ 700 (tipo_documento 0, número 0 — NO requiere 8 dígitos). Solo se exige identificar
             // si la boleta es ≥ S/ 700 o es FACTURA. Antes daba "DNI debe tener 8 dígitos" y bloqueaba VARIOS.
@@ -8335,7 +8349,8 @@
             // bloqueaba emitir boleta a un cliente con RUC.
             if (pago.value.tipoDoc === 'BOLETA' && !/^\d{8}$/.test(doc) && !/^\d{11}$/.test(doc))
                 return 'Para boleta: DNI (8 díg) o RUC (11 díg)';
-            if (pago.value.tipoDoc === 'FACTURA' && !/^\d{11}$/.test(doc)) return 'RUC debe tener exactamente 11 dígitos';
+            if (pago.value.tipoDoc === 'FACTURA' && !_esRucValido(doc))
+                return /^\d{11}$/.test(doc) ? 'Ese número no es un RUC válido (debe empezar en 10/15/16/17/20)' : 'RUC debe tener exactamente 11 dígitos';
             return '';
         });
 
@@ -8349,7 +8364,10 @@
             const idOk = ce ? !!doc : (/^\d{8}$/.test(doc) || /^\d{11}$/.test(doc));
             const items = [];
             if (tipo === 'FACTURA') {
-                items.push({ label: 'RUC de 11 dígitos', ok: /^\d{11}$/.test(doc), req: true });
+                // [v2.8.192] RUC REAL (prefijo 10/15/16/17/20) y NUNCA a un cliente CE/Pasaporte
+                // (SUNAT: factura solo a RUC; un CE de 11 dígitos ya no se disfraza de RUC).
+                if (ce) items.push({ label: 'FACTURA no aplica a CE/Pasaporte — solo RUC', ok: false, req: true });
+                items.push({ label: 'RUC válido (11 díg · empieza 10/15/16/17/20)', ok: _esRucValido(doc), req: true });
                 items.push({ label: 'Razón social', ok: !!nombre, req: true });
                 // Dirección fiscal: SOLO obligatoria para persona JURÍDICA (RUC '20…'). Persona natural
                 // (RUC 10/15/17) no tiene domicilio fiscal público → SUNAT la acepta sin dirección, así
@@ -16425,6 +16443,12 @@
             const venta = ticketParaAdmin.value;
             const e = adminConvEstado.value;
             if (!venta?.id_venta_gas) { agregarToast('Error', 'Ticket no sincronizado'); return; }
+            // [v2.8.192 SUNAT] FACTURA solo con RUC REAL (prefijo 10/15/16/17/20): un CE/Pasaporte
+            // de 11 dígitos numéricos ya no se disfraza de RUC en la conversión NV→CPE.
+            if (e.tipo === 'FACTURA' && !_esRucValido(e.doc)) {
+                agregarToast('⛔ RUC inválido', 'FACTURA requiere un RUC real (11 dígitos que empiezan en 10/15/16/17/20). Un CE o pasaporte no puede recibir factura.', 'warning', 6000);
+                return;
+            }
             if (!await _meModalConfirm(`¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
             adminProcesando.value = true;
             try {
@@ -18564,12 +18588,68 @@
         //  · Token TEXTO (nombre): SUBSTRING OK en Nombre (es búsqueda fuzzy).
         //    "uan" matchea "Juan", "Juana", "Juancito".
         //  · Dirección: substring OK (campo descriptivo, no estructurado).
+        // [v2.8.192 tiempo-real] El cache local del catálogo NO ve altas recientes
+        // (Jorgenis quedó guardado en la tabla y el buscador no lo mostraba). Cada
+        // tecleo (debounce 350ms) consulta también me.buscar_clientes_frecuentes
+        // (server, SQL 417) y se MERGEA con el cache local (dedup por documento).
+        const _cfServerExtra = ref([]);
+        let _cfServerTimer = null, _cfServerSeq = 0;
+        const _cfBuscarServer = async (q) => {
+            const seq = ++_cfServerSeq;
+            try {
+                const tk = await _mintTokenSB(); if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/buscar_clientes_frecuentes`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { q } })
+                }, 6000);
+                const j = await r.json().catch(() => null);
+                if (seq !== _cfServerSeq) return;   // respuesta vieja: descartar (anti reorden)
+                if (j && j.ok === true && Array.isArray(j.data)) {
+                    _cfServerExtra.value = j.data.map(d => ({
+                        Documento: String(d.documento || ''), Nombre_RazonSocial: String(d.nombre || ''),
+                        Direccion: String(d.direccion || ''), TipoId: String(d.tipoId || '')
+                    }));
+                }
+            } catch (e) { /* fail-safe: queda el cache local */ }
+        };
+        watch(busquedaNombre, (q) => {
+            if (_cfServerTimer) clearTimeout(_cfServerTimer);
+            const qq = String(q || '').trim();
+            if (qq.length < 2) { _cfServerExtra.value = []; return; }
+            _cfServerTimer = setTimeout(() => _cfBuscarServer(qq), 350);
+        });
+        // [v2.8.192] alta/refresco local INSTANTÁNEO de un cliente (tras guardarlo
+        // en el server): searchable al toque en este mismo equipo, sin esperar catálogo.
+        const _cfUpsertLocal = (doc, nombre, tipoId, dir) => {
+            try {
+                const lista = db.value.CLIENTES_FRECUENTES || (db.value.CLIENTES_FRECUENTES = []);
+                const i = lista.findIndex(c => String(c.Documento || '').trim() === String(doc).trim());
+                const fila = { Documento: String(doc), Nombre_RazonSocial: String(nombre), Direccion: String(dir || ''), TipoId: String(tipoId || '') };
+                if (i >= 0) lista.splice(i, 1, Object.assign({}, lista[i], fila)); else lista.push(fila);
+            } catch (e) {}
+        };
+        // Guardado directo al server (RPC me.guardar_cliente_frecuente, SQL 417) + alta local.
+        const _meGuardarClienteFrecuente = async (doc, nombre, tipoId, dir) => {
+            _cfUpsertLocal(doc, nombre, tipoId, dir);
+            try {
+                const tk = await _mintTokenSB(); if (!tk) return;
+                await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/guardar_cliente_frecuente`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { documento: String(doc), nombre: String(nombre), tipoId: String(tipoId || ''), direccion: String(dir || '') } })
+                }, 8000);
+            } catch (e) { /* fire-and-forget: el alta local ya quedó para esta sesión */ }
+        };
         const sugerenciasCliente = computed(() => {
             const q = busquedaNombre.value.trim().toLowerCase();
             if (!q || q.length < 2) return [];
             const tokens = q.split(/\s+/).filter(t => t.length >= 1);
             if (!tokens.length) return [];
-            const lista = (db.value.CLIENTES_FRECUENTES || []);
+            // [v2.8.192] local + server-extra (dedup por documento; server aporta TipoId)
+            const _loc = (db.value.CLIENTES_FRECUENTES || []);
+            const lista = _loc.concat((_cfServerExtra.value || []).filter(e =>
+                !_loc.some(l => String(l.Documento || '').trim() === String(e.Documento || '').trim())));
             const scored = [];
             for (const c of lista) {
                 // [v2.6.2] DEFENSIVO: Documento puede venir como número (Sheets
@@ -18641,6 +18721,14 @@
             // [v2.6.3] El header real es 'Nombre_RazonSocial' en CLIENTES_FRECUENTES.
             // Aceptamos ambos por compat. ANTES: c.Nombre quedaba undefined → casillero vacío.
             const _nombre = String(c.Nombre || c.Nombre_RazonSocial || '').trim();
+            // [v2.8.192 candado 2] REUSO de un extranjero ya registrado: hereda su tipo
+            // (CE '4' / Pasaporte '7') → se marca el flag CE y con él NUNCA valida FACTURA
+            // (aunque su doc tenga 11 dígitos numéricos y "parezca" RUC).
+            const _tid = String(c.TipoId || c.tipoId || '').trim();
+            pago.value.tipoDocClienteCE = (_tid === '4' || _tid === '7');
+            if (pago.value.tipoDocClienteCE && pago.value.tipoDoc === 'FACTURA') {
+                try { agregarToast('⛔ Solo RUC en factura', _nombre + ' es CE/Pasaporte — no puede recibir FACTURA (cámbiala a boleta o N.V.).', 'warning', 5000); } catch(_){}
+            }
             // [v2.7.2] DNI cero perdido: si el doc viene como 7 dígitos puros
             // (almacenado como Number sin formato '@'), padStart con cero para
             // que NubeFact/SUNAT lo reciba bien (DNI debe ser 8 dígitos exactos).
@@ -18702,17 +18790,26 @@
             pago.value.tipoDocClienteCE = false;
             clienteNombreManual.value = '';
         };
+        // [v2.8.192] CE (4) o Pasaporte (7) — catálogo 06 SUNAT. El mini-form del
+        // extranjero elige cuál; default CE (lo más común en tienda).
+        const ceTipoSel = ref('4');
         const confirmarClienteCE = () => {
             const nombre = clienteNombreManual.value.trim().toUpperCase();
             if (!nombre) return;
+            const doc = String(pago.value.docCliente || '').trim().toUpperCase();
+            pago.value.docCliente = doc;
             pago.value.nombreCliente = nombre;
-            // pago.docCliente ya tiene el código tipeado
             // pago.tipoDocClienteCE = true ya quedó marcado
             busquedaNombre.value = '';
             clienteModoManual.value = false;
             clienteNombreManual.value = '';
             try { playBeepOK?.(); } catch(_){}
-            agregarToast('✓ Cliente CE', nombre + ' · doc ' + pago.value.docCliente);
+            // [v2.8.192] GUARDAR de verdad (antes solo llenaba el ticket y el cliente
+            // jamás quedaba en frecuentes → cada venta se re-tipeaba el doc a mano;
+            // así nacieron los 3 docs distintos de Jorgenis). Alta local instantánea
+            // + upsert server (buscable desde cualquier equipo al toque).
+            try { _meGuardarClienteFrecuente(doc, nombre, ceTipoSel.value, ''); } catch(_){}
+            agregarToast('✓ Cliente ' + (ceTipoSel.value === '7' ? 'Pasaporte' : 'CE') + ' guardado', nombre + ' · doc ' + doc + ' · quedó en frecuentes');
         };
 
         // [v2.7.1] Flujo paralelo al CE: ingreso manual de nombre para DNI peruano
@@ -18739,6 +18836,11 @@
             clienteNombreManual.value = '';
             try { playBeepOK?.(); } catch(_){}
             const _et = String(pago.value.docCliente||'').length === 11 ? 'RUC' : 'DNI';
+            // [v2.8.192] también persiste (mismo gap que el CE): tipo 1=DNI / 6=RUC válido.
+            try {
+                const _d = String(pago.value.docCliente || '').trim();
+                _meGuardarClienteFrecuente(_d, nombre, /^\d{8}$/.test(_d) ? '1' : (_esRucValido(_d) ? '6' : ''), '');
+            } catch(_){}
             agregarToast('✓ Cliente registrado', nombre + ' · ' + _et + ' ' + pago.value.docCliente);
         };
         // Cliente VARIOS por defecto en Nota de Venta cuando el cajero no quiere
@@ -21506,7 +21608,7 @@
           clienteMatchExactoDoc,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
           reintentarBuscarCliente, corregirDocumento,
-          iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE,
+          iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE, ceTipoSel,
           // [v2.7.1] DNI peruano manual (cuando APISPeru no lo tiene en su base)
           iniciarRegistroManualDNI, cancelarRegistroManualDNI, confirmarClienteManualDNI,
           // [Bloque C UX] toggle origen + limpiar buscador/extranjero
