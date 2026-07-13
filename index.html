@@ -16066,20 +16066,19 @@
 
         // --- CAJERO: Marcar ticket como CRÉDITO (requiere PIN admin) ---
         const abrirModalCredito = (venta) => {
-            pedirPin(() => {
-                ticketParaCredito.value = venta;
-                obsCredito.value = venta.obs || '';
-                modalCredito.value = true;
-            }, { accion: 'CREDITO', refDocumento: venta.correlativo || venta.id });
+            // [Opción A · cero-caída] PIN al confirmar (no al abrir) → clave disponible para re-verificar.
+            ticketParaCredito.value = venta;
+            obsCredito.value = venta.obs || '';
+            modalCredito.value = true;
         };
 
         // --- CAJERO: Cambiar forma de pago posterior (MONEDA, requiere PIN admin) ---
         const abrirModalMoneda = (venta) => {
-            pedirPin(() => {
-                ticketParaMoneda.value = venta;
-                pagoMoneda.value = { metodo: 'EFECTIVO', montoVirtual: 0 };
-                modalMoneda.value = true;
-            }, { accion: 'CAMBIO_METODO', refDocumento: venta.correlativo || venta.id });
+            // [Opción A · cero-caída] El PIN se pide al CONFIRMAR (no al abrir) → la clave queda
+            // disponible para re-verificarse server-side en la mutación.
+            ticketParaMoneda.value = venta;
+            pagoMoneda.value = { metodo: 'EFECTIVO', montoVirtual: 0 };
+            modalMoneda.value = true;
         };
         const confirmarMoneda = async () => {
             if (!ticketParaMoneda.value) return;
@@ -16096,6 +16095,8 @@
                 const efeNeto = parseFloat((venta.total - vir).toFixed(2));
                 metodoFinal = `MIXTO (VIR:${vir.toFixed(2)}/EFE:${efeNeto.toFixed(2)})`;
             }
+            // [Opción A · cero-caída] PIN al confirmar → la clave (_res.clave) se re-verifica en la mutación.
+            pedirPin((_res) => {
             procesandoMoneda.value = true;
             // Actualizar localmente
             const idx = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -16114,7 +16115,7 @@
             // [Lote1-C · fix C1] Sincronizar VALIDANDO respuesta + cola si no hay red
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
                 _enviarMutacionDinero(
-                    { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value },
+                    { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value, claveAdmin: _res.clave },
                     venta.id,
                     () => {
                         const i2 = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -16131,10 +16132,11 @@
                 q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
                 _mutQueueSave(q);
             }
+            }, { accion: 'CAMBIO_METODO', refDocumento: venta.correlativo || venta.id });
         };
 
         const revertirCobro = (venta) => {
-            pedirPin(async () => {
+            pedirPin(async (_res) => {
                 if (!await _meModalConfirm(`¿Quitar cobro de ${venta.correlativo}?\n\nEl ticket pasará a SIN PAGAR.`, { warning: true, titulo: 'Quitar cobro', okText: 'Quitar' })) return;
                 // Actualizar local — splice fuerza reactividad inmediata en Vue
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -16154,7 +16156,7 @@
                 // [Lote1-C · fix C1] Sincronizar VALIDANDO respuesta + cola si no hay red
                 if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
                     _enviarMutacionDinero(
-                        { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value },
+                        { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value, claveAdmin: _res.clave },
                         venta.id, null /* rechazo → el poll reconverge al estado real */
                     );
                 } else if (venta.id_venta_gas) {
@@ -16168,7 +16170,7 @@
 
         // Versión desde modal Moneda: cierra el modal después del PIN+confirm
         const revertirCobroDesdeModal = (venta) => {
-            pedirPin(async () => {
+            pedirPin(async (_res) => {
                 if (!await _meModalConfirm(`¿Quitar cobro de ${venta.correlativo}?\n\nEl ticket pasará a SIN PAGAR.`, { warning: true, titulo: 'Quitar cobro', okText: 'Quitar' })) return;
                 modalMoneda.value = false;
                 ticketParaMoneda.value = null;
@@ -16188,7 +16190,7 @@
                 _mutMarcar(venta.id);   // [Lote1-C] in-flight
                 if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
                     _enviarMutacionDinero(
-                        { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value },
+                        { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value, claveAdmin: _res.clave },
                         venta.id, null
                     );
                 } else if (venta.id_venta_gas) {
@@ -16205,6 +16207,8 @@
             if (!ticketParaCredito.value?.id_venta_gas) { agregarToast('Error', 'Ticket aún no sincronizado'); return; }
             const _vCred = ticketParaCredito.value;
             const _obsCred = obsCredito.value.trim();
+            // [Opción A · cero-caída] PIN al confirmar → clave (_res.clave) re-verificada en la mutación.
+            pedirPin((_res) => {
             // Optimista + in-flight
             const idx = ventasZona.value.findIndex(v => v.id === _vCred.id);
             if (idx !== -1) {
@@ -16221,7 +16225,7 @@
             // rechazaba, la UI igual marcaba CRÉDITO. Ahora valida + rollback + cola offline.
             const payloadCred = { tipoEvento: 'CREDITAR_VENTA', idVenta: _vCred.id_venta_gas, obs: _obsCred };
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                _enviarMutacionDinero(payloadCred, _vCred.id, () => {
+                _enviarMutacionDinero({ ...payloadCred, claveAdmin: _res.clave }, _vCred.id, () => {
                     const i2 = ventasZona.value.findIndex(v => v.id === _vCred.id);
                     if (i2 !== -1) { ventasZona.value[i2].credito = false; ventasZona.value[i2].raw_data.header.metodo = ''; }
                 });
@@ -16230,6 +16234,7 @@
                 q.push({ payload: payloadCred, ventaLocalId: _vCred.id, ts: Date.now() });
                 _mutQueueSave(q);
             }
+            }, { accion: 'CREDITO', refDocumento: _vCred.correlativo || _vCred.id });
         };
 
         // ════════════════════════════════════════════════════════════
@@ -16279,7 +16284,7 @@
         // ── COBRAR CRÉDITO (caja receptora + método) ──
         const adminAbrirCobrarCredito = async (venta) => {
             modalAdminAcc.value = false;
-            _pinAdminThen('COBRAR_CREDITO_DESDE_LISTA', venta.correlativo || venta.id, async () => {
+            // [Opción A · cero-caída] PIN al CONFIRMAR (adminConfirmarCobrar), no al abrir.
                 ticketParaAdmin.value = venta;
                 adminCobrarEstado.value = {
                     metodo:  'EFECTIVO',
@@ -16314,7 +16319,6 @@
                 } catch(e) {
                     agregarToast('Error', 'No se pudieron cargar las cajas: ' + e.message, 'warning');
                 }
-            });
         };
 
         const adminConfirmarCobrar = async () => {
@@ -16332,6 +16336,8 @@
                 }
                 metodoFinal = `MIXTO (EFE:${monEf.toFixed(2)}/VIR:${monVi.toFixed(2)})`;
             }
+            // [Opción A · cero-caída] PIN al confirmar → clave re-verificada en cobrar_credito_directo.
+            _pinAdminThen('COBRAR_CREDITO_CON_EXTRA', venta.correlativo || venta.id, async (_res) => {
             adminProcesando.value = true;
             try {
                 // [B1 cobro directo cero-GAS] intento directo me.cobrar_credito_directo (314), GAS fallback.
@@ -16349,7 +16355,8 @@
                                 body: JSON.stringify({ p: {
                                     idVenta: venta.id_venta_gas, cajaReceptora: c.cajaSel, metodo: metodoFinal,
                                     montoEfectivo: monEf, montoVirtual: monVi, obs: c.obs || '',
-                                    vendedor: (adminAuthCache.value && adminAuthCache.value.nombre) || config.value.vendedor
+                                    vendedor: (adminAuthCache.value && adminAuthCache.value.nombre) || config.value.vendedor,
+                                    claveAdmin: _res.clave
                                 } })
                             }, 15000);
                             const _dd = await _rr.json().catch(() => null);
@@ -16398,27 +16405,27 @@
             } finally {
                 adminProcesando.value = false;
             }
+            });
         };
 
         // ── CONVERTIR NV → CPE ──
         const adminAbrirConvertir = (venta) => {
             modalAdminAcc.value = false;
-            _pinAdminThen('CONVERTIR_NV_A_CPE_DESDE_LISTA', venta.correlativo || venta.id, () => {
-                ticketParaAdmin.value = venta;
-                // [Tema1] Regla SUNAT: boleta > S/700 exige cliente identificado → si el monto supera 700,
-                // NO copiamos el cliente de la NV (obligamos a poner uno con DNI/RUC vía el buscador). Si es
-                // ≤ 700, conservamos el cliente de la NV (VARIOS ok). La serie ya NO se teclea: la deriva la RPC
-                // por la zona de emisión de la NV (y el confirm la deriva de la estación como respaldo).
-                const _mayor700 = (Number(venta.total) || 0) > 700;
-                adminConvEstado.value = {
-                    tipo: 'BOLETA',
-                    doc: _mayor700 ? '' : (venta.cliente_doc || ''),
-                    nombre: _mayor700 ? '' : (venta.cliente_nombre || ''),
-                    direccion: '',
-                    clienteOK: false
-                };
-                modalAdminConv.value = true;
-            });
+            // [Opción A · cero-caída] PIN al CONFIRMAR (adminConfirmarConvertir), no al abrir.
+            ticketParaAdmin.value = venta;
+            // [Tema1] Regla SUNAT: boleta > S/700 exige cliente identificado → si el monto supera 700,
+            // NO copiamos el cliente de la NV (obligamos a poner uno con DNI/RUC vía el buscador). Si es
+            // ≤ 700, conservamos el cliente de la NV (VARIOS ok). La serie ya NO se teclea: la deriva la RPC
+            // por la zona de emisión de la NV (y el confirm la deriva de la estación como respaldo).
+            const _mayor700 = (Number(venta.total) || 0) > 700;
+            adminConvEstado.value = {
+                tipo: 'BOLETA',
+                doc: _mayor700 ? '' : (venta.cliente_doc || ''),
+                nombre: _mayor700 ? '' : (venta.cliente_nombre || ''),
+                direccion: '',
+                clienteOK: false
+            };
+            modalAdminConv.value = true;
         };
 
         const adminConvSetTipo = (t) => { adminConvEstado.value.tipo = t; };  // la serie la deriva la RPC por zona
@@ -16450,6 +16457,8 @@
                 return;
             }
             if (!await _meModalConfirm(`¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
+            // [Opción A · cero-caída] PIN al confirmar → la clave (_res.clave) se re-verifica en convertir_nv_cpe.
+            _pinAdminThen('CONVERTIR_NV_A_CPE', venta.correlativo || venta.id, async (_res) => {
             adminProcesando.value = true;
             try {
                 // [Tema1] serie DERIVADA de la estación (zona) del cajero — el vendedor ya no la teclea.
@@ -16468,7 +16477,7 @@
                                 body: JSON.stringify({ p: {
                                     idVentaNV: venta.id_venta_gas, tipoDocNuevo: e.tipo, serieNueva: '',
                                     clienteDoc: e.doc.trim(), clienteNombre: e.nombre.trim(), clienteDireccion: e.direccion.trim(),
-                                    usuario: config.value.vendedor, rol: 'CAJERO'
+                                    usuario: config.value.vendedor, rol: 'CAJERO', claveAdmin: _res.clave
                                 } })
                             }, 25000);
                             const _dd = await _rr.json().catch(() => null);
@@ -16517,16 +16526,16 @@
             } finally {
                 adminProcesando.value = false;
             }
+            });
         };
 
         // ── BAJA CPE ──
         const adminAbrirBajaCPE = (venta) => {
             modalAdminAcc.value = false;
-            _pinAdminThen('BAJA_CPE_DESDE_LISTA', venta.correlativo || venta.id, () => {
-                ticketParaAdmin.value = venta;
-                adminBajaEstado.value = { motivo: '', motivoTxt: '' };
-                modalAdminBaja.value = true;
-            });
+            // [Opción A · cero-caída] PIN al CONFIRMAR (adminConfirmarBaja), no al abrir.
+            ticketParaAdmin.value = venta;
+            adminBajaEstado.value = { motivo: '', motivoTxt: '' };
+            modalAdminBaja.value = true;
         };
 
         const adminConfirmarBaja = async () => {
@@ -16534,6 +16543,8 @@
             const motivo = (adminBajaEstado.value.motivo || adminBajaEstado.value.motivoTxt || '').trim();
             if (!venta?.id_venta_gas || motivo.length < 3) return;
             if (!await _meModalConfirm(`¿Comunicar baja del ${venta.tipo} ${venta.correlativo} a SUNAT?\n\nEsta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
+            // [Opción A · cero-caída] BAJA_CPE es MASTER-only — PIN al confirmar; la clave se re-verifica en el Edge.
+            _pinAdminThen('BAJA_CPE', venta.correlativo || venta.id, async (_res) => {
             adminProcesando.value = true;
             try {
                 // [NIVEL 2 corte-GAS] Baja CPE SUNAT 100% Supabase (Edge emitir-cpe op=baja → NubeFact generar_anulacion). Sin GAS.
@@ -16541,7 +16552,7 @@
                 const r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/emitir-cpe`, {
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ operacion: 'baja', idVenta: venta.id_venta_gas, motivo: motivo })
+                    body: JSON.stringify({ operacion: 'baja', idVenta: venta.id_venta_gas, motivo: motivo, claveAdmin: _res.clave })
                 }, 20000);
                 const j = await r.json().catch(() => null);
                 if (!j || j.status !== 'success') throw new Error((j && (j.error || j.mensaje)) || 'Error en backend');
@@ -16558,21 +16569,21 @@
             } finally {
                 adminProcesando.value = false;
             }
+            });
         };
 
         // ── EDITAR CLIENTE ──
         const adminAbrirEditarCliente = (venta) => {
             modalAdminAcc.value = false;
-            _pinAdminThen('EDITAR_CLIENTE_DESDE_LISTA', venta.correlativo || venta.id, () => {
-                ticketParaAdmin.value = venta;
-                adminEditCliEstado.value = {
-                    doc:       venta.cliente_doc || '',
-                    nombre:    venta.cliente_nombre || '',
-                    direccion: '',
-                    motivo:    ''
-                };
-                modalAdminEditCli.value = true;
-            });
+            // [Opción A · cero-caída] PIN al CONFIRMAR (adminConfirmarEditarCliente), no al abrir.
+            ticketParaAdmin.value = venta;
+            adminEditCliEstado.value = {
+                doc:       venta.cliente_doc || '',
+                nombre:    venta.cliente_nombre || '',
+                direccion: '',
+                motivo:    ''
+            };
+            modalAdminEditCli.value = true;
         };
 
         const adminEditCliBuscar = async () => {
@@ -16595,6 +16606,8 @@
             const e = adminEditCliEstado.value;
             if (!venta?.id_venta_gas) { agregarToast('Error', 'Ticket no sincronizado'); return; }
             if (e.motivo.trim().length < 3) { agregarToast('Error', 'Motivo obligatorio'); return; }
+            // [Opción A · cero-caída] PIN al confirmar → la clave se re-verifica en editar_cliente.
+            _pinAdminThen('EDITAR_CLIENTE_VENTA', venta.correlativo || venta.id, async (_res) => {
             adminProcesando.value = true;
             try {
                 // [NIVEL 2 corte-GAS] Editar cliente de venta 100% Supabase (me.editar_cliente, SQL 271). Sin GAS.
@@ -16609,7 +16622,7 @@
                         clienteDireccion: e.direccion.trim(),
                         motivo:           e.motivo.trim(),
                         usuario:          config.value.vendedor, rol: 'CAJERO',
-                        autorizadoPor:    adminAuthCache.value
+                        autorizadoPor:    adminAuthCache.value, claveAdmin: _res.clave
                     } })
                 }, 15000);
                 const j = await r.json().catch(() => null);
@@ -16628,6 +16641,7 @@
             } finally {
                 adminProcesando.value = false;
             }
+            });
         };
 
         // --- CAJERO: Registrar movimiento EXTRA de caja ---
@@ -17760,17 +17774,19 @@
         const _postMutacionDinero = async (payload) => {
             const te = payload && payload.tipoEvento;
             let rpc = null, body = null;
+            // [cero-caída · SQL 435] claveAdmin re-verificada server-side (flag MOS_STRICT_ADMIN_REVERIFY).
+            const _cv = (payload && payload.claveAdmin) || '';
             if (te === 'COBRAR_VENTA') {
                 rpc = 'cobrar_venta_directo';
-                body = { p: { idVenta: payload.idVenta, metodo: payload.metodo, cajaId: payload.cajaId || '', usuario: config.value.vendedor } };
+                body = { p: { idVenta: payload.idVenta, metodo: payload.metodo, cajaId: payload.cajaId || '', usuario: config.value.vendedor, claveAdmin: _cv } };
             } else if (te === 'CREDITAR_VENTA') {
                 rpc = 'creditar_venta_directo';
-                body = { p: { idVenta: payload.idVenta, obs: payload.obs || '', usuario: config.value.vendedor } };
+                body = { p: { idVenta: payload.idVenta, obs: payload.obs || '', usuario: config.value.vendedor, claveAdmin: _cv } };
             } else if (te === 'ANULACION') {
                 // [CORTE GAS B3] Anulación individual 100% Supabase (me.anular_venta_directo, SQL 360). El payload
                 // del POS trae `ventaId` (no idVenta). Atómico + idempotente (repone stock + descuenta pickup).
                 rpc = 'anular_venta_directo';
-                body = { p: { idVenta: payload.ventaId, usuario: config.value.vendedor || '', motivo: payload.motivo || '' } };
+                body = { p: { idVenta: payload.ventaId, usuario: config.value.vendedor || '', motivo: payload.motivo || '', claveAdmin: _cv } };
             }
             // [CERO-GAS/CERO-FALLBACK] Los 3 tipoEvento de dinero (cobrar/creditar/anular) tienen RPC directo.
             // Red caída/timeout → THROW → _enviarMutacionDinero encola y reintenta el DIRECTO (nunca GAS).
@@ -17812,9 +17828,13 @@
                     }
                 })
                 .catch(() => {
-                    // Red caída: encolar con reintento persistente (sobrevive reload)
+                    // Red caída: encolar con reintento persistente (sobrevive reload).
+                    // [seguridad] NUNCA persistir la clave admin en localStorage: se quita antes de encolar.
+                    // El reintento va sin clave → con flag estricto el server pedirá re-autorizar (raro: la red
+                    // cayó justo tras el PIN); con flag en transición se procesa igual.
                     const q = _mutQueueGet();
-                    q.push({ payload, ventaLocalId, ts: Date.now() });
+                    const _safe = Object.assign({}, payload); delete _safe.claveAdmin;
+                    q.push({ payload: _safe, ventaLocalId, ts: Date.now() });
                     _mutQueueSave(q);
                     agregarToast('📡 Sin conexión', 'La operación se reintenta sola al volver la señal', 'warning');
                 });
@@ -19909,9 +19929,9 @@
         };
 
         const anularVenta = (venta) => {
-            pedirPin(() => _ejecutarAnulacion(venta), { accion: 'ANULACION', refDocumento: venta.correlativo || venta.id });
+            pedirPin((_res) => _ejecutarAnulacion(venta, _res.clave), { accion: 'ANULACION', refDocumento: venta.correlativo || venta.id });
         };
-        const _ejecutarAnulacion = (venta) => {
+        const _ejecutarAnulacion = (venta, _claveAdmin) => {
             // Cajero: ticket viene de ventasZona. Vendedor: ticket viene de ventasHoy.
             if (config.value.esCajero) {
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -19935,7 +19955,7 @@
             // [Lote1-C · fix C1] VALIDANDO respuesta + cola si no hay red (antes fire-and-forget)
             const payloadAnu = { tipoEvento: 'ANULACION', ventaId: venta.id_venta_gas || venta.id, correlativo: venta.correlativo, deviceId: deviceId.value };
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                _enviarMutacionDinero(payloadAnu, config.value.esCajero ? venta.id : null,
+                _enviarMutacionDinero({ ...payloadAnu, claveAdmin: _claveAdmin || '' }, config.value.esCajero ? venta.id : null,
                     () => {   // backend rechazó la anulación → restaurar visual
                         if (config.value.esCajero) {
                             const i2 = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -21117,7 +21137,7 @@
                     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/reabrir_guia_zona`, {
                         method: 'POST',
                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ p: { idGuia: String(guia.id_guia), usuario: String(resultado.validadoPor || config.value.vendedor || '') } })
+                        body: JSON.stringify({ p: { idGuia: String(guia.id_guia), usuario: String(resultado.validadoPor || config.value.vendedor || ''), claveAdmin: resultado.clave } })
                     });
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     const d = await res.json();

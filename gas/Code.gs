@@ -241,8 +241,8 @@ function doPost(e) {
     if (data.tipoEvento === 'APERTURA_CAJA')      return procesarAperturaCaja(data);
     if (data.tipoEvento === 'CIERRE_CAJA')         return procesarCierreCaja(data);
     if (data.tipoEvento === 'CIERRE_CAJA_FORZADO') return cerrarCajaForzado(data);
-    // [v2.5.52] Retoma de caja por deviceId con autorización admin
-    if (data.tipoEvento === 'CONFIRMAR_RETOMA_CAJA') return confirmarRetomaCaja(data);
+    // [CERO-GAS · audit 2026-07-13] CONFIRMAR_RETOMA_CAJA eliminado: ME usa el RPC Supabase
+    // me.confirmar_retoma_caja (SQL 364) directo. La función GAS + su bridge eran código muerto.
     // [v2.5.55] Sync de DEVICE_STATE a MOS (ME actúa como proxy con MOS_WEB_APP_URL)
     if (data.tipoEvento === 'SYNC_DEVICE_STATE') return syncDeviceStateProxy(data);
     // [v2.5.58] Pre-reserva correlativo vía POST (acepta header)
