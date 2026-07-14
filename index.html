@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.196';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.197';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -12459,7 +12459,6 @@
         // lo registra cada overlay para que _extDetener pueda cerrarlo (timers rotT/pollT/autoT) al cerrar sesión.
         let _extOverlayPplCerrar = null;
         const _extEsExtension = ref(false);   // [v2] este equipo es una EXTENSIÓN (oculta "Cerrar sesión", muestra badge)
-        let _notaTimer = null, _notaSesionTs = 0, _notaLocal = '', _notaEditando = false, _notaOff = false, _notaPulso = false, _notaOv = null;
         const _extRpc = async (fn, body) => {
             try {
                 const token = await _mintTokenSB();
@@ -12484,7 +12483,6 @@
             @keyframes _extBeam{0%{left:-40%}100%{left:110%}}
             @keyframes _extRoll{0%{opacity:0;transform:translateY(-16px) scale(.7)}60%{opacity:1}100%{opacity:1;transform:none}}
             @keyframes _extBurst{0%{transform:scale(0);opacity:.9}70%{opacity:.35}100%{transform:scale(2.4);opacity:0}}
-            @keyframes _notaPulseK{0%,100%{box-shadow:0 6px 20px rgba(0,0,0,.4)}50%{box-shadow:0 0 0 4px rgba(56,189,248,.5),0 6px 24px rgba(56,189,248,.4)}}
             @keyframes _extSpin{to{transform:rotate(360deg)}}
             ._extBk{position:fixed;inset:0;background:rgba(2,6,23,.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto}
             ._extCard{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:22px;max-width:340px;width:100%;margin:auto;max-height:calc(100vh - 40px);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:_extIn .3s cubic-bezier(.2,.9,.3,1.2);position:relative;overflow:hidden}
@@ -12496,11 +12494,6 @@
             ._extBtnOk{background:linear-gradient(135deg,#10b981,#059669);color:#fff;position:relative;overflow:hidden}
             ._extBtnNo{background:#1e293b;color:#cbd5e1}
             ._extRing{position:absolute;inset:0;pointer-events:none}
-            ._notaFab{position:fixed;left:14px;bottom:calc(78px + env(safe-area-inset-bottom));z-index:99990;width:46px;height:46px;border-radius:50%;border:1px solid #1e293b;background:#0f172a;color:#38bdf8;font-size:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.4);cursor:pointer}
-            ._notaFab.pulso{animation:_notaPulseK 1.4s ease-in-out infinite}
-            ._notaFab .dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#38bdf8;border:2px solid #0f172a;display:none}
-            ._notaFab.pulso .dot{display:block}
-            ._notaTa{width:100%;min-height:96px;background:#0b1220;border:1px solid #1e293b;border-radius:12px;color:#e2e8f0;padding:12px;font-size:15px;resize:none;outline:none}
             `;
             document.head.appendChild(s);
         };
@@ -12744,71 +12737,6 @@
                 setTimeout(cerrar, 300000);   // 5 min máx
             } catch (e) { /* fail-safe */ }
         };
-        // ── NOTA COMPARTIDA de sesión (principal ↔ companion, 100% Supabase) ──
-        const _notaCtx = () => { const cw = config.value; if (!cw || !cw.completado || !cw.zona || !cw.vendedor) return null; const dev = _extDevId(); if (!dev) return null; return { nombre: cw.vendedor, zona: cw.zona, deviceId: dev }; };
-        const _notaFabEl = () => document.getElementById('_notaFab');
-        const _notaEnsureFab = () => { let f = _notaFabEl(); if (f) return f; _extCssOnce(); f = document.createElement('button'); f.id = '_notaFab'; f.className = '_notaFab'; f.innerHTML = '📝<span class="dot"></span>'; f.title = 'Nota compartida del equipo'; f.onclick = _notaAbrir; document.body.appendChild(f); return f; };
-        const _notaQuitarFab = () => { const f = _notaFabEl(); if (f) { try { f.remove(); } catch (e) {} } };
-        const _notaMarcarPulso = (on) => { const f = _notaFabEl(); if (!f) return; _notaPulso = !!on; f.classList.toggle('pulso', !!on); };
-        const _notaTick = async () => {
-            const ctx = _notaCtx(); if (!ctx) { _notaQuitarFab(); return; }
-            const r = await _extRpc('nota_sesion_get', ctx);
-            if (!r || r.ok !== true) { _notaOff = true; _notaQuitarFab(); return; }   // flag off / no autorizado → sin FAB
-            _notaOff = false;
-            // solo con sesión ACTIVA y cuando aporta: hay ≥1 companion atado, o ya hay nota
-            const util = r.activa && ((r.companions || 0) > 0 || String(r.nota || '') !== '');
-            if (!util) { if (!_notaEditando) _notaQuitarFab(); return; }
-            _notaEnsureFab();
-            if (_notaEditando) return;                                                  // no pisar mientras edita
-            const ts = r.ts || 0;
-            if (ts > _notaSesionTs) {                                                    // llegó algo más nuevo (otro equipo)
-                const cambio = (String(r.nota || '') !== String(_notaLocal || '')) && _notaSesionTs > 0;
-                _notaSesionTs = ts; _notaLocal = String(r.nota || '');
-                if (cambio) { _extHaptic([12, 30, 12]); _notaMarcarPulso(true); }
-            }
-        };
-        function _notaAbrir() {
-            if (_notaEditando || _notaOv) return;   // [500x] sin reentrada: no apilar editores
-            _notaMarcarPulso(false); _notaEditando = true;
-            const ov = _extOverlay(`
-                <div>
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                        <span style="font-size:22px">📝</span>
-                        <div style="font-weight:800;color:#e2e8f0;font-size:15px">Nota del equipo</div>
-                    </div>
-                    <div style="color:#94a3b8;font-size:11px;margin-bottom:8px">La ven y editan todos los equipos de esta sesión.</div>
-                    <textarea class="_notaTa" id="_notaTa" maxlength="280" placeholder="Ej: falta vuelto de S/50, cliente Ana paga 3pm…">${_extEsc(_notaLocal)}</textarea>
-                    <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:6px">
-                        <span id="_notaCnt" style="color:#64748b;font-size:11px"></span>
-                    </div>
-                    <div style="display:flex;gap:10px;margin-top:12px">
-                        <button class="_extBtn _extBtnNo" id="_notaX">Cerrar</button>
-                        <button class="_extBtn _extBtnOk" id="_notaSave">Guardar</button>
-                    </div>
-                </div>`);
-            const ta = ov.querySelector('#_notaTa'); const cnt = ov.querySelector('#_notaCnt');
-            const upd = () => { if (cnt) cnt.textContent = ta.value.length + '/280'; }; upd();
-            ta.addEventListener('input', upd);
-            try { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
-            _notaOv = ov;
-            const cerrar = () => { _notaEditando = false; _notaOv = null; try { ov.remove(); } catch (e) {} };
-            ov.querySelector('#_notaX').onclick = cerrar;
-            ov.querySelector('#_notaSave').onclick = async () => {
-                const btn = ov.querySelector('#_notaSave'); const txt = String(ta.value || '');
-                btn.textContent = 'Guardando…'; btn.disabled = true;
-                const ctx = _notaCtx();
-                const r = ctx ? await _extRpc('nota_sesion_set', { ...ctx, nota: txt, baseTs: _notaSesionTs }) : null;
-                if (r && r.ok) {
-                    _notaSesionTs = r.ts || _notaSesionTs; _notaLocal = String(r.nota != null ? r.nota : txt);
-                    if (r.conflict) {   // otro equipo escribió antes → mostrar lo del server, no pisar a ciegas
-                        _extHaptic([80]); ta.value = _notaLocal; upd(); btn.textContent = 'Se actualizó ↑'; btn.disabled = false;
-                        setTimeout(() => { if (btn) { btn.textContent = 'Guardar'; } }, 1500);
-                    } else { _extHaptic([10, 30, 10]); btn.textContent = '✓'; setTimeout(cerrar, 500); }
-                } else { btn.textContent = 'Reintentar'; btn.disabled = false; }
-            };
-        }
-        const _notaIniciar = () => { if (_notaTimer) clearInterval(_notaTimer); _notaTick(); _notaTimer = setInterval(_notaTick, 8000); };
-        const _notaDetener = () => { if (_notaTimer) { clearInterval(_notaTimer); _notaTimer = null; } _notaQuitarFab(); if (_notaOv) { try { _notaOv.remove(); } catch (e) {} _notaOv = null; } _notaSesionTs = 0; _notaLocal = ''; _notaEditando = false; };
         // [v2] registrar este equipo como PRINCIPAL de su sesión (para saber quién autoriza + la cascada de logout).
         const _extRegistrarPrincipal = () => { try { const cw = config.value; const dev = _extDevId(); if (_extEsExtension.value || !cw || !cw.completado || !cw.zona || !cw.vendedor || !dev) return; _extRpc('extension_registrar_principal', { nombre: cw.vendedor, zona: cw.zona, deviceId: dev, rol: cw.esCajero ? 'cajero' : 'vendedor', pushToken: (_pushTokenActual || '') }); } catch (e) {} };
         // [v2 CRÍTICO-1] la EXTENSIÓN vigila su acceso: si el principal cerró la sesión (accesos CERRADA / sesión
@@ -12846,14 +12774,14 @@
         };
         const _extIniciar = () => {
             // Si YA soy extensión (link previo o restaurado en boot): NO me registro como principal; solo vigilo el cierre.
-            if (_extInfoExt()) { _extEsExtension.value = true; _extVigilarCierre(); _notaIniciar(); return; }
+            if (_extInfoExt()) { _extEsExtension.value = true; _extVigilarCierre(); return; }
             // [FIX login-limbo] NO auto-pedir extensión. Antes `_extPedir()` corría en CADA login → el equipo se
             //   auto-preguntaba "¿soy 2º equipo?" y, al ver su propia registración de principal (mismo deviceId,
             //   de ahí el 409), se creía 2º equipo → modal "Conectando… esperando QR" en limbo infinito. El flujo
             //   solicitante ahora es EXPLÍCITO: solo por el botón "📲 Este es mi 2º equipo" (wizExtTocar → _extPedir
             //   con args). Un login normal SOLO se registra como principal y escucha pedidos entrantes (tick).
             _extRegistrarPrincipal();
-            if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 2000); _notaIniciar();   // [fix QR-demora] 5s→2s: el principal ve el pedido y muestra el QR más rápido
+            if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 2000);   // [fix QR-demora] 5s→2s: el principal ve el pedido y muestra el QR más rápido
         };
         const _extDetener = () => {
             if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; }
@@ -12862,7 +12790,7 @@
             // [100x A1/A2] liberar cámara (permiso/LED) + cerrar el overlay QR/aprobación con sus timers rotT/pollT/autoT.
             try { _extPararScanner(); } catch (e) {}
             try { if (_extOverlayPplCerrar) _extOverlayPplCerrar(); } catch (e) {}
-            _extShownAppr = {}; _extPedirAbierto = false; _extApprAbierto = false; _notaDetener();
+            _extShownAppr = {}; _extPedirAbierto = false; _extApprAbierto = false;
         };
 
         // ── Métodos de navegación ──
