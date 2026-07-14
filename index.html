@@ -14683,7 +14683,7 @@
             espiaCerrarSesion: 'espia_cerrar_sesion'
         };
         async function _espiaCliPostMOS(accion, params) {
-            // Supabase-first: RPC mos.espia_* vía mint-me; mismo shape {ok,data}. Fallback GAS.
+            // [cero-GAS] Supabase-only: RPC mos.espia_* vía mint-me; shape {ok,data}. Sin fallback GAS (degrada a null).
             const rpc = _ESPIA_RPC_ME[accion];
             if (rpc && window.ESPIA_DIRECTO !== false) {
                 try {
