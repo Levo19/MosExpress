@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.192';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.194';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -13932,13 +13932,11 @@
                         }
                         cid = dAp.idCaja;
                         aperturada = true;
-                        // Espejo a Hoja + push admins: fire-and-forget (modo espejo, GAS NO re-crea ni re-guarda
-                        // en me.cajas — solo Hoja + push). FUERA del camino crítico = sin lentitud.
-                        try {
-                            fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
-                                body: JSON.stringify(Object.assign({}, payload, { idCaja: cid })) }).catch(()=>{});
-                        } catch(_) {}
-                    } catch(eAp) { /* Supabase falló → fallback a GAS abajo */ }
+                        // [cero-GAS 2026-07-14] ELIMINADO el espejo GAS fire-and-forget (era el ÚNICO write a GAS
+                        // que corría en CADA apertura aunque el directo tuviera éxito). El push "caja abierta" a
+                        // admins ahora lo emite me.abrir_caja server-side (atómico); la Hoja la cubre la
+                        // reconciliación server-side. La caja ya quedó persistida en me.cajas por _abrirCajaDirecto.
+                    } catch(eAp) { /* Supabase falló → fallback a GAS abajo (aperturada=false) */ }
                 }
                 if (!aperturada && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                     try {
@@ -14699,16 +14697,13 @@
                         const d = await res.json().catch(() => null);
                         if (d && !(d.ok === false && String(d.error || '') === 'APP_NO_AUTORIZADA')) return d;
                     }
-                } catch(_) { /* → GAS */ }
+                } catch(_) { /* degradar (cero-GAS) */ }
             }
-            try {
-                // [v2.7.31] Inyectar token HMAC automáticamente
-                const body = Object.assign({ action: accion }, params || {});
-                const token = _espiaCli?.token;
-                if (token && body.token === undefined) body.token = token;
-                const r = await fetch(MOS_GAS_URL, { method: 'POST', body: JSON.stringify(body) });
-                return await r.json();
-            } catch(_) { return null; }
+            // [cero-GAS 2026-07-14] ELIMINADO el fallback GAS (fetch MOS_GAS_URL). El espía es Supabase-first
+            // (RPCs mos.espia_* mapeadas en _ESPIA_RPC_ME); si el RPC falla o la acción no está mapeada, degrada
+            // (return null) en vez de tocar GAS. Las sesiones huérfanas las limpia la expiración server-side
+            // (mos.espia_purgar / _espia_expiro). El espía es monitoreo, no toca dinero ni el POS.
+            return null;
         }
 
         // [CERO-GAS F4] Sube un chunk de audio/video del espía a la Edge `espia-chunk` (Storage + registro), en vez
@@ -15377,16 +15372,9 @@
         // Antes string crudo → Content-Type text/plain → cierre se perdía a veces.
         window.addEventListener('beforeunload', () => {
             if (!_espiaCli?.sesionId) return;
-            try {
-                const blob = new Blob([JSON.stringify({
-                    action: 'espiaCerrarSesion',
-                    sesionId: _espiaCli.sesionId,
-                    motivo: 'page_unload',
-                    lado: 'device',
-                    token: _espiaCli.token
-                })], { type: 'application/json' });
-                navigator.sendBeacon(MOS_GAS_URL, blob);
-            } catch(_){}
+            // [cero-GAS 2026-07-14] ELIMINADO el sendBeacon a GAS de cierre en page_unload: sendBeacon no puede
+            // autenticar contra Supabase REST (no lleva headers) y el espía es Supabase-first. Una sesión huérfana
+            // por unload la limpia la expiración server-side (mos.espia_purgar / _espia_expiro). Marginal (monitoreo).
         });
 
         async function _espiaCliCerrar(motivo) {
@@ -15437,14 +15425,11 @@
             if (ref.gpsCh) try { ref.gpsCh.close(); } catch(_){}
             try { ref.pc?.close(); } catch(_){}
             if (ref.sesionId) {
-                fetch(MOS_GAS_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'espiaCerrarSesion',
-                        sesionId: ref.sesionId, motivo: motivo || 'manual',
-                        lado: 'device', token: ref.token
-                    })
-                }).catch(()=>{});
+                // [cero-GAS 2026-07-14] cierre de sesión espía por RPC mos.espia_cerrar_sesion (vía el mapper
+                // Supabase-first _espiaCliPostMOS). Antes pegaba SOLO a GAS. Best-effort (no bloquea el teardown).
+                try { _espiaCliPostMOS('espiaCerrarSesion', {
+                    sesionId: ref.sesionId, motivo: motivo || 'manual', lado: 'device', token: ref.token
+                }); } catch(_){}
             }
             _espiaCliOcultarIndicador();
         }
@@ -15483,14 +15468,8 @@
                 console.log('[Audio] Grabación iniciada, sesión', sesionId);
             } catch(e) {
                 console.error('[Audio] No se pudo iniciar:', e?.message);
-                // Si fue rechazo de permiso, intentar avisar a MOS para que el admin sepa
-                fetch(MOS_GAS_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'detenerEscuchaAudio',
-                        idSesion: sesionId
-                    })
-                }).catch(() => {});
+                // [cero-GAS 2026-07-14] ELIMINADO el aviso a GAS (detenerEscuchaAudio). No hay RPC para este
+                // teardown de estado; el server reconcilia el estado del espía por expiración. Marginal (monitoreo).
                 _audioRecorder = null;
                 _audioStream = null;
                 _audioSesionId = null;
@@ -15512,15 +15491,8 @@
             const sid = _audioSesionId;
             _audioSesionId = null;
             _audioChunkIdx = 0;
-            // Notificar al backend que la sesión cerró (por si el push de stop no llegó)
-            if (sid) {
-                try {
-                    await fetch(MOS_GAS_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'detenerEscuchaAudio', idSesion: sid })
-                    });
-                } catch(_) {}
-            }
+            // [cero-GAS 2026-07-14] ELIMINADO el aviso a GAS (detenerEscuchaAudio). Sin RPC para este teardown;
+            // el server reconcilia el estado del espía por expiración (mos.espia_purgar). Marginal (monitoreo).
             console.log('[Audio] Grabación detenida');
         };
 
