@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.195';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.196';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -14310,17 +14310,12 @@
                      // El loop GAS queda SOLO para el modo legacy (flag OFF).
                      for (let intento = 0; intento < 2 && !cierreOk && !cierreDirecto(); intento++) {
                          try {
-                             const reqCierre = await _fetchConTimeout(API_URL, {
-                                 method: 'POST',
-                                 body: JSON.stringify({
-                                     tipoEvento:  'CIERRE_CAJA',
-                                     cajaId:      _idCaja,
-                                     montoFinal:  montoFinal,
-                                     idsAnular:   idsAnular,         // backend anula atómicamente
-                                     ventasTotal: cobradosEnSesion.value.length
-                                 })
-                             }, 60000);
-                             resCierre = await reqCierre.json();
+                             // [cero-GAS 2026-07-14] SIN fetch a GAS. Con ME_CIERRE_DIRECTO ON (prod) este loop es
+                             // INALCANZABLE (condición `!cierreDirecto()`). Si el flag estuviera OFF, ya no hay cierre
+                             // por GAS: rompemos → `if(!cierreOk)` de abajo muestra el mensaje money-safe (no cierra la
+                             // sesión sin confirmar el arqueo). El arqueo autoritativo lo hace me.cerrar_caja (arriba).
+                             throw new Error('cero-GAS: cierre directo requerido');
+                             // eslint-disable-next-line no-unreachable
                              if (resCierre && resCierre.status === 'success') {
                                  cierreOk = true;
                              } else {
@@ -17039,18 +17034,11 @@
                                 }
                             }
                         }
-                    } catch (_) { /* cae a GAS */ }
-                    const r = await _meFetchTimeout(API_URL, { method: 'POST', body: JSON.stringify({
-                        tipoEvento: 'RECHAZAR_COBRO_ASIGNADO',
-                        idCobro: cobro.idCobro,
-                        razon: razon,
-                        auth: {
-                            vendedor: config.value.vendedor,
-                            esCajero: true, rol: 'CAJERO',
-                            deviceId: deviceId.value
-                        }
-                    })}, 20000);
-                    return await r.json();
+                    } catch (_) { /* degradar (cero-GAS) */ }
+                    // [cero-GAS 2026-07-14] El rechazo directo (me.rechazar_cobro_asignado) falló (infra/OFF) →
+                    // fail-closed, SIN GAS. Sin movimiento de dinero: el cobro sigue ASIGNADO (el else de abajo lo
+                    // deja en la lista + el polling lo re-trae), el cajero reintenta. La RPC es idempotente por estado.
+                    return { status: 'error', mensaje: 'Sin conexión con el servidor · reintenta el rechazo' };
                 })();
                 if (d && d.status === 'success') {
                     try { playBeepError?.(); } catch(_){}
@@ -19451,11 +19439,12 @@
                for (var attempt = 0; attempt < delays.length; attempt++) {
                    if (delays[attempt] > 0) await new Promise(r => setTimeout(r, delays[attempt]));
                    try {
-                       const r = await _fetchConTimeout(API_URL, {
-                           method: 'POST',
-                           body: JSON.stringify(payload)
-                       }, 20000);
-                       const res = await r.json();
+                       // [cero-GAS 2026-07-14] SIN fetch a GAS. Con escritura directa ON (prod) esta función es
+                       // INALCANZABLE (procesarPago retorna por _crearVentaDirecta/_crearCPEDirecto antes de llamarla).
+                       // Si el flag estuviera OFF, ya no se envía por GAS: sintetizamos un error → la lógica de abajo
+                       // lanza → el caller cae a la COLA OFFLINE (pendingSales, que drena DIRECTO). La venta NO se
+                       // pierde ni va a GAS ni se marca fantasma.
+                       const res = { status: 'error', mensaje: 'CERO_GAS_DIRECTO_REQUERIDO' };
                        // [v2.7.4] Validación CRÍTICA: success solo es válido si trae idVenta.
                        // Antes el backend devolvía status=success con idVenta=null cuando
                        // rechazaba (NO_CAJA_ACTIVA_EN_ZONA) → frontend marcaba como sincronizada
