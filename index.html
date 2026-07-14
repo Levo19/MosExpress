@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.194';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.195';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9396,12 +9396,11 @@
                                      const rd = await _cerrarCajaDirecto(cr.idCaja, null, null, 'CERRADA');
                                      _ok = !!(rd && rd.status === 'success');
                                  }
-                             } catch(_) { /* cae a GAS */ }
-                             if (!_ok) {
-                                 try { await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                                     tipoEvento: 'CIERRE_CAJA', cajaId: cr.idCaja, montoFinal: 0
-                                 }) }); } catch(_) {}
-                             }
+                             } catch(_) { /* directo falló → backstop server-side, sin GAS */ }
+                             // [cero-GAS 2026-07-14] ELIMINADO el fallback GAS (cerraba con montoFinal:0, PEOR que el
+                             // arqueo real de me.cerrar_caja). Si el cierre directo falla, la caja de ayer la auto-cierra
+                             // el SERVER en la próxima apertura (me.abrir_caja auto-cierra cajas de días previos →
+                             // CERRADA_AUTO). Sin GAS. (_ok queda como estaba; no hay acción adicional.)
                          })();
                      }
                      localStorage.removeItem('mosexpress_caja_activa');
@@ -10399,11 +10398,11 @@
                        }
                        continue;
                    }
-                   // [legacy] Path GAS — INALCANZABLE con escritura directa ON (guard arriba). Se conserva solo
-                   // como respaldo si el flag estuviera OFF; se elimina con el corte total de GAS.
+                   // [cero-GAS 2026-07-14] Path legacy INALCANZABLE con escritura directa ON (prod; el guard de arriba
+                   // drena TODO directo). SIN fetch a GAS: si el flag estuviera OFF, sintetizamos un error de infra →
+                   // el `else` final hace intentos++/backoff → el ítem PERMANECE en la cola (no se pierde), sin GAS.
                    try {
-                       const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(venta.raw_data) });
-                       const res = await req.json();
+                       const res = { status: 'error', error: 'CERO_GAS_DIRECTO_REQUERIDO' };
                        // [Lote1-C · fix A3] success solo vale CON idVenta (misma validación
                        // v2.7.4 de _enviarVentaConReintentos). Antes: el backend devolvía
                        // success con idVenta=null al rechazar (NO_CAJA_ACTIVA al subir la cola
@@ -13529,24 +13528,13 @@
           // [Fase 2] Impresión DIRECTA vía Edge Function (flag me_impresion_directa, OFF por defecto). Saca el
           // salto a GAS → ticket más rápido (~100-300ms vs ~500ms-1s). Si falla, cae al path GAS (transparente).
           if (impresionDirectaEdge()) {
-            try { return await _imprimirDirectoPN(printerId, titulo, textoRaw); }
-            catch(eE) { console.warn('[impresion Edge] fallback a GAS:', eE && eE.message); }
+            return await _imprimirDirectoPN(printerId, titulo, textoRaw);
           }
-          const resp = await fetch(API_URL, {
-              method: 'POST',
-              body: JSON.stringify({
-                  accion: 'imprimir',
-                  printerId: printerId,
-                  title: titulo,
-                  content: textoRaw,
-                  deviceId: deviceId.value
-              })
-          });
-          if (!resp.ok) throw new Error("Error HTTP GAS: " + resp.status);
-          const res = await resp.json();
-          // GAS siempre devuelve HTTP 200 — hay que revisar el status del JSON
-          if (res.status === 'error') throw new Error(res.mensaje || 'Error PrintNode desconocido');
-          return res;
+          // [cero-GAS 2026-07-14] ELIMINADO el fallback GAS de impresión. Con ME_IMPRESION_DIRECTA=1 (prod) el
+          // ticket va por la Edge `imprimir` (clave PrintNode en el secret de la Edge, nunca en el browser). Si la
+          // Edge falla, degradamos con error claro — la VENTA ya quedó registrada en Supabase, el ticket se
+          // reimprime — en vez de tocar GAS.
+          throw new Error('Impresión no disponible ahora (servicio directo) · reintenta o reimprime el ticket');
         };
 
         // [v2.5.16] Verifica que la impresora esté online ANTES de enviar
@@ -13938,32 +13926,11 @@
                         // reconciliación server-side. La caja ya quedó persistida en me.cajas por _abrirCajaDirecto.
                     } catch(eAp) { /* Supabase falló → fallback a GAS abajo (aperturada=false) */ }
                 }
-                if (!aperturada && !offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                    try {
-                        const req = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                        // Guard: usuario cerró sesión mientras esperaba GAS.
-                        // Limpiamos config+session_date para NO dejar "sesión cajero
-                        // fantasma" (config dice cajero logueado pero nunca se abrió
-                        // caja → al recargar aparece el modal de apertura bloqueando).
-                        if (!config.value.completado) {
-                            localStorage.removeItem('mosexpress_config');
-                            localStorage.removeItem('mosexpress_session_date');
-                            procesandoCaja.value = false;
-                            return;
-                        }
-                        const res = await req.json();
-                        if (res.status === 'success') {
-                            cid = res.idCaja;
-                        } else {
-                            agregarToast('Error apertura', res.mensaje || 'No se pudo abrir la caja');
-                            config.value = { completado: false, vendedor: '', zona: '', estacion: null, esCajero: false };
-                            localStorage.removeItem('mosexpress_config');
-                            localStorage.removeItem('mosexpress_session_date');
-                            procesandoCaja.value = false;
-                            return;
-                        }
-                    } catch(e) { /* sin red: CAJA-LOCAL reintentará después */ }
-                }
+                // [cero-GAS 2026-07-14] ELIMINADO el fallback GAS de apertura. Si el directo (me.abrir_caja) falló
+                // (blip de infra), la caja queda CAJA-LOCAL-xxx y `_intentarRegistrarCajaLocal` (setInterval 60s,
+                // línea ~8947) la promueve a caja real vía DIRECTO (me.abrir_caja retry, cero-GAS). Mismo estado
+                // final que antes (CAJA-LOCAL) pero SIN tocar GAS. El guard anti "sesión cajero fantasma" lo cubre
+                // el guard final de abajo. El cajero puede operar sobre la CAJA-LOCAL mientras se promueve.
                 _wizAvanzarProgreso(1, 55);
                 // Guard final: sesión cerrada durante el await — misma limpieza
                 // anti "sesión cajero fantasma".
@@ -16344,18 +16311,10 @@
                     // [hardening cero-GAS] si el directo YA cobró (la venta dejó de estar pendiente) pese a
                     // que perdimos la respuesta → NO llamar a GAS (cierra la ventana de doble registro).
                     if ((await _meVentaPendiente(venta.id_venta_gas)) === false) return { status: 'success', via: 'directo-verificado' };
-                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                        tipoEvento:    'COBRAR_CREDITO_CON_EXTRA',
-                        idVenta:       venta.id_venta_gas,
-                        cajaReceptora: c.cajaSel,
-                        metodo:        metodoFinal,
-                        montoEfectivo: monEf,
-                        montoVirtual:  monVi,
-                        obs:           c.obs || '',
-                        auth:          { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
-                        adminAuth:     adminAuthCache.value
-                    })});
-                    return await r.json();
+                    // [cero-GAS 2026-07-14] El directo falló y la venta SIGUE pendiente (el check de arriba dio ≠false)
+                    // → fail-closed, SIN GAS. La venta queda POR_COBRAR (recuperable); el cajero reintenta. Idempotente:
+                    // un retry que sí commitee no duplica (cobrar_credito_directo dedupea + el guard _meVentaPendiente).
+                    return { status: 'error', mensaje: 'Sin conexión con el servidor · reintenta (la venta sigue por cobrar)' };
                 })();
                 if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
                 // Actualizar local
@@ -16474,18 +16433,10 @@
                             if (_vr.ok && _vd && _vd.ok === true && /^ANULADO/i.test(String(_vd.forma_pago || ''))) return { status: 'success', via: 'directo-verificado' };
                         }
                     } catch (_) {}
-                    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({
-                        tipoEvento:        'CONVERTIR_NV_A_CPE',
-                        idVenta:           venta.id_venta_gas,
-                        tipoDocNuevo:      e.tipo,
-                        serieNueva:        _serieAuto,
-                        clienteDoc:        e.doc.trim(),
-                        clienteNombre:     e.nombre.trim(),
-                        clienteDireccion:  e.direccion.trim(),
-                        auth:              { vendedor: config.value.vendedor, rol: 'CAJERO', deviceId: deviceId.value },
-                        adminAuth:         adminAuthCache.value
-                    })});
-                    return await r.json();
+                    // [cero-GAS 2026-07-14] El RPC falló y la NV NO está ANULADO (no se convirtió, el check de arriba
+                    // no dio ANULADO) → fail-closed, SIN GAS: evita DOBLE emisión de CPE en SUNAT. La NV queda intacta;
+                    // el admin reintenta (crear_cpe_directo/convertir es idempotente por estado de la NV).
+                    return { status: 'error', mensaje: 'Sin conexión con el servidor · reintenta (la NV sigue sin convertir)' };
                 })();
                 if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
                 modalAdminConv.value = false;
@@ -17018,8 +16969,9 @@
                 // [hardening cero-GAS] si el directo YA confirmó el cobro (la venta dejó de estar pendiente)
                 // pese a perder la respuesta → NO llamar a GAS (cierra la ventana de doble registro).
                 if ((await _meVentaPendiente(String(cobro.idVenta || ''))) === false) return { status: 'success', via: 'directo-verificado' };
-                const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-                return await r.json();
+                // [cero-GAS 2026-07-14] El directo falló y la venta sigue pendiente → fail-closed, SIN GAS. El cobro
+                // NO se pierde: el .then de abajo lo devuelve a la lista + el polling de 30s lo re-trae como pendiente.
+                return { status: 'error', mensaje: 'Sin conexión con el servidor · reintenta (el cobro sigue pendiente)' };
             })()
                 .then(d => {
                     if (d && d.status === 'success') {
@@ -18926,51 +18878,17 @@
                                   (config.value.estacion && config.value.estacion.Serie_NV) ||
                                   'NVa2';
             if (_correlativoEnMano.value && _correlativoEnMano.value.serie === serieEsperada) return;
-            _prereservaCargando.value = true;
-            try {
-                const r = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({
-                        tipoEvento: 'RESERVAR_CORRELATIVO',
-                        serie:      serieEsperada,
-                        vendedor:   config.value.vendedor || '',
-                        deviceId:   deviceId.value || ''
-                    })
-                });
-                const d = await r.json();
-                if (d && d.status === 'success') {
-                    _correlativoEnMano.value = {
-                        numero:         d.numero,
-                        idReserva:      d.idReserva,
-                        correlativoFmt: d.correlativoFmt,
-                        serie:          serieEsperada,
-                        tipoDoc:        'NOTA_DE_VENTA'
-                    };
-                    try { playBeepSuave?.(); } catch(_) {}
-                } else {
-                    console.warn('[prereserva] falló:', d?.mensaje || d?.error);
-                }
-            } catch(e) {
-                console.warn('[prereserva] error red:', e?.message || e);
-            } finally {
-                _prereservaCargando.value = false;
-            }
+            // [cero-GAS 2026-07-14] SIN fetch a GAS. La pre-reserva de correlativo era una feature GAS-legacy (solo
+            // se invocaba con escritura directa OFF, ver call-site). En modo directo (prod) el RPC crear_venta_directa
+            // es el ÚNICO minter del correlativo al momento de la venta → no hay pre-reserva ni doble-mint. No-op.
         };
 
         const _prereservaCancelar = async () => {
             const res = _correlativoEnMano.value;
             if (!res || !res.idReserva) return;
             _correlativoEnMano.value = null;
-            // Fire-and-forget: no bloquea UI
-            fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    tipoEvento: 'CANCELAR_RESERVA_CORRELATIVO',
-                    idReserva:  res.idReserva
-                })
-            }).catch(() => {});
+            // [cero-GAS 2026-07-14] SIN fetch a GAS. La reserva solo existe en modo GAS-legacy (flag OFF); su TTL
+            // server-side la libera. En modo directo (prod) nunca hay reserva que cancelar (pre-reserva es no-op).
         };
 
         // Si el cajero cambia tipoDoc, libera reserva de NV (CPE no pre-reserva)
