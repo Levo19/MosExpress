@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.198';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.199';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -76,9 +76,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.163"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.199"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
-  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.8.188"></script>
+  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=2.8.199"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -1372,6 +1372,23 @@
     _checkForcedUpdate();
     // Revisar cada 3 minutos
     setInterval(_checkForcedUpdate, 3 * 60 * 1000);
+
+    // [perf sesión larga · Fase 4] Red de seguridad anti-degradación: recarga suave si la app lleva >12h
+    // abierta, está OCULTA (nadie mirando) y NO está a mitad de venta/cobro (__ME_BUSY__). pendingSales/config
+    // se persisten y se recuperan al recargar. Desactivable con localStorage 'me_no_autoreload'='1'. Cada 30 min.
+    (function _meHousekeepReload() {
+      var _bootTs = Date.now();
+      setInterval(function () {
+        try {
+          if (localStorage.getItem('me_no_autoreload') === '1') return;
+          if (!document.hidden) return;
+          if (window.__ME_BUSY__) return;
+          if (Date.now() - _bootTs < 12 * 3600 * 1000) return;
+          location.reload();
+        } catch (_) {}
+      }, 30 * 60 * 1000);
+    })();
+
     // Y cada vez que la app vuelve al foreground (cambio de pestaña / unlock)
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') _checkForcedUpdate();
@@ -8925,8 +8942,8 @@
             }
           }, 1200);
 
-          // Reloj header — actualizar cada minuto
-          setInterval(() => { horaActual.value = _fmtHora(); }, 60000);
+          // Reloj header — actualizar cada minuto (pausa con la pestaña oculta)
+          setInterval(() => { if (!document.hidden) horaActual.value = _fmtHora(); }, 60000);
 
           // [v2.7.0] GUARD POLLING ELIMINADO — antes corría cada 60s comparando
           // session_date local contra hoy y, si no coincidían, mataba la sesión
@@ -8948,9 +8965,10 @@
 
           // 🏷 Etiquetas pendientes: carga inicial + refresh cada 2 min
           setTimeout(() => cargarEtiqsPendientes().catch(() => {}), 1500);
-          setInterval(() => cargarEtiqsPendientes().catch(() => {}), 120000);
+          setInterval(() => { if (!document.hidden) cargarEtiqsPendientes().catch(() => {}); }, 120000);
 
           _intervalFocus = setInterval(() => {
+            if (document.hidden) return;   // [perf] no robar/chequear foco (cada 1.5s) con la pestaña oculta
             // [v2.8.31] ⚠ ANTI-CRUCE scan↔venta: NO robar foco al scanner de VENTA mientras
             // hay un flujo de GUÍA/recepción/auditoría abierto (overlay sobre POS, currentModule
             // sigue en 'POS'). Si lo robáramos, un scan destinado a la guía caería en el carrito
@@ -11196,6 +11214,13 @@
                 // background (el poller no corre oculto). Money-safe: _chequearVersionCatalogo
                 // difiere si hay venta en curso.
                 _chequearVersionCatalogo();
+                // [perf sesión larga + money-safe · rev 500x] Al volver a primer plano:
+                // 1º DRENAR la cola de mutaciones de DINERO — refresca `_mutPend` sincrónicamente para que el
+                //    merge NO revierta en pantalla un cobro/anulación en vuelo (evita que el cajero re-cobre).
+                // 2º refrescar ventas/cobros (los pollers se pausan con la pestaña oculta).
+                try { _reintentarMutacionesDinero(); } catch (_) {}
+                try { actualizarVentasZonaSilencioso(); } catch (_) {}
+                try { if (typeof cargarCobrosAsignados === 'function') cargarCobrosAsignados(); } catch (_) {}
             }
         });
         // Volver foco a la ventana (sin pasar por hidden, p.ej. cambio de pestaña a misma app)
@@ -13431,13 +13456,16 @@
         const iniciarPollingZona = () => {
             if (pollingTimer.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             pollingTimer.value = setInterval(async () => {
-                actualizarVentasZonaSilencioso();
-                // Cada ~30 s (10 ciclos × 3 s): verificar cajero activo + traslados
                 _pollingCajeroCount++;
+                // [money-safe] La cola de mutaciones de DINERO se reintenta SIEMPRE, aún con la pestaña oculta:
+                // es barata (no hace nada si la cola está vacía / offline) y NO debe demorarse. Solo lo CARO
+                // (render de ventas + checks de cajero/traslados) se pausa en background.
+                if (_pollingCajeroCount % 10 === 0) { try { _reintentarMutacionesDinero(); } catch(_){} }   // [Lote1-C]
+                if (document.hidden) return;   // [perf sesión larga] no re-renderizar ventas (cada 3s) con la pestaña oculta; refresca al volver
+                actualizarVentasZonaSilencioso();
                 if (_pollingCajeroCount % 10 === 0) {
                     verificarCajeroActivo();
                     verificarTrasladosEntrantes();
-                    try { _reintentarMutacionesDinero(); } catch(_){}   // [Lote1-C] cola de dinero pendiente
                 }
             }, 3000);
         };
@@ -16709,7 +16737,7 @@
             if (_cobrosAsigPollTimer) clearInterval(_cobrosAsigPollTimer);
             _primerPollCobros = true; // sesión nueva: primer poll no auto-abre modal
             cargarCobrosAsignados();
-            _cobrosAsigPollTimer = setInterval(cargarCobrosAsignados, 15000);  // [fix lag] 30s→15s: el aviso llega mas rapido (el push ya avisa al instante; esto acelera la impresion del aviso)
+            _cobrosAsigPollTimer = setInterval(() => { if (!document.hidden) cargarCobrosAsignados(); }, 15000);  // [fix lag] 30s→15s + pausa con pestaña oculta (el push avisa al instante igual)
         };
         const detenerPollingCobros = () => {
             if (_cobrosAsigPollTimer) { clearInterval(_cobrosAsigPollTimer); _cobrosAsigPollTimer = null; }
