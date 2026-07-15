@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.197';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.198';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -15989,11 +15989,10 @@
                         }
                     }
                 );
-            } else if (venta.id_venta_gas) {
-                const q = _mutQueueGet();
-                q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: metodoFinal, cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
-                _mutQueueSave(q);
             }
+            // [rev 500x · cero-GAS] Se eliminó la rama offline `else if (venta.id_venta_gas)` que encolaba
+            // COBRAR_VENTA a la cola GAS: es INALCANZABLE (confirmarPin bloquea offline en Opción A) y además
+            // encolaba SIN clave admin. El cambio de método requiere conexión + PIN re-verificado en la mutación.
             }, { accion: 'CAMBIO_METODO', refDocumento: venta.correlativo || venta.id });
         };
 
@@ -16021,10 +16020,6 @@
                         { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value, claveAdmin: _res.clave },
                         venta.id, null /* rechazo → el poll reconverge al estado real */
                     );
-                } else if (venta.id_venta_gas) {
-                    const q = _mutQueueGet();
-                    q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
-                    _mutQueueSave(q);
                 }
                 agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
             }, { accion: 'REVERTIR_COBRO', refDocumento: venta.correlativo || venta.id });
@@ -16055,10 +16050,6 @@
                         { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value, claveAdmin: _res.clave },
                         venta.id, null
                     );
-                } else if (venta.id_venta_gas) {
-                    const q = _mutQueueGet();
-                    q.push({ payload: { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value }, ventaLocalId: venta.id, ts: Date.now() });
-                    _mutQueueSave(q);
                 }
                 agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
             }, { accion: 'REVERTIR_COBRO', refDocumento: venta.correlativo || venta.id });
