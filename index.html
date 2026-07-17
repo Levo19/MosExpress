@@ -5733,8 +5733,8 @@
                         class="w-full flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 border-2 border-red-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
                     <span class="text-2xl">📋</span>
                     <div class="flex-1 min-w-0">
-                        <div class="font-black text-sm text-red-900">Baja del CPE (SUNAT)</div>
-                        <div class="text-[10px] text-red-700 font-semibold">Comunicación de baja · irreversible</div>
+                        <div class="font-black text-sm text-red-900">Anular comprobante</div>
+                        <div class="text-[10px] text-red-700 font-semibold">Reversa el pago (sale de caja) + baja SUNAT · irreversible</div>
                     </div>
                 </button>
                 <!-- [rediseño] Convertir a crédito (cambia el método a CRÉDITO) -->
@@ -5930,7 +5930,7 @@
         <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-[slideUp_0.3s] max-h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-3">
                 <div>
-                    <h2 class="text-xl font-black text-gray-800">📋 Baja del CPE</h2>
+                    <h2 class="text-xl font-black text-gray-800">📋 Anular comprobante</h2>
                     <p class="text-xs text-gray-400 font-bold mt-0.5">{{ ticketParaAdmin.correlativo }} · {{ ticketParaAdmin.tipo }}</p>
                 </div>
                 <button @click="modalAdminBaja = false" class="p-2 bg-gray-100 rounded-full text-gray-500 active:scale-90">
@@ -5939,7 +5939,7 @@
             </div>
             <div class="bg-red-50 border border-red-200 rounded-xl p-3 mb-3">
                 <p class="text-red-800 text-[11px] font-semibold leading-relaxed">
-                    ⚠ Se enviará una <strong>Comunicación de Baja</strong> a NubeFact → SUNAT. El CPE quedará inválido oficialmente. Acción <strong>irreversible</strong>.
+                    ⚠ Se <strong>reversa el pago</strong> (la venta sale de la caja) y se comunica la <strong>Baja</strong> a SUNAT. Si el CPE aún no fue aceptado, la baja se <strong>agenda automáticamente</strong> y se comunica al aceptarse. Acción <strong>irreversible</strong>.
                 </p>
             </div>
             <label class="block text-xs font-black text-gray-500 uppercase mb-2">Motivo (SUNAT lo requiere)</label>
@@ -5962,7 +5962,7 @@
                     :disabled="adminProcesando || ((adminBajaEstado.motivo || adminBajaEstado.motivoTxt).trim().length < 3)"
                     class="w-full bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
                 <svg v-if="adminProcesando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                {{ adminProcesando ? 'ENVIANDO...' : '📤 Enviar baja a SUNAT' }}
+                {{ adminProcesando ? 'ANULANDO...' : '🗑 Anular (reversa pago + baja SUNAT)' }}
             </button>
         </div>
     </div>
@@ -16290,8 +16290,10 @@
         const adminPuedeBajaCPE = (v) => {
             if (!v || v.anulada || !v.id_venta_gas) return false;
             if (v.tipo !== 'BOLETA' && v.tipo !== 'FACTURA') return false;
-            // Solo si está EMITIDO (puede no estar disponible offline)
-            return (v.nfEstado || v.raw_data?.nfEstado) === 'EMITIDO' || !v.nfEstado; // permitir intento si desconocido
+            // [505] Anular = reversa de pago + baja fiscal automática. Aplica a CUALQUIER CPE no anulado, esté
+            // EMITIDO o PENDIENTE (si aún no fue aceptado, la baja SUNAT se agenda y la reconciliación la comunica).
+            const nf = String(v.nfEstado || v.raw_data?.nfEstado || '');
+            return !nf.startsWith('BAJA_') && nf !== 'ANULADO';
         };
         const adminPuedeEditarCliente = (v) => {
             if (!v || v.anulada || !v.id_venta_gas) return false;
@@ -16566,28 +16568,39 @@
             const venta = ticketParaAdmin.value;
             const motivo = (adminBajaEstado.value.motivo || adminBajaEstado.value.motivoTxt || '').trim();
             if (!venta?.id_venta_gas || motivo.length < 3) return;
-            if (!await _meModalConfirm(`¿Comunicar baja del ${venta.tipo} ${venta.correlativo} a SUNAT?\n\nEsta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
-            // [Opción A · cero-caída] BAJA_CPE es MASTER-only — PIN al confirmar; la clave se re-verifica en el Edge.
+            if (!await _meModalConfirm(`¿Anular ${venta.tipo} ${venta.correlativo}?\n\nSe reversa el pago (sale de caja) y se comunica la baja a SUNAT — o se agenda automáticamente si el CPE aún no fue aceptado. Irreversible.`, { danger: true, titulo: 'Anular comprobante', okText: 'Anular' })) return;
+            // [505] BAJA_CPE es MASTER-only — PIN al confirmar; la clave se re-verifica en el Edge (fiscal) y en
+            // me.anular_venta_directo (pago). La MISMA clave sirve para ambos.
             _pinAdminThen('BAJA_CPE', venta.correlativo || venta.id, async (_res) => {
             adminProcesando.value = true;
             try {
-                // [NIVEL 2 corte-GAS] Baja CPE SUNAT 100% Supabase (Edge emitir-cpe op=baja → NubeFact generar_anulacion). Sin GAS.
-                const _tk = await _mintTokenSB();
-                const r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/emitir-cpe`, {
-                    method: 'POST',
-                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ operacion: 'baja', idVenta: venta.id_venta_gas, motivo: motivo, claveAdmin: _res.clave })
-                }, 20000);
-                const j = await r.json().catch(() => null);
-                if (!j || j.status !== 'success') throw new Error((j && (j.error || j.mensaje)) || 'Error en backend');
+                // 1) REVERSA DEL PAGO — SIEMPRE y AL MOMENTO. Reusa el anular existente: forma_pago='ANULADO'
+                //    (sale de caja) + reposición de stock + descuento de pickup, atómico/idempotente, offline-safe
+                //    (si no hay red, encola). Es lo que hace que la caja cuadre aunque el CPE siga pendiente.
+                _ejecutarAnulacion(venta, _res.clave);
+                // 2) LADO FISCAL con SUNAT (best-effort). La reconciliación es el respaldo: como forma_pago quedó
+                //    'ANULADO', comunicará la baja SOLA apenas SUNAT acepte, aunque este Edge falle o no haya red.
+                let fiscalMsg = 'La baja SUNAT se comunicará automáticamente.';
+                try {
+                    const _tk = await _mintTokenSB();
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/emitir-cpe`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ operacion: 'baja', idVenta: venta.id_venta_gas, motivo: motivo, claveAdmin: _res.clave })
+                    }, 20000);
+                    const j = await r.json().catch(() => null);
+                    if (j && j.status === 'success') {
+                        fiscalMsg = j.pendiente
+                            ? 'La baja SUNAT se comunicará automáticamente al aceptarse el CPE.'
+                            : ('Baja SUNAT: ' + (j.nuevoEstado || 'comunicada') + '.');
+                        const idx = ventasZona.value.findIndex(v => v.id === venta.id);
+                        if (idx !== -1) ventasZona.value[idx].nfEstado = j.nuevoEstado || 'ANULADO_PEND_BAJA';
+                    }
+                    // status!=='success' (p.ej. reverify) → el pago YA se reversó; la reconciliación cierra el fiscal.
+                } catch(_) { /* sin internet → forma_pago='ANULADO' basta; la reconciliación comunica la baja */ }
                 modalAdminBaja.value = false;
                 ticketParaAdmin.value = null;
-                agregarToast('✓ Baja enviada', j?.nuevoEstado || 'aceptada', 'success');
-                // Marcar local como anulado defensivamente (queda pendiente la confirmación SUNAT)
-                const idx = ventasZona.value.findIndex(v => v.id === venta.id);
-                if (idx !== -1) {
-                    ventasZona.value[idx].nfEstado = j?.nuevoEstado || 'BAJA_SOLICITADA';
-                }
+                agregarToast('✓ Comprobante anulado', 'Pago reversado (fuera de caja). ' + fiscalMsg, 'success', 6000);
             } catch(err) {
                 agregarToast('Error', err.message, 'error');
             } finally {
