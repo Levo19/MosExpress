@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.200';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.201';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -5072,6 +5072,45 @@
     <!-- imprimimos LOCAL si hay red. Animación viva para que no     -->
     <!-- parezca lento.                                              -->
     <!-- ============================================================ -->
+    <!-- [bancarización · Ley 28194] Gate ≥ límite: A bancarizar · B partir · ⟵ volver -->
+    <div v-if="bancModal.abierto" class="fixed inset-0 z-[210] bg-gray-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div class="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl p-5 max-h-[92vh] overflow-y-auto shadow-2xl">
+        <div class="flex items-center gap-3 mb-4">
+          <button @click="bancVolver()" :disabled="bancModal.emitiendo" class="p-2.5 bg-gray-100 rounded-full text-gray-600 active:scale-90 disabled:opacity-40" title="Volver">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+          </button>
+          <div class="min-w-0">
+            <h2 class="font-black text-lg text-gray-900 leading-tight">Requiere bancarización</h2>
+            <p class="text-xs text-gray-500">Pago de S/ {{ bancModal.total.toFixed(2) }} · supera S/ {{ bancModal.limite }} (Ley 28194)</p>
+          </div>
+        </div>
+        <div v-if="!bancModal.emitiendo" class="space-y-3">
+          <button @click="bancElegirA()" class="w-full text-left p-4 rounded-2xl border-2 border-emerald-500 bg-emerald-50 active:scale-[.99] transition-transform">
+            <div class="font-black text-emerald-700 flex items-center gap-2">💳 Bancarizar <span class="text-[10px] font-bold bg-emerald-600 text-white px-1.5 py-0.5 rounded">recomendado</span></div>
+            <div class="text-xs text-emerald-800/80 mt-1">El cliente paga por transferencia / Yape / Plin. Se imprime la cuenta y el pago queda como VIRTUAL.</div>
+          </button>
+          <button @click="bancElegirB()" :disabled="bancModal.particion && (bancModal.particion.requiereBancarizacion || bancModal.particion.demasiados)" class="w-full text-left p-4 rounded-2xl border-2 border-indigo-300 bg-indigo-50 active:scale-[.99] transition-transform disabled:opacity-50">
+            <div class="font-black text-indigo-700 flex items-center gap-2">✂️ Partir en {{ bancModal.particion ? bancModal.particion.nCPE : '?' }} comprobantes</div>
+            <div class="text-xs text-indigo-800/80 mt-1">Cada uno menor a S/ {{ bancModal.limite }}. Se cobra como está (efectivo o virtual).</div>
+            <div v-if="bancModal.particion" class="mt-2 space-y-1">
+              <div v-for="(s,i) in bancModal.particion.subCarritos" :key="i" class="text-[11px] flex justify-between bg-white/70 rounded px-2 py-1">
+                <span class="text-gray-600">CPE {{ i+1 }} · {{ s.items.length }} ítem(s)</span>
+                <span :class="s.sobreLimite ? 'text-red-500 font-bold' : 'text-gray-800 font-semibold'">S/ {{ s.total.toFixed(2) }}{{ s.sobreLimite ? ' ⚠' : '' }}</span>
+              </div>
+            </div>
+            <div v-if="bancModal.particion && bancModal.particion.requiereBancarizacion" class="mt-2 text-[11px] text-red-500">Hay un producto ≥ S/ {{ bancModal.limite }} por unidad — no baja del umbral. Usá Bancarizar.</div>
+            <div v-else-if="bancModal.particion && bancModal.particion.demasiados" class="mt-2 text-[11px] text-amber-600">Se necesitarían demasiados comprobantes — mejor bancarizar.</div>
+          </button>
+          <p class="text-[11px] text-gray-400 text-center pt-1">Nada se emite hasta que elijas. Tocá ⟵ para volver al carrito.</p>
+        </div>
+        <div v-else class="py-10 text-center">
+          <svg class="animate-spin w-8 h-8 mx-auto text-indigo-500 mb-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          <p class="font-bold text-gray-800">{{ bancModal.progreso || 'Emitiendo…' }}</p>
+          <p class="text-xs text-gray-500 mt-1">No cierres la app</p>
+        </div>
+      </div>
+    </div>
+
     <div v-if="asegurandoNumeracion" class="fixed inset-0 z-[180] flex items-center justify-center p-4"
          style="background:rgba(2,16,32,.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:fadeIn .2s ease;">
       <div class="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center" style="animation:scaleIn .25s ease both;">
@@ -9882,6 +9921,107 @@
                 }
             } catch(_) { /* queda el cache/fallback */ }
         };
+        // [bancarización] Medios de cobro de la empresa (bancos/Yape/Plin) + límite. RPC me.get_medios_cobro (anon).
+        const mediosCobro = ref((() => {
+            try { const c = JSON.parse(localStorage.getItem('mosexpress_medios_cobro') || 'null'); if (c && Array.isArray(c.medios)) return c; } catch(_) {}
+            return { limite: 2000, medios: [] };
+        })());
+        const _cargarMediosCobro = async () => {
+            try {
+                const _r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/get_medios_cobro`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: '{}'
+                }, 8000);
+                const _j = await _r.json().catch(() => null);
+                if (_j && _j.ok) {
+                    mediosCobro.value = { limite: parseInt(_j.limite, 10) || 2000, medios: Array.isArray(_j.medios) ? _j.medios : [] };
+                    try { localStorage.setItem('mosexpress_medios_cobro', JSON.stringify(mediosCobro.value)); } catch(_) {}
+                }
+            } catch(_) { /* queda el cache/fallback */ }
+        };
+        // [bancarización] estado del modal + algoritmo de partición (validado) + handlers A/B.
+        const bancModal = ref({ abierto:false, decidido:null, total:0, particion:null, medios:[], limite:2000, emitiendo:false, progreso:'' });
+        const _r2b = (n) => Math.round((parseFloat(n)||0)*100)/100;
+        function partirCarritoBanc(items, limite, pasoGranelKg) {
+            limite = limite || 2000; const paso = pasoGranelKg || 0.1; const EPS = 0.005;
+            const subs = []; let cur = { items: [], total: 0 };
+            const cerrar = () => { if (cur.items.length) { subs.push(cur); cur = { items: [], total: 0 }; } };
+            let requiereBanc = false;
+            for (const it of items) {
+                const granel = String(it.unidadMedida||'').toUpperCase() === 'KGM';
+                const pe = it.cantidad > 0 ? it.subtotal / it.cantidad : (it.precioUnitario||0);
+                let restante = it.cantidad; let subtotalRest = it.subtotal;
+                const minU = granel ? paso : 1;
+                if (_r2b(pe * minU) >= limite) { requiereBanc = true; cerrar(); subs.push({ items:[{...it}], total: it.subtotal, sobreLimite:true }); continue; }
+                while (restante > EPS) {
+                    const espacio = (limite - cur.total) - 0.01;
+                    let fit;
+                    if (granel) { fit = Math.floor((espacio/pe)/paso + 1e-9) * paso; fit = Math.min(fit, restante); fit = _r2b(fit); }
+                    else { fit = Math.min(Math.floor(espacio/pe + 1e-9), Math.round(restante)); }
+                    if (fit < (granel ? paso - 1e-9 : 1)) { if (cur.total === 0) { requiereBanc = true; break; } cerrar(); continue; }
+                    const ult = (restante - fit) <= EPS;
+                    const fragSub = ult ? _r2b(subtotalRest) : _r2b(fit * pe);
+                    cur.items.push({ ...it, cantidad: granel ? _r2b(fit) : fit, subtotal: fragSub });
+                    cur.total = _r2b(cur.total + fragSub);
+                    restante = _r2b(restante - fit); subtotalRest = _r2b(subtotalRest - fragSub);
+                    if (restante > EPS) cerrar();
+                }
+            }
+            cerrar();
+            return { subCarritos: subs, requiereBancarizacion: requiereBanc, demasiados: subs.length > 6, nCPE: subs.length };
+        }
+        function abrirBancModal() {
+            const limite = mediosCobro.value.limite || 2000;
+            const part = partirCarritoBanc(carrito.value, limite);
+            bancModal.value = { abierto:true, decidido:null, total: granTotal.value, particion: part,
+                medios: (mediosCobro.value.medios||[]).filter(m => m.imprime), limite, emitiendo:false, progreso:'' };
+        }
+        function bancVolver() { bancModal.value.abierto = false; bancModal.value.decidido = null; }   // ⟵ vuelve al carrito, no emite
+        function bancElegirA() {                         // A = bancarizar (pago virtual obligatorio) → 1 CPE + ticket de cuenta
+            pago.value.metodo = 'VIRTUAL';
+            bancModal.value.decidido = 'A';
+            bancModal.value.abierto = false;
+            procesarPago();
+        }
+        async function bancElegirB() {                   // B = partir en N CPE (< límite c/u); cada uno cobra como está
+            if (bancModal.value.emitiendo) return;        // [fix #2] guard de reentrada (anti doble-tap → doble emisión)
+            const part = bancModal.value.particion;
+            if (!part || part.requiereBancarizacion || part.demasiados) return;
+            bancModal.value.decidido = 'B';
+            bancModal.value.emitiendo = true;
+            const pagoSnap = JSON.parse(JSON.stringify(pago.value));   // cliente/tipoDoc/metodo se re-aplican por CPE
+            const subs = part.subCarritos;
+            let emitidos = 0;
+            try {
+                for (let i = 0; i < subs.length; i++) {
+                    bancModal.value.progreso = 'Emitiendo ' + (i + 1) + ' de ' + subs.length + '…';
+                    pago.value = JSON.parse(JSON.stringify(pagoSnap));      // procesarPago limpia pago → re-aplicar por CPE
+                    carrito.value = subs[i].items.map(x => ({ ...x }));     // el sub-carrito es el carrito actual
+                    const _antes = ventasHoy.value.length;
+                    await procesarPago();                                   // emite (o encola) 1 CPE de este sub-carrito; await real
+                    // [fix #1 · FISCAL] éxito = la venta quedó REGISTRADA (emitida o encolada) → ventasHoy creció.
+                    // Si un RECHAZO DE NEGOCIO la quitó (no creció), PARAR el barrido (no cerrar como éxito) y dejar
+                    // en el carrito los fragmentos FALTANTES → el cajero reintenta (re-partir o bancarizar el resto).
+                    if (ventasHoy.value.length <= _antes) {
+                        const faltan = [];
+                        for (let k = i; k < subs.length; k++) subs[k].items.forEach(it => faltan.push({ ...it }));
+                        carrito.value = faltan;
+                        pago.value = JSON.parse(JSON.stringify(pagoSnap));
+                        bancModal.value.emitiendo = false; bancModal.value.decidido = null; bancModal.value.abierto = false;
+                        agregarToast('⚠ Partición detenida', 'Se emitieron ' + emitidos + ' de ' + subs.length + ' comprobantes. El resto quedó en el carrito — revisá el motivo del rechazo y reintentá.', 'warning');
+                        return;
+                    }
+                    emitidos++;
+                }
+                bancModal.value.abierto = false;
+                if (emitidos > 1) agregarToast('✓ Venta partida', emitidos + ' comprobantes emitidos, cada uno menor a S/ ' + bancModal.value.limite + '.');
+            } catch (e) {
+                agregarToast('⚠ Error al partir', 'Se emitieron ' + emitidos + ' de ' + subs.length + '. Revisá y reintentá los faltantes desde el carrito.', 'warning');
+            } finally {
+                bancModal.value.emitiendo = false; bancModal.value.decidido = null;
+            }
+        }
         const _cargarConfigMos = async () => {
             try {
                 if (offlineMode.value) return;
@@ -10023,6 +10163,7 @@
                     _syncImpresorasFromProyectoMOS();
                     _cargarConfigMos();
                     _cargarEmpresaFiscal();   // [#9 D fase 2] refresca datos fiscales para el header del ticket
+                    _cargarMediosCobro();     // [bancarización] medios de cobro + límite
                     // [G4 online-only] (se eliminó _sincronizarAdminCache: verificación admin siempre online)
                     // Refrescar el baseline de versión del catálogo (poller). Fire-and-forget:
                     // si falla la lectura de versión, el catálogo igual quedó actualizado.
@@ -19095,9 +19236,13 @@
                }
            }
 
-           // [bancarización · Ley 28194] operaciones ≥ S/2000 en EFECTIVO: SUNAT exige medio bancario.
-           if (granTotal.value >= 2000 && String(pago.value.metodo || '').toUpperCase() === 'EFECTIVO') {
-               if (!confirm('SUNAT (Ley 28194): las operaciones ≥ S/2000 deben pagarse por medio bancario (transferencia, depósito, tarjeta, Yape/Plin).\n\n¿Continuar igual como EFECTIVO?')) return;
+           // [bancarización · Ley 28194] BOLETA/FACTURA ≥ límite → modal (A: bancarizar · B: partir en varios CPE).
+           // Gate: NADA se emite hasta decidir. bancModal.decidido evita re-abrir en la re-ejecución (A) o en el loop (B).
+           if (!bancModal.value.decidido
+               && (pago.value.tipoDoc === 'BOLETA' || pago.value.tipoDoc === 'FACTURA')
+               && granTotal.value >= (mediosCobro.value.limite || 2000)) {
+               abrirBancModal();
+               return;
            }
 
            procesando.value = true;
@@ -19727,8 +19872,42 @@
            // GAS responde <4s, sino LOCAL + cola transparente.
         };
 
+        // [bancarización] Ticket "DATOS PARA TRANSFERIR" (opción A): imprime los medios marcados `imprime`.
+        function imprimirTicketMediosCobro(monto) {
+          const medios = (mediosCobro.value.medios||[]).filter(m => m.imprime);
+          if (!medios.length) return;
+          const W = 48;
+          const _n = (s) => String(s==null?'':s).normalize('NFC').replace(/[^\x20-\xFF]/g,'');
+          const rep = (ch,n) => ch.repeat(Math.max(0,n));
+          const SEP = rep('=',W)+'\n', SEPd = rep('-',W)+'\n';
+          const ef = empresaFiscal.value||{};
+          let t = '\x1b\x40\x1b\x74\x10';
+          t += '\x1b\x61\x01\x1b\x21\x30' + _n('DATOS PARA TRANSFERIR') + '\n\x1b\x21\x00';
+          t += _n(ef.razonSocial||'') + '\n';
+          if (ef.ruc) t += _n('RUC ' + ef.ruc) + '\n';
+          t += '\x1b\x61\x00' + SEP;
+          t += '\x1b\x45\x01' + _n('MONTO: S/ ' + (parseFloat(monto)||0).toFixed(2)) + '\x1b\x45\x00\n' + SEPd;
+          medios.forEach(m => {
+            if (m.tipo === 'banco') {
+              t += '\x1b\x45\x01' + _n((m.banco||'BANCO') + (m.moneda?(' · '+m.moneda):'')) + '\x1b\x45\x00\n';
+              if (m.nroCuenta) t += _n('Cuenta: ' + m.nroCuenta) + '\n';
+              if (m.cci)       t += _n('CCI: ' + m.cci) + '\n';
+              if (m.titular)   t += _n('Titular: ' + m.titular) + '\n';
+            } else {
+              t += '\x1b\x45\x01' + _n((m.tipo==='yape'?'YAPE':'PLIN') + (m.telefono?(' ' + m.telefono):'')) + '\x1b\x45\x00\n';
+              if (m.titular) t += _n('Titular: ' + m.titular) + '\n';
+              if (m.qrUrl)   t += _n('(escanea el QR que te muestra el cajero)') + '\n';
+            }
+            t += SEPd;
+          });
+          t += '\x1b\x61\x01' + _n('Envia la constancia al cajero') + '\n\n\n\n\x1d\x56\x00';
+          try { const pid = (config.value.estacion||{}).PrintNode_ID; if (pid) mandarImpresionPrintNode(pid, 'Datos transferencia', b64ESC(t)); } catch(_) {}
+        }
         const finalizarPostPago = (totalCobrado = 0) => {
           playVentaOK();
+          // [bancarización] opción A → imprimir el ticket con los datos de cuenta (para que el cliente transfiera).
+          if (bancModal.value.decidido === 'A') { try { imprimirTicketMediosCobro(totalCobrado); } catch(_) {} }
+          bancModal.value.decidido = null;   // reset para la próxima venta (los sub-carritos de B son <límite → no re-gatean)
           // Voz: anuncia total + gracias por su compra (ceremonial — refuerza atención al cliente)
           if (voiceEnabled.value && totalCobrado > 0) {
               setTimeout(() => speakES(_precioVoz(totalCobrado) + ', gracias por su compra'), 350);
@@ -21432,6 +21611,7 @@
           extEsExtension: _extEsExtension,
           bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago, cpeReglas, cpeReglasConv,
+          bancModal, bancVolver, bancElegirA, bancElegirB,
           iniciarTurno, cambiarModulo, toggleCamara,
           procesarEscaneoOBusqueda, filtrarCatalogo, agregarCarritoObj,
           cambiarCantidad, eliminarItem, setMonto,
