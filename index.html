@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.201';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.204';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -14619,6 +14619,7 @@
                 // [cero-GAS] Supabase-first: heartbeat + bloqueo en 1 RPC. null → flag OFF / error → GAS legacy.
                 // [CERO-GAS / CERO-FALLBACK] Solo directo (ME_BLOQUEO_DIRECTO=1 en prod). En error → null →
                 // se salta este tick (reintenta en 120s); ya no cae al GAS getEstadoBloqueoUsuario.
+                // [CERO-GAS] poll directo a mos.estado_bloqueo_usuario; en error null → se salta el tick (sin fallback GAS).
                 const j = await _meEstadoBloqueoDirecto({
                     nombre: config.value.vendedor, appOrigen: 'mosExpress',
                     deviceId: deviceId.value || '', idZona: est.Zona_ID || '', idEstacion: est.idEstacion || ''
