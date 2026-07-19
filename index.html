@@ -18664,7 +18664,8 @@
               setTimeout(() => playPromoDing(), 180);
           }
 
-          agregarToast('¡Añadido!', prodObj.nombreCorto);
+          // [2.8.215] toast '¡Añadido!' ELIMINADO (pedido dueño: tapaba el carrito). El feedback
+          // de agregado ya es triple: burbuja +1 volando al carrito + flash del item + sonido.
           // Voz: SOLO cuando el item vino de escaneo / código de barras exacto.
           // _voiceNextAdd se setea true únicamente en los matches exactos de
           // procesarEscaneoOBusqueda (PRESENTACIONES.Cod_Barras o SKU_Base).
