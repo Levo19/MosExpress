@@ -3998,6 +3998,8 @@
                          
                          <!-- Productos Component -->
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
+                              @contextmenu.prevent="abrirAnaliticaPos(prod)"
+                              @touchstart.passive="anaPosPressStart(prod)" @touchend="anaPosPressCancel" @touchmove.passive="anaPosPressCancel" @touchcancel="anaPosPressCancel"
                               :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '']">
                             <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
                             <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="absolute top-1.5 left-1.5 z-10 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md uppercase" title="Producto a granel — vendido por kilo">⚖️ kg</span>
@@ -4755,6 +4757,76 @@
        </div>
     </div>
     <!-- MODAL PRESENTACIONES -->
+    <!-- ══ [2.8.208] ANALÍTICA DE PRODUCTO (click derecho / long-press en catálogo) ══ -->
+    <div v-if="anaPos.abierto" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[70] flex items-end sm:items-center justify-center backdrop-blur-sm" @click.self="cerrarAnaliticaPos()">
+      <div class="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
+        <!-- header -->
+        <div class="p-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center gap-3 shrink-0">
+          <div class="w-12 h-12 rounded-xl bg-white/15 border border-white/25 overflow-hidden flex items-center justify-center shrink-0">
+            <img v-if="anaPos.data && anaPos.data.producto.foto" :src="anaPos.data.producto.foto" class="w-full h-full object-cover">
+            <span v-else class="text-xl">📈</span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <h3 class="font-black text-sm leading-tight line-clamp-2">{{ anaPos.data ? anaPos.data.producto.nombre : 'Analítica de producto' }}</h3>
+            <p class="text-[10px] opacity-80 mt-0.5">{{ anaPos.data ? ('📍 ' + anaPos.data.zona + ' · ventas de tu zona · en tiempo real') : '' }}</p>
+          </div>
+          <span v-if="anaPos.data" class="text-[10px] font-black px-2 py-1 rounded-full border bg-white" :class="anaPosTend(anaPos.data.tendencia).cls">{{ anaPosTend(anaPos.data.tendencia).txt }}</span>
+          <button @click="cerrarAnaliticaPos()" class="text-white bg-black/20 rounded-full p-1.5 shrink-0"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg></button>
+        </div>
+        <!-- body -->
+        <div class="overflow-y-auto p-4 space-y-4 flex-1 bg-gray-50">
+          <div v-if="anaPos.cargando" class="py-10 text-center text-gray-400 text-sm font-bold animate-pulse">Leyendo ventas de tu zona…</div>
+          <div v-else-if="anaPos.error" class="py-8 text-center text-red-500 text-sm font-bold">⚠️ {{ anaPos.error }}</div>
+          <template v-else-if="anaPos.data && anaPos.vm">
+            <!-- KPIs -->
+            <div class="grid grid-cols-4 gap-2 text-center">
+              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black text-indigo-600">{{ Math.round(anaPos.data.pronSemana) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Pronóstico<br>semana</div></div>
+              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black text-emerald-600">{{ Math.round(anaPos.data.vendidosSemana) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Ya vendidos<br>semana</div></div>
+              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black" :class="anaPos.data.stockZona > 0 ? 'text-gray-800' : 'text-red-500'">{{ Math.round(anaPos.data.stockZona) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock<br>tu zona</div></div>
+              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black" :class="anaPos.data.stockAlmacen > 0 ? 'text-gray-800' : 'text-red-500'">{{ Math.round(anaPos.data.stockAlmacen) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock<br>almacén</div></div>
+            </div>
+            <!-- Insight de HOY -->
+            <div v-if="anaPos.vm.hoy" class="bg-indigo-50 border border-indigo-200 rounded-2xl p-3 flex items-center gap-3">
+              <span class="text-2xl">💡</span>
+              <p class="text-xs text-indigo-900 leading-snug"><b>Hoy ({{ anaPos.vm.dowLbl[anaPos.vm.hoy.dow] }})</b> suele venderse <b>~{{ Math.round(anaPos.vm.hoy.pron) }}</b> y ya llevas <b>{{ Math.round(anaPos.vm.hoy.u || 0) }}</b>.<span v-if="anaPos.data.stockZona < anaPos.vm.hoy.pron" class="text-red-600 font-bold"> Stock de zona corto — pide a almacén.</span><span v-else> Tienes stock para cubrirlo.</span></p>
+            </div>
+            <!-- Esta semana: real vs pronóstico -->
+            <div class="bg-white rounded-2xl border border-gray-200 p-3">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-black text-gray-500 uppercase tracking-wide">Esta semana · real vs pronóstico</span>
+                <span class="text-[9px] text-gray-400"><span class="inline-block w-2 h-2 rounded-sm bg-emerald-500 mr-0.5"></span>real <span class="inline-block w-2 h-2 rounded-sm border border-dashed border-indigo-400 bg-indigo-50 ml-1.5 mr-0.5"></span>pronóstico</span>
+              </div>
+              <div class="flex items-end gap-1.5 h-24">
+                <div v-for="d in anaPos.data.semanaActual" :key="d.fecha" class="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                  <div class="w-full relative flex items-end justify-center h-full">
+                    <div class="absolute bottom-0 w-full rounded-t border border-dashed border-indigo-300 bg-indigo-50" :style="{ height: Math.max(4, (d.pron / anaPos.vm.maxAll) * 100) + '%' }"></div>
+                    <div v-if="d.u !== null" class="relative w-2/3 rounded-t bg-emerald-500" :style="{ height: Math.max(d.u > 0 ? 6 : 2, (d.u / anaPos.vm.maxAll) * 100) + '%' }"></div>
+                  </div>
+                  <span class="text-[8.5px] font-black leading-none" :class="d.esHoy ? 'text-indigo-600 bg-indigo-100 rounded px-1 py-0.5' : 'text-gray-400'">{{ anaPos.vm.dowLbl[d.dow] }}</span>
+                </div>
+              </div>
+            </div>
+            <!-- 4 semanas anteriores día a día -->
+            <div class="bg-white rounded-2xl border border-gray-200 p-3">
+              <span class="text-[10px] font-black text-gray-500 uppercase tracking-wide">Últimas 4 semanas · día a día</span>
+              <div class="flex gap-2 mt-2">
+                <div v-for="(sem, i) in anaPos.vm.semanas" :key="i" class="flex-1">
+                  <div class="flex items-end gap-[2px] h-14 bg-gray-50 rounded-lg p-1">
+                    <div v-for="d in sem" :key="d.fecha" class="flex-1 rounded-sm" :class="d.u > 0 ? 'bg-indigo-400' : 'bg-gray-200'" :style="{ height: Math.max(8, (d.u / anaPos.vm.maxAll) * 100) + '%' }" :title="d.fecha + ' · ' + d.u"></div>
+                  </div>
+                  <div class="text-center mt-1"><span class="text-[8.5px] font-bold text-gray-400">S{{ i + 1 }}</span> <span class="text-[9px] font-black text-gray-600">{{ anaPos.vm.totSem[i] }}u</span></div>
+                </div>
+              </div>
+              <p class="text-[9px] text-gray-400 mt-1.5">S4 = semana pasada · barras Lun→Dom · total {{ Math.round(anaPos.data.volumen4sem) }} uds en 4 semanas</p>
+            </div>
+            <!-- Vencimiento próximo en zona (si hay libro) -->
+            <div v-if="anaPos.data.vencProxZona" class="bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2 text-[11px] text-amber-800 font-bold">📅 Lote más próximo a vencer en tu zona: {{ anaPos.data.vencProxZona }}</div>
+            <p v-if="anaPos.data.producto.esPadreDe" class="text-[9px] text-gray-400 text-center">Analítica del producto padre (incluye {{ anaPos.data.producto.esPadreDe }} y demás presentaciones)</p>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <div v-if="modalPresentaciones" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh] shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]">
            <div class="p-5 bg-emerald-500 text-white flex justify-between items-center shadow-md z-10 relative">
@@ -18109,6 +18181,9 @@
         const prodSeleccionado = ref(null);
 
         const agregarOVerDetalle = (prod) => { 
+            // [2.8.208 Analítica POS] un long-press que ya abrió la analítica NO debe además
+            // agregar al carrito (el click sintético llega después del touchend)
+            if (_anaPosFired) { _anaPosFired = false; return; }
             if (prod.presentaciones && prod.presentaciones.length > 1) {
                 prodSeleccionado.value = prod;
                 modalPresentaciones.value = true;
@@ -18116,6 +18191,60 @@
                 agregarCarritoObj(prod);
             }
         };
+
+        // ══ [2.8.208] ANALÍTICA DE PRODUCTO EN POS (proyecto dueño) ══════════════════
+        // Click derecho (PC) / mantener presionado ~550ms (táctil) sobre un producto del
+        // catálogo → card del producto PADRE con: ventas de MI zona día a día (4 semanas
+        // completas), pronóstico de ESTA semana por día (promedio del mismo día de semana),
+        // tendencia con la MISMA lógica de MOS/zona, y stock almacén/zona EN TIEMPO REAL.
+        // Fuente: RPC me.analitica_pos (SQL 531) — una sola llamada, fresca en cada apertura.
+        const anaPos = ref({ abierto:false, cargando:false, data:null, vm:null, error:'' });
+        let _anaPosTimer = null, _anaPosFired = false;
+        const DOW_LBL = ['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+        const abrirAnaliticaPos = async (prod) => {
+            const cb   = String(prod.codBarras || prod.cod_barras || '');
+            const zona = String(config.value?.zona || '');
+            if (!cb || !zona) { try { agregarToast('Sin zona activa para analítica', 'warning'); } catch(_) {} return; }
+            anaPos.value = { abierto:true, cargando:true, data:null, vm:null, error:'' };
+            try {
+                const tk  = await _mintTokenSB();
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/analitica_pos`, { method:'POST',
+                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+tk,
+                              'Content-Profile':'me', 'Content-Type':'application/json' },
+                    body: JSON.stringify({ p: { codigoBarra: cb, zona } }) });
+                const d = await res.json();
+                if (d && d.ok) {
+                    const H  = d.historial || [], SA = d.semanaActual || [];
+                    const maxAll = Math.max(1, ...H.map(x => +x.u || 0), ...SA.map(x => Math.max(+x.u || 0, +x.pron || 0)));
+                    const hoy = SA.find(x => x.esHoy) || null;
+                    anaPos.value = { abierto:true, cargando:false, data:d, error:'', vm: {
+                        maxAll,
+                        semanas: [1,2,3,4].map(w => H.filter(x => x.sem === w)),
+                        totSem:  [1,2,3,4].map(w => Math.round(H.filter(x => x.sem === w).reduce((a,x) => a + (+x.u||0), 0))),
+                        hoy,
+                        dowLbl: DOW_LBL
+                    }};
+                } else anaPos.value = { abierto:true, cargando:false, data:null, vm:null, error:(d && d.error) || 'Sin datos' };
+            } catch(e) {
+                anaPos.value = { abierto:true, cargando:false, data:null, vm:null, error:'Sin conexión' };
+            }
+        };
+        const cerrarAnaliticaPos = () => { anaPos.value.abierto = false; };
+        const anaPosPressStart = (prod) => {
+            clearTimeout(_anaPosTimer); _anaPosFired = false;
+            _anaPosTimer = setTimeout(() => {
+                _anaPosFired = true;
+                try { navigator.vibrate && navigator.vibrate(18); } catch(_) {}
+                abrirAnaliticaPos(prod);
+            }, 550);
+        };
+        const anaPosPressCancel = () => { clearTimeout(_anaPosTimer); };
+        const anaPosTend = (t) => ({
+            CRECIENTE:   { txt:'↑ Sube',      cls:'bg-emerald-100 text-emerald-700 border-emerald-300' },
+            DECRECIENTE: { txt:'↓ Baja',      cls:'bg-red-100 text-red-700 border-red-300' },
+            ESTABLE:     { txt:'≈ Estable',   cls:'bg-sky-100 text-sky-700 border-sky-300' },
+            NULA:        { txt:'∅ Sin rotar', cls:'bg-gray-100 text-gray-500 border-gray-300' }
+        }[t] || { txt:'—', cls:'bg-gray-100 text-gray-500 border-gray-300' });
 
         const elegirPresentacion = (prodBase, pres) => {
             const codEsc = _codEscaneadoTemp || String(pres.Cod_Barras);
@@ -21704,6 +21833,8 @@
           // [Bloque C UX] toggle origen + limpiar buscador/extranjero
           setClienteOrigen, limpiarBusqueda, limpiarExtranjero,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
+          // [2.8.208] Analítica de producto en POS
+          anaPos, abrirAnaliticaPos, cerrarAnaliticaPos, anaPosPressStart, anaPosPressCancel, anaPosTend,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           // [v2.7.78 CLEANUP] bHerramientas, imprimirMembrete, procesandoMembrete,
           // camaraHerramientasAbierta, toggleCamaraHerramientas — TODOS eliminados
