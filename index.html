@@ -403,6 +403,22 @@
       30%  { transform: scale(1.06); box-shadow: 0 0 0 12px rgba(16,185,129,0.55); border-color:#10b981; }
       100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16,185,129,0); }
     }
+    /* [2.8.211] UX catalogo: hover localizador + long-press + boton presentaciones */
+    .pos-card:hover { transform: translateY(-3px) scale(1.015); box-shadow: 0 10px 24px -8px rgba(16,185,129,.35); border-color: #34d399 !important; }
+    .pos-card:hover .prod-img img { transform: scale(1.06); }
+    .prod-img img { transition: transform .25s ease; }
+    .pos-pressing { transform: scale(.93) !important; box-shadow: 0 0 0 3px rgba(99,102,241,.55), 0 0 22px rgba(99,102,241,.35) !important; border-color: #818cf8 !important; }
+    .pres-btn {
+      font-size: 10px; font-weight: 900; color: #4f46e5;
+      background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px;
+      padding: 2px 6px; line-height: 1.3; cursor: pointer;
+      transition: transform .12s, box-shadow .15s, background .15s;
+    }
+    .pres-btn:hover { background: #e0e7ff; box-shadow: 0 0 0 2px rgba(99,102,241,.35); transform: scale(1.08); }
+    .pres-btn:active { transform: scale(.92); }
+    .ana-enter { animation: anaSlideUp .28s cubic-bezier(.32,.72,.35,1.05); }
+    @keyframes anaSlideUp { from { transform: translateY(46px); opacity: .3; } to { transform: none; opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .ana-enter { animation: none; } .pos-card:hover { transform: none; } }
     .product-pulse { animation: productGridPulse 0.75s ease-out; z-index: 10; position: relative; border-color:#10b981 !important; }
 
     /* ─── Espaciado bottom-nav que respeta safe-area (iPhone home indicator, Android gesture bar) ─── */
@@ -4000,7 +4016,7 @@
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
                               @contextmenu.prevent="abrirAnaliticaPos(prod)"
                               @touchstart.passive="anaPosPressStart(prod)" @touchend="anaPosPressCancel" @touchmove.passive="anaPosPressCancel" @touchcancel="anaPosPressCancel"
-                              :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '']">
+                              :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '']">
                             <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
                             <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="absolute top-1.5 left-1.5 z-10 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md uppercase" title="Producto a granel — vendido por kilo">⚖️ kg</span>
                             <div class="prod-img w-full bg-gray-200">
@@ -4008,7 +4024,7 @@
                             </div>
                             <div class="p-2.5 flex-1 flex flex-col justify-between bg-white">
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
-                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> <span v-if="prod.presentaciones && prod.presentaciones.length > 1" class="text-[9px] text-gray-400 bg-gray-100 rounded px-1 ml-1 align-middle border border-gray-200 shadow-sm transition-colors">+{{ prod.presentaciones.length - 1 }}</span></p>
+                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> <button v-if="prod.presentaciones && prod.presentaciones.length > 1" @click.stop="abrirPresentaciones(prod)" @touchstart.stop @touchend.stop class="pres-btn ml-1 align-middle" :title="(prod.presentaciones.length - 1) + ' presentaciones'">📦 {{ prod.presentaciones.length - 1 }} ▾</button></p>
                                <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : ' uds') : 'Sin stock' }}</span>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
@@ -4759,7 +4775,7 @@
     <!-- MODAL PRESENTACIONES -->
     <!-- ══ [2.8.208] ANALÍTICA DE PRODUCTO (click derecho / long-press en catálogo) ══ -->
     <div v-if="anaPos.abierto" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[70] flex items-end sm:items-center justify-center backdrop-blur-sm" @click.self="cerrarAnaliticaPos()">
-      <div class="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
+      <div class="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden ana-enter">
         <!-- header -->
         <div class="p-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center gap-3 shrink-0">
           <div class="w-12 h-12 rounded-xl bg-white/15 border border-white/25 overflow-hidden flex items-center justify-center shrink-0">
@@ -4840,10 +4856,9 @@
                <button @click="cerrarModalPres()" class="text-white bg-black bg-opacity-20 hover:bg-opacity-30 transition-colors rounded-full p-2 shrink-0"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
            </div>
            <div class="p-4 space-y-3 overflow-y-auto bg-gray-50 flex-1">
-               <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">Elige una presentación:</p>
-               <div v-for="pres in prodSeleccionado.presentaciones" :key="pres.Cod_Barras" @click="elegirPresentacion(prodSeleccionado, pres)"
-                    :class="pres.Factor === 1 ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-gray-100'"
-                    class="border-2 shadow-sm p-4 rounded-2xl flex justify-between items-center cursor-pointer hover:border-emerald-500 active:scale-95 transition-all">
+               <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">Elige una presentación <span class="normal-case font-semibold text-gray-300">· el card agrega el producto solo</span></p>
+               <div v-for="pres in presentacionesDelPicker(prodSeleccionado)" :key="pres.Cod_Barras" @click="elegirPresentacion(prodSeleccionado, pres)"
+                    class="bg-white border-gray-100 border-2 shadow-sm p-4 rounded-2xl flex justify-between items-center cursor-pointer hover:border-emerald-500 active:scale-95 transition-all">
                    <div>
                        <p class="font-black text-gray-800 text-lg uppercase">
                            {{ pres.Empaque }}
@@ -18195,13 +18210,18 @@
             // [2.8.208 Analítica POS] un long-press que ya abrió la analítica NO debe además
             // agregar al carrito (el click sintético llega después del touchend)
             if (_anaPosFired) { _anaPosFired = false; return; }
-            if (prod.presentaciones && prod.presentaciones.length > 1) {
-                prodSeleccionado.value = prod;
-                modalPresentaciones.value = true;
-            } else {
-                agregarCarritoObj(prod);
-            }
+            // [2.8.211 UX dueño] El click en el CARD agrega 1 del PADRE directo (1 und / 1 kg
+            // granel) — camino rápido. Las presentaciones viven en su botón (abrirPresentaciones).
+            agregarCarritoObj(prod);
         };
+        const abrirPresentaciones = (prod) => {
+            prodSeleccionado.value = prod;
+            modalPresentaciones.value = true;
+        };
+        // Picker SIN la fila del padre (elegir el padre = click en el card; elegirlo aquí
+        // duplicaba el nombre: "sibarita... (sibarita...)"). Solo presentaciones reales.
+        const presentacionesDelPicker = (prod) => ((prod && prod.presentaciones) || [])
+            .filter(pr => !(parseFloat(pr.Factor) === 1 && String(pr.Cod_Barras) === String(prod.codBarras)));
 
         // ══ [2.8.208] ANALÍTICA DE PRODUCTO EN POS (proyecto dueño) ══════════════════
         // Click derecho (PC) / mantener presionado ~550ms (táctil) sobre un producto del
@@ -18210,6 +18230,7 @@
         // tendencia con la MISMA lógica de MOS/zona, y stock almacén/zona EN TIEMPO REAL.
         // Fuente: RPC me.analitica_pos (SQL 531) — una sola llamada, fresca en cada apertura.
         const anaPos = ref({ abierto:false, cargando:false, data:null, vm:null, error:'' });
+        const anaPosPressingId = ref(null);   // card en long-press (feedback visual)
         let _anaPosTimer = null, _anaPosFired = false;
         const DOW_LBL = ['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
         const abrirAnaliticaPos = async (prod) => {
@@ -18243,13 +18264,15 @@
         const cerrarAnaliticaPos = () => { anaPos.value.abierto = false; };
         const anaPosPressStart = (prod) => {
             clearTimeout(_anaPosTimer); _anaPosFired = false;
+            anaPosPressingId.value = prod.idUnico;
             _anaPosTimer = setTimeout(() => {
                 _anaPosFired = true;
-                try { navigator.vibrate && navigator.vibrate(18); } catch(_) {}
+                anaPosPressingId.value = null;
+                try { navigator.vibrate && navigator.vibrate([16, 40, 24]); } catch(_) {}
                 abrirAnaliticaPos(prod);
             }, 550);
         };
-        const anaPosPressCancel = () => { clearTimeout(_anaPosTimer); };
+        const anaPosPressCancel = () => { clearTimeout(_anaPosTimer); anaPosPressingId.value = null; };
         const anaPosTend = (t) => ({
             CRECIENTE:   { txt:'↑ Sube',      cls:'bg-emerald-100 text-emerald-700 border-emerald-300' },
             DECRECIENTE: { txt:'↓ Baja',      cls:'bg-red-100 text-red-700 border-red-300' },
@@ -18301,7 +18324,7 @@
                 factor:       pres.Factor || 1,
                 codBarras:    String(pres.Cod_Barras), // canónico — usado para dedup en carrito
                 codBarrasEsc: codEsc,                  // escaneado — va a VENTAS_DETALLE y STOCK
-                nombreCorto:  prodBase.nombreCorto + ' (' + pres.Empaque + ')',
+                nombreCorto:  prodBase.nombreCorto + (parseFloat(pres.Factor) !== 1 && pres.Empaque ? ' (' + pres.Empaque + ')' : ''),   // [2.8.211] factor 1 = el padre; sin duplicar nombre
                 codSunat:     prodBase.codSunat,
                 tipoIgv:      prodBase.tipoIgv,
                 unidadMedida: prodBase.unidadMedida,
@@ -21846,6 +21869,7 @@
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
           // [2.8.208] Analítica de producto en POS
           anaPos, abrirAnaliticaPos, cerrarAnaliticaPos, anaPosPressStart, anaPosPressCancel, anaPosTend,
+          anaPosPressingId, abrirPresentaciones, presentacionesDelPicker,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           // [v2.7.78 CLEANUP] bHerramientas, imprimirMembrete, procesandoMembrete,
           // camaraHerramientasAbierta, toggleCamaraHerramientas — TODOS eliminados
