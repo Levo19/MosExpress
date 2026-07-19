@@ -410,13 +410,13 @@
     .pos-pressing { transform: scale(.93) !important; box-shadow: 0 0 0 3px rgba(99,102,241,.55), 0 0 22px rgba(99,102,241,.35) !important; border-color: #818cf8 !important; }
     .pres-btn-sq {
       position: absolute; bottom: 6px; right: 6px;
-      width: 30px; height: 30px; border-radius: 9px;
+      width: 38px; height: 38px; border-radius: 11px;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 0; color: #4f46e5; background: #eef2ff; border: 1px solid #c7d2fe;
       cursor: pointer; transition: transform .12s, box-shadow .15s, background .15s;
       z-index: 5;
     }
-    .pres-btn-sq .pres-btn-n { font-size: 8.5px; font-weight: 900; line-height: 1; margin-top: 1px; }
+    .pres-btn-sq .pres-btn-n { font-size: 10px; font-weight: 900; line-height: 1; margin-top: 1px; }
     .pres-btn-sq:hover { background: #e0e7ff; box-shadow: 0 0 0 2px rgba(99,102,241,.4); transform: scale(1.1); }
     .pres-btn-sq:active { transform: scale(.9); }
     .pres-btn {
@@ -4038,9 +4038,9 @@
                             <div class="prod-img w-full bg-gray-200">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
                             </div>
-                            <div class="p-2.5 flex-1 flex flex-col justify-between bg-white relative" :class="prod.presentaciones && prod.presentaciones.length > 1 ? 'pr-10' : ''">
+                            <div class="p-2.5 flex-1 flex flex-col justify-between bg-white relative" :class="prod.presentaciones && prod.presentaciones.length > 1 ? 'pr-12' : ''">
                                <button v-if="prod.presentaciones && prod.presentaciones.length > 1" @click.stop="abrirPresentaciones(prod)" @touchstart.stop @touchend.stop class="pres-btn-sq" :title="(prod.presentaciones.length - 1) + ' presentaciones'">
-                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4-8 4-8-4 8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 11l8 4 8-4"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 15l8 4 8-4"/></svg>
+                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-4.5 h-4.5" style="width:18px;height:18px"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4-8 4-8-4 8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 11l8 4 8-4"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 15l8 4 8-4"/></svg>
                                  <span class="pres-btn-n">{{ prod.presentaciones.length - 1 }}</span>
                                </button>
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
@@ -4061,7 +4061,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
                           </button>
                           <h2 class="font-black text-gray-800 uppercase flex items-center">
-                             <svg class="w-5 h-5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                             <svg id="cartFlyAnchor" class="w-5 h-5 mr-1.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                              Carrito <span class="bg-gray-200 text-gray-600 ml-1.5 px-2 py-0.5 rounded-full text-xs">{{ carrito.length }}</span>
                           </h2>
                        </div>
@@ -4824,15 +4824,15 @@
               <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black" :class="anaPos.data.stockAlmacen > 0 ? 'text-gray-800' : 'text-red-500'">{{ Math.round(anaPos.data.stockAlmacen) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock<br>almacén</div></div>
             </div>
             <!-- [2.8.210] Zona activa sin ventas pero OTRAS sí → decirlo (cero mudo genera desconfianza) -->
-            <div v-if="anaPos.data.volumen4sem == 0 && anaPos.data.otrasZonas > 0" class="bg-sky-50 border border-sky-200 rounded-2xl px-3 py-2.5 text-[11px] text-sky-800 leading-snug">
-              ℹ️ <b>{{ anaPos.data.zona }}</b> no registra ventas de este producto en 4 semanas, pero
+            <div v-if="(anaPos.data.volumen4sem + anaPos.data.vendidosSemana) == 0 && anaPos.data.otrasZonas > 0" class="bg-sky-50 border border-sky-200 rounded-2xl px-3 py-2.5 text-[11px] text-sky-800 leading-snug">
+              ℹ️ <b>{{ anaPos.data.zona }}</b> no registra NINGUNA venta de este producto (ni en 4 semanas ni esta semana), pero
               <template v-for="(o, i) in anaPos.data.otrasZonasDetalle" :key="o.zona"><b> {{ o.zona }}</b> vendió <b>{{ Math.round(o.u) }}</b><span v-if="i < anaPos.data.otrasZonasDetalle.length - 1"> ·</span></template>.
               La analítica es de la zona de TU caja.
             </div>
-            <!-- Insight de HOY -->
-            <div v-if="anaPos.vm.hoy" class="bg-indigo-50 border border-indigo-200 rounded-2xl p-3 flex items-center gap-3">
-              <span class="text-2xl">💡</span>
-              <p class="text-xs text-indigo-900 leading-snug"><b>Hoy ({{ anaPos.vm.dowLbl[anaPos.vm.hoy.dow] }})</b> suele venderse <b>~{{ Math.round(anaPos.vm.hoy.pron) }}</b> y ya llevas <b>{{ Math.round(anaPos.vm.hoy.u || 0) }}</b>.<span v-if="anaPos.data.stockZona < anaPos.vm.hoy.pron" class="text-red-600 font-bold"> Stock de zona corto — pide a almacén.</span><span v-else> Tienes stock para cubrirlo.</span></p>
+            <!-- Insight de HOY (variable: rompió pronóstico / normal / día sin venta) -->
+            <div v-if="anaPos.vm.insight" class="border rounded-2xl p-3 flex items-center gap-3" :class="anaPos.vm.insight.cls">
+              <span class="text-2xl">{{ anaPos.vm.insight.ico }}</span>
+              <p class="text-xs leading-snug font-semibold">{{ anaPos.vm.insight.txt }}</p>
             </div>
             <!-- Esta semana: real vs pronóstico -->
             <div class="bg-white rounded-2xl border border-gray-200 p-3">
@@ -18296,11 +18296,35 @@
                     const H  = d.historial || [], SA = d.semanaActual || [];
                     const maxAll = Math.max(1, ...H.map(x => +x.u || 0), ...SA.map(x => Math.max(+x.u || 0, +x.pron || 0)));
                     const hoy = SA.find(x => x.esHoy) || null;
+                    // [2.8.214] Insight VARIABLE (pedido dueño): si ya rompiste el pronóstico,
+                    // celebrarlo y analizar el stock REAL (zona en cero → pedir a almacén con su
+                    // disponible); nunca decir "tienes stock" cuando la zona está en 0.
+                    let insight = null;
+                    if (hoy) {
+                        const u  = +hoy.u || 0, pr = +hoy.pron || 0;
+                        const sz = +d.stockZona || 0, sa = +d.stockAlmacen || 0;
+                        const dow = DOW_LBL[hoy.dow] || '';
+                        const pedirAlm = sa > 0 ? ('pide a almacén — tiene ' + Math.round(sa) + '.') : 'almacén tampoco tiene unidades.';
+                        if (u > pr) {
+                            insight = { ico: '🔥', cls: 'bg-amber-50 border-amber-300 text-amber-900',
+                                txt: 'Hoy (' + dow + ') ya llevas ' + Math.round(u) + (pr > 0 ? ' — por encima de lo usual (~' + Math.round(pr) + ')' : ' — este producto no solía venderse los ' + dow.toLowerCase()) + '. Está rotando fuerte: '
+                                   + (sz <= 0 ? ('la zona quedó SIN stock, ' + pedirAlm) : ('te quedan ' + Math.round(sz) + ' en zona.')) };
+                        } else if (pr > 0) {
+                            const falta = pr - u;
+                            insight = { ico: '💡', cls: 'bg-indigo-50 border-indigo-200 text-indigo-900',
+                                txt: 'Hoy (' + dow + ') suele venderse ~' + Math.round(pr) + ' y llevas ' + Math.round(u) + '. '
+                                   + (sz < falta ? ('Stock de zona corto para lo que falta (~' + Math.round(falta) + ') — ' + pedirAlm) : ('Tienes stock para cubrirlo (' + Math.round(sz) + ' en zona).')) };
+                        } else {
+                            insight = { ico: '😴', cls: 'bg-gray-50 border-gray-200 text-gray-600',
+                                txt: 'Hoy (' + dow + ') no suele venderse este producto.' + (sz <= 0 && sa > 0 ? (' Si lo necesitas, almacén tiene ' + Math.round(sa) + '.') : '') };
+                        }
+                    }
                     anaPos.value = { abierto:true, cargando:false, data:d, error:'', vm: {
                         maxAll,
                         semanas: [1,2,3,4].map(w => H.filter(x => x.sem === w)),
                         totSem:  [1,2,3,4].map(w => Math.round(H.filter(x => x.sem === w).reduce((a,x) => a + (+x.u||0), 0))),
                         hoy,
+                        insight,
                         dowLbl: DOW_LBL
                     }};
                 } else anaPos.value = { abierto:true, cargando:false, data:null, vm:null, error:(d && d.error) || 'Sin datos' };
@@ -18402,6 +18426,30 @@
             };
             agregarCarritoObj(item);
             modalPresentaciones.value = false;
+        };
+
+        // [2.8.214] Vuelo al carrito: burbuja que viaja del último click al panel del carrito.
+        let _lastClickXY = { x: 0, y: 0 };
+        document.addEventListener('pointerdown', (e) => { _lastClickXY = { x: e.clientX, y: e.clientY }; }, { passive: true, capture: true });
+        const _flyToCart = () => {
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            const destEl = document.getElementById('cartFlyAnchor');
+            if (!destEl || !_lastClickXY.x) return;
+            const dr = destEl.getBoundingClientRect();
+            if (!dr.width && !dr.height) return;   // carrito no visible (móvil en vista catálogo) → sin vuelo
+            const dot = document.createElement('div');
+            dot.style.cssText = 'position:fixed;z-index:120;width:22px;height:22px;border-radius:50%;background:#10b981;box-shadow:0 4px 14px rgba(16,185,129,.5);pointer-events:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:900;'
+              + 'left:' + (_lastClickXY.x - 11) + 'px;top:' + (_lastClickXY.y - 11) + 'px;'
+              + 'transition:left .5s cubic-bezier(.5,-0.1,.7,.4), top .5s cubic-bezier(.3,.7,.4,1), transform .5s ease, opacity .5s ease;';
+            dot.textContent = '+1';
+            document.body.appendChild(dot);
+            requestAnimationFrame(() => { requestAnimationFrame(() => {
+                dot.style.left = (dr.left + dr.width / 2 - 11) + 'px';
+                dot.style.top  = (dr.top + dr.height / 2 - 11) + 'px';
+                dot.style.transform = 'scale(.45)';
+                dot.style.opacity = '.15';
+            }); });
+            setTimeout(() => { try { dot.remove(); } catch(_) {} }, 560);
         };
 
         const cerrarModalPres = () => { modalPresentaciones.value = false; _codEscaneadoTemp = null; };
@@ -18527,9 +18575,11 @@
           if (g >= 1) { item.cantidad = Math.round(g) / 1000; calcularImportes(item); }
         };
         const agregarCarritoObj = (prodObj) => {
-          // Limpiar búsqueda al agregar cualquier producto (click o enter)
-          bBuscador.value = '';
-          filtrarCatalogo();
+          // [2.8.214 PERF] filtrarCatalogo re-renderiza TODO el grid — solo hace falta si
+          // había texto en el buscador (causa de la lentitud al elegir presentación).
+          if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); }
+          // [2.8.214] vuelo al carrito (efecto elegante desde el punto del click)
+          try { _flyToCart(); } catch(_) {}
           // Código escaneado (equivalencia) o canónico si no hubo equivalencia
           const codEsc = _codEscaneadoTemp || prodObj.codBarrasEsc || String(prodObj.codBarras);
           _codEscaneadoTemp = null;
