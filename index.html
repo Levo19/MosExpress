@@ -2030,6 +2030,11 @@
     }
 
     function _meCheckHorario() {
+      // [2.8.212 FIX dueño] DOS modales apilados: este overlay legacy (horario fijo 7-19)
+      // Y el modal del sistema central de Seguridad aparecian JUNTOS fuera de horario.
+      // El central es la verdad (horarios reales de config + permiso remoto + desbloqueo
+      // + extension). Este overlay queda SOLO como fallback si el asset central no cargo.
+      if (window.SeguridadSystem) { _meOcultarCerrado(); return; }
       const ahora = new Date();
       const dia = ahora.getDay() === 0 ? 7 : ahora.getDay();
       const cierreH   = (dia === 7) ? 16 : 19;
@@ -9063,7 +9068,7 @@
                 },
                 usuario:        function() { return (config.value && config.value.vendedor) || ''; },
                 rol:            function() { return (config.value && config.value.rol) || 'VENDEDOR'; },
-                idPersonal:     function() { return (config.value && config.value.idPersonal) || ''; },
+                idPersonal:     function() { try { return _idPersonalSesion(); } catch(_) { return (config.value && config.value.idPersonal) || ''; } },
                 app:            'mosExpress',
                 unwrapData:     true,
                 endpointPrefix: '',
@@ -15858,6 +15863,31 @@
         // vacío (login viejo sin idPersonal), usamos el mismo esquema de fallback
         // que el heartbeat de presencia ('NOID:<nombre>') para que el server pueda
         // matchear igual. La zona se deriva de config.zona o de la estación.
+        // [2.8.212] idPersonal de la SESION con fallback + auto-sanado (para SeguridadSystem:
+        // el permiso remoto fallaba con "no hay id_personal" en configs viejos sin el campo).
+        const _idPersonalSesion = () => {
+            const c = config.value || {};
+            let idp = String(c.idPersonal || '').trim();
+            if (!idp) idp = String((configWizard.value && configWizard.value.idPersonal) || '').trim();
+            if (!idp) {
+                const nom = String(c.vendedor || '').trim().toLowerCase();
+                if (nom) {
+                    try {
+                        for (const z of Object.values(wizPresenciaPorZona.value || {})) {
+                            const cand = [].concat(z.vendedores || [], z.cajero ? [z.cajero] : []);
+                            const hit = cand.find(v => String((v && v.nombre) || '').trim().toLowerCase() === nom);
+                            if (hit && (hit.id_personal || hit.idPersonal)) { idp = String(hit.id_personal || hit.idPersonal); break; }
+                        }
+                    } catch(_) {}
+                }
+            }
+            // auto-sanado: persistir al config para que el proximo arranque ya lo tenga
+            if (idp && !String(c.idPersonal || '').trim()) {
+                try { c.idPersonal = idp; lsSet('mosexpress_config', JSON.stringify(c)); } catch(_) {}
+            }
+            return idp;
+        };
+
         const _msgIdPersonal = () => {
             const c = config.value || {};
             const idp = String(c.idPersonal || '').trim();
