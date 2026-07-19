@@ -10381,6 +10381,27 @@
                     }
                 });
                 _RT_CAT.channel = channel;
+
+                // [PRESENCIA ecosistema] Canal presence compartido 'ecos-presencia' (mismo WS).
+                // ME se ANUNCIA {deviceId, nombre: vendedor, app:'ME'} → el panel MOS (Configuración)
+                // muestra esta caja/cajero EN LÍNEA AL SEGUNDO (pisa el heartbeat de 10 min).
+                // Best-effort: si falla, nada cambia (el heartbeat sigue siendo la base).
+                try {
+                    const devId = String(localStorage.getItem('mosexpress_deviceId') || '').trim();
+                    if (devId) {
+                        let vend = '';
+                        try { vend = JSON.parse(localStorage.getItem('mosexpress_config') || '{}').vendedor || ''; } catch(_) {}
+                        const chP = client.channel('ecos-presencia', { config: { presence: { key: devId } } });
+                        chP.subscribe((status) => {
+                            try { console.log('[Realtime] canal ecos-presencia:', status); } catch(_) {}
+                            if (status === 'SUBSCRIBED') {
+                                try { chP.track({ deviceId: devId, nombre: vend, rol: '', app: 'ME' }); } catch(_) {}
+                            }
+                        });
+                        _RT_CAT.chPres = chP;
+                    }
+                } catch (e) { try { console.warn('[Realtime] presencia no abrió (heartbeat sigue):', e); } catch(_) {} }
+
                 _rtCablearListeners();
             } catch (err) {
                 try { console.warn('[Realtime] arranque falló (poller sigue):', err); } catch(_) {}
@@ -10417,6 +10438,7 @@
         const _detenerRealtimeCatalogo = () => {
             _RT_CAT.gen++;   // [anti-orphan] invalida cualquier arranque en vuelo (post-await abortará en vez de abrir un canal huérfano)
             try { if (_RT_CAT.channel && _RT_CAT.client && _RT_CAT.client.removeChannel) _RT_CAT.client.removeChannel(_RT_CAT.channel); } catch(_) {}
+            try { if (_RT_CAT.chPres && _RT_CAT.client && _RT_CAT.client.removeChannel) { _RT_CAT.client.removeChannel(_RT_CAT.chPres); _RT_CAT.chPres = null; } } catch(_) {}
             try { if (_RT_CAT.client && _RT_CAT.client.disconnect) _RT_CAT.client.disconnect(); } catch(_) {}
             _RT_CAT.channel = null;
             _RT_CAT.client  = null;
