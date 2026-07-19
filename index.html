@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.219';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.220';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -7953,6 +7953,16 @@
         // [rediseño POS] acordeón del header (saldo + extras) + modal cambiar impresora
         const posExtrasOpen = ref(false);
         // [rev100 2.8.219] modalImpresora/abrirModalImpresora/seleccionarImpresora ELIMINADOS (modal simple sin callers).
+        // [HOTFIX 2.8.220] haptic vivía DENTRO del bloque eliminado y se fue con él → setup crasheaba
+        // (ReferenceError) y tumbaba TODA la app. Restaurada tal cual (global, usada por decenas de handlers).
+        // Háptico global (respeta prefers-reduced-motion → el usuario que lo desactiva no siente buzz).
+        // ⚠️ SIN guión bajo: Vue 3 NO expone al template las claves que empiezan con `_`.
+        const haptic = (pat) => {
+            try {
+                if (window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+                navigator.vibrate && navigator.vibrate(pat);
+            } catch (e) {}
+        };
 
         // [v40.3] Cobros asignados por admin/master desde MOS
         const cobrosAsignados = ref([]);
