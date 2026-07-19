@@ -4785,6 +4785,12 @@
               <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black" :class="anaPos.data.stockZona > 0 ? 'text-gray-800' : 'text-red-500'">{{ Math.round(anaPos.data.stockZona) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock<br>tu zona</div></div>
               <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black" :class="anaPos.data.stockAlmacen > 0 ? 'text-gray-800' : 'text-red-500'">{{ Math.round(anaPos.data.stockAlmacen) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock<br>almacén</div></div>
             </div>
+            <!-- [2.8.210] Zona activa sin ventas pero OTRAS sí → decirlo (cero mudo genera desconfianza) -->
+            <div v-if="anaPos.data.volumen4sem == 0 && anaPos.data.otrasZonas > 0" class="bg-sky-50 border border-sky-200 rounded-2xl px-3 py-2.5 text-[11px] text-sky-800 leading-snug">
+              ℹ️ <b>{{ anaPos.data.zona }}</b> no registra ventas de este producto en 4 semanas, pero
+              <template v-for="(o, i) in anaPos.data.otrasZonasDetalle" :key="o.zona"><b> {{ o.zona }}</b> vendió <b>{{ Math.round(o.u) }}</b><span v-if="i < anaPos.data.otrasZonasDetalle.length - 1"> ·</span></template>.
+              La analítica es de la zona de TU caja.
+            </div>
             <!-- Insight de HOY -->
             <div v-if="anaPos.vm.hoy" class="bg-indigo-50 border border-indigo-200 rounded-2xl p-3 flex items-center gap-3">
               <span class="text-2xl">💡</span>
