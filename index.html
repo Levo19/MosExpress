@@ -8444,11 +8444,16 @@
             if (db.value.ZONAS_CONFIG && db.value.ZONAS_CONFIG.length > 0 && configWizard.value.zona) return db.value.ZONAS_CONFIG.filter(z => z.Zona_ID === configWizard.value.zona);
             return [];  // SIN fallback dummy
         });
-        const granTotal = computed(() => carrito.value.reduce((acc, item) => acc + item.subtotal, 0));
+        // [2.8.209 FIX float] Redondeo de DINERO a 2 decimales. IEEE-754: 3 × 0.80 =
+        // 2.4000000000000004 — esa basura llegaba a granTotal y se veía en la pantalla de
+        // pago (monto recibido / EXAC.). La BD siempre estuvo limpia (numeric redondea al
+        // insertar); esto sanea la CADENA VISIBLE: subtotal → granTotal → vuelto.
+        const _money = (v) => Math.round(((+v || 0) + Number.EPSILON) * 100) / 100;
+        const granTotal = computed(() => _money(carrito.value.reduce((acc, item) => acc + (+item.subtotal || 0), 0)));
         const combosBanner = ref([]);  // Combos detectados en el carrito (se llena en aplicarPromosCarrito)
         const vuelto = computed(() => {
             if (pago.value.metodo === 'VIRTUAL') return 0;
-            return pago.value.montoRecibido + (pago.value.montoVirtual || 0) - granTotal.value;
+            return _money(pago.value.montoRecibido + (pago.value.montoVirtual || 0) - granTotal.value);
         });
 
         // [v2.8.192 SUNAT] RUC REAL: 11 dígitos numéricos + prefijo válido (10/15/16/17/20).
@@ -18681,7 +18686,7 @@
             ttl = _round1Dec(ttl);
             pNormal = _round1Dec(pNormal);
           }
-          item.subtotal = ttl; item.ahorroPromo = pNormal - ttl;
+          item.subtotal = _money(ttl); item.ahorroPromo = _money(pNormal - ttl);
         };
 
         // ── Aplicar combos sobre el carrito (después de calcular individuales) ──
