@@ -408,6 +408,17 @@
     .pos-card:hover .prod-img img { transform: scale(1.06); }
     .prod-img img { transition: transform .25s ease; }
     .pos-pressing { transform: scale(.93) !important; box-shadow: 0 0 0 3px rgba(99,102,241,.55), 0 0 22px rgba(99,102,241,.35) !important; border-color: #818cf8 !important; }
+    .pres-btn-sq {
+      position: absolute; bottom: 6px; right: 6px;
+      width: 30px; height: 30px; border-radius: 9px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0; color: #4f46e5; background: #eef2ff; border: 1px solid #c7d2fe;
+      cursor: pointer; transition: transform .12s, box-shadow .15s, background .15s;
+      z-index: 5;
+    }
+    .pres-btn-sq .pres-btn-n { font-size: 8.5px; font-weight: 900; line-height: 1; margin-top: 1px; }
+    .pres-btn-sq:hover { background: #e0e7ff; box-shadow: 0 0 0 2px rgba(99,102,241,.4); transform: scale(1.1); }
+    .pres-btn-sq:active { transform: scale(.9); }
     .pres-btn {
       font-size: 10px; font-weight: 900; color: #4f46e5;
       background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px;
@@ -4027,9 +4038,13 @@
                             <div class="prod-img w-full bg-gray-200">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
                             </div>
-                            <div class="p-2.5 flex-1 flex flex-col justify-between bg-white">
+                            <div class="p-2.5 flex-1 flex flex-col justify-between bg-white relative" :class="prod.presentaciones && prod.presentaciones.length > 1 ? 'pr-10' : ''">
+                               <button v-if="prod.presentaciones && prod.presentaciones.length > 1" @click.stop="abrirPresentaciones(prod)" @touchstart.stop @touchend.stop class="pres-btn-sq" :title="(prod.presentaciones.length - 1) + ' presentaciones'">
+                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4-8 4-8-4 8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 11l8 4 8-4"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 15l8 4 8-4"/></svg>
+                                 <span class="pres-btn-n">{{ prod.presentaciones.length - 1 }}</span>
+                               </button>
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
-                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> <button v-if="prod.presentaciones && prod.presentaciones.length > 1" @click.stop="abrirPresentaciones(prod)" @touchstart.stop @touchend.stop class="pres-btn ml-1 align-middle" :title="(prod.presentaciones.length - 1) + ' presentaciones'">📦 {{ prod.presentaciones.length - 1 }} ▾</button></p>
+                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
                                <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : ' uds') : 'Sin stock' }}</span>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
@@ -4065,11 +4080,13 @@
                            :class="['bg-white border rounded-xl shadow-sm p-3 relative flex flex-col transition-colors', item.flashing ? 'cart-flash' : 'border-gray-100', item.enCombo ? 'border-amber-300' : '']">
                          <div class="flex items-start space-x-3 w-full">
                          <div class="flex-1 min-w-0 pr-4">
-                           <h3 class="font-bold text-gray-800 text-xs leading-tight truncate">
-                             {{ item.nombre }}
+                           <!-- [2.8.213] nombre COMPLETO (wrap, sin truncate) · presentación como sub-línea -->
+                           <h3 class="font-bold text-gray-800 text-xs leading-tight">
+                             {{ item.nombrePadre || item.nombre }}
                              <span v-if="esGranel(item)" class="ml-1 inline-block bg-amber-100 text-amber-700 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider align-middle">⚖️ kg</span>
                              <span v-if="item.enCombo" class="text-amber-600 text-[9px] font-bold ml-1">[combo]</span>
                            </h3>
+                           <p v-if="item.presLabel" class="text-[10px] font-bold text-indigo-500 leading-tight mt-0.5 pl-2.5 flex items-center gap-1"><span class="text-gray-300">└</span> {{ item.presLabel }}</p>
                            <div v-if="item.ahorroPromo > 0" class="inline-flex items-center mt-1 bg-red-50 text-red-600 text-[9px] font-black px-1.5 py-0.5 rounded border border-red-100 uppercase">★ Ahorro S/ {{ item.ahorroPromo.toFixed(2) }}</div>
                            <div v-else class="text-gray-400 text-[10px] font-mono mt-0.5">S/ {{ Number(item.precioUnitario || 0).toFixed(2) }} {{ esGranel(item) ? '/ kg' : 'ud.' }}</div>
                            <!-- [v2.5.50] Badge segmento aplicado (solo si granel con tramo activo) -->
@@ -4854,7 +4871,7 @@
       </div>
     </div>
 
-    <div v-if="modalPresentaciones" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+    <div v-if="modalPresentaciones" @click.self="cerrarModalPres()" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh] shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]">
            <div class="p-5 bg-emerald-500 text-white flex justify-between items-center shadow-md z-10 relative">
                <h3 class="font-black text-lg leading-tight line-clamp-2 pr-2">{{ prodSeleccionado.nombreCorto }}</h3>
@@ -18310,6 +18327,23 @@
             NULA:        { txt:'∅ Sin rotar', cls:'bg-gray-100 text-gray-500 border-gray-300' }
         }[t] || { txt:'—', cls:'bg-gray-100 text-gray-500 border-gray-300' });
 
+        // [2.8.213] Descriptor limpio de una presentación: si el Empaque empieza con el nombre
+        // del padre (o lo contiene al inicio tras normalizar), se recorta — queda solo el
+        // descriptor ("PACK X10 (10UN)"). Evita "sibarita (sibarita pack x10)".
+        const _descriptorPres = (empaque, padre) => {
+            const e = String(empaque || '').trim();
+            const pd = String(padre || '').trim();
+            if (!e) return '';
+            const norm = t => t.toLowerCase().replace(/\s+/g, ' ').trim();
+            const en = norm(e), pn = norm(pd);
+            if (!pn) return e;
+            if (en === pn) return '';
+            if (en.startsWith(pn)) {
+                const resto = e.slice(pd.length).replace(/^[\s·:,–—-]+/, '').trim();
+                return resto || '';
+            }
+            return e;
+        };
         const elegirPresentacion = (prodBase, pres) => {
             const codEsc = _codEscaneadoTemp || String(pres.Cod_Barras);
             _codEscaneadoTemp = null;
@@ -18354,7 +18388,10 @@
                 factor:       pres.Factor || 1,
                 codBarras:    String(pres.Cod_Barras), // canónico — usado para dedup en carrito
                 codBarrasEsc: codEsc,                  // escaneado — va a VENTAS_DETALLE y STOCK
-                nombreCorto:  prodBase.nombreCorto + (parseFloat(pres.Factor) !== 1 && pres.Empaque ? ' (' + pres.Empaque + ')' : ''),   // [2.8.211] factor 1 = el padre; sin duplicar nombre
+                // [2.8.213] nombre limpio: padre + descriptor SIN repetir el padre
+                nombreCorto:  (function(){ const d = parseFloat(pres.Factor) !== 1 ? _descriptorPres(pres.Empaque, prodBase.nombreCorto) : ''; return prodBase.nombreCorto + (d ? ' · ' + d : ''); })(),
+                nombrePadre:  prodBase.nombreCorto,
+                presLabel:    parseFloat(pres.Factor) !== 1 ? _descriptorPres(pres.Empaque, prodBase.nombreCorto) : '',
                 codSunat:     prodBase.codSunat,
                 tipoIgv:      prodBase.tipoIgv,
                 unidadMedida: prodBase.unidadMedida,
@@ -18368,6 +18405,18 @@
         };
 
         const cerrarModalPres = () => { modalPresentaciones.value = false; _codEscaneadoTemp = null; };
+
+        // [2.8.213] ESC universal: cierra el modal/overlay activo (prioridad: analítica →
+        // presentaciones → popover) y si no hay nada abierto, limpia el buscador del catálogo.
+        window.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Escape') return;
+            try {
+                if (anaPos.value && anaPos.value.abierto) { cerrarAnaliticaPos(); ev.preventDefault(); return; }
+                if (modalPresentaciones.value) { cerrarModalPres(); ev.preventDefault(); return; }
+                if (popover.value && popover.value.visible) { popover.value.visible = false; ev.preventDefault(); return; }
+                if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); ev.preventDefault(); return; }
+            } catch(_) {}
+        });
 
         const agregarItemDesdePopover = () => { agregarCarritoObj(popover.value.data); popover.value.visible = false; bBuscador.value = ''; filtrarCatalogo(); };
 
@@ -18536,6 +18585,8 @@
               factor: prodObj.factor || 1,
               codBarras: String(prodObj.codBarras), codBarrasEsc: codEsc,
               nombre: prodObj.nombreCorto,
+              nombrePadre: prodObj.nombrePadre || '',
+              presLabel: prodObj.presLabel || '',
               codSunat: prodObj.codSunat || '',
               tipoIgv: prodObj.tipoIgv || 1,
               unidadMedida: prodObj.unidadMedida || 'NIU',
