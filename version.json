@@ -1,1 +1,1 @@
-{"version": "2.8.229", "build": "2.8.229 fix radio: los xhrGet anexaban ?accion= a la URL Supabase que ya lleva ?apikey= (el segundo ? corrompía la key → 401 → caía a mocks). Ahora GET limpio al RPC."}
+{"version": "2.8.230", "build": "2.8.230 repin seguridad: FIX la extensión aprobada no desbloqueaba (401 del polling → grant anon SQL 537) + buzón rediseñado."}
