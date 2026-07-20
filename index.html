@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.223';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.224';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -78,7 +78,7 @@
        ?v= bump fuerza refresh cuando cambia el módulo. -->
   <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.199"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
-  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=3.8.223"></script>
+  <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=3.8.224"></script>
   <style>
     [v-cloak] { display: none; }
     @keyframes slideUp { 0% { transform: translateY(100%); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
@@ -8355,8 +8355,10 @@
               // [v2.7.47 FIX] Guard contra reapertura cada 5min cuando el usuario
               // ya cerró el modal. Solo lo reabre si NO estaba ya bloqueado.
               try {
-                if (window.SeguridadSystem && window.SeguridadSystem.abrirModalFueraHorario
-                    && !window._meHorarioModalMostrado) {
+                if (window.SeguridadSystem && window.SeguridadSystem.abrirModalFueraHorario) {
+                  // [UNIFICADO] la pantalla es no-descartable y se auto-dedupea (id fijo) →
+                  // se asegura en CADA check (antes el guard _meHorarioModalMostrado dejaba
+                  // la app abierta si el usuario cerraba el modal viejo).
                   window.SeguridadSystem.abrirModalFueraHorario(
                     d.motivo || 'fuera',
                     d.apertura || '06:00',
@@ -8373,8 +8375,9 @@
             } else {
               horarioBloqueado.value = false;
               horarioInfo.value = null;
-              // Volvió a estar permitido → resetear flag por si vuelve a bloquearse
+              // Volvió a estar permitido → resetear flag + limpiar cache anti-F5 + cerrar pantalla
               try { window._meHorarioModalMostrado = false; } catch(_) {}
+              try { window.SeguridadSystem && window.SeguridadSystem.horarioPermitido && window.SeguridadSystem.horarioPermitido(); } catch(_) {}
             }
           } catch(_) { /* offline — no bloquear */ }
         }
@@ -9018,6 +9021,10 @@
                 // [CERO-GAS] Hook de push por audiencia para seguridad-modal (mismo setup scope: _pushEdge ya definido al mount).
                 pushAudiencia:  function(aud, titulo, cuerpo, data) { try { return _pushEdge(aud, titulo, cuerpo, data); } catch(_) {} }
               });
+              // [ANTI-F5 2026-07-20] re-aplicar el último veredicto fuera-de-horario AL INSTANTE
+              // (reloj local, sin red). Antes un F5 dejaba la app usable hasta que la verificación
+              // async (fail-open) volviera a correr — agujero reportado por el dueño.
+              try { window.SeguridadSystem.enforceBoot && window.SeguridadSystem.enforceBoot(); } catch(_) {}
             }
           } catch(e) { console.warn('[Seguridad] init fail:', e); }
 
