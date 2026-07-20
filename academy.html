@@ -1,0 +1,1431 @@
+<title>ME Academy · Capacitación Día 1</title>
+<style>
+  :root{
+    --bg:#0b1220; --bg2:#0e1526; --surf:#141d31; --surf2:#1b2740; --line:#26324b;
+    --ink:#eaf1fb; --ink2:#9fb0c9; --ink3:#65758f;
+    --brand:#10b981; --brand2:#34d399; --brandink:#052e22;
+    --gold:#fbbf24; --gold2:#f59e0b;
+    --rose:#f43f5e; --sky:#38bdf8; --violet:#a78bfa;
+    --r:18px; --shadow:0 18px 46px rgba(0,0,0,.45);
+    --coach:#fbbf24;
+  }
+  @media (prefers-color-scheme:light){
+    :root{ --bg:#eef2f8; --bg2:#e6ecf5; --surf:#ffffff; --surf2:#f4f7fc; --line:#dce4f0;
+      --ink:#0e1a2b; --ink2:#4a5b74; --ink3:#8494ac; --shadow:0 16px 40px rgba(20,40,80,.14); }
+  }
+  :root[data-theme="dark"]{ --bg:#0b1220; --bg2:#0e1526; --surf:#141d31; --surf2:#1b2740; --line:#26324b;
+    --ink:#eaf1fb; --ink2:#9fb0c9; --ink3:#65758f; --shadow:0 18px 46px rgba(0,0,0,.45); }
+  :root[data-theme="light"]{ --bg:#eef2f8; --bg2:#e6ecf5; --surf:#ffffff; --surf2:#f4f7fc; --line:#dce4f0;
+    --ink:#0e1a2b; --ink2:#4a5b74; --ink3:#8494ac; --shadow:0 16px 40px rgba(20,40,80,.14); }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:radial-gradient(1200px 700px at 80% -10%, rgba(16,185,129,.10), transparent 60%),
+               radial-gradient(900px 600px at -10% 110%, rgba(251,191,36,.07), transparent 55%),
+               var(--bg);
+    color:var(--ink);
+    font-family:'Segoe UI Variable Display','Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.5; min-height:100vh;
+  }
+  .tnum{font-variant-numeric:tabular-nums}
+  button{font-family:inherit}
+  h1,h2,h3{margin:0;letter-spacing:-.02em;text-wrap:balance}
+
+  /* ===== APP SHELL ===== */
+  .top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:12px 18px;
+    background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:900;font-size:17px;letter-spacing:-.02em}
+  .logo .dot{width:30px;height:30px;border-radius:9px;background:linear-gradient(140deg,var(--brand),var(--brand2));
+    display:grid;place-items:center;font-size:16px;box-shadow:0 6px 16px rgba(16,185,129,.4)}
+  .logo small{color:var(--ink3);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  .xpbar{flex:1;max-width:340px;height:12px;border-radius:99px;background:var(--surf2);overflow:hidden;border:1px solid var(--line)}
+  .xpbar > i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--gold));transition:width .6s cubic-bezier(.2,.9,.3,1)}
+  .xplbl{font-weight:800;font-size:12px;color:var(--gold);display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .top .sp{flex:1}
+  .icobtn{border:1px solid var(--line);background:var(--surf);color:var(--ink);width:38px;height:38px;border-radius:11px;cursor:pointer;font-size:16px}
+  .icobtn:hover{background:var(--surf2)}
+
+  .wrap{display:grid;grid-template-columns:290px 1fr;gap:22px;max-width:1180px;margin:0 auto;padding:22px 18px 60px}
+  @media(max-width:860px){ .wrap{grid-template-columns:1fr;gap:14px} .side{order:2} }
+
+  /* ===== SIDEBAR MAP ===== */
+  .side{position:sticky;top:74px;align-self:start;background:var(--surf);border:1px solid var(--line);border-radius:var(--r);padding:14px;box-shadow:var(--shadow)}
+  @media(max-width:860px){ .side{position:static} }
+  .side h3{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin:2px 4px 12px}
+  .mod{margin-bottom:6px;border-radius:14px;overflow:hidden;border:1px solid transparent}
+  .mod-h{display:flex;align-items:center;gap:10px;padding:10px 10px;cursor:pointer;border-radius:12px}
+  .mod-h:hover{background:var(--surf2)}
+  .mod-ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:17px;flex-shrink:0;background:var(--surf2)}
+  .mod.on .mod-ico{background:linear-gradient(140deg,var(--brand),var(--brand2))}
+  .mod-t{font-weight:800;font-size:14px;flex:1;min-width:0}
+  .mod-t small{display:block;color:var(--ink3);font-weight:600;font-size:11px}
+  .lessons{padding:2px 6px 8px 6px;display:none}
+  .mod.open .lessons{display:block}
+  .les{display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink2)}
+  .les:hover{background:var(--surf2);color:var(--ink)}
+  .les.active{background:color-mix(in srgb,var(--brand) 16%,transparent);color:var(--ink)}
+  .les .st{width:20px;height:20px;border-radius:99px;display:grid;place-items:center;font-size:11px;flex-shrink:0;
+    background:var(--surf2);color:var(--ink3);border:1px solid var(--line)}
+  .les.done .st{background:var(--brand);color:#042; border-color:transparent}
+  .les.locked{opacity:.45;cursor:not-allowed}
+  .les.locked:hover{background:transparent}
+
+  /* ===== STAGE ===== */
+  .stage{min-width:0}
+  .card{background:var(--surf);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+  .lead{padding:22px 24px 4px}
+  .eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--brand2);
+    background:color-mix(in srgb,var(--brand) 14%,transparent);padding:5px 11px;border-radius:99px}
+  .lead h1{font-size:clamp(22px,4.2vw,30px);margin:14px 0 6px;font-weight:900}
+  .why{display:flex;gap:10px;align-items:flex-start;background:color-mix(in srgb,var(--gold) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);border-radius:14px;padding:11px 14px;margin:10px 24px 0;color:var(--ink)}
+  .why b{color:var(--gold2)}
+  .body{padding:18px 24px 8px;font-size:15px;color:var(--ink2)}
+  .body p{margin:0 0 12px} .body b{color:var(--ink)}
+  .steplist{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:8px}
+  .steplist li{display:flex;gap:11px;align-items:flex-start;background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:14px;color:var(--ink)}
+  .steplist .n{width:24px;height:24px;border-radius:8px;background:var(--brand);color:#042;font-weight:900;display:grid;place-items:center;flex-shrink:0;font-size:13px}
+
+  /* ===== COACH ===== */
+  .coach{display:flex;gap:12px;align-items:flex-start;margin:16px 24px;padding:14px 16px;border-radius:16px;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 13%,var(--surf2)),var(--surf2));
+    border:1px solid color-mix(in srgb,var(--gold) 34%,transparent)}
+  .coach .face{font-size:30px;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,.25))}
+  .coach .msg{font-size:14.5px;color:var(--ink);font-weight:600}
+  .coach .msg b{color:var(--gold2)}
+
+  /* TIP / ATAJO PRO */
+  .tip{display:flex;gap:11px;align-items:flex-start;margin:2px 24px 16px;padding:12px 15px;border-radius:14px;
+    background:linear-gradient(100deg,color-mix(in srgb,var(--violet) 16%,var(--surf2)),var(--surf2));
+    border:1px solid color-mix(in srgb,var(--violet) 38%,transparent)}
+  .tip .ti{font-size:20px;filter:drop-shadow(0 0 6px rgba(167,139,250,.5))}
+  .tip div{font-size:14px;color:var(--ink);font-weight:600;line-height:1.5}
+  .tip b{color:var(--violet);letter-spacing:.03em}
+  .tipspk{border:1px solid var(--line);background:var(--surf);border-radius:8px;cursor:pointer;font-size:12px;padding:1px 6px;margin-left:4px}
+  kbd{background:var(--surf);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 7px;font-weight:800;font-size:12px}
+
+  /* ===== POS SIMULATOR ===== */
+  .simwrap{margin:6px 24px 20px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#0a1120}
+  .sim-top{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#111a2c;border-bottom:1px solid #1f2b44;font-size:12px;color:#8aa0c0;font-weight:700}
+  .sim-top .pill{margin-left:auto;background:#0e2a20;color:#4fe0ac;border:1px solid #16543f;border-radius:99px;padding:3px 9px;font-size:11px}
+  .sim{display:grid;grid-template-columns:1fr 240px;min-height:360px}
+  @media(max-width:620px){ .sim{grid-template-columns:1fr} }
+  .grid{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:9px;align-content:start;max-height:420px;overflow:auto}
+  .prod{position:relative;background:#131f36;border:1px solid #223251;border-radius:14px;padding:10px 9px 12px;cursor:pointer;text-align:left;transition:transform .09s,box-shadow .15s,border-color .15s;color:#eaf1fb}
+  .prod:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(0,0,0,.35)}
+  .prod:hover{border-color:#3a4f78}
+  .prod:active{transform:scale(.96)}
+  .prod .emo{font-size:26px;display:block;margin-bottom:6px}
+  .prod .nm{font-size:11.5px;font-weight:700;line-height:1.2;min-height:28px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .prod .pr{margin-top:6px;font-weight:900;color:var(--brand2);font-size:15px}
+  .prod .sq{position:absolute;right:7px;bottom:9px;width:26px;height:26px;border-radius:8px;background:#20304f;border:1px solid #33456a;color:#cfe0ff;font-size:14px;display:grid;place-items:center;cursor:pointer}
+  .prod .sq:hover{background:var(--brand);color:#042;border-color:transparent}
+  .prod.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  .sq.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.5)}50%{box-shadow:0 0 0 8px rgba(251,191,36,0)}}
+
+  .cartp{background:#0d1526;border-left:1px solid #1f2b44;display:flex;flex-direction:column;min-height:360px}
+  @media(max-width:620px){ .cartp{border-left:0;border-top:1px solid #1f2b44} }
+  .cartp .hd{padding:11px 13px;font-weight:800;font-size:13px;color:#cfe0ff;border-bottom:1px solid #1f2b44;display:flex;align-items:center;gap:7px}
+  .cartp .items{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:7px}
+  .empty{margin:auto;text-align:center;color:#4a5b78;font-size:13px;padding:26px 14px}
+  .ci{background:#131f36;border:1px solid #223251;border-radius:11px;padding:8px 10px;display:flex;gap:8px;align-items:center}
+  .ci .l{flex:1;min-width:0}
+  .ci .nm{font-size:12px;font-weight:700;color:#eaf1fb;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ci .sub{font-size:10.5px;color:#7f93b4}
+  .ci .amt{font-weight:900;color:var(--brand2);font-size:13px}
+  .ci .x{width:22px;height:22px;border-radius:7px;border:1px solid #33456a;background:#1a2740;color:#c9d6ea;cursor:pointer;font-size:12px}
+  .cartp .ft{padding:11px 13px;border-top:1px solid #1f2b44}
+  .cartp .tot{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+  .cartp .tot .k{color:#8aa0c0;font-size:12px;font-weight:700} .cartp .tot .v{font-weight:900;font-size:22px;color:#fff}
+  .cobrar{width:100%;padding:13px;border:0;border-radius:13px;background:linear-gradient(140deg,var(--brand),var(--brand2));color:#042;font-weight:900;font-size:15px;cursor:pointer;box-shadow:0 8px 20px rgba(16,185,129,.35)}
+  .cobrar:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+  .cobrar.hl{animation:pulse 1.2s infinite}
+
+  /* CAJA / tickets */
+  .chip{border:1px solid #2b3a5a;background:#131f36;color:#cfe0ff;border-radius:99px;padding:6px 14px;font-weight:800;font-size:12.5px;cursor:pointer}
+  .chip:hover{background:#1a2740}
+  .chip.on{background:linear-gradient(140deg,var(--brand),var(--brand2));color:#042;border-color:transparent}
+  .chip.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  .tkrow{display:flex;align-items:center;gap:10px;background:#0f1a2e;border:1px solid #223251;border-radius:12px;padding:10px 12px;cursor:pointer;transition:.1s}
+  .tkrow:hover{border-color:#3a4f78;transform:translateY(-1px)}
+  .tkrow.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  #prnpill.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+
+  /* ===== MINI COACH BUBBLE over sim ===== */
+  .mission{display:flex;align-items:center;gap:10px;margin:0 24px 6px;padding:11px 14px;border-radius:14px;background:color-mix(in srgb,var(--brand) 14%,var(--surf2));border:1px dashed color-mix(in srgb,var(--brand) 45%,transparent)}
+  .mission .mk{font-size:22px}
+  .mission .mt{flex:1;font-size:14px;font-weight:700;color:var(--ink)}
+  .mission .prog{font-size:12px;font-weight:800;color:var(--brand2);white-space:nowrap}
+
+  /* ===== QUIZ ===== */
+  .quiz{margin:6px 24px 8px}
+  .qq{font-weight:800;font-size:16px;margin-bottom:12px}
+  .opts{display:grid;gap:9px}
+  .opt{display:flex;gap:11px;align-items:center;text-align:left;padding:13px 15px;border-radius:13px;border:1px solid var(--line);background:var(--surf2);color:var(--ink);cursor:pointer;font-size:14.5px;font-weight:600;transition:.12s}
+  .opt:hover{border-color:var(--brand)}
+  .opt .k{width:26px;height:26px;border-radius:8px;background:var(--surf);border:1px solid var(--line);display:grid;place-items:center;font-weight:800;flex-shrink:0}
+  .opt.good{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 18%,transparent)}
+  .opt.good .k{background:var(--brand);color:#042;border-color:transparent}
+  .opt.bad{border-color:var(--rose);background:color-mix(in srgb,var(--rose) 14%,transparent);animation:shake .35s}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+  /* ===== FOOTER NAV ===== */
+  .foot{display:flex;align-items:center;gap:12px;padding:16px 24px 22px}
+  .foot .sp{flex:1}
+  .btn{padding:12px 20px;border-radius:13px;border:1px solid var(--line);background:var(--surf2);color:var(--ink);font-weight:800;font-size:14px;cursor:pointer}
+  .btn:hover{background:var(--surf)}
+  .btn.primary{background:linear-gradient(140deg,var(--brand),var(--brand2));color:#042;border-color:transparent;box-shadow:0 8px 20px rgba(16,185,129,.3)}
+  .btn.primary:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;filter:grayscale(.4)}
+  .btn.ghost{background:transparent}
+
+  /* ===== DONE TICK / TOAST ===== */
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);opacity:0;
+    background:var(--surf);border:1px solid var(--brand);border-radius:14px;padding:12px 18px;font-weight:800;color:var(--ink);
+    box-shadow:var(--shadow);z-index:80;transition:.35s;display:flex;gap:9px;align-items:center;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .coin{position:fixed;font-size:22px;z-index:90;pointer-events:none;transition:transform .8s cubic-bezier(.3,.8,.4,1),opacity .8s}
+
+  /* ===== INTRO / DIPLOMA ===== */
+  .hero{padding:40px 26px}
+  .hero .badge{font-size:60px;margin-bottom:6px}
+  .hero h1{font-size:clamp(26px,6vw,40px);font-weight:900}
+  .hero p{color:var(--ink2);font-size:16px;max-width:52ch}
+  .statgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0}
+  @media(max-width:520px){.statgrid{grid-template-columns:1fr}}
+  .stat{background:var(--surf2);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .stat .v{font-size:22px;font-weight:900} .stat .k{font-size:12px;color:var(--ink3);font-weight:700}
+  .diploma{text-align:center;padding:44px 26px}
+  .diploma .seal{font-size:70px}
+  .locktip{margin:0 24px 20px;font-size:13px;color:var(--ink3);text-align:center}
+
+  /* ticket que sale de la impresora */
+  .ticketout{margin:14px auto 2px;width:150px;background:#fff;color:#111;border-radius:4px;padding:10px 12px;
+    box-shadow:0 8px 20px rgba(0,0,0,.4);text-align:center;transform-origin:top;
+    animation:printout .9s cubic-bezier(.2,.8,.3,1);font-family:ui-monospace,Menlo,monospace}
+  @keyframes printout{0%{transform:scaleY(0);opacity:.2}60%{transform:scaleY(1.04)}100%{transform:scaleY(1);opacity:1}}
+
+  /* ===== FLOW SIM (pantallas guiadas) ===== */
+  .fscr{padding:14px;display:flex;flex-direction:column;gap:9px;min-height:220px}
+  .fhead{font-weight:800;color:#cfe0ff;font-size:13.5px}
+  .fnote{color:#7f93b4;font-size:12px;font-weight:600}
+  .fopt{display:flex;gap:11px;align-items:center;width:100%;text-align:left;background:#131f36;border:1px solid #223251;
+    border-radius:12px;padding:12px 14px;color:#eaf1fb;font-weight:700;font-size:13.5px;cursor:pointer;transition:.12s}
+  .fopt:hover{border-color:#3a4f78;transform:translateY(-1px)}
+  .fopt:active{transform:scale(.98)}
+  .fopt .fk{font-size:21px;flex-shrink:0}
+  .fopt small{display:block;color:#7f93b4;font-weight:600;font-size:11px;margin-top:1px}
+  .fopt.bad{border-color:var(--rose);animation:shake .35s}
+  .fopt.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  .fdone{text-align:center;padding:30px 14px;color:#4fe0ac;font-weight:800;font-size:15px;line-height:1.7}
+
+  /* ===== FIDELIDAD ME: pantallas claras (Caja y wizard reales son blancos) ===== */
+  .ltwrap{background:#f1f5f9;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:9px;color:#1e293b}
+  .lopt{display:flex;gap:11px;align-items:center;width:100%;text-align:left;background:#fff;border:2px solid #e2e8f0;
+    border-radius:14px;padding:12px 14px;color:#1e293b;font-weight:700;font-size:13.5px;cursor:pointer;transition:.12s}
+  .lopt:hover{border-color:#94a3b8}
+  .lopt:active{transform:scale(.98)}
+  .lopt .fk{font-size:21px;flex-shrink:0}
+  .lopt small{display:block;color:#64748b;font-weight:600;font-size:11px;margin-top:1px}
+  .lopt.bad{border-color:#f43f5e;animation:shake .35s}
+  .lopt.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  .lhead{font-weight:800;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  .lnote{color:#64748b;font-size:11.5px;font-weight:600}
+  .wizhd{background:linear-gradient(150deg,#059669,#0d9488);border-radius:14px 14px 0 0;margin:-12px -12px 2px;padding:14px;text-align:center;color:#fff}
+  .wizhd b{font-size:17px;display:block}
+  .wizdots{display:flex;justify-content:center;gap:6px;margin-top:8px}
+  .wizdots i{width:26px;height:5px;border-radius:99px;background:rgba(255,255,255,.25);display:block}
+  .wizdots i.on{background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.6)}
+  .sil{width:36px;height:36px;border-radius:11px;color:#fff;font-weight:900;display:grid;place-items:center;font-size:15px;flex-shrink:0}
+  .metab{border:2px solid #e2e8f0;background:#fff;color:#334155;border-radius:99px;padding:6px 13px;font-weight:800;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .metab.on{background:#059669;color:#fff;border-color:transparent}
+  .metab.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  .metab .bdg{background:rgba(0,0,0,.08);border-radius:99px;font-size:10px;padding:1px 6px;font-weight:900}
+  .metab.on .bdg{background:rgba(255,255,255,.25)}
+  .tkcard{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:11px 13px;cursor:pointer;transition:.1s;width:100%;text-align:left;color:#1e293b}
+  .tkcard:hover{border-color:#94a3b8;transform:translateY(-1px)}
+  .tkcard.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  .tkpill{font-size:9.5px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;border-radius:6px;padding:2px 7px}
+
+  /* ===== CABANOSSI (mascota SVG) ===== */
+  .cab{display:inline-block;flex-shrink:0;line-height:0}
+  .cab svg{width:100%;height:100%;display:block;overflow:visible}
+  .cabtail{transform-origin:52px 84px;animation:wag .7s ease-in-out infinite alternate}
+  @keyframes wag{from{transform:rotate(-8deg)}to{transform:rotate(16deg)}}
+  .cabhero{animation:bob 3.2s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  .cabeyes{transform-box:fill-box;transform-origin:center;animation:cabblink 4.6s infinite}
+  @keyframes cabblink{0%,91%,97%,100%{transform:scaleY(1)}94%{transform:scaleY(.08)}}
+  .cabb{animation:cabpop .55s cubic-bezier(.3,1.6,.4,1)}
+  @keyframes cabpop{0%{transform:scale(.45) rotate(-16deg)}65%{transform:scale(1.18) rotate(7deg)}100%{transform:scale(1) rotate(0)}}
+  .cabcheer{animation:cabjump .8s cubic-bezier(.3,1.4,.4,1) 2}
+  @keyframes cabjump{0%,100%{transform:translateY(0) rotate(0)}35%{transform:translateY(-14px) rotate(-8deg)}60%{transform:translateY(0) rotate(4deg)}}
+
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+
+<div class="top">
+  <div class="logo"><span class="dot">🛒</span><div>ME Academy<br><small>Capacitación · Día 1</small></div></div>
+  <div class="sp"></div>
+  <div class="xplbl">⭐ <span id="xpn" class="tnum">0</span> XP</div>
+  <div class="xpbar"><i id="xpfill"></i></div>
+  <button class="icobtn" id="voiceBtn" title="Voz de Cabanossi (leer en voz alta)">🗣️</button>
+  <button class="icobtn" id="soundBtn" title="Efectos de sonido">🔊</button>
+  <button class="icobtn" id="themeBtn" title="Tema">🌙</button>
+</div>
+
+<div class="wrap">
+  <aside class="side" id="side"></aside>
+  <main class="stage"><div class="card" id="stage"></div></main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(s,r){return (r||document).querySelector(s)};
+
+/* ---------- SONIDO (WebAudio, sin archivos externos) ---------- */
+var SND={on:true}; try{SND.on=localStorage.getItem('me_ac_snd')!=='0'}catch(e){}
+var _ac=null; function ac(){ if(!_ac){try{_ac=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}} if(_ac&&_ac.state==='suspended')_ac.resume(); return _ac; }
+function beep(freqs,dur,type,vol){ if(!SND.on)return; var c=ac(); if(!c)return;
+  var t=c.currentTime; (freqs.length?freqs:[freqs]).forEach(function(f,i){
+    var o=c.createOscillator(),g=c.createGain(); o.type=type||'sine'; o.frequency.value=f;
+    var st=t+i*(dur*0.55); o.connect(g); g.connect(c.destination);
+    g.gain.setValueAtTime(0.0001,st); g.gain.exponentialRampToValueAtTime(vol||0.16,st+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,st+dur); o.start(st); o.stop(st+dur+0.02);
+  });
+}
+var SFX={
+  tap:function(){beep([660],0.09,'triangle',0.12)},
+  add:function(){beep([523,784],0.10,'sine',0.14)},
+  coin:function(){beep([784,1046,1318],0.12,'triangle',0.15)},
+  ok:function(){beep([659,880,1174],0.16,'sine',0.16)},
+  bad:function(){beep([180,120],0.18,'sawtooth',0.10)},
+  open:function(){beep([440,620],0.09,'sine',0.11)},
+  print:function(){var c=ac();if(!c||!SND.on)return;var o=c.createOscillator(),g=c.createGain();o.type='sawtooth';o.connect(g);g.connect(c.destination);var t=c.currentTime;o.frequency.setValueAtTime(300,t);for(var i=0;i<8;i++){o.frequency.setValueAtTime(300+(i%2?120:0),t+i*0.05);}g.gain.setValueAtTime(0.06,t);g.gain.setValueAtTime(0.0001,t+0.45);o.start(t);o.stop(t+0.46);},
+  scan:function(){beep([1200,1600],0.07,'square',0.10)},
+  bark:function(){ if(!SND.on)return; var c=ac(); if(!c)return; var t=c.currentTime;
+    [0,0.16].forEach(function(off){ var o=c.createOscillator(),g=c.createGain(); o.type='sawtooth';
+      o.frequency.setValueAtTime(340,t+off); o.frequency.exponentialRampToValueAtTime(110,t+off+0.11);
+      o.connect(g); g.connect(c.destination);
+      g.gain.setValueAtTime(0.0001,t+off); g.gain.exponentialRampToValueAtTime(0.18,t+off+0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+off+0.12); o.start(t+off); o.stop(t+off+0.14); }); }
+};
+/* Cabanossi se anima al cambiar de paso y celebra al completar */
+function cabBounce(){ var e=document.querySelector('.mission .cab'); if(!e)return;
+  e.classList.remove('cabb'); void e.offsetWidth; e.classList.add('cabb'); }
+function cabCheer(){ var e=document.querySelector('.mission .cab')||document.querySelector('.coach .cab'); if(!e)return;
+  e.classList.remove('cabcheer'); void e.offsetWidth; e.classList.add('cabcheer'); SFX.bark(); }
+
+/* ---------- VOZ (Cabanossi lee en voz alta) ---------- */
+var VOZ={on:true}; try{VOZ.on=localStorage.getItem('me_ac_voz')!=='0'}catch(e){}
+function stripSpeak(html){ return String(html||'')
+  .replace(/<[^>]+>/g,' ')
+  .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2300}-\u{23FF}\u{25A0}-\u{25FF}\u{2B00}-\u{2BFF}\u{2000}-\u{206F}\u{FE0F}\u{20E3}]/gu,' ')
+  .replace(/\s+/g,' ').trim(); }
+function speak(html){ if(!VOZ.on||!('speechSynthesis'in window))return; var txt=stripSpeak(html); if(!txt)return;
+  try{ speechSynthesis.cancel(); var u=new SpeechSynthesisUtterance(txt); u.lang='es-PE'; u.rate=0.98; u.pitch=1.05;
+    var vs=speechSynthesis.getVoices(); var es=vs.find(function(v){return /es/i.test(v.lang)}); if(es)u.voice=es;
+    speechSynthesis.speak(u); }catch(e){} }
+function stopSpeak(){ try{if('speechSynthesis'in window)speechSynthesis.cancel()}catch(e){} }
+
+/* ---------- CABANOSSI: perro salchicha negro (SVG inline) ---------- */
+var CAB_FACE='<svg viewBox="0 0 120 122" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cabanossi">'
+ +'<path d="M25 34 C10 46 8 80 22 92 C32 99 40 88 38 64 C37 48 33 38 25 34Z" fill="#0e0e13"/>'
+ +'<path d="M95 34 C110 46 112 80 98 92 C88 99 80 88 82 64 C83 48 87 38 95 34Z" fill="#0e0e13"/>'
+ +'<ellipse cx="60" cy="58" rx="35" ry="32" fill="#1f1f27"/>'
+ +'<ellipse cx="52" cy="41" rx="19" ry="10" fill="#2d2d38" opacity=".7"/>'
+ +'<ellipse cx="46" cy="42" rx="6" ry="4.4" fill="#33333f"/>'
+ +'<ellipse cx="74" cy="42" rx="6" ry="4.4" fill="#33333f"/>'
+ +'<g class="cabeyes">'
+ +'<circle cx="46" cy="53" r="6" fill="#06060a"/><circle cx="48.2" cy="50.8" r="2.1" fill="#fff"/><circle cx="44" cy="55" r="1" fill="#fff" opacity=".5"/>'
+ +'<circle cx="74" cy="53" r="6" fill="#06060a"/><circle cx="76.2" cy="50.8" r="2.1" fill="#fff"/><circle cx="72" cy="55" r="1" fill="#fff" opacity=".5"/>'
+ +'</g>'
+ +'<ellipse cx="60" cy="77" rx="20" ry="15" fill="#2a2a34"/>'
+ +'<ellipse cx="60" cy="69" rx="7.2" ry="5.6" fill="#050508"/><circle cx="57.5" cy="67.4" r="1.7" fill="#fff" opacity=".8"/>'
+ +'<path d="M60 75 Q59 81 51 82 M60 75 Q61 81 69 82" stroke="#4a4a58" stroke-width="2.4" fill="none" stroke-linecap="round"/>'
+ +'<path d="M55 82 Q60 92 65 82 Q63 79.5 60 79.5 Q57 79.5 55 82Z" fill="#f4778c"/>'
+ +'<path d="M58 97 L40 89 Q37 96 40 105 L58 99 Z" fill="#e11d48" stroke="#9f1239" stroke-width="1.4" stroke-linejoin="round"/>'
+ +'<path d="M62 97 L80 89 Q83 96 80 105 L62 99 Z" fill="#e11d48" stroke="#9f1239" stroke-width="1.4" stroke-linejoin="round"/>'
+ +'<rect x="54" y="92" width="12" height="11" rx="4" fill="#be123c" stroke="#9f1239" stroke-width="1.2"/>'
+ +'<path d="M60 106 C60.8 110 62 111 66 112 C62 113 60.8 114 60 118 C59.2 114 58 113 54 112 C58 111 59.2 110 60 106 Z" fill="#f8fafc"/>'
+ +'</svg>';
+var CAB_FULL='<svg viewBox="0 0 260 165" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cabanossi, perro salchicha negro">'
+ +'<g class="cabtail"><path d="M52 84 Q30 70 24 46" stroke="#1f1f27" stroke-width="11" fill="none" stroke-linecap="round"/></g>'
+ +'<rect x="42" y="66" width="146" height="52" rx="26" fill="#1f1f27"/>'
+ +'<ellipse cx="112" cy="74" rx="58" ry="9" fill="#2d2d38" opacity=".65"/>'
+ +'<path d="M60 112 Q115 124 176 110 L176 118 Q115 130 60 118 Z" fill="#14141a"/>'
+ +'<rect x="58" y="104" width="14" height="42" rx="7" fill="#17171e"/>'
+ +'<rect x="84" y="106" width="14" height="40" rx="7" fill="#0d0d12"/>'
+ +'<rect x="138" y="106" width="14" height="40" rx="7" fill="#0d0d12"/>'
+ +'<rect x="162" y="104" width="14" height="42" rx="7" fill="#17171e"/>'
+ +'<ellipse cx="65" cy="147" rx="10" ry="6" fill="#1c1c24"/><ellipse cx="91" cy="147" rx="10" ry="6" fill="#12121a"/>'
+ +'<ellipse cx="145" cy="147" rx="10" ry="6" fill="#12121a"/><ellipse cx="169" cy="147" rx="10" ry="6" fill="#1c1c24"/>'
+ +'<path d="M222 32 C238 44 240 76 226 88 C217 94 210 84 212 62 C213 46 216 38 222 32Z" fill="#0e0e13"/>'
+ +'<ellipse cx="202" cy="54" rx="32" ry="30" fill="#1f1f27"/>'
+ +'<ellipse cx="195" cy="39" rx="16" ry="9" fill="#2d2d38" opacity=".7"/>'
+ +'<ellipse cx="190" cy="38" rx="5.4" ry="4" fill="#33333f"/><ellipse cx="216" cy="38" rx="5.4" ry="4" fill="#33333f"/>'
+ +'<g class="cabeyes">'
+ +'<circle cx="190" cy="49" r="5.4" fill="#06060a"/><circle cx="192" cy="47" r="1.9" fill="#fff"/>'
+ +'<circle cx="216" cy="49" r="5.4" fill="#06060a"/><circle cx="218" cy="47" r="1.9" fill="#fff"/>'
+ +'</g>'
+ +'<ellipse cx="203" cy="71" rx="18" ry="13.5" fill="#2a2a34"/>'
+ +'<ellipse cx="203" cy="64" rx="6.6" ry="5.2" fill="#050508"/><circle cx="200.8" cy="62.6" r="1.5" fill="#fff" opacity=".8"/>'
+ +'<path d="M203 69 Q202 74 195 75 M203 69 Q204 74 211 75" stroke="#4a4a58" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+ +'<path d="M199 75 Q203 84 207 75 Q205.6 73 203 73 Q200.4 73 199 75Z" fill="#f4778c"/>'
+ +'<path d="M180 30 C164 42 162 76 176 88 C185 94 192 84 190 62 C189 46 186 38 180 30Z" fill="#0e0e13"/>'
+ +'<path d="M186 92 L170 84 Q167 91 170 99 L186 94 Z" fill="#e11d48" stroke="#9f1239" stroke-width="1.3" stroke-linejoin="round"/>'
+ +'<path d="M190 92 L206 86 Q209 93 206 100 L190 94 Z" fill="#e11d48" stroke="#9f1239" stroke-width="1.3" stroke-linejoin="round"/>'
+ +'<rect x="183" y="88" width="10" height="10" rx="3.5" fill="#be123c" stroke="#9f1239" stroke-width="1.1"/>'
+ +'<path d="M172 100 C173 105.5 174.6 107 180 108.5 C174.6 110 173 111.5 172 117 C171 111.5 169.4 110 164 108.5 C169.4 107 171 105.5 172 100 Z" fill="#f8fafc"/>'
+ +'<circle cx="180" cy="101" r="1.6" fill="#f8fafc" opacity=".85"/>'
+ +'</svg>';
+function cab(sz){return '<span class="cab" style="width:'+sz+'px;height:'+sz+'px">'+CAB_FACE+'</span>'}
+function cabFull(w){return '<span class="cab cabhero" style="width:'+w+'px;height:'+Math.round(w*165/260)+'px">'+CAB_FULL+'</span>'}
+
+/* ---------- emoji por categoría (como el categorizador real de ME) ---------- */
+function emo(n){n=(n||'').toLowerCase();
+  var K=[[/cerveza|pilsen|cristal/,'🍺'],[/coca|inca kola|gaseosa|kola|pepsi|kero|bebida/,'🥤'],[/agua/,'💧'],
+  [/sillao|soya|salsa|ketchup|mayone|ají|aji /,'🥫'],[/sal |sal yodada|azucar|azúcar|impalpable/,'🧂'],
+  [/leche|queso|gloria|laive|yogur/,'🥛'],[/pan|panco|bolsa 230/,'🍞'],[/detergente|jabon|lava/,'🧼'],
+  [/kiwicha|maiz|maíz|quinua|arroz|harina|avena/,'🌾'],[/chocolate|sublime|galleta/,'🍫'],
+  [/sibarita|panquita|condimento|comino/,'🌶️'],[/algarrobina|miel/,'🍯'],[/brillo|elymar|escarcha/,'✨'],
+  [/base de|gondola|góndola/,'🧱'],[/aloe/,'🌿']];
+  for(var i=0;i<K.length;i++) if(K[i][0].test(n)) return K[i][1];
+  return '📦';
+}
+
+/* ---------- catálogo real (muestras del catálogo vivo de ME) ---------- */
+var CAT=[
+  {n:'SIBARITA PANQUITA 31.2GR',p:1.00,pres:[{t:'Caja x12',f:12,p:11.00}]},
+  {n:'KERO ALOE BEBIDA UVA 300ML',p:2.80,pres:[{t:'Sixpack',f:6,p:16.00}]},
+  {n:'GLORIA QUESO PARMESANO 35GR',p:4.60},
+  {n:'LAIVE LECHE SIN LACTOSA 1LT',p:5.50,pres:[{t:'Caja x6',f:6,p:31.00}]},
+  {n:'NORSAL SAL YODADA MESA',p:1.00},
+  {n:'ALACENA KETCHUP 100GR',p:3.00},
+  {n:'WMY PANCO BLANCO 230GR',p:6.00},
+  {n:'SAN YAN SILLAO OSCURO 1.79LT',p:16.00},
+  {n:'PATITO DETERGENTE 4KG',p:30.00},
+  {n:'AZÚCAR IMPALPABLE',p:10.50,granel:true},
+  {n:'KIWICHA REAL',p:12.00,granel:true},
+  {n:'AGROIND. ALGARROBINA 500ML',p:5.00}
+];
+
+/* ---------- estado ---------- */
+var ST={xp:0,done:{}};
+try{var raw=localStorage.getItem('me_academy_v1'); if(raw) ST=JSON.parse(raw);}catch(e){}
+function save(){try{localStorage.setItem('me_academy_v1',JSON.stringify(ST))}catch(e){}}
+
+/* ---------- CURSO ---------- */
+var COURSE=[
+ {id:'pos',ico:'🛒',t:'Vender (POS)',sub:'El corazón de tu caja',les:[
+   {id:'pos-intro',t:'Bienvenida a tu caja',kind:'intro'},
+   {id:'pos-venta',t:'Tu primera venta',kind:'sim'},
+   {id:'pos-pres',t:'Presentaciones (pack y fracción)',kind:'sim'},
+   {id:'pos-granel',t:'Vender a granel (por kilo)',kind:'sim'},
+   {id:'pos-cobrar',t:'Cobrar y dar vuelto',kind:'sim'},
+   {id:'pos-ana',t:'Analítica: mantén presionado',kind:'sim'},
+ ]},
+ {id:'caja',ico:'🧾',t:'Controlar (Caja)',sub:'Tickets, impresora, permisos',les:[
+   {id:'caja-abrir',t:'Abrir tu turno (el wizard)',kind:'flow'},
+   {id:'caja-tickets',t:'Tickets del turno y filtros',kind:'ticket'},
+   {id:'caja-reimp',t:'Reimprimir un ticket',kind:'ticket'},
+   {id:'caja-imp',t:'Impresora y cambio de impresora',kind:'ticket'},
+   {id:'caja-perm',t:'Cobros pendientes y permisos',kind:'flow'},
+ ]},
+ {id:'tools',ico:'🧰',t:'Herramientas',sub:'Almacén, adhesivos, devoluciones',les:[
+   {id:'tools-adh',t:'Membretes: alertas y cola',kind:'flow'},
+   {id:'tools-ingreso',t:'Recibir guía (QR + conteo)',kind:'guia'},
+   {id:'tools-salida',t:'Salida y traslado a otra tienda',kind:'flow'},
+   {id:'tools-dev',t:'Devoluciones al almacén',kind:'flow'},
+   {id:'tools-horario',t:'Fuera de horario: pedir permiso',kind:'flow'},
+ ]},
+ {id:'fin',ico:'🎓',t:'Examen y diploma',sub:'Demuestra que sabes',les:[
+   {id:'fin-exam',t:'Examen final',kind:'exam'},
+   {id:'fin-dip',t:'Tu diploma',kind:'diploma'},
+ ]},
+];
+var FLAT=[]; COURSE.forEach(function(m){m.les.forEach(function(l){l.mod=m;FLAT.push(l)})});
+function idx(id){for(var i=0;i<FLAT.length;i++) if(FLAT[i].id===id) return i; return 0}
+function isDone(id){return !!ST.done[id]}
+function unlocked(i){ if(i===0) return true; return isDone(FLAT[i-1].id); }
+var current=null;
+for(var i=0;i<FLAT.length;i++){ if(!isDone(FLAT[i].id)){current=FLAT[i].id;break} }
+if(!current) current=FLAT[0].id;
+
+/* ---------- XP / progreso ---------- */
+var TOTAL_XP=FLAT.length*100;
+function renderXP(){ $('#xpn').textContent=ST.xp; $('#xpfill').style.width=Math.min(100,(ST.xp/TOTAL_XP)*100)+'%'; }
+function award(id,amt){ if(!isDone(id)){ST.done[id]=1; ST.xp+=(amt||100); save(); renderXP(); flyCoins(); SFX.coin();} }
+
+function flyCoins(){
+  for(var i=0;i<8;i++){(function(k){
+    var c=document.createElement('div');c.className='coin';c.textContent='⭐';
+    c.style.left=(40+Math.random()*20)+'%';c.style.top='55%';document.body.appendChild(c);
+    requestAnimationFrame(function(){
+      c.style.transform='translate('+(Math.random()*260-130)+'px,-'+(180+Math.random()*160)+'px) rotate('+(Math.random()*360)+'deg)';
+      c.style.opacity='0';
+    });
+    setTimeout(function(){c.remove()},900);
+  })(i)}
+}
+function toast(msg){var t=$('#toast');t.innerHTML=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show')},2200)}
+
+/* ---------- SIDEBAR ---------- */
+function renderSide(){
+  var cur=FLAT[idx(current)];
+  var html='<h3>Tu ruta de hoy</h3>';
+  COURSE.forEach(function(m){
+    var opened=(m.id===cur.mod.id)?'open':'';
+    var allDone=m.les.every(function(l){return isDone(l.id)});
+    html+='<div class="mod '+(allDone?'on':'')+' '+opened+'" data-mod="'+m.id+'">'
+      +'<div class="mod-h" data-toggle="'+m.id+'"><div class="mod-ico">'+m.ico+'</div>'
+      +'<div class="mod-t">'+m.t+'<small>'+m.sub+'</small></div>'
+      +'<div>'+(allDone?'✅':'')+'</div></div><div class="lessons">';
+    m.les.forEach(function(l){
+      var li=idx(l.id),lock=!unlocked(li),d=isDone(l.id),act=(l.id===current);
+      html+='<div class="les '+(d?'done':'')+' '+(lock?'locked':'')+' '+(act?'active':'')+'" data-go="'+(lock?'':l.id)+'">'
+        +'<span class="st">'+(d?'✓':(lock?'🔒':(li+1)))+'</span><span>'+l.t+'</span></div>';
+    });
+    html+='</div></div>';
+  });
+  $('#side').innerHTML=html;
+  Array.prototype.forEach.call(document.querySelectorAll('[data-go]'),function(el){
+    el.addEventListener('click',function(){var g=el.getAttribute('data-go'); if(g){current=g;renderAll()}});
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-toggle]'),function(el){
+    el.addEventListener('click',function(e){ if(e.target.closest('[data-go]'))return;
+      var m=$('.mod[data-mod="'+el.getAttribute('data-toggle')+'"]'); m.classList.toggle('open'); });
+  });
+}
+
+/* ---------- NAV footer ---------- */
+function footNav(){
+  var i=idx(current), canNext=isDone(current), last=(i===FLAT.length-1);
+  return '<div class="foot">'
+    +(i>0?'<button class="btn ghost" data-nav="prev">← Atrás</button>':'')
+    +'<div class="sp"></div>'
+    +(!last?'<button class="btn primary" data-nav="next" '+(canNext?'':'disabled')+'>'+(canNext?'Siguiente →':'Completa el paso para seguir')+'</button>'
+           :'<button class="btn primary" data-nav="next" '+(canNext?'':'disabled')+'>Terminar 🎉</button>')
+    +'</div>';
+}
+function bindFoot(){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-nav]'),function(el){
+    el.addEventListener('click',function(){
+      var i=idx(current),d=el.getAttribute('data-nav');
+      // [fix] la bienvenida (intro) se marca completa al pasar de largo → deja de contar como "falta 1"
+      if(d==='next' && FLAT[i].kind==='intro') award(FLAT[i].id,100);
+      if(d==='prev'&&i>0) current=FLAT[i-1].id;
+      if(d==='next'&&i<FLAT.length-1) current=FLAT[i+1].id;
+      if(d==='next'&&i===FLAT.length-1) current=FLAT[i].id;
+      stopSpeak();
+      window.scrollTo({top:0,behavior:'smooth'}); renderAll();
+    });
+  });
+}
+
+/* ---------- RENDER LESSON ---------- */
+function renderStage(){
+  var l=FLAT[idx(current)];
+  if(l.kind==='intro') return renderIntro(l);
+  if(l.kind==='diploma') return renderDiploma(l);
+  if(l.kind==='sim') return renderSim(l);
+  if(l.kind==='ticket') return renderTicket(l);
+  if(l.kind==='guia') return renderGuia(l);
+  if(l.kind==='flow') return renderFlow(l);
+  if(l.kind==='exam') return renderExam(l);
+  return renderIntro(l);
+}
+function renderAll(){ save(); renderSide(); $('#stage').innerHTML=renderStage(); afterRender(); bindFoot(); renderXP(); }
+
+/* ---------- INTRO ---------- */
+function renderIntro(l){
+  return '<div class="hero">'
+    +'<div class="badge">'+cabFull(210)+'</div>'
+    +'<div class="eyebrow">Empieza aquí</div>'
+    +'<h1>¡Hola! Soy Cabanossi, tu guía.</h1>'
+    +'<p>Hoy aprenderás a usar <b>ME (MosExpress)</b>, la caja registradora de la tienda. '
+    +'No necesitas saber nada de antes. Vamos <b>paso a paso</b>, tocando botones de verdad, '
+    +'y no te dejo avanzar hasta que te salga bien. Si te equivocas, no pasa nada: aquí nada se rompe. 💚</p>'
+    +'<div class="statgrid">'
+    +'<div class="stat"><div class="v">3</div><div class="k">módulos: Vender · Caja · Herramientas</div></div>'
+    +'<div class="stat"><div class="v">18</div><div class="k">lecciones cortas con práctica</div></div>'
+    +'<div class="stat"><div class="v">⭐ '+TOTAL_XP+'</div><div class="k">estrellas por ganar hoy</div></div>'
+    +'</div>'
+    +'<div class="coach">'+cab(46)+'<div class="msg">Regla de oro: <b>si dudas, mira arriba</b> — siempre te digo qué tocar. ¿Listo? Dale a <b>Siguiente</b>.</div></div>'
+    +footNav().replace('Completa el paso para seguir','¡Empecemos! →').replace('disabled','')
+    +'</div>';
+}
+
+/* ---------- SIM LESSONS ---------- */
+var sim={cart:[],mission:null,step:0};
+function money(v){return 'S/ '+(Math.round((v+1e-9)*100)/100).toFixed(2)}
+function cartTotal(){var t=0;sim.cart.forEach(function(c){t+=c.amt});return Math.round(t*100)/100}
+
+/* ---------- TIPS / ATAJOS REALES de ME ---------- */
+var TIPS={
+ 'pos-venta':'La <b>pistola de código</b> escanea y agrega el producto <b>solo</b> — ni toques la pantalla. Y aunque la pantalla esté en descanso, al escanear lo agrega igual.',
+ 'pos-pres':'El <b>cuadradito ▦</b> abre presentaciones; tocar el resto de la tarjeta agrega <b>1 unidad</b> directo. No los confundas.',
+ 'pos-granel':'Pesa <b>primero</b> en la balanza y recién teclea los gramos — ME hace la multiplicación, tú no calculas nada.',
+ 'pos-cobrar':'En PC: <kbd>barra espaciadora</kbd> = <b>COBRAR</b>, y otra vez <kbd>espacio</kbd> = <b>CONFIRMAR</b>. <kbd>Esc</kbd> cierra cualquier ventana. ¡Cobras sin soltar la mano!',
+ 'pos-ana':'En PC es más rápido aún: <b>click derecho</b> sobre el producto abre su analítica al toque.',
+ 'caja-tickets':'Atajo: la tecla <kbd>/</kbd> te lleva al POS al instante desde donde estés.',
+ 'caja-reimp':'Hay un botón para <b>reimprimir el último ticket</b> sin buscarlo en la lista.',
+ 'caja-imp':'El puntito del chip 🖨 se actualiza solo: <b style="color:var(--brand2)">🟢</b> = online, <b style="color:var(--rose)">🔴</b> = apagada. Solo puedes cambiar a impresoras de TU zona, y el cambio pide clave de admin.',
+ 'tools-adh':'Los membretes <b>NO salen de tu impresora</b>: se imprimen en la etiquetadora del ALMACÉN y te los mandan. Tú solo pegas y marcas “Pegada”.',
+ 'tools-ingreso':'La cámara queda <b>abierta en continuo</b>: escanea producto tras producto y la lista crece sola. ME no te muestra lo esperado — cuenta lo que DE VERDAD llegó.',
+ 'tools-horario':'Nunca intentes <kbd>F5</kbd> para saltar el bloqueo (ya no funciona). Pide la hora extra: es más rápido y queda registrado.'
+};
+function tipHtml(id){ var t=TIPS[id]; if(!t)return '';
+  return '<div class="tip"><span class="ti">⚡</span><div><b>ATAJO PRO</b> · '+t+' <button class="tipspk" data-tip="'+id+'" title="Escuchar">🔊</button></div></div>'; }
+
+function renderSim(l){
+  var cfg=SIMS[l.id];
+  return '<div class="lead"><div class="eyebrow">🛒 Vender · POS</div><h1>'+l.t+'</h1></div>'
+    +'<div class="why"><span>💡</span><div><b>¿Por qué importa?</b> '+cfg.why+'</div></div>'
+    +'<div class="body">'+cfg.body+'</div>'
+    + tipHtml(l.id)
+    +'<div class="mission" id="mission">'+cab(30)+'<span class="mt" id="mt">…</span><span class="prog" id="mp"></span></div>'
+    +'<div class="simwrap"><div class="sim-top">📟 ME · Punto de venta<span class="pill">● En línea</span></div>'
+    +'<div class="sim"><div class="grid" id="grid"></div>'
+    +'<div class="cartp"><div class="hd">🛒 Carrito</div><div class="items" id="items"></div>'
+    +'<div class="ft"><div class="tot"><span class="k">TOTAL</span><span class="v tnum" id="tot">S/ 0.00</span></div>'
+    +'<button class="cobrar" id="cobrar" disabled>COBRAR</button></div></div></div></div>'
+    +footNav();
+}
+
+/* mission engine: steps=[{text, event, match(payload)}] */
+function startMission(steps){ sim.mission=steps; sim.step=0; paintMission(); }
+function paintMission(){
+  var m=sim.mission; if(!m) return;
+  var mt=$('#mt'),mp=$('#mp');
+  if(sim.step>=m.length){ if(mt){mt.innerHTML='✅ ¡Misión cumplida! Ganaste ⭐. Dale a <b>Siguiente</b>.';} if(mp)mp.textContent=''; clearHL(); return; }
+  if(mt) mt.innerHTML=m[sim.step].text;
+  if(mp) mp.textContent=(sim.step+1)+' / '+m.length;
+  applyHL(m[sim.step].hl);
+  cabBounce();
+  speak(m[sim.step].text);   // Cabanossi dice en voz alta qué hacer
+}
+function emit(event,payload){
+  var m=sim.mission; if(!m||sim.step>=m.length) return;
+  var s=m[sim.step];
+  if(s.event===event && (!s.match||s.match(payload))){
+    sim.step++; paintMission();
+    // el último paso suele ser una celebración con event:'never' → completa la misión al llegar
+    if(sim.step>=m.length || (m[sim.step] && m[sim.step].event==='never')){ completeSim(); }
+  }
+}
+function completeSim(){ var l=FLAT[idx(current)]; award(l.id,100); toast('⭐ +100 XP · ¡'+l.t+' logrado!'); cabCheer(); renderSide();
+  var b=document.querySelector('[data-nav="next"]'); if(b){b.disabled=false;b.textContent=(idx(current)===FLAT.length-1?'Terminar 🎉':'Siguiente →')} }
+
+function clearHL(){Array.prototype.forEach.call(document.querySelectorAll('.hl'),function(e){e.classList.remove('hl')})}
+function applyHL(sel){clearHL(); if(!sel)return; var e=typeof sel==='function'?sel():document.querySelector(sel); if(e)e.classList.add('hl');}
+
+function drawGrid(opts){
+  opts=opts||{};
+  var g=$('#grid'); if(!g)return; g.innerHTML='';
+  CAT.forEach(function(p,i){
+    var b=document.createElement('button'); b.className='prod'; b.setAttribute('data-i',i);
+    var sq=(!opts.noPres && (p.pres&&p.pres.length))?'<span class="sq" data-sq="'+i+'" title="Presentaciones">▦</span>':'';
+    b.innerHTML='<span class="emo">'+emo(p.n)+'</span><span class="nm">'+p.n+'</span><span class="pr tnum">'+money(p.p)+(p.granel?'/kg':'')+'</span>'+sq;
+    g.appendChild(b);
+  });
+  g.addEventListener('click',function(e){
+    var sq=e.target.closest('[data-sq]'); if(sq){ e.stopPropagation(); openPres(+sq.getAttribute('data-sq')); return; }
+    var pb=e.target.closest('.prod'); if(!pb) return;
+    var i=+pb.getAttribute('data-i'), p=CAT[i];
+    if(p.granel){ openGranel(i); return; }
+    addToCart({nm:p.n, sub:'1 unidad', amt:p.p}); emit('add',{i:i});
+  });
+  // long-press for analítica
+  var timer=null,moved=false;
+  g.addEventListener('pointerdown',function(e){var pb=e.target.closest('.prod'); if(!pb||e.target.closest('[data-sq]'))return; moved=false;
+    timer=setTimeout(function(){ openAna(+pb.getAttribute('data-i')); },600);});
+  g.addEventListener('pointermove',function(){moved=true;});
+  g.addEventListener('pointerup',function(){clearTimeout(timer)});
+  g.addEventListener('pointerleave',function(){clearTimeout(timer)});
+  paintCart();
+}
+function addToCart(line){ line.amt=Math.round(line.amt*100)/100; sim.cart.push(line); paintCart(); SFX.add(); }
+function paintCart(){
+  var box=$('#items'); if(!box)return;
+  if(!sim.cart.length){ box.innerHTML='<div class="empty">Toca un producto<br>para agregarlo 👆</div>'; }
+  else{ box.innerHTML=sim.cart.map(function(c,i){
+    return '<div class="ci"><div class="l"><div class="nm">'+c.nm+'</div><div class="sub">'+c.sub+'</div></div>'
+      +'<div class="amt tnum">'+money(c.amt)+'</div><button class="x" data-del="'+i+'">✕</button></div>';
+  }).join(''); }
+  var tot=$('#tot'); if(tot)tot.textContent=money(cartTotal());
+  var cb=$('#cobrar'); if(cb)cb.disabled=!sim.cart.length;
+  Array.prototype.forEach.call(document.querySelectorAll('[data-del]'),function(el){
+    el.addEventListener('click',function(){sim.cart.splice(+el.getAttribute('data-del'),1);paintCart();});
+  });
+}
+
+/* ---- overlays (pres / granel / cobrar / analítica) built inline in simwrap ---- */
+function modal(inner,cls){
+  var o=document.createElement('div'); o.className='ov';
+  o.style.cssText='position:fixed;inset:0;z-index:70;background:rgba(3,8,18,.72);display:flex;align-items:center;justify-content:center;padding:18px';
+  o.innerHTML='<div class="'+(cls||'')+'" style="background:var(--surf);border:1px solid var(--line);border-radius:18px;max-width:420px;width:100%;box-shadow:var(--shadow);overflow:hidden">'+inner+'</div>';
+  o.addEventListener('click',function(e){if(e.target===o)o.remove()});
+  document.body.appendChild(o); return o;
+}
+function openPres(i){
+  var p=CAT[i]; var rows=[{t:'1 unidad (suelta)',f:1,p:p.p}].concat(p.pres||[]);
+  var inner='<div style="padding:16px 18px;border-bottom:1px solid var(--line)"><div style="font-weight:900;font-size:16px">'+emo(p.n)+' '+p.n+'</div>'
+    +'<div style="color:var(--ink3);font-size:12.5px;margin-top:2px">Elige en qué presentación se vende</div></div><div style="padding:12px">';
+  rows.forEach(function(r,k){ inner+='<button class="opt" data-pk="'+k+'" style="width:100%;margin-bottom:8px"><span class="k">'+(r.f>1?'📦':(r.f<1?'✂️':'1')) +'</span>'
+    +'<span style="flex:1"><b>'+r.t+'</b>'+(r.f!==1?'<div style="font-size:11.5px;color:var(--ink3)">'+(r.f>1?('trae '+r.f+' unidades'):('una parte del paquete'))+'</div>':'')+'</span>'
+    +'<span class="amt tnum" style="font-weight:900;color:var(--brand2)">'+money(r.p)+'</span></button>'; });
+  inner+='</div>';
+  var o=modal(inner);
+  Array.prototype.forEach.call(o.querySelectorAll('[data-pk]'),function(el){
+    el.addEventListener('click',function(){ var r=rows[+el.getAttribute('data-pk')];
+      addToCart({nm:p.n, sub:r.t, amt:r.p}); o.remove(); emit('pres',{i:i,f:r.f}); });
+  });
+}
+function openGranel(i){
+  var p=CAT[i];
+  var inner='<div style="padding:16px 18px;border-bottom:1px solid var(--line)"><div style="font-weight:900;font-size:16px">⚖️ '+p.n+'</div>'
+    +'<div style="color:var(--ink3);font-size:12.5px">Se vende por peso · '+money(p.p)+' el kilo</div></div>'
+    +'<div style="padding:16px"><div style="color:var(--ink2);font-size:13px;margin-bottom:8px">¿Cuántos <b>gramos</b> pesó la balanza?</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +['250','500','750','1000'].map(function(g){return '<button class="opt" data-g="'+g+'" style="flex:1;justify-content:center;min-width:70px">'+g+' g</button>'}).join('')
+    +'</div><div id="gcalc" style="margin-top:14px;text-align:center;color:var(--ink3);font-size:13px">Elige un peso…</div></div>';
+  var o=modal(inner);
+  Array.prototype.forEach.call(o.querySelectorAll('[data-g]'),function(el){
+    el.addEventListener('click',function(){ var g=+el.getAttribute('data-g'), amt=Math.round(p.p*g/1000*100)/100;
+      $('#gcalc',o).innerHTML='<b style="color:var(--brand2);font-size:16px">'+g+' g = '+money(amt)+'</b>';
+      setTimeout(function(){ addToCart({nm:p.n,sub:g+' g (granel)',amt:amt}); o.remove(); emit('granel',{i:i,g:g}); },500);
+    });
+  });
+}
+function openAna(i){
+  var p=CAT[i]; var days=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  var base=Math.max(2,Math.round(p.p<3?18:6)); var vals=days.map(function(_,k){return Math.max(0,base+Math.round(Math.sin(k)*base*.5)+(k===5?base:0))});
+  var mx=Math.max.apply(null,vals);
+  var bars=days.map(function(d,k){var h=Math.round(vals[k]/mx*70)+8;
+    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">'
+    +'<div style="width:100%;max-width:22px;height:'+h+'px;border-radius:6px 6px 3px 3px;background:linear-gradient(180deg,var(--brand2),var(--brand))"></div>'
+    +'<div style="font-size:10px;color:var(--ink3)">'+d+'</div></div>';}).join('');
+  var inner='<div style="padding:16px 18px;border-bottom:1px solid var(--line)"><div style="font-weight:900;font-size:16px">📈 '+emo(p.n)+' '+p.n+'</div>'
+    +'<div style="color:var(--ink3);font-size:12.5px">Cómo se vendió esta semana en tu zona</div></div>'
+    +'<div style="padding:18px"><div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-bottom:12px">'+bars+'</div>'
+    +'<div style="display:flex;gap:8px">'
+    +'<div class="stat" style="flex:1"><div class="v tnum" style="color:var(--brand2)">'+vals.reduce(function(a,b){return a+b},0)+'</div><div class="k">vendidos 7 días</div></div>'
+    +'<div class="stat" style="flex:1"><div class="v">🔥 Sáb</div><div class="k">tu mejor día</div></div></div>'
+    +'<button class="btn primary" id="anaClose" style="width:100%;margin-top:14px">Entendido</button></div>';
+  var o=modal(inner); $('#anaClose',o).addEventListener('click',function(){o.remove();emit('ana',{i:i})});
+  emit('anaopen',{i:i});
+}
+function openCobrar(){
+  var tot=cartTotal();
+  var inner='<div style="padding:16px 18px;border-bottom:1px solid var(--line)"><div style="font-weight:900;font-size:16px">💵 Cobrar</div>'
+    +'<div style="color:var(--ink3);font-size:12.5px">Total a cobrar: <b style="color:var(--brand2)">'+money(tot)+'</b></div></div>'
+    +'<div style="padding:16px"><div style="color:var(--ink2);font-size:13px;margin-bottom:8px">¿Con cuánto paga el cliente?</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +[tot,Math.ceil(tot/10)*10,Math.ceil(tot/50)*50].filter(function(v,k,a){return a.indexOf(v)===k}).map(function(v){
+        return '<button class="opt" data-pay="'+v+'" style="flex:1;justify-content:center;min-width:80px">'+money(v)+'</button>'}).join('')
+    +'</div><div id="vuelto" style="margin-top:14px;text-align:center;color:var(--ink3);font-size:14px">Elige el pago…</div></div>';
+  var o=modal(inner);
+  Array.prototype.forEach.call(o.querySelectorAll('[data-pay]'),function(el){
+    el.addEventListener('click',function(){ var pay=+el.getAttribute('data-pay'),v=Math.round((pay-tot)*100)/100;
+      SFX.print();
+      $('#vuelto',o).innerHTML='Vuelto: <b style="color:var(--brand2);font-size:20px">'+money(v)+'</b>'
+        +'<div class="ticketout"><div style="font-weight:800;font-size:11px">🧾 MOSEXPRESS</div>'
+        +'<div style="font-size:9px;color:#333">Impresora: <b>Caja-01</b></div>'
+        +'<div style="font-size:9px;color:#333">TOTAL '+money(tot)+' · Pagó '+money(pay)+'</div>'
+        +'<div style="font-size:9px;color:#333">Vuelto '+money(v)+'</div>'
+        +'<div style="font-size:8px;color:#999;margin-top:2px">¡Gracias por su compra!</div></div>';
+      emit('cobrar',{pay:pay});
+      setTimeout(function(){o.remove(); sim.cart=[]; paintCart();},2200);
+    });
+  });
+}
+
+var SIMS={
+ 'pos-venta':{
+   why:'Es lo que harás 200 veces al día: pasar un producto a la boleta. Aquí es un solo toque.',
+   body:'<p>La pantalla tiene dos partes: a la <b>izquierda los productos</b> (cada cuadrito es uno) y a la <b>derecha el carrito</b> (lo que le vas a cobrar al cliente).</p><p>Regla simple: <b>tocar un producto = lo agrega al carrito</b>. Nada más.</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'Toca <b>NORSAL SAL YODADA</b> para agregarla.', event:'add', hl:function(){return prodEl('NORSAL')}, match:function(p){return /NORSAL/.test(CAT[p.i].n)}},
+     {text:'¡Bien! Ahora agrega la <b>ALGARROBINA</b>.', event:'add', hl:function(){return prodEl('ALGARROBINA')}, match:function(p){return /ALGARROBINA/.test(CAT[p.i].n)}},
+     {text:'Ya tienes 2 en el carrito. 🎉 Mira el TOTAL a la derecha.', event:'never'}
+   ]); }
+ },
+ 'pos-pres':{
+   why:'Un mismo producto se puede vender suelto, en pack (más barato por unidad) o en fracción. El cliente elige.',
+   body:'<p>Los productos con un <b>cuadradito ▦ abajo a la derecha</b> tienen presentaciones. Tócalo para elegir: <b>1 unidad</b>, un <b>pack</b> (📦, trae varias) o una <b>fracción</b> (✂️, una parte).</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'Toca el <b>cuadradito ▦</b> del <b>KERO ALOE</b> (no el producto, el cuadradito).', event:'presopen', hl:function(){return sqEl('KERO')}, match:function(p){return /KERO/.test(CAT[p.i].n)}},
+     {text:'Elige la presentación <b>📦 Sixpack</b> (6 unidades).', event:'pres', match:function(p){return p.f===6}},
+     {text:'¡Perfecto! Vendiste un pack completo. 🎉', event:'never'}
+   ]); }
+ },
+ 'pos-granel':{
+   why:'El azúcar, la kiwicha, los granos… se venden por peso. La balanza da los gramos y ME calcula el precio.',
+   body:'<p>Los productos <b>a granel</b> muestran el precio <b>“/kg”</b>. Al tocarlos te preguntan los <b>gramos</b> (lo que marcó la balanza) y ME hace la cuenta solo.</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'Toca <b>KIWICHA REAL</b> (fíjate que dice “/kg”).', event:'granelopen', hl:function(){return prodEl('KIWICHA')}, match:function(p){return /KIWICHA/.test(CAT[p.i].n)}},
+     {text:'El cliente pidió <b>500 g</b>. Tócalo y mira cómo calcula el precio.', event:'granel', match:function(p){return p.g===500}},
+     {text:'¡Eso! 500 g de S/ 12/kg = S/ 6.00. La balanza manda. 🎉', event:'never'}
+   ]); }
+ },
+ 'pos-cobrar':{
+   why:'Cobrar bien y dar el vuelto correcto es lo más importante: es la plata de la tienda.',
+   body:'<p>Cuando el carrito tiene todo, tocas el botón verde <b>COBRAR</b>. Eliges con cuánto paga el cliente y ME te dice el <b>vuelto exacto</b> e imprime el ticket.</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'Agrega cualquier <b>2 productos</b> al carrito.', event:'add', match:function(){return sim.cart.length>=2}},
+     {text:'Ahora toca el botón verde <b>COBRAR</b>.', event:'cobrar-open', hl:'#cobrar'},
+     {text:'Elige con cuánto paga el cliente y mira el <b>vuelto</b>.', event:'cobrar'},
+     {text:'¡Venta cerrada y ticket impreso! Así de fácil. 🎉', event:'never'}
+   ]);
+   // adjust: first step needs custom counting
+   sim.mission[0].match=function(){return sim.cart.length>=2};
+   }
+ },
+ 'pos-ana':{
+   why:'Antes de pedir mercadería o dudar de un precio, puedes ver cómo se vende un producto en TU zona.',
+   body:'<p>Truco pro: <b>mantén presionado</b> un producto (aguántalo ~1 segundo) y se abre su <b>analítica</b>: cuánto se vendió cada día de la semana y cuál fue el mejor día.</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'<b>Mantén presionado</b> el <b>PATITO DETERGENTE</b> (aguántalo 1 seg).', event:'anaopen', hl:function(){return prodEl('PATITO')}, match:function(p){return /PATITO/.test(CAT[p.i].n)}},
+     {text:'Mira su semana y cierra con <b>Entendido</b>.', event:'ana'},
+     {text:'¡Ya eres un cajero con datos! 🎉', event:'never'}
+   ]); }
+ }
+};
+function prodEl(key){var r=null;Array.prototype.forEach.call(document.querySelectorAll('.prod'),function(e){if(new RegExp(key).test(e.textContent))r=e});return r}
+function sqEl(key){var p=prodEl(key);return p?p.querySelector('.sq'):null}
+
+/* hook cobrar button + pres/granel/ana "open" events via delegation after render */
+function afterRender(){
+  var l=FLAT[idx(current)];
+  if(l.kind==='sim'){ var cfg=SIMS[l.id]; if(cfg&&cfg.init) cfg.init();
+    var cb=$('#cobrar'); if(cb) cb.addEventListener('click',function(){ if(!sim.cart.length)return; emit('cobrar-open',{}); openCobrar(); });
+    if(isDone(l.id)){ var b=document.querySelector('[data-nav="next"]'); if(b){b.disabled=false;} }
+  }
+  if(l.kind==='ticket'){ var tc=TSIMS[l.id]; if(tc&&tc.init) tc.init(); if(isDone(l.id)){var b2=document.querySelector('[data-nav="next"]');if(b2)b2.disabled=false;} }
+  if(l.kind==='guia'){ initGuia(l); if(isDone(l.id)){var b3=document.querySelector('[data-nav="next"]');if(b3)b3.disabled=false;} }
+  if(l.kind==='flow'){ initFlow(l); if(isDone(l.id)){var b4=document.querySelector('[data-nav="next"]');if(b4)b4.disabled=false;} }
+  if(l.kind==='exam'){ initExam(l); if(isDone(l.id)){var b5=document.querySelector('[data-nav="next"]');if(b5)b5.disabled=false;} }
+}
+/* wrap openPres/openGranel/openAna to emit *open events */
+var _openPres=openPres; openPres=function(i){emit('presopen',{i:i});_openPres(i)};
+var _openGranel=openGranel; openGranel=function(i){emit('granelopen',{i:i});_openGranel(i)};
+
+/* ======================= SIMULADOR CAJA / TICKETS (réplica de la Caja real de ME) ======================= */
+var TICKETS=[
+ {n:'B001-00045',t:'BOLETA', h:'10:12',m:12.50, e:'Pagado'},
+ {n:'NV-00031',  t:'NV',     h:'10:20',m:5.00,  e:'Por cobrar'},
+ {n:'B001-00046',t:'BOLETA', h:'10:31',m:28.90, e:'Pagado'},
+ {n:'F001-00007',t:'FACTURA',h:'10:44',m:120.00,e:'Pagado'},
+ {n:'NV-00032',  t:'NV',     h:'11:02',m:8.00,  e:'Por cobrar'},
+ {n:'B001-00047',t:'BOLETA', h:'11:15',m:3.70,  e:'Anulado'}
+];
+var tsim={filter:'Todas',printerOk:true};
+function renderTicket(l){
+  var cfg=TSIMS[l.id];
+  return '<div class="lead"><div class="eyebrow">🧾 Controlar · Caja</div><h1>'+l.t+'</h1></div>'
+    +'<div class="why"><span>💡</span><div><b>¿Por qué importa?</b> '+cfg.why+'</div></div>'
+    +'<div class="body">'+cfg.body+'</div>'
+    + tipHtml(l.id)
+    +'<div class="mission" id="mission">'+cab(30)+'<span class="mt" id="mt">…</span><span class="prog" id="mp"></span></div>'
+    +'<div class="simwrap"><div class="sim-top">📟 ME · Caja (tus ventas de hoy)'
+    +'<span class="pill" id="prnpill" style="cursor:pointer">🖨 …</span></div>'
+    +'<div style="background:#f1f5f9;padding:10px 12px;display:flex;gap:7px;flex-wrap:wrap" id="chips"></div>'
+    +'<div id="tklist" style="background:#f1f5f9;padding:2px 12px 12px;display:flex;flex-direction:column;gap:8px;max-height:340px;overflow:auto"></div>'
+    +'</div>'
+    +footNav();
+}
+/* pestañas reales de la Caja de ME: Todas · NV · Bol · Fac (con contador) */
+var TABDEFS=[['Todas','Todas'],['NV','NV'],['Boletas','Bol'],['Facturas','Fac']];
+function tkVisible(t,f){ f=f||tsim.filter;
+  if(f==='Todas')return true; if(f==='Boletas')return t.t==='BOLETA';
+  if(f==='Facturas')return t.t==='FACTURA'; if(f==='NV')return t.t==='NV'; return true; }
+function drawChipsInner(){ var c=$('#chips'); if(!c)return;
+  TABDEFS.forEach(function(d){
+    var count=TICKETS.filter(function(t){return tkVisible(t,d[0])}).length;
+    var b=document.createElement('button'); b.className='metab'+(tsim.filter===d[0]?' on':'');
+    b.innerHTML=d[1]+' <span class="bdg tnum">'+count+'</span>'; b.setAttribute('data-f',d[0]);
+    c.appendChild(b);
+  });
+}
+function drawChips(){
+  var c=$('#chips'); if(!c)return; c.innerHTML=''; drawChipsInner();
+  if(!c._b){ c._b=1; c.addEventListener('click',function(e){var b=e.target.closest('[data-f]');if(!b)return;
+    tsim.filter=b.getAttribute('data-f'); SFX.tap(); drawChips2(); emit('filter',{f:tsim.filter});}); }
+}
+function drawChips2(){ var c=$('#chips'); if(!c)return; c.innerHTML=''; drawChipsInner(); drawTickets(); }
+function drawPrinter(){ var p=$('#prnpill'); if(!p)return;
+  p.innerHTML='🖨 Caja-01 <span style="font-size:13px;color:'+(tsim.printerOk?'#4fe0ac':'#ff7a90')+'">●</span>';
+  p.style.borderColor=tsim.printerOk?'#16543f':'#5a2030'; p.style.background=tsim.printerOk?'#0e2a20':'#2a1016'; p.style.color='#cfe0ff';
+  p.title='Impresora: Caja-01 · '+(tsim.printerOk?'online':'offline')+' · tap: estado y cambio';
+  p.onclick=function(){ emit('printer',{}); openImpresora(); };
+}
+function drawTickets(){
+  var box=$('#tklist'); if(!box)return; box.innerHTML='';
+  var vis=TICKETS.filter(function(t){return tkVisible(t)});
+  if(!vis.length){ box.innerHTML='<div class="lnote" style="text-align:center;padding:26px 10px;background:#fff;border:2px dashed #e2e8f0;border-radius:14px">Aún no hay ventas de ese tipo hoy.</div>'; return; }
+  vis.forEach(function(t){
+    var est=t.e==='Pagado'?['#065f46','#d1fae5']:(t.e==='Por cobrar'?['#92400e','#fef3c7']:['#991b1b','#fee2e2']);
+    var b=document.createElement('button'); b.className='tkcard'; b.setAttribute('data-n',t.n);
+    b.innerHTML='<div style="flex:1;min-width:0">'
+      +'<div style="font-weight:800;font-size:14px;'+(t.e==='Anulado'?'text-decoration:line-through;color:#94a3b8':'')+'">'+t.n+'</div>'
+      +'<div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap">'
+      +'<span class="tkpill" style="background:#e2e8f0;color:#475569">'+t.t+'</span>'
+      +'<span class="tkpill" style="background:'+est[1]+';color:'+est[0]+'">'+t.e+'</span>'
+      +'<span class="tkpill" style="background:transparent;color:#94a3b8">'+t.h+'</span>'
+      +'</div></div>'
+      +'<div style="font-weight:900;color:#059669;font-size:14.5px" class="tnum">'+money(t.m)+'</div>';
+    box.appendChild(b);
+  });
+  if(!box._b){ box._b=1; box.addEventListener('click',function(e){var r=e.target.closest('[data-n]');if(!r)return; SFX.open(); openTicket(r.getAttribute('data-n'));}); }
+}
+function openTicket(n){
+  var t=TICKETS.filter(function(x){return x.n===n})[0]; if(!t)return;
+  var inner='<div style="padding:16px 18px;border-bottom:1px solid var(--line)"><div style="font-weight:900;font-size:16px">🧾 '+t.n+'</div>'
+    +'<div style="color:var(--ink3);font-size:12.5px">'+t.t+' · '+t.h+' · '+money(t.m)+' · '+t.e+'</div></div>'
+    +'<div style="padding:14px">'
+    +'<button class="btn primary" id="reimp" style="width:100%;margin-bottom:8px">🖨 Reimprimir (no cobra de nuevo)</button>'
+    +'<div id="reimpres" style="text-align:center;color:var(--ink3);font-size:12.5px;min-height:16px"></div>'
+    +'<button class="btn ghost" id="tkclose" style="width:100%;margin-top:6px">Cerrar</button></div>';
+  var o=modal(inner);
+  $('#tkclose',o).addEventListener('click',function(){o.remove()});
+  $('#reimp',o).addEventListener('click',function(){ SFX.print(); emit('reimp',{n:n});
+    $('#reimpres',o).innerHTML='<div class="ticketout" style="width:130px"><div style="font-weight:800;font-size:11px">🧾 MOSEXPRESS</div><div style="font-size:9px;color:#333">'+t.n+' (copia)</div><div style="font-size:9px;color:#333">'+money(t.m)+'</div></div>';
+    setTimeout(function(){o.remove()},1900);
+  });
+}
+/* réplica del modal real "Cambiar impresora": solo impresoras de TU zona + clave admin */
+function openImpresora(){
+  var inner='<div style="padding:16px 18px;border-bottom:1px solid var(--line)"><div style="font-weight:900;font-size:16px">🖨 Cambiar impresora</div>'
+    +'<div style="color:var(--ink3);font-size:12.5px">Caja-01 · '+(tsim.printerOk?'<b style="color:var(--brand2)">● online</b>':'<b style="color:var(--rose)">● offline</b> (apagada o sin conexión)')+'</div></div>'
+    +'<div style="padding:14px">'
+    +(tsim.printerOk? '<div style="color:var(--ink2);font-size:13px">Todo bien: la impresora está lista para imprimir tickets.</div>'
+      : '<div style="font-size:11px;font-weight:900;letter-spacing:.06em;color:var(--ink3);margin-bottom:8px">IMPRESORAS DE TU ZONA (2)</div>'
+        +'<button class="opt" data-imp="Caja-02" style="width:100%;margin-bottom:8px"><span class="k">🖨</span><span style="flex:1"><b>Caja-02</b><div style="font-size:11px;color:var(--ink3)">TIENDA 1 · <span style="color:var(--brand2)">🟢 lista</span></div></span></button>'
+        +'<button class="opt" data-imp="Caja-03" style="width:100%"><span class="k">🖨</span><span style="flex:1"><b>Caja-03</b><div style="font-size:11px;color:var(--ink3)">TIENDA 1 · <span style="color:var(--brand2)">🟢 lista</span></div></span></button>'
+        +'<div style="color:var(--ink3);font-size:11.5px;margin-top:10px">ℹ Solo se muestran impresoras de <b>TIENDA 1</b>. El cambio pide <b>clave de admin</b> (aquí en el curso te la perdonamos 😉).</div>')
+    +'<button class="btn ghost" id="impclose" style="width:100%;margin-top:10px">Cerrar</button></div>';
+  var o=modal(inner);
+  $('#impclose',o).addEventListener('click',function(){o.remove()});
+  Array.prototype.forEach.call(o.querySelectorAll('[data-imp]'),function(el){
+    el.addEventListener('click',function(){ tsim.printerOk=true; SFX.ok(); drawPrinter(); o.remove(); emit('changed',{imp:el.getAttribute('data-imp')}); });
+  });
+}
+var TSIMS={
+ 'caja-tickets':{
+   why:'En la pestaña Caja ves TODO lo que vendiste en el turno. Las pestañas de arriba (Todas · NV · Bol · Fac) filtran en un toque.',
+   body:'<p>Cada tarjeta es un comprobante: su <b>correlativo</b> (B001-00045), tipo (<b>Bol</b>eta / <b>Fac</b>tura / <b>NV</b> nota de venta), hora, monto y estado. Las pestañas muestran el <b>contador</b> de cada tipo.</p>',
+   init:function(){ tsim.filter='Todas'; tsim.printerOk=true; drawChips(); drawPrinter(); drawTickets(); startMission([
+     {text:'Toca la pestaña <b>NV</b> para ver solo las Notas de Venta.', event:'filter', hl:function(){return chipEl('NV')}, match:function(p){return p.f==='NV'}},
+     {text:'¿Ves? Solo quedaron las 2 NV (una está <b>Por cobrar</b>). Vuelve a <b>Todas</b>.', event:'filter', hl:function(){return chipEl('Todas')}, match:function(p){return p.f==='Todas'}},
+     {text:'¡Así de rápido encuentras cualquier venta! 🎉', event:'never'}
+   ]); }
+ },
+ 'caja-reimp':{
+   why:'Cuando el papel sale mal o el cliente pide otra copia, reimprimes sin volver a cobrar.',
+   body:'<p>Tocas el comprobante y eliges <b>🖨 Reimprimir</b>. Sale una copia idéntica y <b>NO se cobra de nuevo</b> (no duplica la venta). Nunca vuelvas a cobrar por un problema de impresión.</p>',
+   init:function(){ tsim.filter='Todas'; tsim.printerOk=true; drawChips(); drawPrinter(); drawTickets(); startMission([
+     {text:'Toca la boleta <b>B001-00045</b> de la lista.', event:'reimpopen', hl:function(){return tkEl('B001-00045')}, match:function(p){return p.n==='B001-00045'}},
+     {text:'Ahora toca <b>🖨 Reimprimir</b>. Mira: sale la copia y no cobra otra vez.', event:'reimp'},
+     {text:'¡Listo! Copia entregada sin cobrar doble. 🎉', event:'never'}
+   ]); }
+ },
+ 'caja-imp':{
+   why:'Si la impresora está apagada no salen tickets. El chip 🖨 con su puntito te lo dice al instante.',
+   body:'<p>Arriba está el <b>chip de impresora</b>: 🖨 con un puntito <b style="color:var(--brand2)">🟢 verde</b> (online) o <b style="color:var(--rose)">🔴 rojo</b> (apagada/sin conexión). Hoy amaneció <b>roja</b>. Al tocarla se abre <b>Cambiar impresora</b>: solo verás impresoras de TU zona, y el cambio pide clave de admin.</p>',
+   init:function(){ tsim.filter='Todas'; tsim.printerOk=false; drawChips(); drawPrinter(); drawTickets(); startMission([
+     {text:'El puntito está <b style="color:#ff7a90">🔴 rojo</b>. Toca el chip <b>🖨 Caja-01</b> arriba a la derecha.', event:'printer', hl:'#prnpill'},
+     {text:'Elige <b>Caja-02</b> (misma zona, 🟢 lista) para cambiar.', event:'changed'},
+     {text:'¡Puntito verde otra vez! Ya salen tickets. 🎉', event:'never'}
+   ]); }
+ }
+};
+function chipEl(f){var r=null;Array.prototype.forEach.call(document.querySelectorAll('#chips [data-f]'),function(e){if(e.getAttribute('data-f')===f)r=e});return r}
+function tkEl(n){var r=null;Array.prototype.forEach.call(document.querySelectorAll('#tklist [data-n]'),function(e){if(e.getAttribute('data-n')===n)r=e});return r}
+var _openTicket=openTicket; openTicket=function(n){emit('reimpopen',{n:n});_openTicket(n)};
+
+/* ======================= SIMULADOR RECIBIR GUÍA (réplica del flujo real WH→ME: QR → conteo ciego → resultado) ======================= */
+var GUIA=[
+ {n:'SIBARITA PANQUITA 31.2GR',cod:'7751851',esp:4},
+ {n:'GLORIA QUESO PARMESANO 35GR',cod:'7758891',esp:3},
+ {n:'ALACENA KETCHUP 100GR',cod:'7785204',esp:2}
+];
+var gsim={paso:'guia',rec:{},id:''};
+function gTotal(){var t=0;Object.keys(gsim.rec).forEach(function(k){t+=gsim.rec[k]});return t}
+function gEsperado(){var t=0;GUIA.forEach(function(p){t+=p.esp});return t}
+function allScanned(){ return GUIA.every(function(p,i){return (gsim.rec[i]||0)>=p.esp}); }
+function renderGuia(l){
+  return '<div class="lead"><div class="eyebrow">🧰 Herramientas · Guías · Entrada</div><h1>'+l.t+'</h1></div>'
+    +'<div class="why"><span>💡</span><div><b>¿Por qué importa?</b> El almacén te manda mercadería con una guía. Tú la recibes en 2 pasos: escaneas el QR del ticket de la guía y luego cuentas producto por producto. Así el stock cuadra solo.</div></div>'
+    +'<div class="body"><p>Igual que en ME real: <b>Paso 1</b> apuntas la cámara al <b>QR del ticket</b> de la guía (o tecleas el código G…). <b>Paso 2</b> escaneas los productos <b>uno tras otro</b> — ME no te muestra cuánto "debería" llegar: tú cuentas lo que <b>de verdad</b> llegó. Al finalizar, ME compara y el admin ve las diferencias en MOS.</p></div>'
+    + tipHtml(l.id)
+    +'<div class="mission" id="mission">'+cab(30)+'<span class="mt" id="mt">…</span><span class="prog" id="mp"></span></div>'
+    +'<div class="simwrap"><div class="sim-top" style="background:#059669;border-color:#047857;color:#fff">📦 Recibir guía · TIENDA 1<span class="pill" id="gpill" style="background:rgba(255,255,255,.18);color:#fff;border-color:transparent">Escanea el código de la guía</span></div>'
+    +'<div id="gbox"></div>'
+    +'</div>'
+    +footNav();
+}
+function paintGuia(){
+  var box=$('#gbox'); if(!box)return;
+  var pill=$('#gpill');
+  if(gsim.paso==='guia'){
+    if(pill)pill.textContent='Escanea el código de la guía';
+    box.innerHTML='<div class="fscr">'
+      +'<div style="background:rgba(5,150,105,.15);border:1px solid rgba(5,150,105,.45);border-radius:12px;padding:10px 13px;font-size:12px;color:#6ee7b7;font-weight:700">Paso 1 de 2 · Apunta la cámara al <b>QR del ticket</b> de la guía del almacén. También puedes teclear el código (G…). Luego escanearás los productos uno por uno.</div>'
+      +'<button class="fopt" data-g="qr" style="justify-content:center;background:#059669;border-color:#047857;font-size:15px;text-transform:uppercase;letter-spacing:.04em">📷&nbsp; Escanear QR de la guía</button>'
+      +'<div class="fnote" style="text-align:center">— o ingresa el código a mano —</div>'
+      +'<div style="display:flex;gap:8px"><div style="flex:1;background:#131f36;border:1px solid #223251;border-radius:12px;padding:11px 14px;color:#4a5b78;font-family:ui-monospace,monospace;letter-spacing:.15em">Código de la guía (G...)</div><div style="background:#059669;border-radius:12px;color:#fff;font-weight:900;display:grid;place-items:center;padding:0 16px">→</div></div>'
+      +'</div>';
+  }
+  if(gsim.paso==='escaneo'){
+    if(pill)pill.textContent='Guía '+gsim.id;
+    var rows=GUIA.map(function(p,i){
+      var got=gsim.rec[i]||0;
+      return '<div style="display:flex;align-items:center;gap:10px;background:#131f36;border:1px solid #223251;border-radius:12px;padding:10px 12px">'
+        +'<span style="font-size:21px">'+emo(p.n)+'</span>'
+        +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;color:#eaf1fb">'+p.n+'</div>'
+        +'<div style="font-size:11px;color:#7f93b4;font-family:ui-monospace,monospace">'+p.cod+' · contadas: <b style="color:#4fe0ac">'+got+'</b></div></div>'
+        +'<button class="btn primary" style="padding:8px 12px" data-scan="'+i+'">📷 Escanear</button>'
+        +'</div>';
+    }).join('');
+    box.innerHTML='<div class="fscr">'
+      +'<div style="background:rgba(5,150,105,.15);border:1px solid rgba(5,150,105,.45);border-radius:10px;padding:8px 12px;font-size:11.5px;color:#6ee7b7;font-weight:700;text-align:center">Paso 2 de 2 · Escanea los productos <b>uno tras otro</b>. La cámara queda abierta y la lista crece sola.</div>'
+      +'<div style="background:#059669;color:#fff;font-size:10.5px;font-weight:900;text-align:center;border-radius:8px;padding:4px;display:flex;align-items:center;justify-content:center;gap:6px"><span style="width:8px;height:8px;background:#fff;border-radius:99px;animation:pulse 1.2s infinite"></span> ESCANEANDO EN CONTINUO · apunta producto tras producto</div>'
+      +rows
+      +'<div style="color:#4fe0ac;font-weight:900;text-align:center;font-size:13px" class="tnum">'+Object.keys(gsim.rec).length+' producto(s) · '+gTotal()+' unidades contadas</div>'
+      +'<button class="cobrar" id="gclose" '+(gTotal()>0?'':'disabled')+'>✓ Finalizar y registrar ('+Object.keys(gsim.rec).length+')</button>'
+      +'</div>';
+  }
+  if(gsim.paso==='resultado'){
+    if(pill)pill.textContent='Guía '+gsim.id+' · registrada';
+    box.innerHTML='<div class="fscr">'
+      +'<div style="background:rgba(5,150,105,.2);border:1px solid rgba(5,150,105,.55);border-radius:14px;padding:18px;text-align:center">'
+      +'<div style="font-size:36px">✅</div><div style="color:#fff;font-weight:900;font-size:16px">Ingreso completo</div>'
+      +'<div style="color:#9fb0c9;font-size:11.5px;margin-top:3px">El admin verá las diferencias en MOS.</div></div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">'
+      +'<div style="background:#131f36;border-radius:12px;padding:10px"><div class="fnote" style="text-transform:uppercase;font-size:9.5px">Enviado</div><div style="color:#fff;font-weight:900;font-size:17px" class="tnum">'+gEsperado()+'</div></div>'
+      +'<div style="background:#131f36;border-radius:12px;padding:10px"><div class="fnote" style="text-transform:uppercase;font-size:9.5px">Contado</div><div style="color:#fff;font-weight:900;font-size:17px" class="tnum">'+gTotal()+'</div></div>'
+      +'<div style="background:#131f36;border-radius:12px;padding:10px"><div class="fnote" style="text-transform:uppercase;font-size:9.5px">Líneas dif.</div><div style="color:#4fe0ac;font-weight:900;font-size:17px" class="tnum">0</div></div>'
+      +'</div>'
+      +'<button class="cobrar" id="glisto">Listo ✓</button>'
+      +'</div>';
+  }
+  bindGuia();
+}
+function bindGuia(){
+  var box=$('#gbox'); if(!box)return;
+  if(!box._b){ box._b=1; box.addEventListener('click',function(e){
+    var qr=e.target.closest('[data-g="qr"]');
+    if(qr){ SFX.scan(); gsim.id='G-8412'; gsim.paso='escaneo'; paintGuia(); emit('gid',{}); return; }
+    var b=e.target.closest('[data-scan]');
+    if(b){ var i=+b.getAttribute('data-scan');
+      var got=gsim.rec[i]||0;
+      if(got>=GUIA[i].esp){ SFX.tap(); return; } // ya contaste todo lo que llegó de este
+      gsim.rec[i]=got+1; SFX.scan(); paintGuia(); emit('scan',{i:i});
+      if(allScanned()) emit('allscanned',{});
+      return; }
+    var gc=e.target.closest('#gclose');
+    if(gc && !gc.disabled){
+      if(!allScanned()){ SFX.bad(); var mt=$('#mt'); if(mt)mt.innerHTML='🐾 Aún faltan unidades por contar — son 9 en total. Sigue escaneando.'; return; }
+      SFX.ok(); gsim.paso='resultado'; paintGuia(); emit('close',{}); return; }
+    var gl=e.target.closest('#glisto');
+    if(gl){ SFX.ok(); emit('listo',{}); return; }
+  }); }
+}
+function initGuia(l){ gsim={paso:'guia',rec:{},id:''}; paintGuia(); startMission([
+  {text:'El almacén te mandó mercadería. Toca <b>📷 Escanear QR de la guía</b> (está en el ticket que vino con las cajas).', event:'gid', hl:function(){return document.querySelector('#gbox [data-g="qr"]')}},
+  {text:'Guía <b>G-8412</b> abierta. Llegaron <b>4 panquitas, 3 quesos y 2 ketchup</b>: escanea cada unidad (9 bips en total). ME no te dice cuánto "debería" llegar — tú cuentas lo real.', event:'allscanned'},
+  {text:'¡9 unidades contadas! Toca <b>✓ Finalizar y registrar</b>.', event:'close', hl:function(){return document.querySelector('#gclose')}},
+  {text:'✅ Ingreso completo: Enviado 9 = Contado 9, cero diferencias. Toca <b>Listo ✓</b>.', event:'listo', hl:function(){return document.querySelector('#glisto')}},
+  {text:'El stock ya entró a tu zona, todo cuadrado. 🎉', event:'never'}
+]); }
+
+/* ======================= SIMULADOR DE FLUJOS (pantallas guiadas paso a paso) ======================= */
+function fopt(act,ico,t,sub){return '<button class="fopt" data-act="'+act+'"><span class="fk">'+ico+'</span><span style="flex:1;min-width:0"><b>'+t+'</b>'+(sub?'<small>'+sub+'</small>':'')+'</span></button>'}
+function fhead(t,sub){return '<div class="fhead">'+t+(sub?' <span class="fnote">· '+sub+'</span>':'')+'</div>'}
+
+var FLOWS={
+ 'caja-abrir':{
+  top:'🔑 ME · Inicio de sesión (wizard)',
+  why:'Sin abrir tu turno no puedes vender. El wizard de ME te pregunta 3 cosas: quién eres, en qué tienda entras y con cuánto sencillo arrancas.',
+  body:'<p>Al abrir ME aparece el <b>wizard</b> (el mismo que verás cada mañana): eliges o tipeas tu nombre, tocas tu tienda, te sumas como <b>👑 cajero</b> (si abres la caja) o <b>🛍 vendedor</b> (si ya hay cajero), y registras el <b>monto inicial</b>. Ahí mismo ves si la impresora está 🟢 lista.</p>',
+  done:'🔓 Turno ABIERTO · TIENDA 1 · Caja-01<br><span class="fnote">Quedaste como 👑 cajero con S/ 50.00 de apertura. Al cierre debe cuadrar contra este monto.</span>',
+  steps:[
+   {ok:'nombre',say:'¡Buenos días! ☀️ El wizard pregunta <b>¿Quién entra?</b>. Los de siempre tocan su carita; tú eres nuevo: toca <b>✏ Tipea tu nombre completo</b>.',
+    screen:'<div class="ltwrap"><div class="wizhd"><span style="opacity:.8;font-size:12px;font-weight:600">¡Buenos días!</span><b>Abrir mi turno</b><div class="wizdots"><i class="on"></i><i></i><i></i></div></div>'
+      +'<div class="lhead">¿Quién entra?</div>'
+      +'<div style="display:flex;gap:8px">'
+      +'<button class="lopt" data-act="x1" style="flex-direction:column;text-align:center;gap:5px;flex:1"><span class="sil" style="background:#f472b6">R</span><b style="font-size:12px">Rosa</b><small>vendedora</small></button>'
+      +'<button class="lopt" data-act="x2" style="flex-direction:column;text-align:center;gap:5px;flex:1"><span class="sil" style="background:#60a5fa">P</span><b style="font-size:12px">Pedro</b><small>cajero</small></button>'
+      +'</div>'
+      +'<button class="lopt" data-act="nombre"><span class="fk">✏</span><span style="flex:1;color:#94a3b8;font-weight:600">Tipea tu nombre completo</span></button>'
+      +'</div>',
+    no:'Esa carita es de otra persona. Tú eres nuevo: tipea tu nombre.'},
+   {ok:'cajero',say:'Paso 2: <b>¿En qué tienda entras?</b> En TIENDA 1 no hay nadie todavía. Hoy abres la caja tú: toca <b>👑 + Cajero</b>.',
+    screen:'<div class="ltwrap"><div class="wizhd"><span style="opacity:.8;font-size:12px;font-weight:600">Hola, TÚ 👋</span><b>¿En qué tienda entras?</b><div class="wizdots"><i class="on"></i><i class="on"></i><i></i></div></div>'
+      +'<div style="background:#fff;border:2px solid #f1f5f9;border-radius:16px;padding:12px">'
+      +'<div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">🏪</span><b style="flex:1;font-size:15px">TIENDA 1</b><span class="lnote" style="background:#f1f5f9;border-radius:99px;padding:2px 9px">2 cajas</span></div>'
+      +'<div class="lnote" style="font-style:italic;margin:6px 0 10px">Nadie dentro todavía — sé el primero</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+      +'<button class="lopt" data-act="cajero" style="justify-content:center;background:linear-gradient(140deg,#f59e0b,#d97706);color:#fff;border-color:transparent"><b>👑 + Cajero</b></button>'
+      +'<button class="lopt" data-act="x1" style="justify-content:center;background:linear-gradient(140deg,#3b82f6,#2563eb);color:#fff;border-color:transparent"><b>🛍 + Vendedor</b></button>'
+      +'</div></div></div>',
+    no:'Vendedor es cuando YA hay un cajero en la tienda. Hoy la caja la abres tú: 👑 + Cajero.'},
+   {ok:'m50',say:'Se abrió el panel <b>💵 Monto inicial de caja</b>. Te dieron <b>S/ 50</b> de sencillo: toca <b>50</b>.',
+    screen:'<div class="ltwrap"><div class="lhead" style="color:#d97706;text-align:center">💵 Monto inicial de caja</div>'
+      +'<div style="display:flex;align-items:center;gap:6px;background:#fffbeb;border:2px solid #fcd34d;border-radius:16px;padding:10px 14px"><b style="font-size:20px;color:#b45309">S/</b><span style="flex:1;text-align:center;color:#d6d3d1;font-size:20px;font-weight:900">0.00</span></div>'
+      +'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">'
+      +'<button class="lopt" data-act="m50" style="justify-content:center;padding:9px 4px"><b>50</b></button>'
+      +'<button class="lopt" data-act="x1" style="justify-content:center;padding:9px 4px"><b>100</b></button>'
+      +'<button class="lopt" data-act="x2" style="justify-content:center;padding:9px 4px"><b>200</b></button>'
+      +'<button class="lopt" data-act="x3" style="justify-content:center;padding:9px 4px"><b>300</b></button>'
+      +'<button class="lopt" data-act="x4" style="justify-content:center;padding:9px 4px"><b>500</b></button>'
+      +'</div>'
+      +'<div class="lnote" style="text-align:center">💡 Sugerido <b style="color:#b45309">S/ 50</b> (cierre del último turno)</div>'
+      +'</div>',
+    no:'Registra exactamente lo que te entregaron: S/ 50. Ni más ni menos — al cierre debe cuadrar.'},
+   {ok:'abrir',say:'Todo listo. Mira el puntito de la impresora (🟢 lista) y toca <b>👑 Abrir caja →</b>.',
+    screen:'<div class="ltwrap"><div class="lhead">Resumen</div>'
+      +'<div class="lnote">🙋 TÚ · 🏪 TIENDA 1 · Caja-01 · 💵 S/ 50.00</div>'
+      +'<div class="lnote">🖨 Impresora Caja-01 · <b style="color:#059669">🟢 lista</b></div>'
+      +'<button class="lopt" data-act="abrir" style="justify-content:center;background:linear-gradient(140deg,#f59e0b,#d97706);color:#fff;border-color:transparent;font-size:15px"><b>👑 Abrir caja →</b></button>'
+      +'</div>'}
+  ]
+ },
+ 'caja-perm':{
+  top:'✅ ME · Caja · Pendientes y permisos',
+  why:'No todo se cobra al instante: hay cobros que el admin te asigna (suenan y palpitan al llegar), y las acciones que mueven dinero hacia atrás piden clave de admin.',
+  body:'<p>En <b>Caja</b> también viven los <b>cobros pendientes</b>: ventas <b>Por cobrar</b> y cobros que el admin te encargó (llegan con sonido y pulso). Y cuando algo mueve dinero hacia atrás (anular, convertir), ME pide <b>clave de admin</b> — no es desconfianza, es protección para ti.</p>',
+  done:'✅ Cobro registrado y anulación autorizada<br><span class="fnote">Todo lo que toca dinero queda con nombre, hora y permiso.</span>',
+  steps:[
+   {ok:'cob',say:'Te llegó un <b>cobro asignado</b> del admin (¿escuchaste el pulso?). Tócalo para abrirlo.',
+    screen:'<div class="ltwrap"><div class="lhead">Pendientes de hoy</div>'
+      +'<button class="lopt" data-act="cob" style="border-color:#fcd34d;background:#fffbeb"><span class="fk">📌</span><span style="flex:1;min-width:0"><b>COBRO ASIGNADO · Sr. Torres</b><small>S/ 45.00 · el admin te lo encargó</small></span></button>'
+      +'<button class="lopt" data-act="x1"><span class="fk">🧾</span><span style="flex:1;min-width:0"><b>B001-00046 · Pagado</b><small>S/ 28.90 · ya está cobrado</small></span></button>'
+      +'</div>',
+    no:'Ese ya está pagado. El pendiente es el COBRO ASIGNADO (el que palpita).'},
+   {ok:'cobrar',say:'El Sr. Torres llegó y te paga los S/ 45. ¿Qué haces?',
+    screen:'<div class="ltwrap"><div class="lhead">Cobro · Sr. Torres · S/ 45.00</div>'
+      +'<button class="lopt" data-act="cobrar"><span class="fk">💵</span><span style="flex:1"><b>Cobrar ahora</b><small>recibes el pago y queda registrado</small></span></button>'
+      +'<button class="lopt" data-act="x1"><span class="fk">🗑️</span><span style="flex:1"><b>Borrar el cobro</b><small>como si nunca existió</small></span></button>'
+      +'<button class="lopt" data-act="x2"><span class="fk">🌙</span><span style="flex:1"><b>Dejarlo para mañana</b><small>el señor puede esperar</small></span></button>'
+      +'</div>',
+    no:'Si el cliente está pagando, se cobra al toque. Un cobro asignado NUNCA se borra.'},
+   {ok:'clave',say:'Ahora necesitas <b>anular</b> una venta que salió mal. ¿Cómo se hace en ME?',
+    screen:'<div class="ltwrap"><div class="lhead">Anular venta B001-00047</div>'
+      +'<button class="lopt" data-act="clave"><span class="fk">🔐</span><span style="flex:1"><b>Pedir clave de admin y anular</b><small>autorizado y registrado</small></span></button>'
+      +'<button class="lopt" data-act="x1"><span class="fk">⚡</span><span style="flex:1"><b>Anularla yo nomás</b><small>rapidito, sin avisar</small></span></button>'
+      +'</div>',
+    no:'Anular mueve plata: SIEMPRE con clave de admin. Así nadie puede acusarte de nada raro.'}
+  ]
+ },
+ 'tools-adh':{
+  top:'🏷 ME · Herramientas · Membretes',
+  why:'El precio de la góndola debe decir LO MISMO que la caja. Los membretes NO salen de tu impresora: se imprimen en el ALMACÉN y te los mandan para pegar.',
+  body:'<p>En <b>Herramientas</b> vive la sección <b>🏷 MEMBRETES</b> con dos caminos: <b>🚨 Alertas precio</b> (cuando un precio cambia, palpita en rojo hasta que pegues la etiqueta nueva) y <b>📋 LISTA PARA IMPRIMIR EN LOTE</b> (armas una <b>cola</b> de productos y el almacén imprime todos los membretes juntos).</p>',
+  done:'🏷 Góndola al día y lote en camino<br><span class="fnote">El almacén imprime el lote en su etiquetadora y te lo manda. Tú solo pegas.</span>',
+  steps:[
+   {ok:'alertas',say:'Cambió el precio de la panquita y <b>🚨 Alertas precio</b> está palpitando en ROJO. Tócalo.',
+    screen:'<div class="ltwrap"><div style="text-align:center"><b style="font-size:16px">🏷 MEMBRETES</b><div class="lnote">Membretes ME (góndola) impresos en almacén</div></div>'
+      +'<button class="lopt" data-act="x1" style="justify-content:center;background:linear-gradient(140deg,#10b981,#059669);color:#fff;border-color:transparent"><b>📋 LISTA PARA IMPRIMIR EN LOTE</b></button>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+      +'<button class="lopt" data-act="alertas" style="justify-content:center;background:linear-gradient(140deg,#ef4444,#b91c1c);color:#fff;border-color:#991b1b;position:relative;animation:pulse 1.2s infinite"><b>🚨 Alertas precio</b><span style="position:absolute;top:-8px;right:-6px;background:#fbbf24;color:#7f1d1d;font-size:10px;font-weight:900;border-radius:99px;min-width:20px;height:20px;display:grid;place-items:center;border:2px solid #fff">1</span></button>'
+      +'<button class="lopt" data-act="x2" style="justify-content:center;background:#fffbeb;border-color:#fcd34d;color:#b45309"><b>📋 Historial lotes</b></button>'
+      +'</div></div>',
+    no:'La cola es para pedir membretes nuevos. Lo urgente es la ALERTA roja: un precio cambió y la góndola miente.'},
+   {ok:'imprimir',say:'Ahí está: la panquita subió de S/ 1.00 a <b>S/ 1.10</b> hace 12 min. Toca <b>🖨 Imprimir</b> (se imprime en el ALMACÉN).',
+    screen:'<div class="ltwrap"><div><b style="font-size:15px">🏷 Etiquetas de precio</b><div class="lnote">1 pendiente(s) · pega en estantes</div></div>'
+      +'<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:14px;padding:12px">'
+      +'<b style="font-size:13px">SIBARITA PANQUITA 31.2GR</b>'
+      +'<div class="lnote" style="font-family:ui-monospace,monospace">7751851</div>'
+      +'<div style="display:flex;align-items:baseline;gap:8px;margin-top:4px"><span style="text-decoration:line-through;color:#94a3b8;font-size:12px">S/ 1.00</span><b style="color:#047857;font-size:18px">S/ 1.10</b></div>'
+      +'<div class="lnote" style="margin-top:3px">hace 12 min · estado: <b>PENDIENTE</b></div>'
+      +'<div style="display:flex;gap:8px;margin-top:9px">'
+      +'<button class="lopt" data-act="pegada0" style="flex:1;justify-content:center;background:#059669;color:#fff;border-color:transparent;padding:8px"><b>📌 Pegada</b></button>'
+      +'<button class="lopt" data-act="imprimir" style="flex:1;justify-content:center;padding:8px"><b>🖨 Imprimir</b></button>'
+      +'</div></div></div>',
+    no:'Todavía no la has pegado — primero imprime la etiqueta nueva. Ojo: sale en la etiquetadora del ALMACÉN, no en tu impresora.'},
+   {ok:'pegada',say:'El almacén imprimió la etiqueta y te la trajo. Ya la pegaste sobre el precio viejo: ahora sí, toca <b>📌 Pegada</b>.',
+    screen:'<div class="ltwrap"><div><b style="font-size:15px">🏷 Etiquetas de precio</b><div class="lnote">1 pendiente(s) · pega en estantes</div></div>'
+      +'<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:14px;padding:12px">'
+      +'<b style="font-size:13px">SIBARITA PANQUITA 31.2GR</b>'
+      +'<div style="display:flex;align-items:baseline;gap:8px;margin-top:4px"><span style="text-decoration:line-through;color:#94a3b8;font-size:12px">S/ 1.00</span><b style="color:#047857;font-size:18px">S/ 1.10</b></div>'
+      +'<div class="lnote" style="margin-top:3px">estado: <b>IMPRESA</b> ✓ (llegó del almacén)</div>'
+      +'<div style="display:flex;gap:8px;margin-top:9px">'
+      +'<button class="lopt" data-act="pegada" style="flex:1;justify-content:center;background:#059669;color:#fff;border-color:transparent;padding:8px"><b>📌 Pegada</b></button>'
+      +'<button class="lopt" data-act="x1" style="flex:1;justify-content:center;padding:8px"><b>Después</b></button>'
+      +'</div></div></div>',
+    no:'“Después” deja el estante mintiendo y al cliente reclamando en caja. Pégala y márcala ahora.'},
+   {ok:'cola',say:'Ahora la jefa pidió membretes para un producto nuevo. Abre <b>📋 LISTA PARA IMPRIMIR EN LOTE</b> (la cola).',
+    screen:'<div class="ltwrap"><div style="text-align:center"><b style="font-size:16px">🏷 MEMBRETES</b><div class="lnote">Membretes ME (góndola) impresos en almacén</div></div>'
+      +'<button class="lopt" data-act="cola" style="justify-content:center;background:linear-gradient(140deg,#10b981,#059669);color:#fff;border-color:transparent"><b>📋 LISTA PARA IMPRIMIR EN LOTE</b></button>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+      +'<button class="lopt" data-act="x1" style="justify-content:center;background:#fef2f2;border-color:#fecaca;color:#b91c1c"><b>🚨 Alertas precio</b></button>'
+      +'<button class="lopt" data-act="x2" style="justify-content:center;background:#fffbeb;border-color:#fcd34d;color:#b45309"><b>📋 Historial lotes</b></button>'
+      +'</div></div>',
+    no:'Las alertas ya quedaron al día. Ahora toca armar la cola del lote.'},
+   {ok:'agregar',say:'Esta es la <b>COLA MEMBRETES ME (góndola)</b>. Busca el producto y tócalo para <b>agregarlo a la cola</b>.',
+    screen:fhead('🏪 COLA MEMBRETES ME (góndola)','0 productos en cola')
+      +'<div style="background:#0a1424;border:1px solid #1e293b;border-radius:10px;padding:10px 12px;color:#64748b;font-size:12.5px">🔍 kero aloe<span style="opacity:.5">|</span></div>'
+      +'<div class="fnote">Sugerencias:</div>'
+      +fopt('agregar','🥤','KERO ALOE BEBIDA UVA 300ML','S/ 2.80 · toca para agregar a la cola')
+      +fopt('x1','🥤','KERO ALOE BEBIDA PIÑA 300ML','S/ 2.80 · este no es el que pidió la jefa'),
+    no:'La jefa pidió el de UVA. Fíjate bien en la sugerencia.'},
+   {ok:'lote',say:'¡En cola! Ahora toca <b>🖨 IMPRIMIR 1 MEMBRETE</b> — el lote viaja al almacén y su etiquetadora lo imprime.',
+    screen:fhead('🏪 COLA MEMBRETES ME (góndola)','1 productos en cola')
+      +'<div style="display:flex;align-items:center;gap:10px;background:rgba(15,23,42,.5);border:1px solid #1e293b;border-radius:10px;padding:10px 12px">'
+      +'<div style="flex:1;min-width:0"><div style="color:#f1f5f9;font-weight:700;font-size:13px">KERO ALOE BEBIDA UVA 300ML</div></div>'
+      +'<b style="color:#fbbf24;font-family:ui-monospace,monospace;font-size:15px">S/ 2.80</b>'
+      +'<span style="color:#fca5a5;border:1px solid rgba(248,113,113,.35);border-radius:6px;padding:2px 8px;font-size:13px">✕</span></div>'
+      +fopt('lote','🖨','IMPRIMIR 1 MEMBRETE','se imprime en el almacén y te lo mandan')
+      +fopt('x1','🚪','Cerrar','sin imprimir'),
+    no:'Si cierras sin imprimir, la cola se queda esperando y el producto sin membrete.'}
+  ]
+ },
+ 'tools-salida':{
+  top:'📤 ME · Guías · ↓ Salida',
+  why:'Cuando mandas productos a otra tienda o de vuelta al almacén, deben viajar CON guía: el stock sale de ti y entra al destino, todo cuadrado.',
+  body:'<p>En <b>Herramientas → Guías</b>, la pestaña <b>↓ Salida</b> tiene 3 tipos: <b>Salida a la jefa</b>, <b>Movimiento a otra zona</b> (eliges la tienda destino) y <b>Devolución al almacén</b>. Escaneas los productos, confirmas, y tu stock baja mientras el del destino sube.</p>',
+  done:'📤 Salida confirmada → TIENDA 2<br><span class="fnote">Tu stock bajó 2 sillaos y a TIENDA 2 le llegará el traslado automático. Todo cuadra.</span>',
+  steps:[
+   {ok:'mov',say:'TIENDA 2 se quedó sin sillao y tú tienes de sobra. En la pestaña <b>↓ Salida</b>, toca <b>Movimiento a otra zona</b>.',
+    screen:'<div style="display:flex;border-radius:10px;overflow:hidden;border:1px solid #223251"><span style="flex:1;text-align:center;padding:8px;background:#ef4444;color:#fff;font-weight:900;font-size:11px">↓ SALIDA</span><span style="flex:1;text-align:center;padding:8px;color:#7f93b4;font-weight:900;font-size:11px;background:#0d1526">↑ ENTRADA</span><span style="flex:1;text-align:center;padding:8px;color:#7f93b4;font-weight:900;font-size:11px;background:#0d1526">🕘 HISTORIAL</span></div>'
+      +fopt('x1','🧑‍💼','Salida a la jefa','entregarle mercadería a la jefa')
+      +fopt('mov','↔','Movimiento a otra zona','trasladar stock a otra tienda')
+      +fopt('x2','📦','Devolución al almacén','vencidos / dañados / sobrantes'),
+    no:'No es para la jefa ni una devolución: es un traslado entre tiendas → Movimiento a otra zona.'},
+   {ok:'z2',say:'Elige la <b>Zona destino</b>: TIENDA 2.',
+    screen:fhead('Zona destino')
+      +fopt('z2','🏬','TIENDA 2','les falta sillao')
+      +fopt('x1','🏬','TIENDA 3','ellos no pidieron nada'),
+    no:'El pedido vino de TIENDA 2.'},
+   {ok:'scan',say:'Escanea el sillao con la pistola (o teclea el código y toca <b>+</b>).',
+    screen:'<div style="display:flex;gap:8px"><div style="flex:1;background:#131f36;border:1px solid #223251;border-radius:12px;padding:11px 14px;color:#4a5b78;font-family:ui-monospace,monospace;letter-spacing:.12em">Código de barras...</div><div style="background:#f59e0b;border-radius:12px;color:#fff;font-weight:900;display:grid;place-items:center;padding:0 16px">+</div></div>'
+      +fopt('scan','🥫','SAN YAN SILLAO OSCURO 1.79LT','📷 escanear · × 2 unidades')
+      +fopt('x1','🧼','PATITO DETERGENTE 4KG','esto no lo pidieron'),
+    no:'El pedido fue sillao. Manda solo lo que pidieron.'},
+   {ok:'conf',say:'Revisa: <b>1 producto · 2 unid.</b> Toca el botón rojo <b>↓ Confirmar Salida</b>.',
+    screen:'<div style="display:flex;align-items:center;justify-content:space-between"><span style="color:#fbbf24;font-weight:900;font-size:11px;text-transform:uppercase;letter-spacing:.06em">1 producto</span><span class="fnote">2 unid.</span></div>'
+      +'<div style="display:flex;align-items:center;gap:10px;background:#131f36;border:1px solid #223251;border-radius:12px;padding:10px 12px"><span style="font-size:20px">🥫</span><div style="flex:1;min-width:0"><div style="color:#eaf1fb;font-weight:700;font-size:12.5px">SAN YAN SILLAO OSCURO 1.79LT</div><div class="fnote" style="font-family:ui-monospace,monospace">Stock: 8 → 6</div></div><b style="color:#fff">× 2</b></div>'
+      +fopt('conf','⬇','CONFIRMAR SALIDA (1 items)','sale de tu stock, entra al de TIENDA 2'),
+    no:'Revisa la lista y confirma con el botón rojo.'}
+  ]
+ },
+ 'tools-dev':{
+  top:'📦 ME · Guías · Devolución al almacén',
+  why:'Lo vencido o dañado no se vende ni se bota: se devuelve al almacén marcando el estado REAL y con foto obligatoria. Control de dos personas: tú envías, el almacén revisa y firma.',
+  body:'<p>Es un tipo de guía de salida: <b>Devolución al almacén</b>. Por cada producto marcas su <b>estado real</b> (buen estado / vencido / dañado) y si NO está bueno, la <b>foto es obligatoria</b>. El almacén recibe, revisa la evidencia y firma.</p>',
+  done:'📦 Devolución enviada al almacén<br><span class="fnote">Con estado real + foto. El almacén revisa y firma: nadie pierde, nada descuadra.</span>',
+  steps:[
+   {ok:'dev',say:'Encontraste una <b>leche vencida</b> en tu góndola. En <b>↓ Salida</b>, toca <b>Devolución al almacén</b>.',
+    screen:fhead('↓ Salida · ¿qué tipo?')
+      +fopt('x1','🧑‍💼','Salida a la jefa','no, la jefa no quiere leche vencida 😅')
+      +fopt('x2','↔','Movimiento a otra zona','¡mandarle lo vencido a otra tienda, jamás!')
+      +fopt('dev','📦','Devolución al almacén','vencidos / dañados · con evidencia'),
+    no:'Lo vencido NUNCA se vende ni se pasa a otra tienda: se devuelve al almacén con evidencia.'},
+   {ok:'venc',say:'Escaneaste la leche. Ahora marca su <b>estado real</b>. Sé honesto:',
+    screen:'<div style="background:linear-gradient(100deg,rgba(159,18,57,.35),rgba(180,83,9,.25));border:2px solid rgba(244,63,94,.4);border-radius:12px;padding:9px 12px;font-size:11.5px;color:#fda4af;font-weight:700">📦 Marca el estado real de cada producto · obligatorio adjuntar foto si NO es buen estado</div>'
+      +'<div style="background:#131f36;border:1px solid #223251;border-radius:12px;padding:10px 12px"><div style="color:#eaf1fb;font-weight:700;font-size:12.5px">🥛 LAIVE LECHE SIN LACTOSA 1LT</div><div class="fnote" style="font-family:ui-monospace,monospace">7756032 · venció ayer</div></div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px">'
+      +fopt('x1','🟢','Buen estado','…está vencida 👀').replace('class="fopt"','class="fopt" style="flex-direction:column;text-align:center;gap:3px;padding:10px 6px"')
+      +fopt('venc','⏰','Vencido','fecha pasada').replace('class="fopt"','class="fopt" style="flex-direction:column;text-align:center;gap:3px;padding:10px 6px"')
+      +fopt('x2','💔','Dañado','roto / aplastado').replace('class="fopt"','class="fopt" style="flex-direction:column;text-align:center;gap:3px;padding:10px 6px"')
+      +'</div>',
+    no:'Está VENCIDA. Marcar otra cosa engaña al almacén y te descuadra a ti. El estado real, siempre.'},
+   {ok:'foto',say:'Como NO está en buen estado, la <b>foto es obligatoria</b>. Toca <b>📷 Foto obligatoria</b> y toma la fecha de vencimiento.',
+    screen:'<div style="background:#131f36;border:2px solid rgba(244,63,94,.4);border-radius:12px;padding:10px 12px"><div style="color:#eaf1fb;font-weight:700;font-size:12.5px">🥛 LAIVE LECHE SIN LACTOSA 1LT</div><div class="fnote">estado: <b style="color:#fda4af">⏰ VENCIDO</b></div></div>'
+      +fopt('foto','📷','Foto obligatoria','toma la fecha de vencimiento'),
+    no:'Sin foto no hay evidencia — y sin evidencia la devolución no camina.'},
+   {ok:'enviar',say:'<b>✓ Foto OK.</b> Ahora toca <b>📦 Enviar al almacén</b> — ellos revisan y firman.',
+    screen:'<div style="background:#131f36;border:1px solid #223251;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px"><div style="width:38px;height:38px;border-radius:9px;background:#0a1424;display:grid;place-items:center;font-size:18px;border:1px solid rgba(52,211,153,.5)">📷</div><div style="flex:1"><div style="color:#eaf1fb;font-weight:700;font-size:12.5px">🥛 LAIVE LECHE 1LT · ⏰ vencida</div><div style="color:#6ee7b7;font-size:11px;font-weight:800">✓ Foto OK</div></div></div>'
+      +fopt('enviar','📦','ENVIAR AL ALMACÉN (1 items)','control de dos personas: ellos revisan y firman'),
+    no:'Ya está todo listo: envíala.'}
+  ]
+ },
+ 'tools-horario':{
+  top:'⏰ ME · Fuera de horario',
+  why:'Cuando la tienda cierra su horario, ME se bloquea solo con un candado. Si de verdad necesitas seguir, pides 1 hora extra — el admin aprueba desde su MOS. Nada se fuerza.',
+  body:'<p>Fuera del horario aparece la <b>pantalla de bloqueo con candado</b>. Tocándolo puedes pedir <b>1 hora extra para este equipo</b>: la solicitud le llega al admin (puede aprobar en persona o a distancia desde su celular) y la pantalla se desbloquea sola. Mientras tanto, sigue bloqueada — y no, <b>F5 ya no la salta</b>.</p>',
+  done:'⏰ Permiso bien usado<br><span class="fnote">1 hora extra para este equipo, autorizada y registrada. Así se hace.</span>',
+  steps:[
+   {ok:'lock',say:'Son las 11:00 pm y ME se bloqueó 🌙. Toca el <b>candado</b> para ver tus opciones.',
+    screen:'<div style="text-align:center;padding:6px 0 2px;font-size:38px">🌙</div>'
+      +'<div class="fnote" style="text-align:center;margin-bottom:4px">Tienda cerrada · fuera de horario</div>'
+      +fopt('lock','🔒','Pantalla bloqueada','toca el candado para ver opciones')},
+   {ok:'pedir',say:'Necesitas cobrar una última venta. ¿Cómo entras?',
+    screen:fhead('¿Qué haces?')
+      +fopt('pedir','🙏','Pedir 1 hora extra a este equipo','le llega al admin · aprueba in-situ o desde su celular')
+      +fopt('x1','🔄','Apretar F5 mil veces','a ver si se abre solito')
+      +fopt('x2','🔌','Desenchufar y enchufar','la técnica de la abuelita'),
+    no:'F5 ya no salta el bloqueo (eso se arregló 😉). El camino correcto es pedir la hora extra.'},
+   {ok:'',say:'Solicitud enviada 📨… el admin la está viendo en su MOS. La pantalla sigue bloqueada mientras tanto…',
+    screen:'<div class="fdone" style="color:#fbbf24">⏳ Esperando aprobación del admin…<br><span class="fnote">puede aprobar en persona o a distancia</span></div>',
+    auto:1800},
+   {ok:'go',say:'✅ ¡El admin aprobó! Este equipo tiene <b>1 hora extra</b>. Toca <b>ENTRAR</b>.',
+    screen:fhead('Permiso concedido','1 hora extra a este equipo')
+      +fopt('go','🔓','ENTRAR','quedó registrado quién y cuándo')}
+  ]
+ }
+};
+
+function renderFlow(l){
+  var cfg=FLOWS[l.id];
+  return '<div class="lead"><div class="eyebrow">'+l.mod.ico+' '+l.mod.t+'</div><h1>'+l.t+'</h1></div>'
+    +'<div class="why"><span>💡</span><div><b>¿Por qué importa?</b> '+cfg.why+'</div></div>'
+    +'<div class="body">'+cfg.body+'</div>'
+    + tipHtml(l.id)
+    +'<div class="mission" id="mission">'+cab(30)+'<span class="mt" id="mt">…</span><span class="prog" id="mp"></span></div>'
+    +'<div class="simwrap"><div class="sim-top">'+cfg.top+'</div><div id="fbox"></div></div>'
+    +footNav();
+}
+var fsim={step:0,cfg:null,lid:null,tok:0};
+function initFlow(l){
+  fsim={step:0,cfg:FLOWS[l.id],lid:l.id,tok:fsim.tok+1};
+  var box=$('#fbox');
+  if(box&&!box._b){ box._b=1; box.addEventListener('click',function(e){
+    var b=e.target.closest('[data-act]'); if(!b)return;
+    var st=fsim.cfg&&fsim.cfg.steps[fsim.step]; if(!st||st.auto)return;
+    if(b.getAttribute('data-act')===st.ok){ SFX.ok(); advFlow(); }
+    else{ SFX.bad(); b.classList.add('bad'); setTimeout(function(){b.classList.remove('bad')},420);
+      var mt=$('#mt'); if(mt){ mt.innerHTML='🐾 '+(st.no||'Ese no… fíjate en lo que brilla dorado.'); speak(st.no||'Ese no. Fíjate en lo que brilla.'); } }
+  }); }
+  paintFlow();
+}
+function advFlow(){
+  fsim.step++;
+  if(fsim.step>=fsim.cfg.steps.length){
+    var mt=$('#mt'),mp=$('#mp');
+    if(mt)mt.innerHTML='✅ ¡Misión cumplida! Dale a <b>Siguiente</b>.'; if(mp)mp.textContent='';
+    var fb=$('#fbox'); if(fb&&fsim.cfg.done) fb.innerHTML='<div class="fdone">'+fsim.cfg.done+'</div>';
+    completeSim(); return;
+  }
+  paintFlow();
+}
+function paintFlow(){
+  var st=fsim.cfg.steps[fsim.step], mt=$('#mt'),mp=$('#mp'),fb=$('#fbox');
+  if(mt)mt.innerHTML=st.say; if(mp)mp.textContent=(fsim.step+1)+' / '+fsim.cfg.steps.length;
+  if(fb)fb.innerHTML='<div class="fscr">'+st.screen+'</div>';
+  if(st.ok){ var okEl=document.querySelector('#fbox [data-act="'+st.ok+'"]'); if(okEl)okEl.classList.add('hl'); }
+  cabBounce();
+  speak(st.say);
+  if(st.auto){ var tok=fsim.tok, s=fsim.step, lid=fsim.lid;
+    setTimeout(function(){ if(fsim.tok===tok&&fsim.step===s&&FLAT[idx(current)].id===lid){ SFX.ok(); advFlow(); } }, st.auto); }
+}
+
+/* ======================= EXAMEN FINAL ======================= */
+var EXAMQ=[
+ {q:'Llegas a tu turno. ¿Qué es lo PRIMERO que haces en ME?',
+  opts:['Abrir caja: mi nombre, mi zona y el monto de apertura','Empezar a cobrar de una','Imprimir adhesivos de góndola'],a:0,
+  tip:'Sin caja abierta ME no cobra. Primero te registras tú.'},
+ {q:'Un producto dice “S/ 12.00/kg” y el cliente pide un cuarto. ¿Qué haces?',
+  opts:['Calculo el precio de memoria','Le cobro el kilo entero','Lo peso en la balanza y pongo los gramos: ME calcula solo'],a:2,
+  tip:'Granel = la balanza manda. Tú pones los gramos, ME hace la cuenta.'},
+ {q:'La boleta salió manchada y el cliente pide otra. ¿Qué haces?',
+  opts:['Cobro de nuevo para que salga otra','Abro el ticket y toco Reimprimir: sale copia SIN cobrar','Le digo que no se puede'],a:1,
+  tip:'Reimprimir saca otra copia sin volver a cobrar. Nunca cobres dos veces.'},
+ {q:'El puntito de la impresora está 🔴 rojo. ¿Qué significa?',
+  opts:['Que la caja está cerrada','Que está apagada o sin conexión: la reviso o cambio de impresora','Que está lista para imprimir'],a:1,
+  tip:'Rojo = apagada o sin red. Verde = lista. Míralo antes de vender.'},
+ {q:'Encuentras 3 yogures vencidos en tu góndola. ¿Qué haces?',
+  opts:['Los vendo con descuento','Los boto sin avisar','Devolución al almacén: estado real (vencido) + foto obligatoria'],a:2,
+  tip:'Vencido se devuelve marcando el estado real y con foto. Ni se vende ni se bota sin registrar.'},
+ {q:'Cambió un precio y la góndola quedó desactualizada. ¿Dónde sale la etiqueta nueva?',
+  opts:['En mi impresora de tickets','En la etiquetadora del ALMACÉN: me la mandan y yo la pego','La escribo a mano con plumón'],a:1,
+  tip:'Los membretes se imprimen en el almacén. Tú la pegas y la marcas 📌 Pegada en Alertas precio.'},
+ {q:'Son las 11 pm, ME está bloqueado y falta cobrar una venta. ¿Qué haces?',
+  opts:['Toco el candado y pido permiso de 1 hora al admin','Aprieto F5 hasta que abra','Uso la caja de otra zona'],a:0,
+  tip:'El bloqueo no se fuerza: se pide permiso y el admin aprueba desde su celular.'}
+];
+function renderExam(l){
+  return '<div class="lead"><div class="eyebrow">🎓 Examen final</div><h1>'+l.t+'</h1></div>'
+    +'<div class="why"><span>💡</span><div><b>¿Por qué importa?</b> Son '+EXAMQ.length+' situaciones reales de un día en caja. Respóndelas bien y el diploma es tuyo.</div></div>'
+    +'<div class="coach">'+cab(46)+'<div class="msg" id="excoach">…</div></div>'
+    +'<div class="quiz" id="exbox" style="margin-bottom:12px"></div>'
+    +footNav();
+}
+var ex={i:0,lock:0};
+function initExam(l){
+  if(isDone(l.id)){ paintExamDone(); return; }
+  ex={i:0,lock:0}; paintExamQ();
+}
+function paintExamQ(){
+  ex.lock=0;
+  var q=EXAMQ[ex.i];
+  var ec=$('#excoach'); if(ec) ec.innerHTML='Pregunta <b>'+(ex.i+1)+' de '+EXAMQ.length+'</b> — tranquilo, esto ya lo practicaste. <button class="tipspk" data-say="'+encodeURIComponent(q.q)+'" title="Escuchar la pregunta">🔊 Repetir</button>';
+  $('#exbox').innerHTML='<div class="qq">'+q.q+'</div><div class="opts">'
+    +q.opts.map(function(o,k){return '<button class="opt" data-ex="'+k+'"><span class="k">'+String.fromCharCode(65+k)+'</span><span>'+o+'</span></button>'}).join('')
+    +'</div><div id="qtip" style="margin-top:12px;color:var(--ink2);font-size:13.5px;min-height:18px"></div>';
+  speak(q.q);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ex]'),function(el){
+    el.addEventListener('click',function(){
+      if(ex.lock)return;
+      var k=+el.getAttribute('data-ex'), q2=EXAMQ[ex.i];
+      if(k===q2.a){ ex.lock=1; el.classList.add('good'); SFX.ok(); $('#qtip').innerHTML='✅ '+q2.tip; speak(q2.tip);
+        setTimeout(function(){ ex.i++; if(ex.i>=EXAMQ.length){ completeSim(); paintExamDone(); } else paintExamQ(); },1300);
+      } else { el.classList.add('bad'); SFX.bad(); $('#qtip').innerHTML='🐾 Casi… recuerda lo que practicaste hoy.'; setTimeout(function(){el.classList.remove('bad')},420); }
+    });
+  });
+}
+function paintExamDone(){
+  var ec=$('#excoach'); if(ec) ec.innerHTML='<b>¡Aprobaste el examen!</b> 🎉 ¡Guau guau! Ve por tu diploma con <b>Siguiente</b>.';
+  var eb=$('#exbox'); if(eb) eb.innerHTML='<div style="text-align:center;padding:26px 10px">'
+    +'<div style="font-size:52px">🏆</div>'
+    +'<div style="font-weight:900;font-size:20px;margin:8px 0 4px">'+EXAMQ.length+' de '+EXAMQ.length+'</div>'
+    +'<div style="color:var(--ink2);font-size:14px">Dominas el día 1 de caja. Cabanossi está orgulloso de ti.</div></div>';
+}
+
+/* ---------- DIPLOMA ---------- */
+function renderDiploma(l){
+  var doneCount=FLAT.filter(function(f){return f.kind!=='diploma'&&isDone(f.id)}).length;
+  var totalLes=FLAT.filter(function(f){return f.kind!=='diploma'}).length;
+  var full=doneCount>=totalLes;
+  if(full && !isDone(l.id)){ ST.done[l.id]=1; ST.xp+=100; save(); }
+  return '<div class="diploma"><div class="seal">'+(full?'🏆':'🎓')+'</div>'
+    +(full?'<div style="margin:4px 0 2px">'+cabFull(180)+'</div>':'')
+    +(full? '<div class="eyebrow" style="margin:0 auto">Capacitación completada</div>'
+           +'<h1 style="font-size:clamp(24px,5vw,34px);margin:14px 0 8px">¡Felicidades, ya eres cajero ME!</h1>'
+           +'<p style="color:var(--ink2);max-width:46ch;margin:0 auto">Completaste las <b>'+totalLes+' lecciones</b> y ganaste <b>⭐ '+ST.xp+' XP</b>. Sabes vender, cobrar, manejar la caja, la impresora y el almacén. 🐶💚</p>'
+           +'<div class="statgrid" style="max-width:420px;margin:22px auto"><div class="stat"><div class="v">✅ '+totalLes+'</div><div class="k">lecciones</div></div><div class="stat"><div class="v tnum">⭐ '+ST.xp+'</div><div class="k">XP total</div></div><div class="stat"><div class="v">100%</div><div class="k">completado</div></div></div>'
+           +'<button class="btn ghost" id="reset" style="margin-top:6px">↺ Reiniciar capacitación</button>'
+        : '<h1>Casi lo logras 💪</h1><p style="color:var(--ink2);max-width:40ch;margin:8px auto">Te faltan <b>'+(totalLes-doneCount)+' lección(es)</b>. Vuelve al mapa de la izquierda y completa las que tienen 🔒. ¡Tú puedes!</p>')
+    +'</div>';
+}
+
+/* ---------- boot ---------- */
+function afterRenderRoot(){ afterRender();
+  var r=$('#reset'); if(r) r.addEventListener('click',function(){ ST={xp:0,done:{}}; save(); current=FLAT[0].id; renderAll(); });
+}
+var _renderAll=renderAll; renderAll=function(){ save(); renderSide(); $('#stage').innerHTML=renderStage(); afterRenderRoot(); bindFoot(); renderXP(); };
+
+/* theme */
+(function(){var b=$('#themeBtn');function cur(){return document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}
+ function set(t){document.documentElement.setAttribute('data-theme',t);b.textContent=t==='dark'?'🌙':'☀️'}
+ set(cur()); b.addEventListener('click',function(){set(cur()==='dark'?'light':'dark')});})();
+
+/* toggles sonido + voz */
+(function(){
+  var sb=$('#soundBtn'), vb=$('#voiceBtn');
+  function paint(){ sb.textContent=SND.on?'🔊':'🔇'; sb.style.opacity=SND.on?'1':'.5';
+    vb.textContent=VOZ.on?'🗣️':'🤐'; vb.style.opacity=VOZ.on?'1':'.5'; }
+  paint();
+  sb.addEventListener('click',function(){ SND.on=!SND.on; try{localStorage.setItem('me_ac_snd',SND.on?'1':'0')}catch(e){} if(SND.on)SFX.coin(); paint(); });
+  vb.addEventListener('click',function(){ VOZ.on=!VOZ.on; try{localStorage.setItem('me_ac_voz',VOZ.on?'1':'0')}catch(e){} if(!VOZ.on)stopSpeak(); else speak('Hola, soy Cabanossi. Te voy a ir diciendo qué hacer.'); paint(); });
+  // desbloquear audio en el primer toque (política de autoplay)
+  var unlock=function(){ ac(); document.removeEventListener('pointerdown',unlock); };
+  document.addEventListener('pointerdown',unlock);
+  // cargar voces (algunos navegadores las traen async)
+  if('speechSynthesis'in window){ try{speechSynthesis.getVoices();}catch(e){} speechSynthesis.onvoiceschanged=function(){}; }
+  // botones "escuchar" de los tips/preguntas (delegación global)
+  document.addEventListener('click',function(e){ var b=e.target.closest('.tipspk'); if(!b)return; e.stopPropagation();
+    if(b.hasAttribute('data-tip')) speak(stripSpeak(TIPS[b.getAttribute('data-tip')]||''));
+    else if(b.hasAttribute('data-say')) speak(decodeURIComponent(b.getAttribute('data-say')));
+  });
+})();
+
+renderAll();
+})();
+</script>

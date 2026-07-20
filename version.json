@@ -1,1 +1,1 @@
-{"version": "2.8.230", "build": "2.8.230 repin seguridad: FIX la extensión aprobada no desbloqueaba (401 del polling → grant anon SQL 537) + buzón rediseñado."}
+{"version": "2.8.231", "build": "2.8.231 ME Academy: curso-simulador de capacitación (Cabanossi) — botón en Herramientas + acceso en el wizard de inicio; academy.html precacheado."}

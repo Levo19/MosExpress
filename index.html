@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.230';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.231';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3402,6 +3402,11 @@
               </button>
               <p class="text-[10px] text-sky-600 text-center mt-1.5 font-semibold">Elige a tu compañero conectado, sin abrir otra caja</p>
             </div>
+            <!-- [Academy] Curso-simulador para cajeros nuevos (Cabanossi). Página estática aparte: no toca ventas ni stock. -->
+            <a href="academy.html" target="_blank" rel="noopener"
+               class="block mt-3 text-center text-xs font-black text-emerald-600 hover:text-emerald-700 active:scale-95 transition-transform">
+              🎓 ¿Primera vez? Practica con ME Academy →
+            </a>
           </div>
 
           <!-- ═══ PASO 2 · ZONA = TIENDA VIVA (fusiona zona + rol + monto) ═══ -->
@@ -4229,6 +4234,19 @@
                          class="w-full bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2">
                     📇 IMPRIMIR TARJETA
                  </button>
+
+                 <hr class="w-full border-gray-200" style="margin-top: 2rem; margin-bottom: 2rem;">
+
+                 <!-- [Academy] Curso-simulador de capacitación (Cabanossi). Página estática aparte: no toca ventas ni stock. -->
+                 <div class="text-center">
+                    <h2 class="text-2xl font-black text-gray-800">🎓 CAPACITACIÓN</h2>
+                    <p class="text-sm text-gray-500 font-bold mt-1">ME Academy: practica ventas, caja, membretes y guías en un simulador seguro — nada real se toca</p>
+                 </div>
+                 <button onclick="window.open('academy.html','_blank','noopener')"
+                         class="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2">
+                    📚 ABRIR ME ACADEMY
+                 </button>
+                 <p class="text-xs text-gray-400 text-center mt-2">Con Cabanossi 🐶 · gana estrellas y tu diploma</p>
 
                  <!-- [Mensajería] ENVIAR AVISO — solo admin/master (rol + PIN) -->
                  <template v-if="esAdminME">
@@ -13350,7 +13368,8 @@
             pasos: [
                 { emoji: '👤', texto: 'Toca tu carita si ya entraste antes, o tipea tu nombre. La app recuerda los últimos 5 usuarios.' },
                 { emoji: '🏪', texto: 'Cada tienda muestra quién está dentro: el 👑 cajero destacado y los vendedores. Toca "+ Vendedor" para sumarte. Solo puede haber 1 cajero por tienda.' },
-                { emoji: '🖨', texto: 'Elige tu caja: el puntito te dice si la impresora está 🟢 lista o 🔴 apagada. Al tocarla, ¡tu turno arranca!' }
+                { emoji: '🖨', texto: 'Elige tu caja: el puntito te dice si la impresora está 🟢 lista o 🔴 apagada. Al tocarla, ¡tu turno arranca!' },
+                { emoji: '🎓', texto: '¿Primera vez? Abajo tienes ME Academy: un curso-simulador con Cabanossi donde practicas ventas, caja y guías sin miedo — nada real se toca. También vive en Herramientas.' }
             ]
         });
         // [v2.8.13] Flag versionado: al rediseñar el wizard (4→3 pasos) los
