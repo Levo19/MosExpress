@@ -437,7 +437,7 @@
   /* ===== Carga de datos: 1 sola llamada al endpoint liviano ===== */
   function cargarData() {
     setLoadingMsg('Conectando con MosExpress...');
-    xhrGet(API_URL + '?accion=radio_productos', function (res) {
+    xhrGet(API_URL, function (res) {
       PRODUCTOS  = res.productos  || [];
       PLAYLISTS  = res.playlists  || [];
       TICKER     = res.ticker     || [];
@@ -459,7 +459,7 @@
 
   /* ===== Recarga periódica de datos (sin reconstruir intervalos) ===== */
   function refrescarData() {
-    xhrGet(API_URL + '?accion=radio_productos', function (res) {
+    xhrGet(API_URL, function (res) {
       if (res.productos && res.productos.length) PRODUCTOS = res.productos;
       if (res.playlists && res.playlists.length) PLAYLISTS = res.playlists;
       if (res.ticker && res.ticker.length) { TICKER = res.ticker; renderTicker(); }

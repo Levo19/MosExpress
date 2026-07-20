@@ -1,1 +1,1 @@
-{"version": "2.8.228", "build": "2.8.228 repin membrete-modal (confirm() nativos → modal propio del asset)."}
+{"version": "2.8.229", "build": "2.8.229 fix radio: los xhrGet anexaban ?accion= a la URL Supabase que ya lleva ?apikey= (el segundo ? corrompía la key → 401 → caía a mocks). Ahora GET limpio al RPC."}
