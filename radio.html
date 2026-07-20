@@ -379,7 +379,11 @@
 (function () {
   'use strict';
 
-  var API_URL = 'https://script.google.com/macros/s/AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ/exec';
+  // [CERO-GAS 2026-07-19 · SQL 536] Endpoint 100% Supabase: RPC public.radio_productos()
+  // (wrapper de me.radio_productos: canónicos V4 + me.radio_ventas + tabla me.radio_config).
+  // GET con apikey anon en query — sin headers, compatible con el xhrGet ES5 de SmartTV.
+  var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+  var API_URL = 'https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/radio_productos?apikey=' + SB_ANON;
 
   /* ===== Categorías: gradiente + emoji para productos sin foto ===== */
   var CATEGORIAS = {

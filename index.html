@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.226';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.227';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -65,7 +65,7 @@
           if (document.getElementById('_meCdnFail')) return;
           var f = document.createElement('div'); f.id = '_meCdnFail';
           f.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
-          f.innerHTML = '<div style="font-size:64px">📶</div><h2 style="margin:10px 0 6px;font-size:20px">No se pudo cargar la app</h2><p style="color:#94a3b8;max-width:420px;margin:0 0 20px;font-size:14px;line-height:1.5">Revisá tu conexión a internet y tocá Reintentar. (Tus datos y sesión están a salvo.)</p><button onclick="try{sessionStorage.removeItem(\'_meAutoHeal\')}catch(e){};location.reload()" style="padding:12px 24px;border-radius:12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;border:0;font-size:15px">🔄 Reintentar</button>';
+          f.innerHTML = '<div style="font-size:64px">📶</div><h2 style="margin:10px 0 6px;font-size:20px">No se pudo cargar la app</h2><p style="color:#94a3b8;max-width:420px;margin:0 0 20px;font-size:14px;line-height:1.5">Revisa tu conexión a internet y toca Reintentar. (Tus datos y sesión están a salvo.)</p><button onclick="try{sessionStorage.removeItem(\'_meAutoHeal\')}catch(e){};location.reload()" style="padding:12px 24px;border-radius:12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;border:0;font-size:15px">🔄 Reintentar</button>';
           document.documentElement.appendChild(f);
         } catch (e) {}
       }, 3500);
@@ -2161,7 +2161,7 @@
   <div id="mePermsOverlay" class="me-perms-overlay">
     <div class="me-perms-modal">
       <div class="me-perms-emoji">🛡</div>
-      <p class="me-perms-title">Configurá tus permisos</p>
+      <p class="me-perms-title">Configura tus permisos</p>
       <p class="me-perms-sub">Para que MOSexpress funcione al 100% necesitamos algunos accesos. Solo te pido lo que falta.</p>
 
       <div class="me-perm-card" data-perm="notifications">
@@ -2419,7 +2419,7 @@
               _meAudioOK = true;
             } catch(_){}
           }
-          // Auto-marcar OK si el navegador permitió beep/speak. Antes usábamos
+          // Auto-marcar OK si el navegador permitió beep/speak. Antes usabamos
           // confirm() pero en algunas PWAs no aparece → wizard atascado.
           if (_meAudioOK) {
             try {
@@ -3274,7 +3274,7 @@
         <div class="text-center mb-4">
           <div class="text-5xl mb-2">🔐</div>
           <h3 class="text-xl font-black text-white">Autorización admin</h3>
-          <p class="text-amber-200 text-xs mt-1">Ingresá tu clave de 8 dígitos (4 global + 4 personal)</p>
+          <p class="text-amber-200 text-xs mt-1">Ingresa tu clave de 8 dígitos (4 global + 4 personal)</p>
         </div>
         <div class="bg-slate-950/60 rounded-xl p-3 mb-4 text-xs space-y-1 border border-slate-700">
           <div class="flex justify-between"><span class="text-slate-400">Cajero</span><span class="text-white font-bold">{{ cajaDetectadaBackend?.vendedor }}</span></div>
@@ -3394,23 +3394,23 @@
             <p v-if="!dbCargada" class="text-[10px] text-gray-400 text-center mt-2 italic">
               El catálogo se descarga del servidor. Verifica tu conexión.
             </p>
-            <!-- [v2 avatar-tap] 2º equipo: lleva al Paso 2 y ahí tocás a tu compañero conectado -->
+            <!-- [v2 avatar-tap] 2º equipo: lleva al Paso 2 y ahí tocas a tu compañero conectado -->
             <div v-if="dbCargada" class="mt-4 pt-3 border-t border-gray-100">
               <button @click="wizEntrarModoExtension()"
                       class="w-full bg-gradient-to-br from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-black text-sm py-2.5 rounded-2xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
                 📲 Este es mi 2º equipo → escanear QR
               </button>
-              <p class="text-[10px] text-sky-600 text-center mt-1.5 font-semibold">Elegí a tu compañero conectado, sin abrir otra caja</p>
+              <p class="text-[10px] text-sky-600 text-center mt-1.5 font-semibold">Elige a tu compañero conectado, sin abrir otra caja</p>
             </div>
           </div>
 
           <!-- ═══ PASO 2 · ZONA = TIENDA VIVA (fusiona zona + rol + monto) ═══ -->
           <div v-else-if="wizStep === 2">
             <button @click="wizSalirModoExtension(); wizPrevStep()" class="text-xs text-gray-400 font-bold mb-3 active:scale-95">← Volver</button>
-            <!-- [v2 avatar-tap] Banner "modo 2º equipo": tocá a tu compañero conectado -->
+            <!-- [v2 avatar-tap] Banner "modo 2º equipo": toca a tu compañero conectado -->
             <div v-if="extModo" class="mb-3 p-3 rounded-2xl bg-gradient-to-br from-sky-50 to-sky-100 border-2 border-sky-300">
               <p class="text-[11px] font-black text-sky-700 flex items-center gap-1.5">🔗 Este es tu 2º equipo</p>
-              <p class="text-xs text-sky-800 font-semibold mt-0.5">Tocá el avatar de tu compañero <b>🟢 conectado</b> para atar este equipo a su sesión — sin abrir otra caja.</p>
+              <p class="text-xs text-sky-800 font-semibold mt-0.5">Toca el avatar de tu compañero <b>🟢 conectado</b> para atar este equipo a su sesión — sin abrir otra caja.</p>
             </div>
             <p v-else class="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">¿En qué tienda entras?</p>
 
@@ -5191,10 +5191,10 @@
               </div>
             </div>
             <div v-if="bancModal.esMixto" class="mt-2 text-[11px] text-amber-600">El pago es MIXTO (parte virtual, parte efectivo) — no se puede partir. Usa Bancarizar.</div>
-            <div v-else-if="bancModal.particion && bancModal.particion.requiereBancarizacion" class="mt-2 text-[11px] text-red-500">Hay un producto ≥ S/ {{ bancModal.limite }} por unidad — no baja del umbral. Usá Bancarizar.</div>
+            <div v-else-if="bancModal.particion && bancModal.particion.requiereBancarizacion" class="mt-2 text-[11px] text-red-500">Hay un producto ≥ S/ {{ bancModal.limite }} por unidad — no baja del umbral. Usa Bancarizar.</div>
             <div v-else-if="bancModal.particion && bancModal.particion.demasiados" class="mt-2 text-[11px] text-amber-600">Se necesitarían demasiados comprobantes — mejor bancarizar.</div>
           </button>
-          <p class="text-[11px] text-gray-400 text-center pt-1">Nada se emite hasta que elijas. Tocá ⟵ para volver al carrito.</p>
+          <p class="text-[11px] text-gray-400 text-center pt-1">Nada se emite hasta que elijas. Toca ⟵ para volver al carrito.</p>
         </div>
         <div v-else class="py-10 text-center">
           <svg class="animate-spin w-8 h-8 mx-auto text-indigo-500 mb-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
@@ -7602,7 +7602,7 @@
         // [v2.5.40] Chip impresora — estado live de la impresora de la estación
         // del usuario actual (cajero o vendedor). Polling 30s al endpoint bulk
         // `estado_impresoras` para detectar offline/online en vivo.
-        const meImpresoraEstado = ref({ state: 'checking', name: '', reason: 'Verificando estado...', lastPrintTs: 0 });
+        const meImpresoraEstado = ref({ state: 'checking', name: '', reason: 'Verificando estado...' });
         let _mePollImpresoraTimer = null;
         let _meEstadoPrevio = null;
 
@@ -7643,11 +7643,11 @@
             const pid = String(config.value?.estacion?.PrintNode_ID || '').trim();
             // [v2.5.41] No volver silenciosamente — mostrar motivo real en el chip
             if (!pid) {
-                meImpresoraEstado.value = { state: 'offline', name: '(sin asignar)', reason: 'Estación sin PrintNode_ID configurado', lastPrintTs: 0 };
+                meImpresoraEstado.value = { state: 'offline', name: '(sin asignar)', reason: 'Estación sin PrintNode_ID configurado' };
                 return;
             }
             if (!/^\d+$/.test(pid)) {
-                meImpresoraEstado.value = { state: 'offline', name: '#' + pid, reason: 'PrintNode_ID inválido: ' + pid, lastPrintTs: 0 };
+                meImpresoraEstado.value = { state: 'offline', name: '#' + pid, reason: 'PrintNode_ID inválido: ' + pid };
                 return;
             }
             if (offlineMode.value) {
@@ -7655,7 +7655,7 @@
                 return;
             }
             if (API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                meImpresoraEstado.value = { state: 'online', name: 'Mock', reason: 'Modo dev', lastPrintTs: 0 };
+                meImpresoraEstado.value = { state: 'online', name: 'Mock', reason: 'Modo dev' };
                 return;
             }
             try {
@@ -7692,8 +7692,7 @@
                 meImpresoraEstado.value = {
                     state: nuevoEstado,
                     name: p.name || ('#' + p.id),
-                    reason: p.reason || (p.online ? 'Lista para imprimir' : 'Apagada o sin red'),
-                    lastPrintTs: meImpresoraEstado.value.lastPrintTs || 0
+                    reason: p.reason || (p.online ? 'Lista para imprimir' : 'Apagada o sin red')
                 };
                 // Sonido en transición online↔offline (no en el primer poll)
                 if (previo && previo !== nuevoEstado) {
@@ -7741,36 +7740,7 @@
         };
 
         // Computed: icono, label, clase, nombre, razón, última impresión
-        const meImpresoraIcon = computed(() => {
-            const s = meImpresoraEstado.value.state;
-            if (s === 'online')   return '🟢';
-            if (s === 'busy')     return '🟡';
-            if (s === 'offline')  return '🔴';
-            return '⚪';
-        });
-        const meImpresoraEstadoLabel = computed(() => {
-            const s = meImpresoraEstado.value.state;
-            if (s === 'online')   return 'Online';
-            if (s === 'busy')     return 'Imprimiendo';
-            if (s === 'offline')  return 'Offline';
-            return 'Verificando';
-        });
-        const meImpresoraClass = computed(() => 'me-imp-' + meImpresoraEstado.value.state);
-        const meImpresoraNombre = computed(() => meImpresoraEstado.value.name || ('#' + (config.value?.estacion?.PrintNode_ID || '?')));
-        const meImpresoraReason = computed(() => meImpresoraEstado.value.reason || '');
-        const meImpresoraUltimaImpTexto = computed(() => {
-            const ts = meImpresoraEstado.value.lastPrintTs;
-            if (!ts) return '';
-            const min = Math.floor((Date.now() - ts) / 60000);
-            if (min < 1) return 'recién';
-            if (min < 60) return 'hace ' + min + 'min';
-            const h = Math.floor(min / 60);
-            return 'hace ' + h + 'h';
-        });
-        // Hook para registrar última impresión (cualquier print exitoso actualiza el ts)
-        const registrarUltimaImpresion = () => {
-            meImpresoraEstado.value = { ...meImpresoraEstado.value, lastPrintTs: Date.now() };
-        };
+        // [quirúrgico 2026-07-19] computeds meImpresora* eliminados: el modal rico usa meImpresoraEstado directo (0 refs en template).
 
         // ═══════════════════════════════════════════════════════════
         // [v2.5.40] MODAL CAMBIO DE IMPRESORA — solo misma zona + PIN admin
@@ -8032,19 +8002,7 @@
           } catch(e) { console.warn('[Etiq] cargar:', e); }
         }
 
-        async function abrirEtiqsModal() {
-          await cargarEtiqsPendientes();
-          etiqsModalAbierto.value = true;
-          // Marcar como vistas las que el user aún no había visto
-          const usr = config.value.vendedor || '';
-          if (usr) {
-            const noVistas = etiqsPendientes.value.filter(e => !e._vistoPorMi);
-            noVistas.forEach(e => {
-              _etiqMarcarSB({ accion: 'visto', idEtiq: e.idEtiq, usuario: usr }).catch(() => {});
-              e._vistoPorMi = true;
-            });
-          }
-        }
+        // [quirúrgico 2026-07-19] abrirEtiqsModal eliminado: el template abre con etiqsModalAbierto = true directo (0 refs).
 
         // [NIVEL 4 corte-GAS] Marcado de etiquetas 100% Supabase (mos.etiqueta_marcar, SQL 373). Sin GAS.
         const _etiqMarcarSB = async (body) => {
@@ -8161,8 +8119,6 @@
         const auditItems = ref([]); // registros auditados HOY por este usuario (más reciente primero)
         const auditBusq = ref('');
         const auditInputRefs = ref([]);
-        const procesandoAudit = ref(false);
-        const auditCargando = ref(false);
 
         // --- RELOJ HEADER ---
         const _fmtHora = () => { const n = new Date(); return n.getHours().toString().padStart(2,'0') + ':' + n.getMinutes().toString().padStart(2,'0'); };
@@ -8564,13 +8520,11 @@
             stockZonas.value.forEach(r => { m[r.Cod_Barras + '_' + r.Zona_ID] = parseFloat(r.Cantidad) || 0; });
             return m;
         });
-        const zonasUnicasStock = computed(() => [...new Set(stockZonas.value.map(r => r.Zona_ID))]);
         // Pendiente si el usuario activo no llegó a 30 hoy
         const auditPendiente = computed(() => {
             if (!config.value.vendedor || !config.value.completado) return false;
             return auditItems.value.length < 30;
         });
-        const auditConfirmados = computed(() => auditItems.value.length);
 
         // Filtro Historial de Caja
         const ventasHistorialFiltradas = computed(() => {
@@ -8606,22 +8560,8 @@
             const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
             return (fuente || []).filter(v => !v.anulada).length;
         });
-        const cantCobrosPendientesTurno = computed(() => {
-            return (cobrosAsignados.value || []).filter(c => !c.cobrado && !c._justPaid).length;
-        });
         // [v2.5.44] KPIs adicionales para mostrar en cards prominentes
-        const cantAnuladosTurno = computed(() => {
-            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
-            return (fuente || []).filter(v => v.anulada).length;
-        });
-        const cantPorCobrarTurno = computed(() => {
-            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
-            return (fuente || []).filter(v => !v.anulada && v.raw_data?.header?.metodo === 'POR_COBRAR').length;
-        });
-        const cantCreditoTurno = computed(() => {
-            const fuente = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
-            return (fuente || []).filter(v => !v.anulada && v.credito).length;
-        });
+        // [quirúrgico 2026-07-19] KPIs cant*Turno eliminados: tarjetas v2.5.44 rediseñadas, 0 refs en template.
         // Para los tabs modernos con conteo
         const conteoTodas = computed(() => {
             const f = config.value?.esCajero ? ventasZona.value : ventasHoy.value;
@@ -8911,7 +8851,7 @@
                     if (typeof Html5Qrcode === 'undefined') { resolve(null); return; }
                     var ov = document.createElement('div');
                     ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px';
-                    ov.innerHTML = '<div style="color:#fff;font-weight:800;margin-bottom:10px;font-size:15px">📷 Escaneá el código del producto</div>'
+                    ov.innerHTML = '<div style="color:#fff;font-weight:800;margin-bottom:10px;font-size:15px">📷 Escanea el código del producto</div>'
                       + '<div id="mbScanReader" style="width:92vw;max-width:380px;border-radius:12px;overflow:hidden"></div>'
                       + '<button id="mbScanCancel" style="margin-top:18px;padding:12px 28px;border-radius:10px;background:#1e293b;color:#fff;border:1px solid #334155;font-weight:800;font-size:15px">Cancelar</button>';
                     document.body.appendChild(ov);
@@ -9700,27 +9640,7 @@
         // (la activa es _verificarDispositivoRed, sin sufijo). Verificado por grep.
 
         // Polling para detectar aprobación cuando estamos en PENDIENTE_APROBACION
-        let _intervalAprobacion = null;
-        const _arrancarPollingAprobacion = () => {
-           if (_intervalAprobacion) return;
-           _intervalAprobacion = setInterval(async () => {
-               try {
-                   // [CERO-GAS] consultarEstadoDispositivo → RPC mos.consultar_estado_dispositivo (via DeviceAuth.rpc).
-                   const j = await DeviceAuth.rpc('consultar_estado_dispositivo', { deviceId: deviceId.value });
-                   if (j?.ok && j.data?.estado === 'ACTIVO') {
-                       clearInterval(_intervalAprobacion);
-                       _intervalAprobacion = null;
-                       dispositivoEstadoMos.value = 'ACTIVO';
-                       agregarToast('✅ Aprobado', 'El administrador autorizó el dispositivo. Recargando...', 'ok');
-                       setTimeout(() => location.reload(), 1500);
-                   } else if (j?.ok && j.data?.estado === 'INACTIVO') {
-                       clearInterval(_intervalAprobacion);
-                       _intervalAprobacion = null;
-                       dispositivoEstadoMos.value = 'INACTIVO';
-                   }
-               } catch(_) {}
-           }, 15 * 1000);
-        };
+        // [quirúrgico 2026-07-19] _arrancarPollingAprobacion eliminado: el polling de aprobación vive en device-auth.js (asset compartido), 0 callers.
 
         // [v2.7.53] In-situ admin: abre el modal del módulo centralizado para
         // que el admin presente apruebe con su clave 8 dígitos sin esperar al panel.
@@ -10050,7 +9970,7 @@
         async function bancElegirB() {                   // B = partir en N CPE (< límite c/u); cada uno cobra como está
             if (bancModal.value.emitiendo) return;        // [fix #2] guard de reentrada (anti doble-tap → doble emisión)
             if (bancModal.value.esMixto) {                // [fix 500x S6-#2] MIXTO no se parte → forzar Bancarizar
-                agregarToast('Pago MIXTO', 'No se puede partir un pago mixto. Usá Bancarizar (VIRTUAL).', 'warning');
+                agregarToast('Pago MIXTO', 'No se puede partir un pago mixto. Usa Bancarizar (VIRTUAL).', 'warning');
                 return;
             }
             const part = bancModal.value.particion;
@@ -10077,7 +9997,7 @@
                         carrito.value = faltan;
                         pago.value = JSON.parse(JSON.stringify(pagoSnap));
                         bancModal.value.emitiendo = false; bancModal.value.decidido = null; bancModal.value.abierto = false;
-                        agregarToast('⚠ Partición detenida', 'Se emitieron ' + emitidos + ' de ' + subs.length + ' comprobantes. El resto quedó en el carrito — revisá el motivo del rechazo y reintentá.', 'warning');
+                        agregarToast('⚠ Partición detenida', 'Se emitieron ' + emitidos + ' de ' + subs.length + ' comprobantes. El resto quedó en el carrito — revisa el motivo del rechazo y reintenta.', 'warning');
                         return;
                     }
                     emitidos++;
@@ -10088,7 +10008,7 @@
                 try { if (!offlineMode.value && !escrituraDirectaSupabase()) setTimeout(() => { try { _prereservaIniciar('NOTA_DE_VENTA'); } catch(_){} }, 0); } catch(_) {}
                 if (emitidos > 1) agregarToast('✓ Venta partida', emitidos + ' comprobantes emitidos, cada uno menor a S/ ' + bancModal.value.limite + '.');
             } catch (e) {
-                agregarToast('⚠ Error al partir', 'Se emitieron ' + emitidos + ' de ' + subs.length + '. Revisá y reintentá los faltantes desde el carrito.', 'warning');
+                agregarToast('⚠ Error al partir', 'Se emitieron ' + emitidos + ' de ' + subs.length + '. Revisa y reintenta los faltantes desde el carrito.', 'warning');
             } finally {
                 bancModal.value.emitiendo = false; bancModal.value.decidido = null;
             }
@@ -10573,6 +10493,7 @@
                                        motivo: /CAJA_NO_ABIERTA/.test(mD) ? 'CAJA_CERRADA_AL_SINCRONIZAR' : 'RECHAZO_VALIDACION',
                                        mensaje: mD, impreso: true });
                                    lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fant.slice(0, 50)));
+                                   _refrescarVentasFantasma();
                                    ventasFantasma.value = _fant.slice(0, 50);
                                } catch(_){}
                                try { playBeepError?.(); } catch(_){}
@@ -10634,6 +10555,7 @@
                                        motivo: /CAJA_NO_ABIERTA/.test(mX) ? 'CAJA_CERRADA_AL_SINCRONIZAR' : 'RECHAZO_VALIDACION',
                                        mensaje: mX, impreso: true });
                                    lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fant.slice(0, 50)));
+                                   _refrescarVentasFantasma();
                                    ventasFantasma.value = _fant.slice(0, 50);
                                } catch(_){}
                                lsSet('pending_sales', JSON.stringify(pendingSales.value));
@@ -10718,6 +10640,7 @@
                                    motivo: res.error === 'CAJA_NO_ABIERTA' ? 'CAJA_CERRADA_AL_SINCRONIZAR' : 'NO_CAJA_ACTIVA_EN_ZONA',
                                    mensaje: res.mensaje || res.error, impreso: true });
                                lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fg.slice(0, 50)));
+                               _refrescarVentasFantasma();
                                ventasFantasma.value = _fg.slice(0, 50);
                            } catch(_){}
                            try { playBeepError?.(); } catch(_){}
@@ -10990,7 +10913,6 @@
             }
         };
 
-        const toggleSound = () => { /* no-op: sonidos siempre activos por política */ };
 
         // [Lote4 · M11-FE] AudioContext SINGLETON compartido por todos los play* del POS.
         // Antes cada beep creaba un contexto nuevo sin close() → en iOS/Safari el límite
@@ -11506,7 +11428,7 @@
                 const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
                 if (!_esConDinero(m)) return;
                 _ticks++;
-                _total += parseFloat(v.total) || 0;
+                _total = _money(_total + (parseFloat(v.total) || 0));
             });
 
             // 2. STATS DE ZONA (suma colectiva de todos los vendedores de la zona, hoy)
@@ -11520,7 +11442,7 @@
                 if (v.anulada) return;
                 const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
                 if (!_esConDinero(m)) return;
-                _totalZona += parseFloat(v.total) || 0;
+                _totalZona = _money(_totalZona + (parseFloat(v.total) || 0));
             });
             // Si por algún motivo no hay polling (vendedor sin polling activo),
             // fallback al total personal para que la barra muestre algo en lugar de cero.
@@ -11964,27 +11886,7 @@
         }, { immediate: true });
 
         // ── Toggles persistentes ─────────────────────────────
-        const toggleWakeLock = () => {
-            idleConfig.value.wakeLockEnabled = !idleConfig.value.wakeLockEnabled;
-            localStorage.setItem('mosexpress_wakelock', idleConfig.value.wakeLockEnabled ? '1' : '0');
-            if (idleConfig.value.wakeLockEnabled && config.value.completado) _activarWakeLock();
-            else _liberarWakeLock();
-        };
-        const toggleSaver = () => {
-            idleConfig.value.saverEnabled = !idleConfig.value.saverEnabled;
-            localStorage.setItem('mosexpress_saver', idleConfig.value.saverEnabled ? '1' : '0');
-            _resetIdleTimer();
-        };
-        const setSaverMinutos = (m) => {
-            idleConfig.value.saverMinutos = parseInt(m, 10) || 2;
-            localStorage.setItem('mosexpress_saver_min', String(idleConfig.value.saverMinutos));
-            _resetIdleTimer();
-        };
-        const setMetaDiaria = (n) => {
-            const v = Math.max(0, parseFloat(String(n).replace(',', '.')) || 0);
-            idleConfig.value.metaDiaria = v;
-            localStorage.setItem('mosexpress_meta_diaria', String(v));
-        };
+        // [quirúrgico 2026-07-19] toggleWakeLock/toggleSaver/setSaverMinutos/setMetaDiaria eliminados: settings del salvapantalla sin UI (0 refs).
 
         const playWelcomeFanfare = () => {
             if (!soundEnabled.value) return;
@@ -12763,9 +12665,6 @@
             document.body.appendChild(bk);
             return bk;
         };
-        // [§9.1] odómetro: cada dígito entra con retardo escalonado (roll-in)
-        const _extCodeHtml = (code) => String(code == null ? '' : code).split('').map((d, i) =>
-            `<span style="animation-delay:${i * 0.09}s">${_extEsc(d)}</span>`).join(' ');
         // [§9.1] ráfaga de éxito sobre la card (al vincular)
         const _extBurst = (ov) => { try { const c = ov.querySelector('._extCard'); if (!c) return; const b = document.createElement('div'); b.className = '_extBurst'; c.appendChild(b); setTimeout(() => { try { b.remove(); } catch (e) {} }, 850); } catch (e) {} };
         // ── LADO SOLICITANTE (2º dispositivo): pide extensión y espera aprobación ──
@@ -12788,7 +12687,7 @@
                     } else if (res && res.ok && !res.needsApproval) {
                         agregarToast('Sin sesión para atar', nombre + ' no tiene una sesión activa hoy. Pedile que inicie sesión primero.', 'warning');
                     } else {
-                        agregarToast('No se pudo vincular', (res && res.error) || 'Error de conexión — reintentá.', 'error');
+                        agregarToast('No se pudo vincular', (res && res.error) || 'Error de conexión — reintenta.', 'error');
                     }
                 } catch(e) {} }
                 return;
@@ -12802,7 +12701,7 @@
                 <div style="text-align:center">
                     <div style="font-size:34px">📷</div>
                     <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">Conectando con ${_extEsc(nombre)}</div>
-                    <div style="color:#94a3b8;font-size:12px;margin-top:6px">En el equipo de <b style="color:#38bdf8">${_extEsc(nombre)}</b> tocá <b>“📲 Mostrar QR”</b>. La cámara se abre sola apenas aparezca.</div>
+                    <div style="color:#94a3b8;font-size:12px;margin-top:6px">En el equipo de <b style="color:#38bdf8">${_extEsc(nombre)}</b> toca <b>“📲 Mostrar QR”</b>. La cámara se abre sola apenas aparezca.</div>
                     <div style="margin:16px auto;width:40px;height:40px;border:3px solid #1e293b;border-top-color:#38bdf8;border-radius:50%;animation:_extSpin .8s linear infinite"></div>
                     <div style="color:#64748b;font-size:11px" id="_extWait">Esperando el QR…</div>
                     <button class="_extBtn _extBtnNo" id="_extCancel" style="margin-top:14px;width:100%">Cancelar</button>
@@ -12822,13 +12721,13 @@
                         _extEscanearQR(res.idReq, dev, ov);
                     }
                     else if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
-                    else if (st.estado === 'RECHAZADA' || st.estado === 'EXPIRADA' || st.estado === 'NO_ENCONTRADA') { _extHaptic([80]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = st.estado === 'EXPIRADA' ? 'Expiró — reintentá' : 'Rechazado'; w.style.color = '#ef4444'; } setTimeout(cerrar, 1400); }
+                    else if (st.estado === 'RECHAZADA' || st.estado === 'EXPIRADA' || st.estado === 'NO_ENCONTRADA') { _extHaptic([80]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = st.estado === 'EXPIRADA' ? 'Expiró — reintenta' : 'Rechazado'; w.style.color = '#ef4444'; } setTimeout(cerrar, 1400); }
                 } catch (e) { /* fail-safe */ }
             }, 1500);   // [fix QR-demora] 2.5s→1.5s: la cámara se abre más rápido apenas el principal emite el QR
             setTimeout(() => { if (!done) cerrar(); }, 130000);
         };
         // ── [v2 avatar-tap] MODO EXTENSIÓN en el Paso 2: el botón "2º equipo" lleva al Paso 2 (la MISMA
-        // vista de tiendas/avatares en vivo, sin modal aparte → no rompe el wizard). Ahí tocás a tu
+        // vista de tiendas/avatares en vivo, sin modal aparte → no rompe el wizard). Ahí tocas a tu
         // compañero CONECTADO para atar este equipo a su sesión (sin abrir otra caja). ──
         const extModo = ref(false);
         const wizEntrarModoExtension = () => {
@@ -12851,7 +12750,7 @@
                 if (card) card.innerHTML = `
                     <div class="_extBeamLine"></div>
                     <div style="text-align:center">
-                        <div style="font-weight:800;color:#e2e8f0;font-size:16px">📷 Escaneá el código</div>
+                        <div style="font-weight:800;color:#e2e8f0;font-size:16px">📷 Escanea el código</div>
                         <div style="color:#94a3b8;font-size:12px;margin:4px 0 10px">Apuntá al QR que muestra el equipo principal.</div>
                         <div id="_extCam" style="width:240px;height:240px;margin:0 auto;border-radius:14px;overflow:hidden;background:#0b1220"></div>
                         <div id="_extScanMsg" style="color:#64748b;font-size:11px;margin-top:8px">Buscando código…</div>
@@ -12876,7 +12775,7 @@
                             setTimeout(() => { try { ov.remove(); } catch (e) {} _extAplicarSesionExtension(r.data); }, 900);
                         } else {
                             canjeando = false;   // token rotó/venció → el principal ya emitió otro; seguir escaneando
-                            if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? 'Código vencido, apuntá otra vez…' : 'Reintentá el escaneo…'; msg.style.color = '#f59e0b'; }
+                            if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? 'Código vencido, apuntá otra vez…' : 'Reintenta el escaneo…'; msg.style.color = '#f59e0b'; }
                         }
                     } catch (e) { canjeando = false; }
                 }, () => { /* no-match frame, ignorar */ }).catch(() => { if (msg) { msg.textContent = 'Permití la cámara para escanear'; msg.style.color = '#ef4444'; } });
@@ -12908,7 +12807,7 @@
                 // llevar al paso de ESTACIÓN (impresora) del wizard — lo único editable de una extensión
                 // (puede elegir la MISMA impresora del principal u otra). Zona y rol se heredan (no editables).
                 try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch (e) {}
-                agregarToast('🔗 Extensión creada', 'Elegí tu impresora y listo · el equipo principal manda', 'success', 6000);
+                agregarToast('🔗 Extensión creada', 'Elige tu impresora y listo · el equipo principal manda', 'success', 6000);
             } catch (e) { /* fail-safe */ }
         };
         // ── LADO PRINCIPAL: detecta pedidos y muestra aprobar (hold-to-confirm) ──
@@ -13171,15 +13070,6 @@
             iniciarTurno();
         };
 
-        const wizSelectRol = (esCajero) => {
-            if (esCajero && wizardCajeroOcupado.value) {
-                wizBeep('error');
-                return;
-            }
-            wizBeep('tap');
-            configWizard.value.esCajero = !!esCajero;
-            if (!esCajero) configWizard.value.monto = 0;
-        };
 
         // ── Fast-track: continuar turno de hoy ──
         const wizFastTrack = () => {
@@ -14002,7 +13892,7 @@
             // una extensión cuya zona no matcheaba ZONAS_CONFIG llegaba acá con estacion=null y se persistía
             // config.completado=true + estacion=null → sesión a medio formar que derivaba en pantalla blanca.
             if (!configWizard.value.estacion || typeof configWizard.value.estacion !== 'object' || !configWizard.value.estacion.Estacion_Nombre) {
-                try { agregarToast('Elegí una caja', 'Falta seleccionar la impresora/caja para abrir el turno.', 'warning'); } catch(_){}
+                try { agregarToast('Elige una caja', 'Falta seleccionar la impresora/caja para abrir el turno.', 'warning'); } catch(_){}
                 try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch(_){}
                 return;
             }
@@ -14090,7 +13980,7 @@
                 if (!offlineMode.value && aperturaDirecto()) {
                     try {
                         const dAp = await _abrirCajaDirecto(payload);
-                        // Guard anti "sesión cajero fantasma": cerró sesión mientras esperábamos Supabase.
+                        // Guard anti "sesión cajero fantasma": cerró sesión mientras esperabamos Supabase.
                         if (!config.value.completado) {
                             // [Review R2 fix] cancelar la caja huérfana SOLO si la apertura CREÓ una caja nueva.
                             // Si fue DEDUP (mismo cajero ya tenía una caja ABIERTA hoy → me.abrir_caja devuelve esa
@@ -14402,7 +14292,7 @@
              cobradosEnSesion.value.forEach(c => {
                  if (!porVendedor[c.vendedor]) porVendedor[c.vendedor] = { tickets: 0, total: 0 };
                  porVendedor[c.vendedor].tickets++;
-                 porVendedor[c.vendedor].total += c.total;
+                 porVendedor[c.vendedor].total = _money(porVendedor[c.vendedor].total + c.total);
              });
 
              // --- Primer y último correlativo cobrado ---
@@ -16283,34 +16173,7 @@
             }, { accion: 'CAMBIO_METODO', refDocumento: venta.correlativo || venta.id });
         };
 
-        const revertirCobro = (venta) => {
-            pedirPin(async (_res) => {
-                if (!await _meModalConfirm(`¿Quitar cobro de ${venta.correlativo}?\n\nEl ticket pasará a SIN PAGAR.`, { warning: true, titulo: 'Quitar cobro', okText: 'Quitar' })) return;
-                // Actualizar local — splice fuerza reactividad inmediata en Vue
-                const idx = ventasZona.value.findIndex(v => v.id === venta.id);
-                if (idx !== -1) {
-                    const updated = { ...ventasZona.value[idx],
-                        cobrado: false, cobradoMetodo: 'POR_COBRAR',
-                        raw_data: { ...ventasZona.value[idx].raw_data,
-                            header: { ...ventasZona.value[idx].raw_data.header, metodo: 'POR_COBRAR' }
-                        }
-                    };
-                    ventasZona.value.splice(idx, 1, updated);
-                }
-                // Quitar de cobradosEnSesion
-                cobradosEnSesion.value = cobradosEnSesion.value.filter(c => c.id !== venta.id);
-                try { lsSet('mosexpress_cobrados_sesion', JSON.stringify(cobradosEnSesion.value)); } catch(_){}
-                _mutMarcar(venta.id);   // [Lote1-C] in-flight
-                // [Lote1-C · fix C1] Sincronizar VALIDANDO respuesta + cola si no hay red
-                if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI' && venta.id_venta_gas) {
-                    _enviarMutacionDinero(
-                        { tipoEvento: 'COBRAR_VENTA', idVenta: venta.id_venta_gas, metodo: 'POR_COBRAR', cajaId: idCajaActual.value, claveAdmin: _res.clave },
-                        venta.id, null /* rechazo → el poll reconverge al estado real */
-                    );
-                }
-                agregarToast('Cobro revertido', venta.correlativo + ' vuelve a Sin Pagar', 'warning');
-            }, { accion: 'REVERTIR_COBRO', refDocumento: venta.correlativo || venta.id });
-        };
+        // [quirúrgico 2026-07-19] revertirCobro eliminado: revertirCobroDesdeModal tiene la lógica completa (0 refs).
 
         // Versión desde modal Moneda: cierra el modal después del PIN+confirm
         const revertirCobroDesdeModal = (venta) => {
@@ -16786,22 +16649,6 @@
         // [v40.3] COBROS ASIGNADOS POR ADMIN — flow cajero
         // ════════════════════════════════════════════════════════
 
-        const _fmtFechaCorta = (iso) => {
-            if (!iso) return '—';
-            try {
-                // [v2.5.22] Coerción defensiva: si iso viene como Date u objeto,
-                // .replace no existe → TypeError → pantalla blanca al render del card.
-                const isoStr = String(iso);
-                const d = new Date(isoStr.replace(' ', 'T'));
-                if (isNaN(d.getTime())) return '—';
-                const ahora = new Date();
-                const min = Math.round((ahora - d) / 60000);
-                if (min < 1)   return 'recién';
-                if (min < 60)  return 'hace ' + min + ' min';
-                if (min < 1440) return 'hace ' + Math.floor(min/60) + ' h';
-                return 'hace ' + Math.floor(min/1440) + ' días';
-            } catch(_) { return '—'; }
-        };
 
         // Polling cobros asignados (cada 30s mientras caja abierta + cajero)
         // _primerPollCobros: en el primer poll después de abrir la app, los cobros
@@ -17302,7 +17149,7 @@
             //   fantasma que el cierre no vería).
             if (offlineMode.value) {
                 try { haptic([80]); } catch(_){}
-                agregarToast('📡 Sin conexión', 'No se puede registrar el movimiento extra ahora. Reintentá cuando vuelva la red.', 'warning');
+                agregarToast('📡 Sin conexión', 'No se puede registrar el movimiento extra ahora. Reintenta cuando vuelva la red.', 'warning');
                 procesandoExtra.value = false;
                 return;
             }
@@ -17311,7 +17158,7 @@
             } catch (eD) {
                 console.warn('[mov extra] el server no confirmó:', eD && eD.message);
                 try { haptic([80, 40, 80]); } catch(_){}
-                agregarToast('⚠ Extra NO registrado', 'El servidor no confirmó el movimiento. Revisá la conexión y reintentá.', 'error');
+                agregarToast('⚠ Extra NO registrado', 'El servidor no confirmó el movimiento. Revisa la conexión y reintenta.', 'error');
                 procesandoExtra.value = false;
                 return;   // no cerrar modal · no push optimista → el usuario reintenta
             }
@@ -17350,7 +17197,7 @@
             catch(_) { return _serverFlags[serverKey] === '1'; }
         };
         // [Fase 2] ¿lectura directa a Supabase activada? server (ME_LECTURA_DIRECTA) || local. OFF por defecto.
-        const lecturaDirectaSupabase = () => _flagOn('ME_LECTURA_DIRECTA', 'me_lectura_directa');
+        // [quirúrgico 2026-07-19] lecturaDirectaSupabase eliminada: cutover de lectura completado, la lectura directa es incondicional.
         // [Fase 2] ¿ESCRITURA directa activada? server (ME_ESCRITURA_DIRECTA) || local. Cuando ON: NV online se
         // crea directo en Supabase (sin GAS) y se GATEA la pre-reserva (el RPC es el único minter → sin doble-mint).
         const escrituraDirectaSupabase = () => _flagOn('ME_ESCRITURA_DIRECTA', 'me_escritura_directa');
@@ -17630,7 +17477,6 @@
         // [cero-GAS] NO-OP. El movimiento ya vive en me.movimientos_extra (persistido por _crearMovimientoDirecto,
         // RPC me.crear_movimiento_directo) ANTES de esto. El espejo a Sheets solo existía porque el cierre GAS leía
         // la Hoja; con el cierre directo (me.cerrar_caja) leyendo Supabase, el espejo sobra. Sin rastro a GAS.
-        const _mirrorMovimientoAsync = (_extra, _idExtra) => { /* dato ya en Supabase; nada que espejar */ };
         // [CERO-GAS auth] Acuña el JWT de dispositivo ME por la Edge `mint-me` (Supabase, claim app='mosExpress',
         // valida deviceId contra mos.dispositivos server-side). GAS MINT_TOKEN queda solo como kill-switch ante
         // fallo/timeout de la Edge. Cachea hasta ~30s antes de exp. Un solo helper → ~17 call-sites heredan el cambio.
@@ -18823,7 +18669,7 @@
               items.forEach(req => {
                 const need = parseFloat(req.cantidad) || 1;
                 const it = carrito.value.find(c => String(c.skuBase || c.sku) === String(req.skuBase));
-                if (it) normalSumPorAplicacion += need * (it.precioUnitario || 0);
+                if (it) normalSumPorAplicacion = _money(normalSumPorAplicacion + need * (it.precioUnitario || 0));
               });
               const totalCombo  = aplicaciones * valorCombo;
               const totalNormal = aplicaciones * normalSumPorAplicacion;
@@ -19081,16 +18927,7 @@
         // como un DNI). El operador ingresa nombre manual y se guarda con el
         // código tipeado tal cual, marcado como tipoDoc=4 (CE) SUNAT.
         // No requiere PIN admin: el código es real (no es VARIOS anónimo).
-        const iniciarRegistroCE = () => {
-            pago.value.tipoDocClienteCE = true;
-            pago.value.registroManualDNI = false; // exclusivos
-            clienteNombreManual.value = '';
-            // mantiene clienteModoManual = true y pago.docCliente con el tipeado
-        };
-        const cancelarRegistroCE = () => {
-            pago.value.tipoDocClienteCE = false;
-            clienteNombreManual.value = '';
-        };
+        // [quirúrgico 2026-07-19] iniciarRegistroCE/cancelarRegistroCE eliminados: el flujo CE abre por asignación directa en template (0 refs).
         // [v2.8.192] CE (4) o Pasaporte (7) — catálogo 06 SUNAT. El mini-form del
         // extranjero elige cuál; default CE (lo más común en tienda).
         const ceTipoSel = ref('4');
@@ -19121,10 +18958,6 @@
         const iniciarRegistroManualDNI = () => {
             pago.value.registroManualDNI = true;
             pago.value.tipoDocClienteCE = false; // exclusivos
-            clienteNombreManual.value = '';
-        };
-        const cancelarRegistroManualDNI = () => {
-            pago.value.registroManualDNI = false;
             clienteNombreManual.value = '';
         };
         const confirmarClienteManualDNI = () => {
@@ -19388,24 +19221,7 @@
         // para que el cajero re-escriba (caso típico: typo en el DNI/RUC).
         // ANTES (v40 "reintentarBuscarCliente"): reciclaba el mismo doc y disparaba
         // el API → loop infinito cuando el doc no existía en RENIEC/SUNAT.
-        const corregirDocumento = () => {
-            busquedaNombre.value        = '';
-            pago.value.docCliente       = '';
-            pago.value.nombreCliente    = '';
-            pago.value.direccionCliente = '';
-            pago.value.tipoDocClienteCE = false;
-            clienteModoManual.value     = false;
-            clienteNombreManual.value   = '';
-            // Devolver foco al input del buscador (espera 1 tick para que se re-renderice)
-            nextTick(() => {
-                try {
-                    const inp = document.querySelector('input[placeholder*="DNI"], input[placeholder*="RUC"]');
-                    if (inp) inp.focus();
-                } catch(_) {}
-            });
-        };
         // Alias por compat — código que aún llame al nombre viejo no rompe
-        const reintentarBuscarCliente = corregirDocumento;
 
         // --- HANDSHAKE FORMATO JSON Y LOGICA MODIFICADA ---
         // [Lote1-C · fix A2] LOCK de reentrada para TODO procesarPago. Antes
@@ -19714,7 +19530,7 @@
                    if (cur) out.push(cur); return out;
                };
                const _pad = (l, r) => { l = _n(l); r = _n(r); let pad = W - l.length - r.length; if (pad < 1) pad = 1; return l + ' '.repeat(pad) + r; };
-               const _money = (x) => { const v = Number(x); return (Number.isFinite(v) ? v : 0).toFixed(2); };
+               const _moneyFmt = (x) => { const v = Number(x); return (Number.isFinite(v) ? v : 0).toFixed(2); };
                const _esPeso = (u) => { u = String(u || '').toUpperCase().trim(); return u === 'KGM' || u === 'KG' || u === 'KGS' || u === 'G' || u === 'GMS' || u === 'GR'; };
                const _fmtCant = (c, u) => {
                    if (_esPeso(u)) { if (c > 0 && c < 1) return Math.round(c * 1000) + ' g'; const s = (c % 1 === 0) ? c.toFixed(0) : c.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''); return s + ' kg'; }
@@ -19749,26 +19565,26 @@
                    const nom = String(it.nombre || '').replace(/\s*\(.*\)\s*$/, '');
                    let ls = _wrap(nom, W); if (ls.length > 2) { ls = ls.slice(0, 2); ls[1] = ls[1].slice(0, W - 3) + '...'; }
                    ls.forEach(l => txt += l + "\n");
-                   const unitTxt = _esPeso(um) ? ('S/ ' + _money(precio) + '/kg') : ('S/ ' + _money(precio));
-                   txt += _pad('  ' + _fmtCant(cant, um) + '  x  ' + unitTxt, 'S/ ' + _money(it.subtotal)) + "\n";
+                   const unitTxt = _esPeso(um) ? ('S/ ' + _moneyFmt(precio) + '/kg') : ('S/ ' + _moneyFmt(precio));
+                   txt += _pad('  ' + _fmtCant(cant, um) + '  x  ' + unitTxt, 'S/ ' + _moneyFmt(it.subtotal)) + "\n";
                });
                txt += SEP + "\n";
                if (esCPE && totalGravada > 0) {
-                   txt += _pad('OP. GRAVADA', 'S/ ' + _money(totalGravada)) + "\n";
-                   txt += _pad('IGV (18%)', 'S/ ' + _money(totalIGV)) + "\n";
+                   txt += _pad('OP. GRAVADA', 'S/ ' + _moneyFmt(totalGravada)) + "\n";
+                   txt += _pad('IGV (18%)', 'S/ ' + _moneyFmt(totalIGV)) + "\n";
                }
                const _exonInaf = (subExonerado || 0) + (subInafecto || 0);
-               if (esCPE && _exonInaf > 0) txt += _pad('OP. EXON./INAF.', 'S/ ' + _money(_exonInaf)) + "\n";
-               txt += "\x1b\x21\x10\x1b\x45\x01" + _pad('TOTAL', 'S/ ' + _money(totalVenta)) + "\x1b\x45\x00\x1b\x21\x00\n";
+               if (esCPE && _exonInaf > 0) txt += _pad('OP. EXON./INAF.', 'S/ ' + _moneyFmt(_exonInaf)) + "\n";
+               txt += "\x1b\x21\x10\x1b\x45\x01" + _pad('TOTAL', 'S/ ' + _moneyFmt(totalVenta)) + "\x1b\x45\x00\x1b\x21\x00\n";
                // forma de pago + VUELTO (solo EFECTIVO/MIXTO, donde hay cambio real — decisión del dueño)
                if (metodoVenta === 'MIXTO') {
                    txt += "Forma de pago: MIXTO\n";
-                   txt += _pad('  Virtual', 'S/ ' + _money(montoVirtualVenta)) + "\n";
-                   txt += _pad('  Efectivo', 'S/ ' + _money(totalVenta - montoVirtualVenta)) + "\n";
-                   if (vueltoVenta > 0) { txt += _pad('  Recibido', 'S/ ' + _money(montoRecibidoVenta)) + "\n"; txt += _pad('  Vuelto', 'S/ ' + _money(vueltoVenta)) + "\n"; }
+                   txt += _pad('  Virtual', 'S/ ' + _moneyFmt(montoVirtualVenta)) + "\n";
+                   txt += _pad('  Efectivo', 'S/ ' + _moneyFmt(totalVenta - montoVirtualVenta)) + "\n";
+                   if (vueltoVenta > 0) { txt += _pad('  Recibido', 'S/ ' + _moneyFmt(montoRecibidoVenta)) + "\n"; txt += _pad('  Vuelto', 'S/ ' + _moneyFmt(vueltoVenta)) + "\n"; }
                } else if (metodoVenta === 'EFECTIVO') {
                    txt += "Forma de pago: EFECTIVO\n";
-                   if (montoRecibidoVenta > 0) { txt += _pad('  Recibido', 'S/ ' + _money(montoRecibidoVenta)) + "\n"; txt += _pad('  Vuelto', 'S/ ' + _money(vueltoVenta)) + "\n"; }
+                   if (montoRecibidoVenta > 0) { txt += _pad('  Recibido', 'S/ ' + _moneyFmt(montoRecibidoVenta)) + "\n"; txt += _pad('  Vuelto', 'S/ ' + _moneyFmt(vueltoVenta)) + "\n"; }
                } else if (metodoVenta === 'CREDITO') {
                    txt += "Forma de pago: CREDITO (Aut. admin)\n";
                    if (adminAuthVenta && adminAuthVenta.nombre) txt += "Autoriza: " + _n(adminAuthVenta.nombre) + "\n";
@@ -20140,6 +19956,7 @@
                            });
                            // mantener últimas 50
                            lsSet('mosexpress_ventas_fantasma', JSON.stringify(fantasmas.slice(0, 50)));
+                           _refrescarVentasFantasma();
                            ventasFantasma.value = fantasmas.slice(0, 50);  // sync ref → banner aparece
                        } catch(_){}
                        return;
@@ -21574,7 +21391,7 @@
         };
 
         // Fallback NO-hold (accesibilidad / clic simple): cierra con la misma lógica idempotente.
-        const cerrarGuia = (guia) => _ejecutarCierreGuia(guia);
+        // [quirúrgico 2026-07-19] cerrarGuia (wrapper) eliminado: el hold-to-close llama _ejecutarCierreGuia directo.
 
         // [v2.8.68] Resuelve nombres de productos por código desde Supabase (RPC mos.nombres_por_codigos):
         // canónico de mos.productos/equivalencias (mismo criterio que la Edge ticket-guia de WH). Devuelve
@@ -21672,18 +21489,6 @@
         };
 
         // Fallback: build audit list from local stock (used when GAS is unreachable)
-        const iniciarAuditoria = () => {
-            if (!auditZona.value) return;
-            const enZona = stockZonas.value.filter(r => r.Zona_ID === auditZona.value);
-            const muestra = [...enZona].sort(() => Math.random() - 0.5).slice(0, 30);
-            auditItems.value = muestra.map(r => {
-                const pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === String(r.Cod_Barras));
-                const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
-                const nombre = base ? (base.Nombre + ' · ' + pres.Empaque) : r.Cod_Barras;
-                return { cod_barras: String(r.Cod_Barras), nombre, cantSistema: parseFloat(r.Cantidad) || 0, cantReal: null, confirmado: false, esCatalogo: false };
-            });
-            if (!auditItems.value.length) agregarToast('Aviso', 'No hay stock registrado en ' + auditZona.value);
-        };
 
         const auditEscanear = (cod) => {
             const q = String(cod || auditBusq.value).trim();
@@ -21869,7 +21674,7 @@
         };
 
         // Kept for compatibility but no longer called by UI
-        const confirmarAuditoria = () => {};
+        // [quirúrgico 2026-07-19] cluster auditoría legacy eliminado (iniciar/confirmar/procesando/cargando/confirmados/zonasUnicasStock): la auditoría vive con autoGuardarItem por ítem, 0 refs.
 
         cargarDatos();
 
@@ -21887,7 +21692,7 @@
           uiState,
           cajaAbierta, idCajaActual, montoAperturaMemoria, procesandoCaja, ventasHoy, tabCajaActivo, ventasHistorialFiltradas,
           ventasZona, cargandoZona, cargarVentasZona, cargarVentasVendedor, cobradosEnSesion, sessionStartTime, playCoinSound,
-          soundEnabled, toggleSound,
+          soundEnabled,
           voiceEnabled,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
@@ -21912,7 +21717,6 @@
           scanPreview, scanningPending, onScanInput, pulsingProductId,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
-          toggleWakeLock, toggleSaver, setSaverMinutos, setMetaDiaria,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
           // [v2.5.58] Pre-reserva correlativo — alias SIN underscore: Vue 3
           // bloquea identificadores _xxx en el template (reservados internos),
@@ -21924,10 +21728,9 @@
           busquedaNombre, sugerenciasCliente, elegirClienteFrecuente,
           clienteMatchExactoDoc,
           clienteBusqEsDocumento, clienteModoManual, clienteNombreManual,
-          reintentarBuscarCliente, corregirDocumento,
-          iniciarRegistroCE, cancelarRegistroCE, confirmarClienteCE, ceTipoSel,
+          confirmarClienteCE, ceTipoSel,
           // [v2.7.1] DNI peruano manual (cuando APISPeru no lo tiene en su base)
-          iniciarRegistroManualDNI, cancelarRegistroManualDNI, confirmarClienteManualDNI,
+          iniciarRegistroManualDNI, confirmarClienteManualDNI,
           // [Bloque C UX] toggle origen + limpiar buscador/extranjero
           setClienteOrigen, limpiarBusqueda, limpiarExtranjero,
           toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
@@ -21940,7 +21743,7 @@
           // del template tras quitar el bloque viejo "MEMBRETES DE PRECIO".
           // ── Etiquetas (membretes de cambio de precio) ──
           etiqsPendientes, etiqsModalAbierto, etiqsProcesando,
-          cargarEtiqsPendientes, abrirEtiqsModal, etiqMarcarPegada,
+          cargarEtiqsPendientes, etiqMarcarPegada,
           etiqMarcarTodasPegadas, etiqReimprimir, etiqAutoPrintAlAperturaCaja,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, defaultClienteBoleta: _defaultClienteBoleta, toggleVentaCreditoDirecto,
           deviceId, dispositivoAutorizado, dispositivoEstadoMos, verificandoDispositivo, verificarDispositivoActivo, abrirInSituAdmin,
@@ -21970,22 +21773,20 @@
           wizNextStep, wizPrevStep, wizSelectUser, wizOnNombreInput, wizSelectEstacion,
           // [v2.8.9] Zona viva (rediseño login)
           wizZonaExpandida, wizZonaShake, wizZonaToggleCajero, wizZonaConfirmCajero, wizZonaAddVendedor,
-          wizSelectRol, wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
+          wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
           // [v2 avatar-tap] modo extensión: botón "2º equipo" → Paso 2 → tocar avatar del compañero
           extModo, wizEntrarModoExtension, wizSalirModoExtension, wizExtTocar,
           wizTutorial, wizTutorialNext, wizTutorialClose, wizTutorialOpen,
           // [v2.5.40] Chip impresora live + cambio impresora
-          meImpresoraEstado, meImpresoraIcon, meImpresoraEstadoLabel, meImpresoraClass,
-          meImpresoraNombre, meImpresoraReason, meImpresoraUltimaImpTexto,
+          meImpresoraEstado,
           abrirModalCambioImpresora, cerrarModalCambioImp, seleccionarImpresoraCambio,
           confirmarCambioImpresora, modalCambioImp, cambioImpEstaciones,
           cambioImpSeleccionada, cambioImpProcesando,
           // [v2.5.40] Info no-monetaria del turno
-          tiempoTurnoTexto, cantTicketsTurno, cantCobrosPendientesTurno,
+          tiempoTurnoTexto, cantTicketsTurno,
           // [v2.5.42] Atajo reimprimir último ticket
 
           // [v2.5.44] KPI cards + tabs modernos
-          cantAnuladosTurno, cantPorCobrarTurno, cantCreditoTurno,
           conteoTodas, conteoNotas, conteoBoletas, conteoFacturas,
           darkMode, toggleDarkMode,
           anularVenta,
@@ -21997,7 +21798,7 @@
           guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
           // [v2.8.30] UX moderna + candado de guías
           guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, esGuiaReabrible, reabrirGuia, reabriendoGuiaId,
-          cerrarGuia, cerrandoGuiaId,
+          cerrandoGuiaId,
           // [v2.8.39] Historial estilo WH: día/filtros/búsqueda · hold-to-confirm · undo · helpers
           guiaFiltro, guiaBusqHist, guiaCelebraId, guiaSearchHitId, guiaUndo,
           guiaGruposPorDia, guiaContadores, guiaHora, esGuiaIngreso, esGuiaVentasAuto,
@@ -22008,18 +21809,18 @@
           abrirRecibirWH, cerrarRecibirWH, rwToggleCamara, rwCargarGuia, rwEscanearItem, rwCerrarIngreso,
           // [v2.7.6] Devolución al almacén (two-party witness)
           devEstadosZona, setDevEstado, capturarFotoDev, puedeConfirmarDevolucion,
-          auditZona, auditItems, auditBusq, procesandoAudit, auditPendiente, auditCargando, auditConfirmados,
+          auditZona, auditItems, auditBusq, auditPendiente,
           camaraAuditAbierta, toggleCamaraAudit, auditEscanear,
           auditInputRefs, autoGuardarItem, auditCardClass, auditInputClass,
-          stockMap, zonasUnicasStock,
-          abrirAuditoria, cerrarAuditoria, iniciarAuditoria, confirmarAuditoria,
+          stockMap,
+          abrirAuditoria, cerrarAuditoria,
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
           posDisponible, posTabsHint, posCajaAbreCelebra, avisarReintentar,
           navInd, navEntrada, navTap,
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
           modalPin, pinInput, pinError, confirmarPin, pinValidando, pinPress, pinDel,
-          modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobro, revertirCobroDesdeModal,
+          modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobroDesdeModal,
           // F3 — Acciones admin sobre tickets + cola pendientes
           modalAdminAcc, ticketParaAdmin, abrirAccionesAdmin,
           adminPuedeCobrar, adminPuedeConvertir, adminPuedeBajaCPE, adminPuedeEditarCliente,
