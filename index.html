@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.231';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.232';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -349,6 +349,24 @@
     }
     @keyframes frameFlash { 0%, 100% { box-shadow: inset 0 0 0 0px rgba(16,185,129,0); } 50% { box-shadow: inset 0 0 0 6px rgba(16,185,129,0.85); } }
     .frame-nuevo { animation: frameFlash 0.5s ease-in-out 4; }
+    /* [v2.8.232] Venta EN COLA (offline): card ámbar pulsante con borde punteado.
+       Al recibir su numeración real, .ticket-sync-flash hace la transición (destello verde). */
+    .ticket-encola {
+      border-style: dashed !important;
+      animation: encolaGlow 1.6s ease-in-out infinite;
+    }
+    @keyframes encolaGlow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+      50%      { box-shadow: 0 0 0 6px rgba(245,158,11,.28); }
+    }
+    .ticket-sync-flash { animation: syncFlash 1.4s cubic-bezier(.2,.8,.3,1) 2; }
+    @keyframes syncFlash {
+      0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0); transform: scale(1); }
+      35%  { box-shadow: 0 0 0 10px rgba(16,185,129,.45); transform: scale(1.015); }
+      100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); transform: scale(1); }
+    }
+    /* Carrito en modo sin conexión: marco ámbar punteado (misma familia que .ticket-encola) */
+    .cart-offline { outline: 3px dashed #f59e0b; outline-offset: -3px; }
     /* Modal de pago no se sale del viewport en pantallas pequeñas */
     @media (max-height: 600px) {
       .modal-pago-inner { max-height: 98vh !important; }
@@ -3823,7 +3841,7 @@
                     
                     <div v-for="venta in ventasHistorialFiltradas" :key="venta.id"
                          class="rounded-2xl border shadow-sm overflow-hidden text-gray-800 transition-all"
-                         :class="[venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : venta.cobrado ? 'bg-emerald-50 border-emerald-200' : venta.credito ? 'bg-orange-50 border-orange-300' : (venta.raw_data?.header?.metodo === 'POR_COBRAR' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'), venta.isNew ? 'ticket-nuevo' : '']">
+                         :class="[venta.anulada ? 'bg-red-50 border-red-200 opacity-75' : venta.syncStatus === 'pending' ? 'bg-amber-100 border-amber-500 ticket-encola' : venta.cobrado ? 'bg-emerald-50 border-emerald-200' : venta.credito ? 'bg-orange-50 border-orange-300' : (venta.raw_data?.header?.metodo === 'POR_COBRAR' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'), venta.isNew ? 'ticket-nuevo' : '', venta.justSynced ? 'ticket-sync-flash' : '']">
 
                         <div @click="expandirTicket(venta)" class="p-4 flex justify-between items-center cursor-pointer hover:bg-black hover:bg-opacity-5 active:bg-opacity-10">
                             <div class="flex flex-col gap-1 min-w-0">
@@ -4036,7 +4054,7 @@
                 </section>
 
                 <!-- Panel Derecho: Carrito  (NO usar pb-nav en la section: el footer del COBRAR debe ir pegado al borde inferior, no flotando con 88px en blanco debajo. El pb-nav vive en el <main> interno para que el scroll respete la nav.) -->
-                <section class="panel-transition bg-gray-50 flex flex-col shadow-[-10px_0_20px_-5px_rgba(0,0,0,0.05)] z-20 overflow-hidden self-stretch" :class="getPosRightClasses()">
+                <section class="panel-transition bg-gray-50 flex flex-col shadow-[-10px_0_20px_-5px_rgba(0,0,0,0.05)] z-20 overflow-hidden self-stretch" :class="[getPosRightClasses(), offlineMode ? 'cart-offline' : '']">
                    <div class="bg-white border-b border-gray-200 p-3 flex justify-between items-center shrink-0">
                        <div class="flex items-center gap-2">
                           <button v-if="uiState.isMobile" @click="uiState.mobileView = 'catalog'" class="p-2 rounded-lg bg-gray-100 text-gray-600 active:scale-95 shrink-0">
@@ -4048,6 +4066,11 @@
                           </h2>
                        </div>
                        <button v-if="carrito.length > 0" @click="carrito = []" class="text-xs text-red-500 font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 active:scale-95 transition-transform uppercase tracking-wider">Vaciar</button>
+                   </div>
+                   <!-- [v2.8.232] Banner carrito offline: se puede vender igual; la venta entra EN COLA y sube sola -->
+                   <div v-if="offlineMode" class="bg-amber-500 text-white text-[11px] font-black text-center py-1.5 px-3 shrink-0 flex items-center justify-center gap-1.5">
+                       <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                       SIN CONEXIÓN · puedes vender: la venta queda EN COLA y sube sola
                    </div>
                    
                    <!-- Lista Productos en carro -->
@@ -4135,8 +4158,8 @@
                         en tablets/móviles. En PC se ve igual pero el espacio extra es invisible
                         porque no hay nav (queda fondo blanco abajo). -->
                    <footer class="bg-white border-t pt-4 px-4 shadow-[0_-5px_15px_-3px_rgba(0,0,0,0.1)] relative z-50 shrink-0" style="padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 24px);">
-                       <button @click="abrirModalPago" :disabled="carrito.length === 0" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="w-full bg-emerald-500 text-white font-black text-lg py-4 rounded-xl shadow-lg shadow-emerald-200 disabled:bg-gray-300 disabled:shadow-none transition-transform active:scale-95 flex justify-between px-6 items-center relative">
-                         <span class="flex items-center gap-2">COBRAR<span v-if="esPC && carrito.length > 0" class="text-[10px] font-bold bg-white/20 px-1.5 py-0.5 rounded">⎵ Espacio</span></span>
+                       <button @click="abrirModalPago" :disabled="carrito.length === 0" :class="[{ 'fx-cobrar-pulse': cobrarFx }, offlineMode ? 'bg-amber-500 shadow-amber-200' : 'bg-emerald-500 shadow-emerald-200']" class="w-full text-white font-black text-lg py-4 rounded-xl shadow-lg disabled:bg-gray-300 disabled:shadow-none transition-transform active:scale-95 flex justify-between px-6 items-center relative">
+                         <span class="flex items-center gap-2">{{ offlineMode ? 'COBRAR · OFFLINE' : 'COBRAR' }}<span v-if="esPC && carrito.length > 0" class="text-[10px] font-bold bg-white/20 px-1.5 py-0.5 rounded">⎵ Espacio</span></span>
                          <span class="text-2xl">S/ {{ granTotal.toFixed(2) }}</span>
                        </button>
                    </footer>
@@ -4321,9 +4344,21 @@
     </main>
 
     <!-- F3: BANNER PERSISTENTE — cola de pendientes con auto-reimpresión -->
+    <!-- [v2.8.232] Pendientes de subir: CHIP compacto por defecto (la barra ancha tapaba
+         la botonera en plena venta — pedido del dueño tras el apagón en zona 2).
+         Tap en el chip → panel expandido con Subir ahora + toggle de reimpresión. -->
     <div v-if="config.completado && dispositivoAutorizado === true && pendingSales.length > 0"
-         class="fixed bottom-16 left-0 right-0 z-30 px-3 pb-2 pointer-events-none">
-        <div class="bg-amber-500 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3 pointer-events-auto border-2 border-amber-600 animate-[slideUp_0.3s]">
+         class="fixed bottom-16 right-3 z-30 pb-2 pointer-events-none flex flex-col items-end max-w-[92vw]">
+        <button v-if="!pendBarExpandida" @click="pendBarExpandida = true"
+                class="pointer-events-auto bg-amber-500 text-white rounded-full shadow-2xl border-2 border-amber-600 pl-2.5 pr-3 py-2 flex items-center gap-2 active:scale-95 animate-[slideUp_0.3s]"
+                :title="offlineMode ? 'Offline · ' + pendingSales.length + ' venta(s) en cola' : pendingSales.length + ' venta(s) pendiente(s) de subir'">
+            <svg class="w-5 h-5" :class="{'animate-spin': isSyncing}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            <span class="font-black text-xs tabular-nums">{{ pendingSales.length }}</span>
+            <span v-if="offlineMode" class="w-2 h-2 rounded-full bg-red-300 animate-pulse"></span>
+        </button>
+        <div v-else class="bg-amber-500 text-white rounded-2xl shadow-2xl p-3 flex items-center gap-3 pointer-events-auto border-2 border-amber-600 animate-[slideUp_0.3s] w-full sm:w-96">
             <div class="shrink-0 relative">
                 <svg class="w-7 h-7" :class="{'animate-spin': isSyncing}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -4348,6 +4383,8 @@
                     :class="reimpAuto ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white opacity-60'">
                 🖨
             </button>
+            <button @click="pendBarExpandida = false" title="Minimizar"
+                    class="shrink-0 w-7 h-7 rounded-full bg-amber-600 text-white font-black text-xs active:scale-95">✕</button>
         </div>
     </div>
 
@@ -7397,6 +7434,10 @@
         const db = ref({});
         const dbCargada = ref(false);
         const pendingSales = ref([]);
+        // [v2.8.232] La barra de pendientes arranca COLAPSADA (chip): expandida tapaba la venta.
+        const pendBarExpandida = ref(false);
+        // [v2.8.232] Destello visual cuando una venta EN COLA recibe su numeración real del servidor.
+        const _flashSync = (tk) => { if (!tk) return; try { tk.justSynced = true; setTimeout(() => { tk.justSynced = false; }, 3200); } catch(_){} };
         const isSyncing = ref(false);
         // [v2.7.4] Ventas FANTASMA (rechazadas por backend, ticket pudo imprimirse)
         const ventasFantasma = ref([]);
@@ -10475,7 +10516,7 @@
                            const hIdxD = ventasHoy.value.findIndex(v => v.id === venta.id);
                            if (hIdxD > -1) {
                                const tkD = ventasHoy.value[hIdxD];
-                               tkD.syncStatus = 'synced'; tkD.raw_data.status = 'synced';
+                               tkD.syncStatus = 'synced'; tkD.raw_data.status = 'synced'; _flashSync(tkD);
                                tkD.correlativo = rd.correlativo; tkD.id_venta_gas = rd.id_venta || tkD.id_venta_gas;
                                if (venta.cpe) {
                                    if (rd.nfEstado)                       tkD.nfEstado   = rd.nfEstado;
@@ -10543,7 +10584,7 @@
                            const hIdx = ventasHoy.value.findIndex(v => v.id === venta.id);
                            if (hIdx > -1) {
                                const tk = ventasHoy.value[hIdx];
-                               tk.syncStatus = 'synced'; tk.raw_data.status = 'synced';
+                               tk.syncStatus = 'synced'; tk.raw_data.status = 'synced'; _flashSync(tk);
                                tk.correlativo = rd.correlativo; tk.id_venta_gas = rd.id_venta || tk.id_venta_gas;
                                if (_esCPE && rd.nfEstado) {
                                    tk.nfEstado = rd.nfEstado;
@@ -10618,6 +10659,7 @@
                                const tk = ventasHoy.value[historiaIdx];
                                tk.syncStatus     = 'synced';
                                tk.raw_data.status = 'synced';
+                               _flashSync(tk);
                                tk.correlativo    = res.correlativo;
                                tk.id_venta_gas   = res.idVenta || tk.id_venta_gas;
                                // Datos SUNAT/NubeFact (si vino emitido)
@@ -17709,6 +17751,7 @@
                     const anulada = String(v.forma_pago || '').toUpperCase().indexOf('ANULADO') === 0;
                     const loc = (ref && byRef[ref]) || byRef[v.id_venta];
                     if (loc) {   // ya existía local → actualizar estado autoritativo, conservar lo rico
+                        if (loc.syncStatus === 'pending') _flashSync(loc);   // [v2.8.232] estaba EN COLA y el server ya la tiene
                         loc.syncStatus = 'synced';
                         if (loc.raw_data) loc.raw_data.status = 'synced';
                         loc.anulada = anulada;
@@ -19614,8 +19657,11 @@
                }
                if (!esSincronizado) txt += "(Sin conexion - N. sujeto a cambio)\n";
                txt += SEP + "\n";
-               // QR: CPE → cadena SUNAT (si emitió; PENDIENTE no lleva); NV → correlativo
-               const qrData = esCPE ? ((nfData && nfData.qrString) ? nfData.qrString : '') : correlativo;
+               // QR: CPE → cadena SUNAT (si emitió; PENDIENTE no lleva); NV → correlativo.
+               // [v2.8.232] NV offline: 'XX-LOCAL' es idéntico en todos los tickets del corte →
+               // se imprime el ref_local (único por venta) para que cada ticket tenga identidad.
+               const qrData = esCPE ? ((nfData && nfData.qrString) ? nfData.qrString : '')
+                                    : (/-LOCAL$/.test(String(correlativo || '')) ? String(localId) : correlativo);
                if (qrData) { txt += "\x1b\x61\x01" + qrESCPOS(qrData) + "\n\x1b\x61\x00"; }
                // pie
                txt += "\x1b\x61\x01";
@@ -21776,7 +21822,7 @@
           pinRetomaAbierto, pinRetomaValor, pinRetomaError,
           abrirModalPinRetomaCaja, confirmarRetomaConPin,
           flashNuevosTickets,
-          sincronizarDatos, isSyncing, pendingSales,
+          sincronizarDatos, isSyncing, pendingSales, pendBarExpandida,
           // [v2.7.4] Ventas fantasma — banner + panel de revisión
           ventasFantasma, mostrarPanelFantasmas, limpiarVentasFantasma,
           procesandoCatalogo, catalogoGlow, sincronizarCatalogoBase,
