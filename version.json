@@ -1,1 +1,1 @@
-{"version": "2.8.225", "build": "2.8.225 repin asset: candado interactivo 🔒→🔓 en la pantalla de bloqueo (wiggle al hover, sonido+vibración al abrir, opciones con entrada escalonada)."}
+{"version": "2.8.226", "build": "2.8.226 FIX suspensión fantasma (SQL 535: extensión de horario ya no pisa el campo del cron de re-suspensión) + repin: la solicitud remota deja la pantalla bloqueada esperando la aprobación real."}
