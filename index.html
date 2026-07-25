@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.234';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.235';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -16665,56 +16665,58 @@
             _pinAdminThen('CONVERTIR_NV_A_CPE', venta.correlativo || venta.id, async (_res) => {
             adminProcesando.value = true;
             try {
-                // [Tema1] serie DERIVADA de la estación (zona) del cajero — el vendedor ya no la teclea.
-                const _estC = config.value.estacion || {};
-                const _serieAuto = e.tipo === 'FACTURA' ? (_estC.Serie_Factura || 'F001') : (_estC.Serie_Boleta || 'B001');
+                // [v2.8.235 · FIX CRÍTICO go-live] La v1 delegaba a fac.* (capa apagada) y el
+                // fallback GAS ya no existe → TODA conversión moría en "Sin conexión". Ahora el
+                // RPC convertir_nv_cpe (SQL 551) hace el lado atómico (anula NV + crea CPE
+                // PENDIENTE + correlativo por SERIE DE LA ZONA, idempotente) y devuelve ventaBase;
+                // aquí emitimos por el MISMO trío del POS: Edge emitir-cpe + set_cpe_nf. Si el
+                // Edge falla, queda PENDIENTE y la reconciliación horaria lo re-emite sola.
                 const j = await (async () => {
-                    // [cero-GAS] intento directo me.convertir_nv_cpe (emite CPE + anula NV, atómico en Supabase).
-                    // FAC_DESACTIVADO/_OFF/APP_NO_AUTORIZADA/sin token/HTTP no-2xx/excepción → GAS. Hoy fac inerte
-                    // → devuelve FAC_DESACTIVADO SIN emitir → cae a GAS limpio. Error de negocio → se muestra.
+                    const _tk = await _mintTokenSB();
+                    if (!_tk) return { status: 'error', mensaje: 'Sin token de sesión · revisa conexión' };
+                    const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/convertir_nv_cpe`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: {
+                            idVentaNV: venta.id_venta_gas, tipoDocNuevo: e.tipo,
+                            clienteDoc: e.doc.trim(), clienteNombre: e.nombre.trim(), clienteDireccion: e.direccion.trim(),
+                            tipoDocCliente: (adminCli.value.sel && adminCli.value.ce) ? adminCli.value.ceTipo : '',
+                            usuario: config.value.vendedor, rol: 'CAJERO', claveAdmin: _res.clave
+                        } })
+                    }, 25000).catch(() => null);
+                    const _dd = _rr ? await _rr.json().catch(() => null) : null;
+                    if (!_dd) return { status: 'error', mensaje: 'Sin conexión · reintenta (si la NV quedó convertida, el reintento recupera el MISMO comprobante)' };
+                    if (_dd.ok !== true) return { status: 'error', mensaje: String(_dd.error || 'no convertido') };
+                    // Emitir a NubeFact por el Edge (token en secret) + patch NF — igual que el POS.
+                    let _nfC = { nf_estado: 'PENDIENTE', nf_hash: '', nf_enlace: '', nf_qr: '' };
                     try {
-                        const _tk = await _mintTokenSB();
-                        if (_tk) {
-                            const _rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/convertir_nv_cpe`, {
-                                method: 'POST',
-                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ p: {
-                                    idVentaNV: venta.id_venta_gas, tipoDocNuevo: e.tipo, serieNueva: '',
-                                    clienteDoc: e.doc.trim(), clienteNombre: e.nombre.trim(), clienteDireccion: e.direccion.trim(),
-                                    usuario: config.value.vendedor, rol: 'CAJERO', claveAdmin: _res.clave
-                                } })
-                            }, 25000);
-                            const _dd = await _rr.json().catch(() => null);
-                            if (_rr.ok && _dd) {
-                                if (_dd.ok === true) return { status: 'success', correlativo: _dd.correlativoNuevo, via: 'directo' };
-                                const _e = String(_dd.error || '');
-                                if (!/_OFF$/.test(_e) && _e !== 'APP_NO_AUTORIZADA' && _e !== 'FAC_DESACTIVADO')
-                                    return { status: 'error', mensaje: _e || 'no convertido' };
-                            }
+                        const ed = await _emitirCPEDirecto(_dd.ventaBase, _dd.correlativoNuevo);
+                        if (ed && ed.ok) {
+                            const estNF = ed.estado || (ed.aceptada ? 'EMITIDO' : 'PENDIENTE');
+                            _nfC = { nf_estado: estNF, nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '',
+                                     aceptada: (ed.estado === 'EMITIDO') || ed.aceptada === true, consultado: true };
+                        } else if (ed && ed.rechazadoPorSunat) {
+                            _nfC = { nf_estado: 'RECHAZADO', nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '', aceptada: false, consultado: true,
+                                     sunat_desc: ed.sunatDescription || '' };
                         }
-                    } catch (_) { /* cae a GAS */ }
-                    // [hardening fiscal] si el RPC YA convirtió (NV = ANULADO_CONVERSION) pese a perder la
-                    // respuesta → NO llamar a GAS (evita DOBLE emisión de CPE en SUNAT).
+                    } catch (_) { /* queda PENDIENTE → la reconciliación lo re-emite */ }
                     try {
-                        const _tk2 = await _mintTokenSB();
-                        if (_tk2) {
-                            const _vr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/venta_estado_lectura`, {
-                                method: 'POST', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk2, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ p_id_venta: venta.id_venta_gas })
-                            }, 6000);
-                            const _vd = await _vr.json().catch(() => null);
-                            if (_vr.ok && _vd && _vd.ok === true && /^ANULADO/i.test(String(_vd.forma_pago || ''))) return { status: 'success', via: 'directo-verificado' };
-                        }
+                        await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/set_cpe_nf`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ p_ref_local: _dd.refLocal, p_nf: _nfC })
+                        }, 8000);
                     } catch (_) {}
-                    // [cero-GAS 2026-07-14] El RPC falló y la NV NO está ANULADO (no se convirtió, el check de arriba
-                    // no dio ANULADO) → fail-closed, SIN GAS: evita DOBLE emisión de CPE en SUNAT. La NV queda intacta;
-                    // el admin reintenta (crear_cpe_directo/convertir es idempotente por estado de la NV).
-                    return { status: 'error', mensaje: 'Sin conexión con el servidor · reintenta (la NV sigue sin convertir)' };
+                    if (_nfC.nf_estado === 'RECHAZADO')
+                        return { status: 'error', mensaje: '⛔ SUNAT rechazó el comprobante: ' + (_nfC.sunat_desc || 'revisa los datos del cliente') };
+                    return { status: 'success', correlativo: _dd.correlativoNuevo, via: 'directo',
+                             conQR: !!_nfC.nf_qr, nfEstado: _nfC.nf_estado };
                 })();
                 if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
                 modalAdminConv.value = false;
                 ticketParaAdmin.value = null;
-                agregarToast('✓ CPE emitido', `Nuevo: ${j?.correlativo || ''}`, 'success');
+                // [v2.8.235] feedback honesto: con QR = ya firmado por NubeFact; sin QR = en cola (recon lo cierra)
+                agregarToast('✓ ' + e.tipo + ' emitida', `Nuevo: ${j?.correlativo || ''}` + (j?.conQR ? ' · con QR SUNAT' : ' · en cola de SUNAT (se confirma solo)'), 'success', 5000);
                 // Refrescar lista en background
                 if (config.value.esCajero) cargarVentasZona();
             } catch(err) {
