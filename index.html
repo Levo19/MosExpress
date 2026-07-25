@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.233';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.234';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -6013,37 +6013,87 @@
                         <button @click="adminConvSetTipo('FACTURA')" :class="adminConvEstado.tipo === 'FACTURA' ? 'bg-purple-500 text-white shadow' : 'bg-gray-100 text-gray-500'" class="py-3 rounded-xl font-black text-xs">📋 Factura (RUC)</button>
                     </div>
                 </div>
-                <!-- Buscar cliente: frecuentes (nombre/DNI/RUC) + SUNAT/RENIEC -->
+                <!-- [v2.8.234] Cliente = MISMO mini-POS del POS: chip con ×, un solo cuadro
+                     (frecuentes → RENIEC/SUNAT automático → registrar a mano). Sin campos sueltos. -->
                 <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">Cliente — busca por nombre, DNI (8) o RUC (11)</label>
-                    <div class="flex gap-2">
-                        <input v-model="adminConvEstado.doc" @input="adminConvEstado.clienteOK = false" type="text" inputmode="text" autocomplete="off" placeholder="Nombre, DNI o RUC…"
-                               class="flex-1 p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
-                        <button @click="adminBuscarCliente"
-                                :disabled="!(adminConvEstado.doc.length === 8 || adminConvEstado.doc.length === 11)"
-                                class="px-4 bg-gray-800 disabled:bg-gray-200 text-emerald-400 disabled:text-gray-300 font-black text-xs rounded-xl active:scale-95">🔎 SUNAT</button>
-                    </div>
-                    <!-- Sugerencias de clientes frecuentes (mismo buscador que la venta) -->
-                    <div v-if="convSugerencias.length" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto">
-                      <div v-for="c in convSugerencias" :key="c.Documento" @click="convElegirCliente(c)"
-                           class="px-3 py-2.5 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-100 last:border-0 transition-colors">
-                        <div class="flex justify-between items-center gap-2">
-                          <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre || c.Nombre_RazonSocial }}</span>
-                          <span class="text-[10px] text-gray-600 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full font-bold">{{ c.Documento }}</span>
+                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                        <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider shrink-0">Cliente
+                            <span v-if="adminConvEstado.tipo === 'FACTURA'" class="text-purple-500 normal-case">· RUC</span>
+                            <span v-else-if="(ticketParaAdmin.total||0) > 700" class="text-amber-600 normal-case">· obligatorio &gt; S/700</span>
+                        </label>
+                        <div v-if="adminConvEstado.tipo !== 'FACTURA'" class="flex bg-gray-100 rounded-full p-0.5 text-[10px] font-black shrink-0">
+                            <button @click="adminCliSetOrigen('PE')" :class="!adminCli.ce ? 'bg-white shadow text-gray-800' : 'text-gray-400'" class="px-2.5 py-1 rounded-full transition-all active:scale-95">🇵🇪 Perú</button>
+                            <button @click="adminCliSetOrigen('EX')" :class="adminCli.ce ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2.5 py-1 rounded-full transition-all active:scale-95">🌎 Extranjero</button>
                         </div>
-                        <div v-if="c.Direccion" class="text-[10px] text-gray-400 mt-0.5 truncate">📍 {{ c.Direccion }}</div>
-                      </div>
                     </div>
-                </div>
-                <!-- Nombre -->
-                <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">{{ adminConvEstado.tipo === 'FACTURA' ? 'Razón social' : 'Nombre' }}</label>
-                    <input v-model="adminConvEstado.nombre" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
-                </div>
-                <!-- Dirección (FACTURA) -->
-                <div v-if="adminConvEstado.tipo === 'FACTURA'">
-                    <label class="block text-[10px] text-gray-400 mb-0.5">Dirección fiscal <span class="text-red-500">*</span></label>
-                    <input v-model="adminConvEstado.direccion" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+
+                    <!-- Cliente elegido → chip con × (nada editable suelto) -->
+                    <div v-if="adminCli.sel" class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-black text-emerald-800 text-sm uppercase truncate">{{ adminCli.sel.nombre || '(sin nombre)' }}</p>
+                            <p class="text-emerald-600 text-xs font-mono mt-0.5">{{ adminCli.sel.doc || 'sin documento' }}</p>
+                        </div>
+                        <button @click="adminCliLimpiar" class="shrink-0 p-1.5 text-gray-400 hover:text-red-500 rounded-lg transition-colors" title="Quitar y buscar otro">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Sin cliente → buscador único -->
+                    <div v-else>
+                        <div v-if="adminCli.ce" class="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 mb-2">
+                            <span class="text-base shrink-0">🌎</span>
+                            <p class="text-[11px] text-indigo-700 font-bold leading-tight flex-1">Si ya existe, aparece abajo al tipear · si no, se guarda en frecuentes</p>
+                            <div class="flex bg-white rounded-full p-0.5 text-[10px] font-black shrink-0 border border-indigo-200">
+                                <button @click="adminCli.ceTipo='4'" :class="adminCli.ceTipo==='4' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2 py-1 rounded-full transition-all active:scale-95">Carné Ext.</button>
+                                <button @click="adminCli.ceTipo='7'" :class="adminCli.ceTipo==='7' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2 py-1 rounded-full transition-all active:scale-95">Pasaporte</button>
+                            </div>
+                        </div>
+                        <div class="relative">
+                            <input v-model="adminCli.busq" type="text" inputmode="text" autocomplete="off"
+                                   :placeholder="adminConvEstado.tipo === 'FACTURA' ? 'RUC (11) o razón social...' : (adminCli.ce ? 'N° de CE o Pasaporte, o nombre...' : 'Nombre, DNI (8) o RUC (11)...')"
+                                   class="w-full p-3.5 pr-11 border-2 rounded-xl font-semibold text-sm bg-gray-50 outline-none transition-colors"
+                                   :class="adminCli.ce ? 'border-indigo-200 focus:border-indigo-500 uppercase tracking-wide' : (adminCli.busq ? 'border-gray-300 focus:border-emerald-500' : 'border-gray-100 focus:border-emerald-500')">
+                            <button v-if="adminCli.busq" @click="adminCli.busq=''; adminCli.manual=false" class="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-gray-200 text-gray-500 hover:bg-gray-300 flex items-center justify-center text-lg font-black leading-none active:scale-90 transition-transform" title="Limpiar">&times;</button>
+                        </div>
+                        <p v-if="adminConvEstado.tipo === 'FACTURA' && adminCli.busq && /^\d+$/.test(adminCli.busq) && adminCli.busq.length !== 11" class="mt-1 text-[10px] text-rose-500 font-bold">⚠ FACTURA requiere RUC de 11 dígitos · llevas {{ adminCli.busq.length }}</p>
+                        <p v-else-if="adminCliSugsConv.length" class="mt-1 text-[10px] text-emerald-600 font-bold">🔎 {{ adminCliSugsConv.length }} en frecuentes · toca para elegir</p>
+                        <p v-else-if="adminCli.buscando" class="mt-1 text-[10px] text-blue-500 font-semibold"><span class="inline-block animate-pulse">⏳</span> {{ String(adminCli.busq||'').length === 8 ? 'DNI · consultando RENIEC' : 'RUC · consultando SUNAT' }}</p>
+                        <div v-if="adminCliSugsConv.length" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto">
+                            <div v-for="c in adminCliSugsConv" :key="c.Documento" @click="adminCliElegir(c)"
+                                 class="px-3 py-2.5 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-100 last:border-0 transition-colors">
+                                <div class="flex justify-between items-center gap-2">
+                                    <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre || c.Nombre_RazonSocial }}</span>
+                                    <span class="text-[10px] text-gray-600 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full font-bold">{{ c.Documento }}</span>
+                                </div>
+                                <div v-if="c.Direccion" class="text-[10px] text-gray-400 mt-0.5 truncate">📍 {{ c.Direccion }}</div>
+                            </div>
+                        </div>
+                        <div v-if="adminCli.manual && !adminCli.ce" class="mt-2 space-y-2">
+                            <div class="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                                <span class="text-base shrink-0">🔍</span>
+                                <p class="text-xs text-amber-800 font-bold flex-1">Sin coincidencia en {{ String(adminCli.busq||'').length === 11 ? 'SUNAT' : 'RENIEC' }} · regístralo a mano</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <input v-model="adminCli.nombreManual" type="text" placeholder="Nombre / razón social..." @keyup.enter="adminCliConfirmManual"
+                                       class="flex-1 p-3 bg-white border-2 border-emerald-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none">
+                                <button @click="adminCliConfirmManual" :disabled="!adminCli.nombreManual.trim()"
+                                        class="bg-emerald-600 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">✓ Guardar</button>
+                            </div>
+                        </div>
+                        <div v-if="adminCli.ce && adminCli.busq && !adminCliSugsConv.length" class="mt-2 flex gap-2">
+                            <input v-model="adminCli.nombreManual" type="text" placeholder="Nombre del cliente..." @keyup.enter="adminCliConfirmCE"
+                                   class="flex-1 p-3 bg-white border-2 border-indigo-200 rounded-xl text-sm font-bold focus:border-indigo-500 outline-none">
+                            <button @click="adminCliConfirmCE" :disabled="!adminCli.nombreManual.trim()"
+                                    class="bg-indigo-500 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">✓ Guardar</button>
+                        </div>
+                    </div>
+
+                    <!-- FACTURA: dirección fiscal (único campo tipeable — SUNAT la exige;
+                         viene prellenada si SUNAT/frecuentes la traen) -->
+                    <div v-if="adminConvEstado.tipo === 'FACTURA' && adminCli.sel" class="mt-2">
+                        <label class="block text-[10px] text-gray-400 mb-0.5">Dirección fiscal <span class="text-red-500">*</span></label>
+                        <input v-model="adminConvEstado.direccion" type="text" placeholder="La trae SUNAT; complétala si falta" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                    </div>
                 </div>
                 <!-- (serie eliminada: la deriva la RPC por la zona de emisión de la NV — el vendedor no la toca) -->
 
@@ -16556,10 +16606,33 @@
                 direccion: '',
                 clienteOK: false
             };
+            // [v2.8.234] mini-POS compartido: el cliente de la NV entra como CHIP con ×
+            // (≤ S/700; si supera 700 se obliga a identificar uno con el buscador).
+            adminCli.value = {
+                sel: (!_mayor700 && (venta.cliente_nombre || venta.cliente_doc)) ? { doc: venta.cliente_doc || '', nombre: venta.cliente_nombre || '', direccion: '' } : null,
+                busq: '', ce: false, ceTipo: '4', manual: false, nombreManual: '', buscando: false, motivo: ''
+            };
             modalAdminConv.value = true;
         };
 
-        const adminConvSetTipo = (t) => { adminConvEstado.value.tipo = t; };  // la serie la deriva la RPC por zona
+        const adminConvSetTipo = (t) => {   // la serie la deriva la RPC por zona
+            adminConvEstado.value.tipo = t;
+            // [v2.8.234] FACTURA = solo RUC: sin toggle extranjero y si el chip no es RUC-11, se limpia
+            if (t === 'FACTURA') {
+                adminCli.value.ce = false;
+                const d = String(adminCli.value.sel?.doc || '').replace(/\D/g, '');
+                if (adminCli.value.sel && d.length !== 11) adminCliLimpiar();
+            }
+        };
+        // [v2.8.234] El chip del mini-POS alimenta adminConvEstado (doc/nombre/dirección):
+        // las reglas SUNAT en vivo y el confirm siguen leyendo lo MISMO de siempre.
+        watch(() => adminCli.value.sel, (sel) => {
+            if (!modalAdminConv.value) return;
+            adminConvEstado.value.doc = sel ? (sel.doc || '') : '';
+            adminConvEstado.value.nombre = sel ? (sel.nombre || '') : '';
+            adminConvEstado.value.direccion = sel ? (sel.direccion || '') : '';
+            adminConvEstado.value.clienteOK = !!sel;
+        });
 
         const adminBuscarCliente = async () => {
             const doc = (adminConvEstado.value.doc || '').trim();
@@ -19019,6 +19092,10 @@
         // [v2.8.233] Sugerencias del editor ADMIN (funciona también en modo extranjero:
         // si el CE/pasaporte ya existe en frecuentes, aparece al tipear).
         const adminCliSugs = computed(() => _cfBuscarLocal(String(adminCli.value.busq || '').trim().toLowerCase()));
+        // [v2.8.234] En Convertir→CPE con FACTURA solo se sugieren RUCs (11 dígitos)
+        const adminCliSugsConv = computed(() => (modalAdminConv.value && adminConvEstado.value.tipo === 'FACTURA')
+            ? adminCliSugs.value.filter(c => String(c.Documento || '').replace(/\D/g, '').length === 11)
+            : adminCliSugs.value);
 
         // [v2.5.60] Match exacto del documento — usado para AUTO-SELECT y
         // evitar la consulta API cuando el cliente ya está registrado.
@@ -22012,7 +22089,7 @@
           modalAdminConv, adminConvEstado, adminAbrirConvertir, adminConvSetTipo, adminBuscarCliente, adminConfirmarConvertir, convSugerencias, convElegirCliente,
           modalAdminBaja, adminBajaEstado, adminAbrirBajaCPE, adminConfirmarBaja,
           modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminConfirmarEditarCliente,
-          adminCli, adminCliSugs, adminCliLimpiar, adminCliSetOrigen, adminCliElegir, adminCliConfirmManual, adminCliConfirmCE,
+          adminCli, adminCliSugs, adminCliSugsConv, adminCliLimpiar, adminCliSetOrigen, adminCliElegir, adminCliConfirmManual, adminCliConfirmCE,
           adminProcesando, reimpAuto, lsSet,
           // [Mensajería] Bandeja (vendedor) + Enviar (admin)
           esAdminME,
