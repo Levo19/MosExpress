@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.232';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.233';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -5574,6 +5574,8 @@
             </div>
             <div class="bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-4">
                 <p class="text-orange-700 text-xs font-bold">El ticket quedará marcado como <strong>CRÉDITO</strong>. No será anulado al cerrar el turno. El cajero podrá cobrarlo después.</p>
+                <!-- [v2.8.233] ticket YA pagado → el pago se retira en el mismo paso -->
+                <p v-if="ticketParaCredito.cobrado" class="text-red-600 text-xs font-black mt-2">⚠ Este ticket ya está pagado ({{ ticketParaCredito.cobradoMetodo || 'pagado' }}): al confirmar, ese pago SE RETIRA del cierre y el total queda como DEUDA por cobrar.</p>
             </div>
             <label class="block text-xs font-black text-gray-600 uppercase tracking-wider mb-1.5">¿A quién se da el crédito? <span class="text-red-500">*</span></label>
             <input v-model="obsCredito" type="text" placeholder="Ej: Juan Pérez — paga el lunes" maxlength="120"
@@ -5884,12 +5886,14 @@
                         <div class="text-[10px] text-red-700 font-semibold">Reversa el pago (sale de caja) + baja SUNAT · irreversible</div>
                     </div>
                 </button>
-                <!-- [rediseño] Convertir a crédito (cambia el método a CRÉDITO) -->
-                <button v-if="!ticketParaAdmin.anulada && !ticketParaAdmin.cobrado && !ticketParaAdmin.credito"
+                <!-- [v2.8.233] Convertir a crédito: SIEMPRE a la primera (antes en tickets
+                     pagados había que "quitar el pago" primero — 2 pasos). Si está pagado,
+                     el pago se retira del cierre automáticamente al pasar a CRÉDITO. -->
+                <button v-if="!ticketParaAdmin.anulada && !ticketParaAdmin.credito"
                         @click="modalAdminAcc=false; abrirModalCredito(ticketParaAdmin)"
                         class="w-full flex items-center gap-3 p-3 bg-orange-50 hover:bg-orange-100 border-2 border-orange-200 rounded-xl text-left active:scale-95 transition-all me-sheet-opt">
                     <span class="text-2xl">🔄</span>
-                    <div class="flex-1 min-w-0"><div class="font-black text-sm text-orange-900">Convertir a crédito</div><div class="text-[10px] text-orange-700 font-semibold">Cambia el método de pago a CRÉDITO</div></div>
+                    <div class="flex-1 min-w-0"><div class="font-black text-sm text-orange-900">Convertir a crédito</div><div class="text-[10px] text-orange-700 font-semibold">{{ ticketParaAdmin.cobrado ? 'Retira el pago (' + (ticketParaAdmin.cobradoMetodo || 'pagado') + ') y lo deja como deuda' : 'Cambia el método de pago a CRÉDITO' }}</div></div>
                 </button>
                 <!-- [rediseño] Cambiar forma de pago -->
                 <button v-if="!ticketParaAdmin.anulada"
@@ -6127,31 +6131,89 @@
                 </button>
             </div>
             <div class="space-y-3">
-                <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">DNI/RUC (vacío para sin doc)</label>
-                    <div class="flex gap-2">
-                        <input v-model="adminEditCliEstado.doc" type="text" maxlength="11" inputmode="numeric"
-                               class="flex-1 p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none font-mono">
-                        <button @click="adminEditCliBuscar"
-                                :disabled="adminEditCliEstado.doc.length !== 8 && adminEditCliEstado.doc.length !== 11"
-                                class="px-4 bg-amber-500 disabled:bg-gray-200 text-white font-black text-xs rounded-xl active:scale-95">🔎 Buscar</button>
+                <!-- [v2.8.233] MISMO buscador que el POS: chip con ×, un solo cuadro que filtra
+                     frecuentes, auto-búsqueda RENIEC/SUNAT, registro manual y extranjero -->
+                <div class="flex items-center justify-between gap-2">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider shrink-0">Cliente nuevo</label>
+                    <div class="flex bg-gray-100 rounded-full p-0.5 text-[10px] font-black shrink-0">
+                        <button @click="adminCliSetOrigen('PE')" :class="!adminCli.ce ? 'bg-white shadow text-gray-800' : 'text-gray-400'" class="px-2.5 py-1 rounded-full transition-all active:scale-95">🇵🇪 Perú</button>
+                        <button @click="adminCliSetOrigen('EX')" :class="adminCli.ce ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2.5 py-1 rounded-full transition-all active:scale-95">🌎 Extranjero</button>
                     </div>
                 </div>
-                <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">Nombre / Razón social</label>
-                    <input v-model="adminEditCliEstado.nombre" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+
+                <!-- Cliente elegido → chip verde con × (ej. VARIOS ×) -->
+                <div v-if="adminCli.sel" class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-black text-emerald-800 text-sm uppercase truncate">{{ adminCli.sel.nombre || '(sin nombre)' }}</p>
+                        <p class="text-emerald-600 text-xs font-mono mt-0.5">{{ adminCli.sel.doc || 'sin documento' }}</p>
+                    </div>
+                    <button @click="adminCliLimpiar" class="shrink-0 p-1.5 text-gray-400 hover:text-red-500 rounded-lg transition-colors" title="Quitar y buscar otro">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
                 </div>
-                <div>
-                    <label class="block text-[10px] text-gray-400 mb-0.5">Dirección (opcional)</label>
-                    <input v-model="adminEditCliEstado.direccion" type="text" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+
+                <!-- Sin cliente → buscador único (filtra frecuentes; doc completo → API) -->
+                <div v-else>
+                    <div v-if="adminCli.ce" class="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 mb-2">
+                        <span class="text-base shrink-0">🌎</span>
+                        <p class="text-[11px] text-indigo-700 font-bold leading-tight flex-1">Si ya existe, aparece abajo al tipear · si no, se guarda en frecuentes</p>
+                        <div class="flex bg-white rounded-full p-0.5 text-[10px] font-black shrink-0 border border-indigo-200">
+                            <button @click="adminCli.ceTipo='4'" :class="adminCli.ceTipo==='4' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2 py-1 rounded-full transition-all active:scale-95">Carné Ext.</button>
+                            <button @click="adminCli.ceTipo='7'" :class="adminCli.ceTipo==='7' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'" class="px-2 py-1 rounded-full transition-all active:scale-95">Pasaporte</button>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <input v-model="adminCli.busq" type="text" inputmode="text" autocomplete="off"
+                               :placeholder="adminCli.ce ? 'N° de CE o Pasaporte, o nombre...' : 'Nombre, DNI (8) o RUC (11)...'"
+                               class="w-full p-3.5 pr-11 border-2 rounded-xl font-semibold text-sm bg-gray-50 outline-none transition-colors"
+                               :class="adminCli.ce ? 'border-indigo-200 focus:border-indigo-500 uppercase tracking-wide' : (adminCli.busq ? 'border-gray-300 focus:border-emerald-500' : 'border-gray-100 focus:border-emerald-500')">
+                        <button v-if="adminCli.busq" @click="adminCli.busq=''; adminCli.manual=false" class="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-gray-200 text-gray-500 hover:bg-gray-300 flex items-center justify-center text-lg font-black leading-none active:scale-90 transition-transform" title="Limpiar">&times;</button>
+                    </div>
+                    <!-- hints -->
+                    <p v-if="adminCliSugs.length" class="mt-1 text-[10px] text-emerald-600 font-bold">🔎 {{ adminCliSugs.length }} en frecuentes · toca para elegir</p>
+                    <p v-else-if="adminCli.buscando" class="mt-1 text-[10px] text-blue-500 font-semibold"><span class="inline-block animate-pulse">⏳</span> {{ String(adminCli.busq||'').length === 8 ? 'DNI · consultando RENIEC' : 'RUC · consultando SUNAT' }}</p>
+                    <p v-else-if="!adminCli.ce && adminCli.busq && /^\d{9,10}$/.test(adminCli.busq)" class="mt-1 text-[10px] text-amber-500 font-bold">RUC · faltan {{ 11 - adminCli.busq.length }} dígito(s)</p>
+                    <p v-else-if="!adminCli.ce && adminCli.busq && /^\d{1,7}$/.test(adminCli.busq)" class="mt-1 text-[10px] text-gray-400 font-semibold">Sigue escribiendo · DNI (8) o RUC (11)</p>
+                    <!-- dropdown frecuentes (idéntico al POS) -->
+                    <div v-if="adminCliSugs.length" class="mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-60 overflow-y-auto">
+                        <div v-for="c in adminCliSugs" :key="c.Documento" @click="adminCliElegir(c)"
+                             class="px-3 py-2.5 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer border-b border-gray-100 last:border-0 transition-colors">
+                            <div class="flex justify-between items-center gap-2">
+                                <span class="font-bold text-gray-800 text-sm truncate">{{ c.Nombre || c.Nombre_RazonSocial }}</span>
+                                <span class="text-[10px] text-gray-600 font-mono shrink-0 bg-gray-100 px-2 py-0.5 rounded-full font-bold">{{ c.Documento }}</span>
+                            </div>
+                            <div v-if="c.Direccion" class="text-[10px] text-gray-400 mt-0.5 truncate">📍 {{ c.Direccion }}</div>
+                        </div>
+                    </div>
+                    <!-- sin match API → registrar a mano (Perú) -->
+                    <div v-if="adminCli.manual && !adminCli.ce" class="mt-2 space-y-2">
+                        <div class="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                            <span class="text-base shrink-0">🔍</span>
+                            <p class="text-xs text-amber-800 font-bold flex-1">Sin coincidencia en {{ String(adminCli.busq||'').length === 11 ? 'SUNAT' : 'RENIEC' }} · regístralo a mano</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <input v-model="adminCli.nombreManual" type="text" placeholder="Nombre y apellidos / razón social..." @keyup.enter="adminCliConfirmManual"
+                                   class="flex-1 p-3 bg-white border-2 border-emerald-200 rounded-xl text-sm font-bold focus:border-emerald-500 outline-none">
+                            <button @click="adminCliConfirmManual" :disabled="!adminCli.nombreManual.trim()"
+                                    class="bg-emerald-600 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">✓ Guardar</button>
+                        </div>
+                    </div>
+                    <!-- extranjero: nombre + guardar (si no salió en frecuentes) -->
+                    <div v-if="adminCli.ce && adminCli.busq && !adminCliSugs.length" class="mt-2 flex gap-2">
+                        <input v-model="adminCli.nombreManual" type="text" placeholder="Nombre del cliente..." @keyup.enter="adminCliConfirmCE"
+                               class="flex-1 p-3 bg-white border-2 border-indigo-200 rounded-xl text-sm font-bold focus:border-indigo-500 outline-none">
+                        <button @click="adminCliConfirmCE" :disabled="!adminCli.nombreManual.trim()"
+                                class="bg-indigo-500 disabled:bg-gray-300 text-white py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 transition-transform">✓ Guardar</button>
+                    </div>
                 </div>
+
                 <div>
                     <label class="block text-[10px] text-gray-400 mb-0.5">Motivo del cambio <span class="text-red-500">*</span></label>
-                    <input v-model="adminEditCliEstado.motivo" type="text" placeholder="ej: cliente corrigió DNI" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
+                    <input v-model="adminCli.motivo" type="text" placeholder="ej: cliente corrigió DNI" class="w-full p-3 text-sm bg-gray-50 border-2 border-gray-200 rounded-xl outline-none">
                 </div>
             </div>
             <button @click="adminConfirmarEditarCliente"
-                    :disabled="adminProcesando || adminEditCliEstado.motivo.trim().length < 3"
+                    :disabled="adminProcesando || !adminCli.sel || adminCli.motivo.trim().length < 3"
                     class="mt-4 w-full bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-300 text-white font-black text-base py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
                 <svg v-if="adminProcesando" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                 {{ adminProcesando ? 'GUARDANDO...' : '✓ Guardar cambios' }}
@@ -7924,6 +7986,10 @@
         const adminBajaEstado    = ref({ motivo: '', motivoTxt: '' });
         const modalAdminEditCli  = ref(false);    // editar cliente
         const adminEditCliEstado = ref({ doc: '', nombre: '', direccion: '', motivo: '' });
+        // [v2.8.233] Editor ADMIN de cliente = mini-POS: chip con ×, buscador único que
+        // filtra frecuentes, auto-búsqueda RENIEC/SUNAT, registro manual y extranjero.
+        const adminCli = ref({ sel: null, busq: '', ce: false, ceTipo: '4', manual: false, nombreManual: '', buscando: false, motivo: '' });
+        let _adminCliT = null;
         const adminProcesando    = ref(false);
         const adminAuthCache     = ref(null);     // último PIN admin validado (se reusa entre flujos)
 
@@ -16273,12 +16339,16 @@
             const _obsCred = obsCredito.value.trim();
             // [Opción A · cero-caída] PIN al confirmar → clave (_res.clave) re-verificada en la mutación.
             pedirPin((_res) => {
-            // Optimista + in-flight
+            // Optimista + in-flight — [v2.8.233] captura el estado previo para rollback
+            // fiel (un ticket PAGADO que pasa a crédito pierde su pago aquí mismo).
             const idx = ventasZona.value.findIndex(v => v.id === _vCred.id);
+            const _prevCred = idx !== -1 ? { cobrado: ventasZona.value[idx].cobrado, cobradoMetodo: ventasZona.value[idx].cobradoMetodo, metodo: ventasZona.value[idx].raw_data.header.metodo, obs: ventasZona.value[idx].obs } : null;
             if (idx !== -1) {
                 ventasZona.value[idx].credito = true;
                 ventasZona.value[idx].obs = _obsCred;
                 ventasZona.value[idx].raw_data.header.metodo = 'CREDITO';
+                ventasZona.value[idx].cobrado = false;
+                ventasZona.value[idx].cobradoMetodo = 'CREDITO';
                 ventasZona.value[idx]._mutPend = Date.now();   // [Lote1-C] in-flight
             }
             modalCredito.value = false;
@@ -16290,8 +16360,11 @@
             const payloadCred = { tipoEvento: 'CREDITAR_VENTA', idVenta: _vCred.id_venta_gas, obs: _obsCred };
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 _enviarMutacionDinero({ ...payloadCred, claveAdmin: _res.clave }, _vCred.id, () => {
+                    // [v2.8.233] rollback FIEL: restaura pago/estado previos (antes dejaba metodo='')
                     const i2 = ventasZona.value.findIndex(v => v.id === _vCred.id);
-                    if (i2 !== -1) { ventasZona.value[i2].credito = false; ventasZona.value[i2].raw_data.header.metodo = ''; }
+                    if (i2 !== -1) { ventasZona.value[i2].credito = false;
+                        if (_prevCred) { ventasZona.value[i2].cobrado = _prevCred.cobrado; ventasZona.value[i2].cobradoMetodo = _prevCred.cobradoMetodo; ventasZona.value[i2].raw_data.header.metodo = _prevCred.metodo; ventasZona.value[i2].obs = _prevCred.obs; }
+                        else ventasZona.value[i2].raw_data.header.metodo = ''; }
                 });
             } else {
                 const q = _mutQueueGet();
@@ -16638,34 +16711,75 @@
             modalAdminAcc.value = false;
             // [Opción A · cero-caída] PIN al CONFIRMAR (adminConfirmarEditarCliente), no al abrir.
             ticketParaAdmin.value = venta;
-            adminEditCliEstado.value = {
-                doc:       venta.cliente_doc || '',
-                nombre:    venta.cliente_nombre || '',
-                direccion: '',
-                motivo:    ''
+            // [v2.8.233] El cliente ACTUAL entra como chip (con × para sacarlo), igual que el POS.
+            adminCli.value = {
+                sel: (venta.cliente_nombre || venta.cliente_doc) ? { doc: venta.cliente_doc || '', nombre: venta.cliente_nombre || '', direccion: '' } : null,
+                busq: '', ce: false, ceTipo: '4', manual: false, nombreManual: '', buscando: false, motivo: ''
             };
             modalAdminEditCli.value = true;
         };
 
-        const adminEditCliBuscar = async () => {
-            const doc = (adminEditCliEstado.value.doc || '').trim();
-            if (doc.length !== 8 && doc.length !== 11) return;
-            try {
-                const j = await _meBuscarClienteDoc(doc);
-                if (j?.status === 'success' && j.nombre) {
-                    adminEditCliEstado.value.nombre = j.nombre;
-                    adminEditCliEstado.value.direccion = j.direccion || '';
-                    agregarToast('✓ Cliente encontrado', j.nombre, 'success');
-                } else {
-                    agregarToast('No encontrado', 'Ingresa los datos manualmente', 'warning');
-                }
-            } catch(e) { agregarToast('Error', e.message, 'error'); }
+        // [v2.8.233] mini-POS del editor admin —
+        const adminCliLimpiar = () => { adminCli.value.sel = null; adminCli.value.busq = ''; adminCli.value.manual = false; adminCli.value.nombreManual = ''; };
+        const adminCliSetOrigen = (o) => { adminCli.value.ce = (o === 'EX'); adminCli.value.busq = ''; adminCli.value.manual = false; adminCli.value.nombreManual = ''; };
+        const adminCliElegir = (c) => {
+            adminCli.value.sel = { doc: String(c.Documento || '').trim(), nombre: String(c.Nombre || c.Nombre_RazonSocial || '').trim(), direccion: String(c.Direccion || '').trim() };
+            adminCli.value.busq = ''; adminCli.value.manual = false;
+            try { playBeepOK?.(); } catch(_){}
+        };
+        const adminCliBusqEsDoc = computed(() => { const q = String(adminCli.value.busq || '').trim(); return /^\d{8}$/.test(q) || /^\d{11}$/.test(q); });
+        // auto-búsqueda RENIEC/SUNAT (debounce) cuando el doc está completo y no hay match local
+        watch(() => adminCli.value.busq, (q) => {
+            clearTimeout(_adminCliT);
+            adminCli.value.manual = false;
+            q = String(q || '').trim();
+            if (adminCli.value.ce) return;                      // extranjero: sin API
+            if (!/^\d{8}$/.test(q) && !/^\d{11}$/.test(q)) return;
+            if (adminCliSugs.value.length) return;               // ya está en frecuentes
+            _adminCliT = setTimeout(async () => {
+                adminCli.value.buscando = true;
+                try {
+                    const j = await _meBuscarClienteDoc(q);
+                    if (j?.status === 'success' && j.nombre) {
+                        adminCli.value.sel = { doc: q, nombre: j.nombre, direccion: j.direccion || '' };
+                        adminCli.value.busq = '';
+                        try { playBeepOK?.(); } catch(_){}
+                        // queda en frecuentes para la próxima (mismo gap que cerró el POS en 2.8.192)
+                        try { _meGuardarClienteFrecuente(q, j.nombre, q.length === 11 ? '6' : '1', j.direccion || ''); } catch(_){}
+                    } else {
+                        adminCli.value.manual = true;            // ✏️ registrar a mano
+                    }
+                } catch(_) { adminCli.value.manual = true; }
+                adminCli.value.buscando = false;
+            }, 650);
+        });
+        const adminCliConfirmManual = () => {
+            const nombre = String(adminCli.value.nombreManual || '').trim().toUpperCase();
+            const doc = String(adminCli.value.busq || '').trim();
+            if (!nombre || !doc) return;
+            adminCli.value.sel = { doc, nombre, direccion: '' };
+            try { _meGuardarClienteFrecuente(doc, nombre, /^\d{8}$/.test(doc) ? '1' : (_esRucValido(doc) ? '6' : ''), ''); } catch(_){}
+            adminCli.value.busq = ''; adminCli.value.manual = false; adminCli.value.nombreManual = '';
+            try { playBeepOK?.(); } catch(_){}
+            agregarToast('✓ Cliente registrado', nombre + ' · quedó en frecuentes');
+        };
+        const adminCliConfirmCE = () => {
+            const nombre = String(adminCli.value.nombreManual || '').trim().toUpperCase();
+            const doc = String(adminCli.value.busq || '').trim().toUpperCase();
+            if (!nombre || !doc) return;
+            adminCli.value.sel = { doc, nombre, direccion: '' };
+            try { _meGuardarClienteFrecuente(doc, nombre, adminCli.value.ceTipo, ''); } catch(_){}
+            adminCli.value.busq = ''; adminCli.value.nombreManual = '';
+            try { playBeepOK?.(); } catch(_){}
+            agregarToast('✓ Cliente ' + (adminCli.value.ceTipo === '7' ? 'Pasaporte' : 'CE') + ' guardado', nombre + ' · quedó en frecuentes');
         };
 
         const adminConfirmarEditarCliente = async () => {
             const venta = ticketParaAdmin.value;
-            const e = adminEditCliEstado.value;
+            // [v2.8.233] fuente = adminCli (mini-POS): chip seleccionado + motivo
+            const e = { doc: (adminCli.value.sel?.doc || ''), nombre: (adminCli.value.sel?.nombre || ''), direccion: (adminCli.value.sel?.direccion || ''), motivo: adminCli.value.motivo };
             if (!venta?.id_venta_gas) { agregarToast('Error', 'Ticket no sincronizado'); return; }
+            if (!adminCli.value.sel) { agregarToast('Falta el cliente', 'Busca y elige al cliente nuevo'); return; }
             if (e.motivo.trim().length < 3) { agregarToast('Error', 'Motivo obligatorio'); return; }
             // [Opción A · cero-caída] PIN al confirmar → la clave se re-verifica en editar_cliente.
             _pinAdminThen('EDITAR_CLIENTE_VENTA', venta.correlativo || venta.id, async (_res) => {
@@ -18850,8 +18964,9 @@
                 }, 8000);
             } catch (e) { /* fire-and-forget: el alta local ya quedó para esta sesión */ }
         };
-        const sugerenciasCliente = computed(() => {
-            const q = busquedaNombre.value.trim().toLowerCase();
+        // [v2.8.233] Scoring extraído a helper para reusarlo en el editor ADMIN de
+        // cliente (mismo buscador que el POS). NO cambia el comportamiento del POS.
+        const _cfBuscarLocal = (q) => {
             if (!q || q.length < 2) return [];
             const tokens = q.split(/\s+/).filter(t => t.length >= 1);
             if (!tokens.length) return [];
@@ -18899,7 +19014,11 @@
             }
             scored.sort((a, b) => b.score - a.score);
             return scored.slice(0, 6).map(s => s.c);
-        });
+        };
+        const sugerenciasCliente = computed(() => _cfBuscarLocal(busquedaNombre.value.trim().toLowerCase()));
+        // [v2.8.233] Sugerencias del editor ADMIN (funciona también en modo extranjero:
+        // si el CE/pasaporte ya existe en frecuentes, aparece al tipear).
+        const adminCliSugs = computed(() => _cfBuscarLocal(String(adminCli.value.busq || '').trim().toLowerCase()));
 
         // [v2.5.60] Match exacto del documento — usado para AUTO-SELECT y
         // evitar la consulta API cuando el cliente ya está registrado.
@@ -21892,7 +22011,8 @@
           modalAdminCobrar, adminCobrarEstado, adminAbrirCobrarCredito, adminConfirmarCobrar,
           modalAdminConv, adminConvEstado, adminAbrirConvertir, adminConvSetTipo, adminBuscarCliente, adminConfirmarConvertir, convSugerencias, convElegirCliente,
           modalAdminBaja, adminBajaEstado, adminAbrirBajaCPE, adminConfirmarBaja,
-          modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminEditCliBuscar, adminConfirmarEditarCliente,
+          modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminConfirmarEditarCliente,
+          adminCli, adminCliSugs, adminCliLimpiar, adminCliSetOrigen, adminCliElegir, adminCliConfirmManual, adminCliConfirmCE,
           adminProcesando, reimpAuto, lsSet,
           // [Mensajería] Bandeja (vendedor) + Enviar (admin)
           esAdminME,
