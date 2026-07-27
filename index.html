@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.237';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.238';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8467,7 +8467,9 @@
         // Inyecta el código en el ref del contexto activo y dispara su handler. Garantiza
         // que el scan NO se cruce: guía→guía, venta→venta. Reinicia el reloj de inactividad.
         const _despacharScanContexto = (codigo) => {
-            const cod = String(codigo || '').trim();
+            // [fix layout ES-LatAm] normalizar apóstrofo (recto/curvo) → "-" (el lector HID con
+            // teclado Español lee el "-" como "'"). Cubre los buffers HID (idle + flujo de guía).
+            const cod = String(codigo || '').trim().replace(/['’‘]/g, '-');
             if (!cod) return;
             const ctx = _scanContextActivo();
             _tocarActividadGuia(); // cualquier scan reinicia el reloj de 5 min de la guía
@@ -11880,9 +11882,13 @@
                 // (cae al buffer de ráfaga: solo se ruteará si es velocidad de scanner, ver abajo)
             }
             const now = Date.now();
-            if (/^[0-9A-Za-z]$/.test(e.key)) {
+            // [fix layout ES-LatAm] e.code (tecla física) para el "-": en teclado Español escribe "'".
+            // Además ACEPTAR "-" en el charset (antes solo [0-9A-Za-z] → un código con "-" reseteaba
+            // el buffer y jamás se capturaba, ej. WH-9S7XBPX).
+            const ch = (e.code === 'Minus' || e.code === 'NumpadSubtract') ? '-' : e.key;
+            if (/^[0-9A-Za-z\-]$/.test(ch)) {
                 if (!_hwGuiaBuffer) _hwGuiaT0 = now;
-                _hwGuiaBuffer += e.key;
+                _hwGuiaBuffer += ch;
                 if (_hwGuiaTimer) clearTimeout(_hwGuiaTimer);
                 _hwGuiaTimer = setTimeout(() => { _hwGuiaBuffer = ''; }, 400); // >400ms entre teclas = humano, no scanner
                 return;
@@ -18594,7 +18600,10 @@
         const agregarItemDesdePopover = () => { agregarCarritoObj(popover.value.data); popover.value.visible = false; bBuscador.value = ''; filtrarCatalogo(); };
 
         const procesarEscaneoOBusqueda = () => {
-          let code = bBuscador.value.trim().toUpperCase();
+          // [fix layout ES-LatAm] un lector HID con teclado Español escribe "'" donde el código
+          // tiene "-" (WH-9S7XBPX → WH'9S7XBPX). Normalizamos apóstrofo (recto/curvo) → "-" para
+          // que el match contra catálogo/equivalencias/presentaciones funcione (choke point único).
+          let code = bBuscador.value.trim().toUpperCase().replace(/['’‘]/g, '-');
           if (!code) return;
           // limpiar estado "esperando"
           scanningPending.value = false;
