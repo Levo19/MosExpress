@@ -273,6 +273,11 @@
   <button class="icobtn" id="voiceBtn" title="Voz de Cabanossi (leer en voz alta)">🗣️</button>
   <button class="icobtn" id="soundBtn" title="Efectos de sonido">🔊</button>
   <button class="icobtn" id="themeBtn" title="Tema">🌙</button>
+  <!-- Salir del simulador y volver a MosExpress: cierra la pestaña si se abrió con window.open;
+       si no puede (p.ej. capturada dentro de la PWA), navega al inicio de ME. -->
+  <button class="icobtn" id="exitBtn" title="Salir y volver a MosExpress"
+    style="width:auto;padding:0 13px;font-size:13px;font-weight:800;gap:6px"
+    onclick="(function(){try{window.close();}catch(e){} setTimeout(function(){ if(!window.closed) location.href='index.html'; },250);})()">🚪 Salir</button>
 </div>
 
 <div class="wrap">
