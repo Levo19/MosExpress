@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.238';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.239';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -18600,19 +18600,21 @@
         const agregarItemDesdePopover = () => { agregarCarritoObj(popover.value.data); popover.value.visible = false; bBuscador.value = ''; filtrarCatalogo(); };
 
         const procesarEscaneoOBusqueda = () => {
-          // [fix layout ES-LatAm] un lector HID con teclado Español escribe "'" donde el código
-          // tiene "-" (WH-9S7XBPX → WH'9S7XBPX). Normalizamos apóstrofo (recto/curvo) → "-" para
-          // que el match contra catálogo/equivalencias/presentaciones funcione (choke point único).
-          let code = bBuscador.value.trim().toUpperCase().replace(/['’‘]/g, '-');
+          // Determinar origen: scanner (físico/cámara/pegado) vs tipeo manual.
+          // Solo el scanner activa modo estricto (sin búsqueda parcial por nombre).
+          // Tipear "250gr" o "coca cola" siempre permite match parcial.
+          const isFromScanner = _lastWasFastInput;
+          // [fix layout ES-LatAm] SOLO si vino de SCANNER: un lector HID con teclado Español
+          // escribe "'" donde el código tiene "-" (WH-9S7XBPX → WH'9S7XBPX). Se corrige a "-"
+          // para el match por código. En tipeo MANUAL queda LITERAL (buscar por nombre con
+          // apóstrofo, ej. "D'Onofrio", debe respetarse tal cual).
+          let code = bBuscador.value.trim().toUpperCase();
+          if (isFromScanner) code = code.replace(/['’‘]/g, '-');
           if (!code) return;
           // limpiar estado "esperando"
           scanningPending.value = false;
           if (_scanIdleTimer) { clearTimeout(_scanIdleTimer); _scanIdleTimer = null; }
 
-          // Determinar origen: scanner (físico/cámara/pegado) vs tipeo manual.
-          // Solo el scanner activa modo estricto (sin búsqueda parcial por nombre).
-          // Tipear "250gr" o "coca cola" siempre permite match parcial.
-          const isFromScanner = _lastWasFastInput;
           _firstInputTime = 0;
           _lastWasFastInput = false;
 
