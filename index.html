@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.239';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.240';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -3685,14 +3685,14 @@
                     </div>
 
                     <!-- [watch-job] El último ticket NO se imprimió (job murió en 'error' pese a equipo conectado) -->
-                    <div v-if="meImpUltimoFallo" class="mt-2.5 flex items-center gap-2 bg-red-50 border border-red-300 rounded-xl px-3 py-2">
+                    <div v-if="meImpFalloActual" class="mt-2.5 flex items-center gap-2 bg-red-50 border border-red-300 rounded-xl px-3 py-2">
                         <svg class="w-4 h-4 text-red-500 animate-pulse shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
                         <div class="min-w-0 flex-1">
-                            <p class="text-red-700 text-[11px] font-black leading-tight truncate">⛔ {{ meImpUltimoFallo.titulo }} NO se imprimió</p>
-                            <p class="text-red-500 text-[9px] font-bold truncate">{{ meImpUltimoFallo.motivo || 'Falla de red en la impresora' }}</p>
+                            <p class="text-red-700 text-[11px] font-black leading-tight truncate">⛔ {{ meImpFalloActual.titulo }} NO se imprimió<span v-if="meImpFallos.length > 1" class="text-red-500 font-bold"> · +{{ meImpFallos.length - 1 }} más</span></p>
+                            <p class="text-red-500 text-[9px] font-bold truncate">{{ meImpFalloActual.motivo || 'Falla de red en la impresora' }}</p>
                         </div>
                         <button @click="reimprimirUltimoTicket(); haptic(8)" class="shrink-0 bg-red-500 hover:bg-red-600 active:scale-95 text-white text-[11px] font-black px-3 py-1.5 rounded-lg transition-all">Reimprimir</button>
-                        <button @click="meImpUltimoFallo = null; haptic(8)" class="shrink-0 text-red-400 hover:text-red-600 text-lg leading-none px-1">✕</button>
+                        <button @click="descartarFallo(); haptic(8)" class="shrink-0 text-red-400 hover:text-red-600 text-lg leading-none px-1">✕</button>
                     </div>
 
                     <!-- Acordeón: extras del turno (se abre con el toggle de saldo) -->
@@ -3718,7 +3718,7 @@
                     <div class="mt-3 grid grid-cols-4 gap-2">
                         <button @click="haptic(10); abrirModalCambioImpresora()" class="me-gb text-slate-700"
                                 :title="'Impresora: ' + (config.estacion ? config.estacion.Estacion_Nombre : '—') + ' · ' + (meImpresoraEstado.reason || meImpresoraEstado.state) + ' · tap: estado y cambio'">
-                            <span class="ic">🖨<span class="me-gb-dot" :class="meImpUltimoFallo ? 'off' : (meImpresoraEstado.state==='online' ? 'on' : meImpresoraEstado.state==='offline' ? 'off' : 'warn')"></span></span>
+                            <span class="ic">🖨<span class="me-gb-dot" :class="meImpFallos.length ? 'off' : (meImpresoraEstado.state==='online' ? 'on' : meImpresoraEstado.state==='offline' ? 'off' : 'warn')"></span></span>
                             <span class="truncate w-full text-center">{{ config.estacion ? config.estacion.Estacion_Nombre.split(' ')[0] : 'Caja' }}</span>
                         </button>
                         <button @click="haptic(12); abrirModoCajero()" class="me-gb text-indigo-600 me-gb-indigo">
@@ -3797,7 +3797,7 @@
                     <div class="mt-3 grid gap-2" :class="(extEsExtension || config.esExtension) ? 'grid-cols-1' : 'grid-cols-2'">
                         <button @click="haptic(10); abrirModalCambioImpresora()" class="me-gb text-slate-700"
                                 :title="'Impresora: ' + (config.estacion ? config.estacion.Estacion_Nombre : '—') + ' · ' + (meImpresoraEstado.reason || meImpresoraEstado.state) + ' · tap: estado y cambio'">
-                            <span class="ic">🖨<span class="me-gb-dot" :class="meImpUltimoFallo ? 'off' : (meImpresoraEstado.state==='online' ? 'on' : meImpresoraEstado.state==='offline' ? 'off' : 'warn')"></span></span>
+                            <span class="ic">🖨<span class="me-gb-dot" :class="meImpFallos.length ? 'off' : (meImpresoraEstado.state==='online' ? 'on' : meImpresoraEstado.state==='offline' ? 'off' : 'warn')"></span></span>
                             <span class="truncate w-full text-center">{{ config.estacion ? config.estacion.Estacion_Nombre.split(' ')[0] : 'Caja' }}</span>
                         </button>
                         <div v-if="extEsExtension || config.esExtension" class="me-gb text-sky-600 me-gb-sky leading-tight">
@@ -7789,7 +7789,10 @@
         let _meEstadoPrevio = null;
         // [watch-job] Último ticket que murió en 'error' (equipo "Connected" pero el job no imprimió).
         // Cuando != null → chip rojo + banner con Reimprimir. Se limpia al reimprimir OK o al descartar.
-        const meImpUltimoFallo = ref(null);
+        // [watch-job] Cola de tickets que NO imprimieron. Antes era un solo slot y dos fallos
+        // seguidos (ej. Apertura Caja + Bienvenida) se pisaban → se perdía la alerta del primero.
+        const meImpFallos = ref([]);
+        const meImpFalloActual = computed(() => meImpFallos.value.length ? meImpFallos.value[meImpFallos.value.length - 1] : null);
 
         // Sonido warn (descendente) — impresora pasa a offline
         const playMeImpWarn = () => {
@@ -7849,7 +7852,8 @@
         const _meFalloDuroImpresion = (titulo, printerId, contenido, motivo) => {
             try { playMeImpWarn(); } catch (_) {}
             try { if (navigator.vibrate) navigator.vibrate([150, 80, 150, 80, 250]); } catch (_) {}
-            meImpUltimoFallo.value = { titulo: titulo || 'Ticket', printerId: printerId, contenido: contenido, motivo: motivo || 'Falla de red en la impresora', ts: Date.now() };
+            meImpFallos.value.push({ titulo: titulo || 'Ticket', printerId: printerId, contenido: contenido, motivo: motivo || 'Falla de red en la impresora', ts: Date.now() });
+            if (meImpFallos.value.length > 10) meImpFallos.value.shift();   // cap defensivo (no crecer sin límite)
             agregarToast('⛔ ' + (titulo || 'Ticket') + ' NO se imprimió', (motivo || '') + ' · Toca Reimprimir', 'error', 12000);
         };
         // Rastrea un job hasta su estado terminal. attempt=0 permite 1 reintento automático.
@@ -7862,11 +7866,7 @@
             const chequear = async () => {
                 intentos++;
                 const st = await _meConsultarJob(jid);
-                if (st && st.done) {
-                    // Éxito: si este job era justamente el que había fallado, limpiar el banner.
-                    if (meImpUltimoFallo.value && meImpUltimoFallo.value.jobId === jid) meImpUltimoFallo.value = null;
-                    return;
-                }
+                if (st && st.done) return;   // imprimió OK, nada que alertar
                 if (st && st.error) {
                     const motivo = (st.last && st.last.message) || 'La impresora no pudo descargar el ticket (red)';
                     // Reintento automático 1 vez, SOLO en la misma impresora (nunca re-enruta a otra estación).
@@ -7889,13 +7889,15 @@
             };
             setTimeout(chequear, delays[0]);
         };
-        // Reimpresión manual del último ticket fallido (botón del banner).
+        // Descartar el fallo actual (✕) — saca el último de la cola.
+        const descartarFallo = () => { if (meImpFallos.value.length) meImpFallos.value.pop(); };
+        // Reimpresión manual del ticket fallido actual (botón del banner) — saca el último de la cola.
         const reimprimirUltimoTicket = async () => {
-            const f = meImpUltimoFallo.value;
-            if (!f || !f.printerId || !f.contenido) { meImpUltimoFallo.value = null; return; }
+            const f = meImpFallos.value.length ? meImpFallos.value[meImpFallos.value.length - 1] : null;
+            if (!f || !f.printerId || !f.contenido) { descartarFallo(); return; }
             agregarToast('🖨 Reimprimiendo…', f.titulo || 'Ticket', 'info', 4000);
             const printerId = f.printerId, titulo = f.titulo, contenido = f.contenido;
-            meImpUltimoFallo.value = null;
+            meImpFallos.value.pop();   // sale de la cola; si vuelve a fallar, _meFalloDuroImpresion lo re-encola
             try {
                 await mandarImpresionPrintNode(printerId, titulo, contenido, 0);
             } catch (e) {
@@ -21021,7 +21023,9 @@
         // Resuelve un código escaneado a {codBarra, descripcion} usando el detalle de la guía y, si no está,
         // el catálogo local. El operario cuenta a ciegas: NO mostramos la cantidad esperada.
         const rwEscanearItem = () => {
-            const q = String(rwBusq.value || '').trim();
+            // [fix layout ES-LatAm] entrada de SCANNER, match exacto de código → corregir "'"→"-"
+            // (lector HID + teclado Español lee el "-" del código como "'"). No es búsqueda por nombre.
+            const q = String(rwBusq.value || '').trim().replace(/['’‘]/g, '-');
             if (!q) return;
             // descripción: 1) de la guía precargada, 2) del catálogo, 3) el propio código.
             let desc = null;
@@ -21099,7 +21103,8 @@
         };
 
         const guiaBuscarItem = () => {
-            const q = guiaBusq.value.trim();
+            // [fix layout ES-LatAm] scanner, match exacto de código → "'"→"-" (no búsqueda por nombre).
+            const q = guiaBusq.value.trim().replace(/['’‘]/g, '-');
             if (!q) return;
 
             let pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
@@ -21861,7 +21866,7 @@
         // Fallback: build audit list from local stock (used when GAS is unreachable)
 
         const auditEscanear = (cod) => {
-            const q = String(cod || auditBusq.value).trim();
+            const q = String(cod || auditBusq.value).trim().replace(/['’‘]/g, '-');  // [fix layout ES-LatAm] scanner, match exacto de código
             if (!q) return;
             auditBusq.value = '';
 
@@ -22149,7 +22154,7 @@
           wizTutorial, wizTutorialNext, wizTutorialClose, wizTutorialOpen,
           // [v2.5.40] Chip impresora live + cambio impresora
           meImpresoraEstado,
-          meImpUltimoFallo,
+          meImpFallos, meImpFalloActual, descartarFallo,
           reimprimirUltimoTicket,
           abrirModalCambioImpresora, cerrarModalCambioImp, seleccionarImpresoraCambio,
           confirmarCambioImpresora, modalCambioImp, cambioImpEstaciones,
