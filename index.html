@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.240';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.241';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -18606,13 +18606,13 @@
           // Solo el scanner activa modo estricto (sin búsqueda parcial por nombre).
           // Tipear "250gr" o "coca cola" siempre permite match parcial.
           const isFromScanner = _lastWasFastInput;
-          // [fix layout ES-LatAm] SOLO si vino de SCANNER: un lector HID con teclado Español
-          // escribe "'" donde el código tiene "-" (WH-9S7XBPX → WH'9S7XBPX). Se corrige a "-"
-          // para el match por código. En tipeo MANUAL queda LITERAL (buscar por nombre con
-          // apóstrofo, ej. "D'Onofrio", debe respetarse tal cual).
           let code = bBuscador.value.trim().toUpperCase();
-          if (isFromScanner) code = code.replace(/['’‘]/g, '-');
           if (!code) return;
+          // [fix layout ES-LatAm · 1000x] un lector HID con teclado Español escribe "'" donde el
+          // código tiene "-" (WH-9S7XBPX → WH'9S7XBPX). Normalizamos "'"(recto/curvo/agudo)→"-" SOLO
+          // para el match por CÓDIGO (determinista, sin depender del heurístico scanner/manual). La
+          // búsqueda por NOMBRE usa `code` LITERAL → marcas con apóstrofo (D'Onofrio) se respetan.
+          const codeCod = code.replace(/['’‘´]/g, '-');
           // limpiar estado "esperando"
           scanningPending.value = false;
           if (_scanIdleTimer) { clearTimeout(_scanIdleTimer); _scanIdleTimer = null; }
@@ -18620,10 +18620,10 @@
           _firstInputTime = 0;
           _lastWasFastInput = false;
 
-          // 1º Resolver Equivalencia si existe (siempre match exacto)
-          const eq = db.value.EQUIVALENCIAS?.find(e => String(e.Cod_Alias).toUpperCase() === code);
+          // 1º Resolver Equivalencia si existe (siempre match exacto) — usa el código normalizado
+          const eq = db.value.EQUIVALENCIAS?.find(e => String(e.Cod_Alias).toUpperCase() === codeCod);
           _codEscaneadoTemp = eq ? String(eq.Cod_Alias) : null;
-          const searchCode = eq ? String(eq.Cod_Barras_Real).toUpperCase() : code;
+          const searchCode = eq ? String(eq.Cod_Barras_Real).toUpperCase() : codeCod;
 
           // Helper local: feedback según stock — la venta NUNCA se bloquea
           const feedbackSegunStock = (prod, label) => {
