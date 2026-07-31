@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.241';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.242';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -14660,6 +14660,16 @@
                              }
                          } catch(eD) {
                              console.warn('[cierre directo] fallback a GAS:', eD && eD.message);
+                             // [595 auto-sanado] el backend rechazó el cierre porque ESTE equipo no es el dueño de
+                             // la caja (una extensión que perdió su flag esExtension). Re-marcar como 2º equipo →
+                             // el botón "cerrar" se oculta y el guard de arriba lo bloquea desde ahora. Money-safe:
+                             // NO se cerró nada (el dueño cierra). El finally restablece procesandoCierre en el return.
+                             if (eD && String(eD.message || '').indexOf('SOLO_EQUIPO_PRINCIPAL_CIERRA') !== -1) {
+                                 try { config.value.esExtension = true; _extEsExtension.value = true;
+                                       localStorage.setItem('mosexpress_config', JSON.stringify(config.value)); } catch(_){}
+                                 try { agregarToast('🔗 Este es un 2º equipo', 'El cierre lo hace el equipo principal. Este equipo se cierra solo cuando el principal cierra.', 'info', 5000); } catch(_){}
+                                 return;
+                             }
                              // cierreOk sigue false → el loop GAS de abajo hace el cierre completo (fallback)
                          }
                      }
