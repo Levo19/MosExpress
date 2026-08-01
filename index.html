@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.242';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.244';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4055,7 +4055,9 @@
                                  <span class="pres-btn-n">{{ prod.presentaciones.length - 1 }}</span>
                                </button>
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
-                               <p class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
+                               <!-- [601] sin precio (PN aprobado sin precio) → sello ⛔ (la venta se bloquea en agregarCarritoObj) -->
+                               <p v-if="Number(prod.precio) > 0" class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
+                               <p v-else class="mt-2"><span class="inline-block text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border border-dashed border-red-400 text-red-600 bg-red-50" title="Aprobado sin precio — pídele al admin que lo ponga en MOS Catálogo">⛔ Sin precio</span></p>
                                <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : ' uds') : 'Sin stock' }}</span>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
@@ -4652,7 +4654,9 @@
                <div class="ml-4 flex-1">
                   <h3 class="font-black text-gray-800 text-lg leading-tight uppercase">{{ popover.data.nombreCorto }}</h3>
                   <p class="text-posPrimary text-xs mt-1 font-bold">{{ popover.data.empaque }} | {{ popover.data.codBarras }}</p>
-                  <div class="mt-3 text-3xl font-black text-emerald-600">S/ {{ popover.data.precio.toFixed(2) }}</div>
+                  <!-- [601] sin precio → sello (venta bloqueada en agregarCarritoObj) -->
+                  <div v-if="Number(popover.data.precio) > 0" class="mt-3 text-3xl font-black text-emerald-600">S/ {{ popover.data.precio.toFixed(2) }}</div>
+                  <div v-else class="mt-3"><span class="inline-block text-sm font-black uppercase tracking-wide px-2 py-1 rounded-lg border-2 border-dashed border-red-400 text-red-600 bg-red-50">⛔ Sin precio — pídelo al admin</span></div>
                </div>
             </div>
             
@@ -18723,6 +18727,14 @@
           if (g >= 1) { item.cantidad = Math.round(g) / 1000; calcularImportes(item); }
         };
         const agregarCarritoObj = (prodObj) => {
+          // [601] ⛔ SIN PRECIO: producto aprobado por registro rápido (PN) sin precio de venta.
+          // VENTA BLOQUEADA (decisión del dueño: cero riesgo de vender a S/0). El admin le pone
+          // precio en MOS Catálogo y el poller de catálogo lo libera solo (~1 min).
+          if (!(parseFloat(prodObj.precio) > 0)) {
+            agregarToast('⛔ Sin precio de venta', (prodObj.nombreCorto || 'Producto') + ' — pídele al admin que le ponga precio en MOS. No se puede vender aún.');
+            try { vibrate([60, 80, 60]); } catch(_) {}
+            return;
+          }
           // [2.8.214 PERF] filtrarCatalogo re-renderiza TODO el grid — solo hace falta si
           // había texto en el buscador (causa de la lentitud al elegir presentación).
           if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); }
