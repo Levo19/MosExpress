@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.245';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.246';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -7918,7 +7918,13 @@
         // Reimpresión manual del ticket fallido actual (botón del banner) — saca el último de la cola.
         const reimprimirUltimoTicket = async () => {
             const f = meImpFallos.value.length ? meImpFallos.value[meImpFallos.value.length - 1] : null;
-            if (!f || !f.printerId || !f.contenido) { descartarFallo(); return; }
+            // [v2.8.246] Sin impresora asignada el banner se cerraba EN SILENCIO y el cajero
+            // creía haber reimpreso. Ahora dice exactamente qué falta configurar.
+            if (f && !f.printerId) {
+                agregarToast('⚠ Esta estación no tiene impresora', 'Configura el PrintNode_ID de la estación para poder imprimir', 'error', 9000);
+                descartarFallo(); return;
+            }
+            if (!f || !f.contenido) { descartarFallo(); return; }
             agregarToast('🖨 Reimprimiendo…', f.titulo || 'Ticket', 'info', 4000);
             const printerId = f.printerId, titulo = f.titulo, contenido = f.contenido;
             meImpFallos.value.pop();   // sale de la cola; si vuelve a fallar, _meFalloDuroImpresion lo re-encola
@@ -19437,7 +19443,8 @@
         };
 
         const leerMontoEnVoz = (monto) => {
-            if (!window.speechSynthesis) return;
+            // [v2.8.246] respeta el switch de voz (antes leía el total aunque estuviera apagada)
+            if (!voiceEnabled.value || !window.speechSynthesis) return;
             const soles = Math.floor(monto);
             const centavos = Math.round((monto - soles) * 100);
             let texto = numALetras(soles);
@@ -19446,8 +19453,13 @@
             utt.lang = 'es-PE';
             utt.rate = 0.92;
             utt.pitch = 1.05;
-            window.speechSynthesis.cancel();
+            // [v2.8.246] cancelar SOLO si de verdad está hablando: el `cancel()` incondicional
+            // vaciaba de la cola la utterance MUDA de precalentado (que a los 140ms todavía no
+            // arranca) y el fix de la voz fría no servía de nada. Así el monto se encola detrás
+            // del warm-up (mudo, rate 2 → inaudible e instantáneo) en vez de matarlo.
+            if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
             window.speechSynthesis.speak(utt);
+            _ttsUltimo = Date.now();   // el monto hablado también deja el motor caliente
         };
 
         const abrirModalPago = () => {
@@ -19458,9 +19470,12 @@
             // ("a la primera demora, después es instantáneo"). Lo despertamos y damos
             // 140ms para que cargue: el monto sale enseguida y ya sin retraso.
             try {
-                const _frio = _ttsNecesitaWarm();
-                if (_frio) { _ttsWarm(); setTimeout(() => { try { leerMontoEnVoz(granTotal.value); } catch(_) {} }, 140); }
-                else leerMontoEnVoz(granTotal.value);
+                // [v2.8.246] El total se CAPTURA ahora: leerlo dentro del setTimeout podía
+                // decir en voz alta un monto distinto al del modal si el scanner metía otro
+                // producto en esos 140ms (el atajo ⎵ = Cobrar se usa con el foco en el lector).
+                const _totVoz = granTotal.value;
+                if (_ttsNecesitaWarm()) { _ttsWarm(); setTimeout(() => { try { leerMontoEnVoz(_totVoz); } catch(_) {} }, 140); }
+                else leerMontoEnVoz(_totVoz);
             } catch(_) {}
             try {
                 pago.value.tipoDoc       = 'NOTA_DE_VENTA';
@@ -20041,17 +20056,33 @@
                // jobs YA creados (necesita printJobId). Ahora un fallo de ENVÍO reintenta 1 vez
                // y, si insiste, entra al MISMO banner rojo persistente con botón Reimprimir.
                // Sigue siendo fire-and-forget: jamás bloquea la venta (que ya quedó registrada).
-               const _pnId = config.value.estacion.PrintNode_ID;
+               const _pnId = (config.value.estacion || {}).PrintNode_ID;
                const _contenido = b64ESC(txt);
+               // [v2.8.246 · ANTI-DOBLE-TICKET] Un timeout NO significa "no se imprimió":
+               // la solicitud pudo llegar a PrintNode y crear el job, y solo perderse la
+               // respuesta. Reintentar ahí sacaba DOS papeles del mismo ticket. Reglas:
+               //   · `_yaSalio` — si el envío resuelve (aunque sea tarde), NO se toca nada más.
+               //   · Reintento automático SOLO ante error CON respuesta (la Edge dijo que no):
+               //     ahí sabemos que el job no se creó. Ante timeout/abort → nunca.
+               //   · Antes de alarmar se esperan 6s más, por si la respuesta venía en camino.
+               // El 4º argumento propaga el nº de intento al watch-job: sin él, cada envío
+               // estrenaba su propio auto-reintento y podían salir hasta 4 papeles.
+               let _yaSalio = false;
+               const _incierto = (e) => /timeout|abort|no respondió/i.test(String((e && e.message) || e || ''));
                const _enviarTicket = (intento) => {
-                   const printPromise = mandarImpresionPrintNode(_pnId, titulo, _contenido);
+                   const printPromise = mandarImpresionPrintNode(_pnId, titulo, _contenido, intento)
+                       .then(d => { _yaSalio = true; return d; });
                    const timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('la impresora no respondió en 8s')), 8000));
                    return Promise.race([printPromise, timeoutP]).then(() => true).catch(e => {
-                       if (intento === 0) {
+                       if (_yaSalio) return true;                       // llegó tarde, pero llegó
+                       if (intento === 0 && !_incierto(e)) {             // rechazo con respuesta → seguro reintentar
                            agregarToast('⚠ Reintentando impresión', (e && e.message) || 'sin respuesta', 'error', 5000);
                            return new Promise(r => setTimeout(r, 900)).then(() => _enviarTicket(1));
                        }
-                       _meFalloDuroImpresion(titulo, _pnId, _contenido, (e && e.message) || 'No se pudo enviar a la impresora');
+                       const _motivo = (e && e.message) || 'No se pudo enviar a la impresora';
+                       setTimeout(() => {                                // margen por si la respuesta venía en camino
+                           if (!_yaSalio) _meFalloDuroImpresion(titulo, _pnId, _contenido, _motivo);
+                       }, 6000);
                        return false;
                    });
                };

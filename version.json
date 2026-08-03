@@ -1,1 +1,1 @@
-{"version":"2.8.245","build":"2.8.245 ticket que no llega a PrintNode: reintento + banner Reimprimir; voz precalentada (ya no demora la primera vez)"}
+{"version":"2.8.246","build":"2.8.246 anti-doble-ticket (no reintentar ante timeout) + warm-up de voz que ya no se autocancela + monto capturado"}
