@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.244';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.245';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -7610,6 +7610,25 @@
         // del catálogo o búsqueda parcial por nombre NO lo activa.
         let _voiceNextAdd = false;
 
+        // [v2.8.245] El motor de voz del sistema se DUERME: tras ~15-20s sin hablar, la
+        // siguiente frase tarda 1-3s en salir (Windows descarga la voz de memoria) y por eso
+        // "la primera vez demora y después es instantáneo". _ttsWarm lo despierta con un
+        // utterance MUDO (volume 0) justo antes de que haga falta — al abrir el cobro.
+        let _ttsUltimo = 0;
+        const _ttsNecesitaWarm = () => (Date.now() - _ttsUltimo) >= 15000;
+        const _ttsWarm = () => {
+            if (!voiceEnabled.value || !('speechSynthesis' in window)) return;
+            if (!_ttsNecesitaWarm()) return;   // sigue caliente, no molestar
+            try {
+                const u = new SpeechSynthesisUtterance(' ');
+                u.lang = 'es-PE'; u.volume = 0; u.rate = 2;
+                const voz = _seleccionarVoz();
+                if (voz) u.voice = voz;
+                speechSynthesis.speak(u);
+                _ttsUltimo = Date.now();
+            } catch (e) {}
+        };
+
         const speakES = (texto) => {
             if (!voiceEnabled.value) return;
             if (!('speechSynthesis' in window)) return;
@@ -7623,6 +7642,7 @@
                 const voz = _seleccionarVoz();
                 if (voz) u.voice = voz;
                 speechSynthesis.speak(u);
+                _ttsUltimo = Date.now();   // [v2.8.245] queda caliente por ~15s
             } catch(e) {}
         };
 
@@ -18738,6 +18758,9 @@
           // [2.8.214 PERF] filtrarCatalogo re-renderiza TODO el grid — solo hace falta si
           // había texto en el buscador (causa de la lentitud al elegir presentación).
           if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); }
+          // [v2.8.245] Empezó una venta → despertar el motor de voz AHORA, no cuando el
+          // cajero toque Cobrar (ahí ya sería tarde y se oiría el retraso de 1-3s).
+          try { _ttsWarm(); } catch(_) {}
           // [2.8.214] vuelo al carrito (efecto elegante desde el punto del click)
           try { _flyToCart(); } catch(_) {}
           // Código escaneado (equivalencia) o canónico si no hubo equivalencia
@@ -19431,7 +19454,14 @@
             // [v2.5.62] El render del modal NUNCA debe quedar bloqueado si
             // un side-effect inicial truena (limpiarCliente, cargarClienteVarios,
             // etc.). Abrimos el modal PRIMERO, luego corremos los efectos.
-            try { leerMontoEnVoz(granTotal.value); } catch(_) {}
+            // [v2.8.245] Si el motor de voz está dormido, este primer speak tarda 1-3s
+            // ("a la primera demora, después es instantáneo"). Lo despertamos y damos
+            // 140ms para que cargue: el monto sale enseguida y ya sin retraso.
+            try {
+                const _frio = _ttsNecesitaWarm();
+                if (_frio) { _ttsWarm(); setTimeout(() => { try { leerMontoEnVoz(granTotal.value); } catch(_) {} }, 140); }
+                else leerMontoEnVoz(granTotal.value);
+            } catch(_) {}
             try {
                 pago.value.tipoDoc       = 'NOTA_DE_VENTA';
                 pago.value.metodo        = (config.value.esCajero && cajaAbierta.value) ? 'EFECTIVO' : 'POR_COBRAR';
@@ -20004,10 +20034,28 @@
                    txt += "Gracias por su compra\n(Nota de venta - no es comprobante\nde pago electronico)\n";
                }
                txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";          // feed + corte
-               const printPromise = mandarImpresionPrintNode(config.value.estacion.PrintNode_ID, titulo, b64ESC(txt));
-               const timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('PrintNode timeout 8s')), 8000));
-               Promise.race([printPromise, timeoutP])
-                   .catch(e => agregarToast('Error Impresión', e.message));
+               // [v2.8.245] HUECO CERRADO: antes, si la solicitud NUNCA llegaba a PrintNode
+               // (Edge lenta, token demorado, microcorte), el único aviso era un toast que se
+               // desvanecía y el ticket se perdía en silencio — el cajero tenía que darse cuenta
+               // solo y buscar Reimprimir a mano. El watch-job NO cubría este caso: solo vigila
+               // jobs YA creados (necesita printJobId). Ahora un fallo de ENVÍO reintenta 1 vez
+               // y, si insiste, entra al MISMO banner rojo persistente con botón Reimprimir.
+               // Sigue siendo fire-and-forget: jamás bloquea la venta (que ya quedó registrada).
+               const _pnId = config.value.estacion.PrintNode_ID;
+               const _contenido = b64ESC(txt);
+               const _enviarTicket = (intento) => {
+                   const printPromise = mandarImpresionPrintNode(_pnId, titulo, _contenido);
+                   const timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('la impresora no respondió en 8s')), 8000));
+                   return Promise.race([printPromise, timeoutP]).then(() => true).catch(e => {
+                       if (intento === 0) {
+                           agregarToast('⚠ Reintentando impresión', (e && e.message) || 'sin respuesta', 'error', 5000);
+                           return new Promise(r => setTimeout(r, 900)).then(() => _enviarTicket(1));
+                       }
+                       _meFalloDuroImpresion(titulo, _pnId, _contenido, (e && e.message) || 'No se pudo enviar a la impresora');
+                       return false;
+                   });
+               };
+               _enviarTicket(0);
            };
 
 

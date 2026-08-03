@@ -1,1 +1,1 @@
-{"version":"2.8.244","build":"2.8.244 Sello SIN PRECIO + venta bloqueada (601) para productos aprobados por PN sin precio: card y popover muestran sello rojo punteado y agregarCarritoObj bloquea con toast (cero riesgo de vender a S/0; el admin pone precio en MOS y el poller libera solo). Incluye 2.8.243: analitica POS con stock a 3 decimales. FIX ritual: var V habia quedado en 2.8.242 (bucle de update)."}
+{"version":"2.8.245","build":"2.8.245 ticket que no llega a PrintNode: reintento + banner Reimprimir; voz precalentada (ya no demora la primera vez)"}
