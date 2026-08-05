@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.248';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.249';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -18573,8 +18573,15 @@
             //       cantidad = 0.25 kg, precio = 12, subtotal = 3.00 ✓
             //       (antes usaba precio=3 → subtotal 0.75, redondeado 0.8 ❌)
             const _esGranel = String(prodBase.unidadMedida || '').toUpperCase() === 'KGM';
+            // [2.8.249 · SQL 628] PRECIO FIJO: presentación de un granel que se cobra a su
+            // precio de ETIQUETA (ej. saco 25 kg del canal mayoreo). Se maneja como unidad
+            // (NIU): cantidad 1, precio propio, sin tramos por kg. El stock igual descuenta
+            // los kg reales server-side (mos._venta_canonico convierte 1 saco → factor kg).
+            // Sin el flag, el comportamiento histórico queda INTACTO (precio por kg del
+            // canónico — el caso maní 250g del comentario de abajo).
+            const _esFijo = pres.Precio_Fijo === true || pres.Precio_Fijo === 'true';
             let precioFinal = parseFloat(pres.Precio_Venta) || 0;
-            if (_esGranel) {
+            if (_esGranel && !_esFijo) {
                 const presCanonica = (prodBase.presentaciones || []).find(p => parseFloat(p.Factor) === 1);
                 if (presCanonica) {
                     precioFinal = parseFloat(presCanonica.Precio_Venta) || precioFinal;
@@ -18585,9 +18592,9 @@
                 }
             }
 
-            // [v2.5.50] Si es granel, parsear segmentos_precio del canónico
+            // [v2.5.50] Si es granel, parsear segmentos_precio del canónico (no aplica al FIJO)
             let _segmentosPrecio = null;
-            if (_esGranel) {
+            if (_esGranel && !_esFijo) {
                 const presCanonica = (prodBase.presentaciones || []).find(p => parseFloat(p.Factor) === 1);
                 const segRaw = presCanonica?.segmentos_precio || prodBase.segmentos_precio || '';
                 if (segRaw) {
@@ -18609,7 +18616,9 @@
                 presLabel:    parseFloat(pres.Factor) !== 1 ? _descriptorPres(pres.Empaque, prodBase.nombreCorto) : '',
                 codSunat:     prodBase.codSunat,
                 tipoIgv:      prodBase.tipoIgv,
-                unidadMedida: prodBase.unidadMedida,
+                // [2.8.249] FIJO → viaja como NIU: cantidad 1 (+1 por toque), sin balanza,
+                // y _venta_canonico multiplica por el factor al descontar stock.
+                unidadMedida: _esFijo ? 'NIU' : prodBase.unidadMedida,
                 precio:       precioFinal,
                 segmentosPrecio: _segmentosPrecio, // [v2.5.50] tramos de pricing granel
                 imagen:       prodBase.imagen,
