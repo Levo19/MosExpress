@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.247';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.248';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -1328,6 +1328,10 @@
       });
 
       _reg.update().catch(() => {});
+      // [2.8.248] revalidar el SW cada 5 min como en WH: antes sólo se pedía UNA vez
+      // al arrancar, así que una caja que no se cerraba en todo el día podía quedarse
+      // con el service worker viejo pese a haber versión nueva publicada.
+      setInterval(() => { try { _reg && _reg.update().catch(() => {}); } catch (_) {} }, 5 * 60 * 1000);
 
     }).catch(e => console.warn('[SW]', e));
 
@@ -1346,7 +1350,13 @@
     async function _checkForcedUpdate() {
       if (_forceUpdateTriggered) return;
       try {
-        const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+        // [2.8.248] con timeout: sin él, una red a medias dejaba este chequeo pendiente
+        // para siempre y la caja se quedaba con la versión vieja sin enterarse.
+        const _ac = new AbortController();
+        const _to = setTimeout(() => { try { _ac.abort(); } catch(_){} }, 4000);
+        let r;
+        try { r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store', signal: _ac.signal }); }
+        finally { clearTimeout(_to); }
         if (!r.ok) return;
         const j = await r.json();
         if (!j || !j.version) return;
