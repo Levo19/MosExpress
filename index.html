@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.246';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.247';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -5220,7 +5220,15 @@
                </div>
             </div>
 
-            <button @click="procesarPago" data-pago-confirmar :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || ((pago.tipoDoc === 'FACTURA' || (pago.tipoDoc === 'BOLETA' && granTotal >= 700)) && !pago.nombreCliente) || !!errorDocumento" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
+            <!-- [623] Un crédito sin cliente es incobrable: la deuda se ata por documento,
+                 así que sin cliente no se puede descontar de planilla ni reclamar a nadie.
+                 (Había S/4,804 en 56 tickets así.) Se explica en vez de solo deshabilitar. -->
+            <p v-if="(pago.ventaCreditoDirecto || pago.metodo === 'CREDITO') && !pago.nombreCliente"
+               class="mt-3 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 leading-snug">
+              ⚠ Para dar crédito necesitas identificar al cliente (DNI/RUC o nombre).<br>
+              <span class="font-semibold text-orange-500">Sin cliente la deuda no se le puede cobrar a nadie.</span>
+            </p>
+            <button @click="procesarPago" data-pago-confirmar :disabled="(!pago.ventaCreditoDirecto && ((pago.metodo === 'EFECTIVO' || pago.metodo === 'MIXTO') && vuelto < 0)) || (!pago.ventaCreditoDirecto && pago.metodo === 'MIXTO' && (!pago.montoVirtual || pago.montoVirtual >= granTotal)) || procesando || ((pago.tipoDoc === 'FACTURA' || (pago.tipoDoc === 'BOLETA' && granTotal >= 700)) && !pago.nombreCliente) || ((pago.ventaCreditoDirecto || pago.metodo === 'CREDITO') && !pago.nombreCliente) || !!errorDocumento" :class="{ 'fx-cobrar-pulse': cobrarFx }" class="mt-4 w-full bg-posPrimary text-white text-xl font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 disabled:shadow-none transition-transform active:scale-95 flex justify-center items-center shrink-0 disabled:bg-opacity-50 tracking-wide"
                     :class="pago.ventaCreditoDirecto ? '!bg-orange-500 shadow-orange-200' : ''">
                <svg v-if="procesando" class="animate-spin w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                <span>{{ procesando ? 'IMPRIMIENDO...' : (pago.ventaCreditoDirecto ? '📋 EMITIR A CRÉDITO' : 'IMPRIMIR TICKET') }}</span>
