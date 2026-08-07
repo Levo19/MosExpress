@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.259';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.260';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -856,6 +856,68 @@
 .alt-pulse{background:linear-gradient(135deg,#6366f1,#4f46e5);animation:altPulse 1.6s ease-in-out infinite}
 @keyframes altPulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.45)}50%{box-shadow:0 0 0 7px rgba(99,102,241,0)}}
 @media (prefers-reduced-motion:reduce){.alt-pulse{animation:none}}
+
+/* ── [2.8.260] Vista Rápida (peek de analítica) — mockup aprobado ── */
+.vr-velo{position:fixed;inset:0;z-index:75;background:rgba(17,24,39,.42);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:18px;animation:vrFade .16s ease-out}
+.vr-panel{position:relative;width:100%;max-width:360px;background:#fff;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:13px;animation:vrPop .18s cubic-bezier(.2,.9,.3,1.08)}
+@keyframes vrFade{from{opacity:0}to{opacity:1}}
+@keyframes vrPop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
+.vr-x{position:absolute;top:6px;right:6px;width:26px;height:26px;border:0;border-radius:99px;background:#f3f4f6;color:#6b7280;font-size:15px;font-weight:900;line-height:1;cursor:pointer;display:grid;place-items:center;z-index:2}
+.vr-x:active{transform:scale(.92)}
+.vr-head{display:flex;gap:10px;align-items:center;padding-right:24px}
+.vr-foto{width:44px;height:44px;border-radius:12px;background:#f3f4f6;display:grid;place-items:center;overflow:hidden;flex:0 0 44px}
+.vr-foto img{width:100%;height:100%;object-fit:cover;mix-blend-mode:multiply}
+.vr-ini{font-size:15px;font-weight:900;color:#c7ccd6;letter-spacing:1px}
+.vr-id{flex:1;min-width:0}
+.vr-nm{font-size:12px;font-weight:900;color:#111827;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vr-sub{font-size:10px;color:#6b7280;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vr-chip{font-size:9px;font-weight:900;border-radius:99px;padding:2px 8px;white-space:nowrap;flex:0 0 auto}
+.vr-chip-ok{background:rgba(255,255,255,.9);border:1px solid #d1fae5;color:#059669}
+.vr-chip-no{background:#dc2626;color:#fff}
+.vr-stats{display:flex;gap:8px;margin-top:10px}
+.vr-stat{flex:1;background:#f9fafb;border-radius:12px;padding:8px;text-align:center;min-width:0}
+.vr-n{font-size:14px;font-weight:900;color:#111827;line-height:1.15}
+.vr-n-cero{color:#dc2626}
+.vr-lb{font-size:8.5px;color:#9ca3af;font-weight:800;margin-top:1px}
+.vr-spark{width:100%;height:40px;margin-top:8px;display:block}
+.vr-acts{display:flex;gap:8px;margin-top:10px}
+.vr-b{flex:1;height:34px;border:0;border-radius:11px;font-weight:900;font-size:10.5px;cursor:pointer;transition:transform .12s;white-space:nowrap;overflow:hidden}
+.vr-b:active{transform:scale(.96)}
+.vr-b-dark{background:#111827;color:#fff}
+.vr-b-pres{background:#eef2ff;color:#4f46e5}
+.vr-b-off{background:#f3f4f6;color:#c2c7d0;pointer-events:none}
+.vr-foot{font-size:9px;color:#9ca3af;margin-top:7px;text-align:center}
+.vr-err{font-size:10px;color:#dc2626;font-weight:800;margin-top:7px;text-align:center}
+@media (prefers-reduced-motion:reduce){.vr-velo,.vr-panel{animation:none}}
+
+/* ── [2.8.260] Sheet de PRESENTACIONES (piel nueva, misma lógica) ── */
+.pv-velo{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.pv-sheet{position:absolute;bottom:0;left:0;right:0;background:#fff;border-radius:24px 24px 0 0;box-shadow:0 -12px 40px rgba(0,0,0,.25);padding:16px 16px 18px;max-height:78vh;overflow-y:auto;animation:altUp .22s ease-out}
+.pv-top{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.pv-foto{width:44px;height:44px;border-radius:12px;background:#f3f4f6;display:grid;place-items:center;overflow:hidden;flex:0 0 44px}
+.pv-foto img{width:100%;height:100%;object-fit:cover;mix-blend-mode:multiply}
+.pv-ini{font-size:15px;font-weight:900;color:#c7ccd6;letter-spacing:1px}
+.pv-tt{font-size:14px;font-weight:900;color:#1f2937;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pv-sub{font-size:9.5px;color:#9ca3af;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.pv-x{margin-left:auto;width:32px;height:32px;border-radius:99px;background:#f3f4f6;color:#6b7280;font-weight:900;border:0;font-size:16px;line-height:1;cursor:pointer;flex:0 0 32px;display:grid;place-items:center}
+.pv-x:active{transform:scale(.92)}
+.pv-fila{width:100%;display:flex;align-items:center;gap:9px;text-align:left;border-radius:18px;padding:11px;margin-top:9px;border:1.5px solid #c7d2fe;background:#eef2ff;cursor:pointer;transition:transform .12s}
+.pv-fila:active{transform:scale(.98)}
+.pv-fila.pv-base{border-color:#a7f3d0;background:#ecfdf5}
+.pv-nm{flex:1;min-width:0}
+.pv-n1,.pv-n2{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-n1{font-size:12px;font-weight:800;color:#1f2937;text-transform:uppercase}
+.pv-n2{font-size:10px;font-weight:700;color:#9ca3af;margin-top:2px}
+.pv-tag{font-size:8.5px;font-weight:900;border-radius:99px;padding:3px 9px;color:#fff;background:#059669;white-space:nowrap;flex:0 0 auto}
+.pv-st{font-size:10px;font-weight:800;color:#9ca3af;white-space:nowrap;flex:0 0 auto}
+.pv-pv{font-size:14px;font-weight:900;color:#111827;white-space:nowrap;flex:0 0 auto}
+.pv-nota{margin-top:12px;text-align:center;font-size:10px;color:#9ca3af;line-height:1.5}
+/* ── [2.8.260] Estado vacío compartido de sheets (Parecidos sin stock) ── */
+.sheet-vacio{text-align:center;padding:26px 10px 12px}
+.sv-ico{font-size:40px;line-height:1;opacity:.5}
+.sv-t{font-size:13px;font-weight:900;color:#374151;margin-top:10px}
+.sv-s{font-size:10.5px;color:#9ca3af;font-weight:600;margin-top:5px;line-height:1.5}
+@media (prefers-reduced-motion:reduce){.pv-sheet{animation:none}}
   </style>
   <style>
     /* ── Update overlay ─────────────────────────────── */
@@ -4071,7 +4133,7 @@
                          
                          <!-- Productos Component -->
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
-                              @contextmenu.prevent="abrirAnaliticaPos(prod)"
+                              @contextmenu.prevent="abrirVistaRapida(prod)"
                               @touchstart.passive="anaPosPressStart(prod)" @touchend="anaPosPressCancel" @touchmove.passive="anaPosPressCancel" @touchcancel="anaPosPressCancel"
                               :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '']">
                             <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
@@ -4093,8 +4155,8 @@
                                        @click.stop="prod.presentaciones && prod.presentaciones.length > 1 && abrirPresentaciones(prod)" @touchstart.stop @touchend.stop>
                                  🧱 <span v-if="prod.presentaciones && prod.presentaciones.length > 1">{{ prod.presentaciones.length - 1 }} PRESENT.</span><span v-else>PRESENT.</span>
                                </button>
-                               <button class="cab" :class="prod.stock !== null && prod.stock <= 0 ? 'cab-alt' : 'cab-off'"
-                                       @click.stop="prod.stock !== null && prod.stock <= 0 && abrirAlternativas(prod)" @touchstart.stop @touchend.stop>🔄 PARECIDOS</button>
+                               <button class="cab" :class="prod.stock !== null && prod.stock <= 0 && tieneAlternativas(prod) ? 'cab-alt' : 'cab-off'"
+                                       @click.stop="prod.stock !== null && prod.stock <= 0 && tieneAlternativas(prod) && abrirAlternativas(prod)" @touchstart.stop @touchend.stop>🔄 PARECIDOS</button>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
                          </div>
@@ -4875,6 +4937,11 @@
           <span class="text-[10px] font-bold text-gray-400">{{ it.stock }} disp.</span>
           <span class="text-sm font-black text-gray-800">S/ {{ it.precio.toFixed(2) }}</span>
         </button>
+        <div v-if="!altSheet.items.length" class="sheet-vacio">
+          <div class="sv-ico">🔍</div>
+          <div class="sv-t">Sin parecidos con stock ahora mismo</div>
+          <div class="sv-s">Ni la familia ni los sustitutos tienen stock en tu zona</div>
+        </div>
       </div>
     </div>
 
@@ -4902,6 +4969,40 @@
     </div>
     <!-- MODAL PRESENTACIONES -->
     <!-- ══ [2.8.208] ANALÍTICA DE PRODUCTO (click derecho / long-press en catálogo) ══ -->
+    <!-- ══ [2.8.260] VISTA RÁPIDA (peek de analítica) · click derecho / presión larga ══ -->
+    <div v-if="peekPos.abierto" class="vr-velo" @click.self="cerrarVistaRapida()">
+      <div class="vr-panel" role="dialog" aria-label="Vista rápida del producto">
+        <button class="vr-x" @click="cerrarVistaRapida()" aria-label="Cerrar vista rápida">×</button>
+        <div class="vr-head">
+          <div class="vr-foto">
+            <img v-if="peekPos.prod && peekPos.prod.imagen" :src="peekPos.prod.imagen" loading="lazy">
+            <span v-else class="vr-ini">{{ peekIni }}</span>
+          </div>
+          <div class="vr-id">
+            <div class="vr-nm">{{ peekPos.prod ? (peekPos.prod.nombreCorto || peekPos.prod.nombre || '') : '' }}</div>
+            <div class="vr-sub">{{ peekSub }}</div>
+          </div>
+          <span v-if="peekStockTxt" class="vr-chip" :class="Number(peekPos.prod.stock) > 0 ? 'vr-chip-ok' : 'vr-chip-no'">{{ peekStockTxt }}</span>
+        </div>
+        <div class="vr-stats">
+          <div class="vr-stat"><div class="vr-n">{{ peekVM ? peekVM.ventas7 : '…' }}</div><div class="vr-lb">VENTAS 7D</div></div>
+          <div class="vr-stat"><div class="vr-n" :class="peekVM && peekVM.stockZona <= 0 ? 'vr-n-cero' : ''">{{ peekVM ? peekVM.stockZona : '…' }}</div><div class="vr-lb">TU ZONA</div></div>
+          <div class="vr-stat"><div class="vr-n" :class="peekVM && peekVM.stockAlmacen <= 0 ? 'vr-n-cero' : ''">{{ peekVM ? peekVM.stockAlmacen : '…' }}</div><div class="vr-lb">ALMACÉN</div></div>
+        </div>
+        <svg class="vr-spark" viewBox="0 0 300 40">
+          <polyline v-if="peekVM && peekVM.pts" :points="peekVM.pts" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle v-if="peekVM && peekVM.pts" :cx="peekVM.lx" :cy="peekVM.ly" r="3.5" fill="#059669"/>
+          <line v-if="!(peekVM && peekVM.pts)" x1="4" y1="30" x2="296" y2="30" stroke="#e5e7eb" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <div class="vr-acts">
+          <button class="vr-b vr-b-dark" @click="vistaRapidaAnalisis()">📊 ANÁLISIS COMPLETO</button>
+          <button class="vr-b" :class="peekPres ? 'vr-b-pres' : 'vr-b-off'" @click="vistaRapidaPres()">🧱 PRESENTACIONES</button>
+        </div>
+        <p v-if="peekPos.error" class="vr-err">⚠️ {{ peekPos.error }}</p>
+        <div v-else class="vr-foot">{{ peekPos.cargando ? 'Leyendo ventas de tu zona…' : ('Últimos ' + (peekVM ? peekVM.dias : 7) + ' días · ventas de tu zona') }}</div>
+      </div>
+    </div>
+
     <div v-if="anaPos.abierto" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[70] flex items-end sm:items-center justify-center backdrop-blur-sm" @click.self="cerrarAnaliticaPos()">
       <div class="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden ana-enter">
         <!-- header -->
@@ -4977,30 +5078,33 @@
       </div>
     </div>
 
-    <div v-if="modalPresentaciones" @click.self="cerrarModalPres()" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
-        <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh] shadow-2xl animate-[slideUp_0.3s_cubic-bezier(0.16,1,0.3,1)]">
-           <div class="p-5 bg-emerald-500 text-white flex justify-between items-center shadow-md z-10 relative">
-               <h3 class="font-black text-lg leading-tight line-clamp-2 pr-2">{{ prodSeleccionado.nombreCorto }}</h3>
-               <button @click="cerrarModalPres()" class="text-white bg-black bg-opacity-20 hover:bg-opacity-30 transition-colors rounded-full p-2 shrink-0"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-           </div>
-           <div class="p-4 space-y-3 overflow-y-auto bg-gray-50 flex-1">
-               <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">Elige una presentación <span class="normal-case font-semibold text-gray-300">· el card agrega el producto solo</span></p>
-               <div v-for="pres in presentacionesDelPicker(prodSeleccionado)" :key="pres.Cod_Barras" @click="elegirPresentacion(prodSeleccionado, pres)"
-                    class="bg-white border-gray-100 border-2 shadow-sm p-4 rounded-2xl flex justify-between items-center cursor-pointer hover:border-emerald-500 active:scale-95 transition-all">
-                   <div>
-                       <p class="font-black text-gray-800 text-lg uppercase">
-                           {{ pres.Empaque }}
-                           <span class="text-xs text-white bg-gray-800 px-1.5 py-0.5 rounded-md align-middle ml-1">x{{ pres.Factor }}</span>
-                           <span v-if="pres.Factor === 1" class="text-[9px] text-emerald-700 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded-md align-middle ml-1 font-bold uppercase tracking-wide">Base</span>
-                       </p>
-                       <p class="text-[10px] text-gray-400 font-mono font-bold mt-0.5">▌ {{ pres.Cod_Barras || pres.SKU }}</p>
-                   </div>
-                   <div class="text-emerald-500 font-black text-xl border-l border-gray-100 pl-4">
-                       S/ {{ parseFloat(pres.Precio_Venta).toFixed(2) }}
-                   </div>
-               </div>
-           </div>
+    <!-- ══ [2.8.260] Sheet de PRESENTACIONES · piel nueva (misma lógica: elegirPresentacion) ══ -->
+    <div v-if="modalPresentaciones" @click.self="cerrarModalPres()" class="pv-velo">
+      <div class="pv-sheet">
+        <div class="pv-top">
+          <div class="pv-foto">
+            <img v-if="prodSeleccionado && prodSeleccionado.imagen" :src="prodSeleccionado.imagen" loading="lazy">
+            <span v-else class="pv-ini">{{ String((prodSeleccionado && (prodSeleccionado.nombreCorto || prodSeleccionado.nombre)) || '?').trim().slice(0,2).toUpperCase() }}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="pv-tt">{{ prodSeleccionado ? (prodSeleccionado.nombreCorto || prodSeleccionado.nombre || '') : '' }}</div>
+            <div class="pv-sub">Elige presentación</div>
+          </div>
+          <button class="pv-x" @click="cerrarModalPres()" aria-label="Cerrar presentaciones">×</button>
         </div>
+        <button v-for="pres in presentacionesDelPicker(prodSeleccionado)" :key="pres.Cod_Barras"
+                @click="elegirPresentacion(prodSeleccionado, pres)"
+                class="pv-fila" :class="parseFloat(pres.Factor) === 1 ? 'pv-base' : ''">
+          <span class="pv-nm">
+            <span class="pv-n1">{{ pres.Empaque }}</span>
+            <span class="pv-n2">x{{ pres.Factor }} · ▌ {{ pres.Cod_Barras || pres.SKU }}</span>
+          </span>
+          <span v-if="parseFloat(pres.Factor) === 1" class="pv-tag">ACTUAL</span>
+          <span v-if="presStock(pres) !== null" class="pv-st">{{ presStock(pres) }} disp.</span>
+          <span class="pv-pv">S/ {{ parseFloat(pres.Precio_Venta || 0).toFixed(2) }}</span>
+        </button>
+        <div class="pv-nota">Un toque = entra al carrito con su precio</div>
+      </div>
     </div>
 
     <!-- MODAL DE PAGO E IMPRESIÓN -->
@@ -11683,10 +11787,42 @@
                     const pr = (db.value.PRESENTACIONES || []).find(p => String(p.Cod_Barras).trim() === String(s.cod).trim());
                     items.push({ cod: String(s.cod), nombre: s.nombre, precio: pr ? (+pr.Precio_Venta || 0) : 0, stock: st, tipo: 'sustituto', motivo: s.motivo || '' });
                 });
-                if (!items.length) return;
-                altSheet.value = { para: base.nombreCorto || base.nombre || '', items: items.slice(0, 8) };
+                // [2.8.260 FIX] Antes: `if (!items.length) return;` → el botón 🔄 PARECIDOS
+                // parecía muerto cuando nada de la familia ni los sustitutos tenía stock.
+                // Ahora el sheet SIEMPRE abre; con 0 items muestra su estado vacío.
+                altSheet.value = { para: base.nombreCorto || base.nombre || '', items: items.slice(0, 8), vacio: !items.length };
             } catch (e) { /* nunca romper la venta por una sugerencia */ }
         };
+        // [2.8.260] ¿este producto tiene AL MENOS UNA alternativa con stock en mi zona?
+        // El botón 🔄 PARECIDOS solo debe palpitar si de verdad hay algo que ofrecer.
+        // PERF: el binding corre por cada card en CADA re-render (miles) → la búsqueda
+        // cruda NO puede vivir en el :class. Memo por SKU; el cache se limpia solo cuando
+        // cambia el stock de la zona o el catálogo (watch de abajo).
+        const _altCache = new Map();
+        const tieneAlternativas = (prod) => {
+            const sku = String((prod && prod.sku) || '').trim();
+            if (!sku) return false;
+            if (_altCache.has(sku)) return _altCache.get(sku);
+            let hay = false;
+            try {
+                const PR = db.value.PRESENTACIONES || [];
+                for (let i = 0; i < PR.length; i++) {
+                    const p = PR[i];
+                    if (String(p.SKU_Base).trim() !== sku) continue;
+                    const st = _stockDeCod(p.Cod_Barras);
+                    if (st !== null && st > 0) { hay = true; break; }
+                }
+                if (!hay) {
+                    const conSust = PR.find(p => String(p.SKU_Base).trim() === sku && Array.isArray(p.Sustitutos) && p.Sustitutos.length);
+                    if (conSust) hay = conSust.Sustitutos.some(x => { const st = _stockDeCod(x.cod); return st !== null && st > 0; });
+                }
+            } catch(_) { hay = false; }
+            _altCache.set(sku, hay);
+            return hay;
+        };
+        // El stock de zona y el catálogo son las Únicas entradas del cálculo → al cambiar
+        // cualquiera, el memo se tira entero (barato: se rellena perezosamente al render).
+        watch([stockMap, db], () => { _altCache.clear(); });
         const elegirAlternativa = (it) => {
             cerrarAltSheet();
             const pres = (db.value.PRESENTACIONES || []).find(p => String(p.Cod_Barras).trim().toUpperCase() === String(it.cod).trim().toUpperCase());
@@ -18609,6 +18745,14 @@
         // duplicaba el nombre: "sibarita... (sibarita...)"). Solo presentaciones reales.
         const presentacionesDelPicker = (prod) => ((prod && prod.presentaciones) || [])
             .filter(pr => !(parseFloat(pr.Factor) === 1 && String(pr.Cod_Barras) === String(prod.codBarras)));
+        // [2.8.260] Stock de una presentación en MI zona (null = sin dato → no se pinta).
+        // Misma fuente que el sheet de Parecidos: stockMap[cod_zona].
+        const presStock = (pres) => {
+            try {
+                const v = _stockDeCod(pres && (pres.Cod_Barras || pres.SKU));
+                return (v === null || v === undefined) ? null : (Math.round(v * 1000) / 1000);
+            } catch(_) { return null; }
+        };
 
         // ══ [2.8.208] ANALÍTICA DE PRODUCTO EN POS (proyecto dueño) ══════════════════
         // Click derecho (PC) / mantener presionado ~550ms (táctil) sobre un producto del
@@ -18620,18 +18764,23 @@
         const anaPosPressingId = ref(null);   // card en long-press (feedback visual)
         let _anaPosTimer = null, _anaPosFired = false;
         const DOW_LBL = ['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+        // [2.8.260] Una sola puerta al RPC me.analitica_pos — la usan el modal completo
+        // y la Vista Rápida (peek). Devuelve el JSON crudo del RPC.
+        const _anaPosRPC = async (cb, zona) => {
+            const tk  = await _mintTokenSB();
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/analitica_pos`, { method:'POST',
+                headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+tk,
+                          'Content-Profile':'me', 'Content-Type':'application/json' },
+                body: JSON.stringify({ p: { codigoBarra: cb, zona } }) });
+            return await res.json();
+        };
         const abrirAnaliticaPos = async (prod) => {
             const cb   = String(prod.codBarras || prod.cod_barras || '');
             const zona = String(config.value?.zona || '');
             if (!cb || !zona) { try { agregarToast('Sin zona activa para analítica', 'warning'); } catch(_) {} return; }
             anaPos.value = { abierto:true, cargando:true, data:null, vm:null, error:'' };
             try {
-                const tk  = await _mintTokenSB();
-                const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/analitica_pos`, { method:'POST',
-                    headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+tk,
-                              'Content-Profile':'me', 'Content-Type':'application/json' },
-                    body: JSON.stringify({ p: { codigoBarra: cb, zona } }) });
-                const d = await res.json();
+                const d = await _anaPosRPC(cb, zona);
                 if (d && d.ok) {
                     const H  = d.historial || [], SA = d.semanaActual || [];
                     const maxAll = Math.max(1, ...H.map(x => +x.u || 0), ...SA.map(x => Math.max(+x.u || 0, +x.pron || 0)));
@@ -18679,8 +18828,7 @@
             _anaPosTimer = setTimeout(() => {
                 _anaPosFired = true;
                 anaPosPressingId.value = null;
-                try { navigator.vibrate && navigator.vibrate([16, 40, 24]); } catch(_) {}
-                abrirAnaliticaPos(prod);
+                abrirVistaRapida(prod);
             }, 550);
         };
         const anaPosPressCancel = () => { clearTimeout(_anaPosTimer); anaPosPressingId.value = null; };
@@ -18690,6 +18838,77 @@
             ESTABLE:     { txt:'≈ Estable',   cls:'bg-sky-100 text-sky-700 border-sky-300' },
             NULA:        { txt:'∅ Sin rotar', cls:'bg-gray-100 text-gray-500 border-gray-300' }
         }[t] || { txt:'—', cls:'bg-gray-100 text-gray-500 border-gray-300' });
+
+        // ══ [2.8.260] VISTA RÁPIDA (peek de analítica) ═══════════════
+        // Click derecho / presión larga ya NO abren el modal pesado: abren un popover
+        // instantáneo (velo suave + vibración corta) con 3 stat-cards y sparkline. El
+        // panel se pinta AL INSTANTE con "…" y se rellena cuando llega el RPC.
+        // Desde ahí: 📊 ANÁLISIS COMPLETO (modal anaPos de siempre) o 🧱 PRESENTACIONES.
+        const peekPos = ref({ abierto:false, prod:null, cargando:false, error:'', d:null });
+        let _peekSeq = 0;
+        const abrirVistaRapida = (prod) => {
+            const cb   = String((prod && (prod.codBarras || prod.cod_barras)) || '');
+            const zona = String(config.value?.zona || '');
+            peekPos.value = { abierto:true, prod, cargando:true, error:'', d:null };
+            try { navigator.vibrate && navigator.vibrate(15); } catch(_) {}
+            if (!cb || !zona) { peekPos.value.cargando = false; peekPos.value.error = 'Sin zona activa para analítica'; return; }
+            const seq = ++_peekSeq;
+            (async () => {
+                try {
+                    const d = await _anaPosRPC(cb, zona);
+                    if (seq !== _peekSeq || !peekPos.value.abierto) return;
+                    if (d && d.ok) peekPos.value = { abierto:true, prod, cargando:false, error:'', d };
+                    else peekPos.value = { abierto:true, prod, cargando:false, error:(d && d.error) || 'Sin datos', d:null };
+                } catch(_) {
+                    if (seq !== _peekSeq || !peekPos.value.abierto) return;
+                    peekPos.value = { abierto:true, prod, cargando:false, error:'Sin conexión', d:null };
+                }
+            })();
+        };
+        const cerrarVistaRapida = () => { _peekSeq++; peekPos.value.abierto = false; };
+        const vistaRapidaAnalisis = () => { const p = peekPos.value.prod; cerrarVistaRapida(); if (p) abrirAnaliticaPos(p); };
+        const vistaRapidaPres     = () => { const p = peekPos.value.prod; cerrarVistaRapida(); if (p) abrirPresentaciones(p); };
+        const _peekKg = (p) => String((p && p.unidadMedida) || '').toUpperCase() === 'KGM';
+        const peekIni = computed(() => {
+            const p = peekPos.value.prod; if (!p) return '';
+            return String(p.nombreCorto || p.nombre || '?').trim().slice(0, 2).toUpperCase();
+        });
+        const peekSub = computed(() => {
+            const p = peekPos.value.prod; if (!p) return '';
+            const pv = Number(p.precio || 0) > 0 ? ('S/ ' + Number(p.precio).toFixed(2) + (_peekKg(p) ? ' / kg' : '')) : '⛔ Sin precio';
+            return (p.cat ? (p.cat + ' · ') : '') + pv;
+        });
+        const peekStockTxt = computed(() => {
+            const p = peekPos.value.prod; if (!p || p.stock === null || p.stock === undefined) return '';
+            return Number(p.stock) > 0 ? (p.stock + (_peekKg(p) ? ' kg' : ' uds')) : 'Sin stock';
+        });
+        const peekPres = computed(() => {
+            const p = peekPos.value.prod;
+            return !!(p && p.presentaciones && p.presentaciones.length > 1);
+        });
+        // Serie REAL: últimos 7 días con dato (historial de 4 semanas + días ya vividos de
+        // la semana actual, deduplicados por fecha). Sparkline en viewBox 0 0 300 40.
+        const peekVM = computed(() => {
+            const d = peekPos.value.d; if (!d) return null;
+            const map = new Map();
+            (d.historial || []).forEach(x => { if (x && x.fecha) map.set(String(x.fecha), +x.u || 0); });
+            (d.semanaActual || []).forEach(x => { if (x && x.fecha && x.u !== null && x.u !== undefined) map.set(String(x.fecha), +x.u || 0); });
+            const dias = Array.from(map.entries()).sort((a, b) => a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0)).slice(-7);
+            const serie = dias.map(e => e[1]);
+            const n = serie.length;
+            const max = Math.max(1, ...serie);
+            const r1 = (v) => Math.round(v * 10) / 10;
+            const xy = serie.map((v, i) => [ n > 1 ? r1(i * (300 / (n - 1))) : 150, r1(36 - (v / max) * 30) ]);
+            return {
+                ventas7: Math.round(serie.reduce((a, b) => a + b, 0)),
+                stockZona:    Math.round((+d.stockZona    || 0) * 1000) / 1000,
+                stockAlmacen: Math.round((+d.stockAlmacen || 0) * 1000) / 1000,
+                dias: n,
+                pts: n >= 2 ? xy.map(p => p[0] + ',' + p[1]).join(' ') : '',
+                lx:  n >= 2 ? xy[n - 1][0] : 0,
+                ly:  n >= 2 ? xy[n - 1][1] : 0
+            };
+        });
 
         // [2.8.213] Descriptor limpio de una presentación: si el Empaque empieza con el nombre
         // del padre (o lo contiene al inicio tras normalizar), se recorta — queda solo el
@@ -18808,6 +19027,7 @@
         window.addEventListener('keydown', (ev) => {
             if (ev.key !== 'Escape') return;
             try {
+                if (peekPos.value && peekPos.value.abierto) { cerrarVistaRapida(); ev.preventDefault(); return; }
                 if (anaPos.value && anaPos.value.abierto) { cerrarAnaliticaPos(); ev.preventDefault(); return; }
                 if (modalPresentaciones.value) { cerrarModalPres(); ev.preventDefault(); return; }
                 if (popover.value && popover.value.visible) { popover.value.visible = false; ev.preventDefault(); return; }
@@ -22368,7 +22588,7 @@
           esPC, cobrarFx,   // [Atajos PC]
           modoPro, navColapsado, expandirNav, programarColapso, toggleModoPro, colorModulo,   // [Modo Pro / color]
           scanPreview, scanningPending, onScanInput, pulsingProductId,
-          altSheet, cerrarAltSheet, elegirAlternativa, abrirAlternativas,
+          altSheet, cerrarAltSheet, elegirAlternativa, abrirAlternativas, tieneAlternativas,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
@@ -22391,6 +22611,9 @@
           // [2.8.208] Analítica de producto en POS
           anaPos, abrirAnaliticaPos, cerrarAnaliticaPos, anaPosPressStart, anaPosPressCancel, anaPosTend,
           anaPosPressingId, abrirPresentaciones, presentacionesDelPicker,
+          // [2.8.260] Vista Rápida (peek de analítica)
+          peekPos, abrirVistaRapida, cerrarVistaRapida, vistaRapidaAnalisis, vistaRapidaPres,
+          peekVM, peekIni, peekSub, peekStockTxt, peekPres,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           // [v2.7.78 CLEANUP] bHerramientas, imprimirMembrete, procesandoMembrete,
           // camaraHerramientasAbierta, toggleCamaraHerramientas — TODOS eliminados
@@ -22416,7 +22639,7 @@
           ventasFantasma, mostrarPanelFantasmas, limpiarVentasFantasma,
           procesandoCatalogo, catalogoGlow, sincronizarCatalogoBase,
           syncQuote, syncQuoteFading,
-          modalPresentaciones, prodSeleccionado, elegirPresentacion, cerrarModalPres,
+          modalPresentaciones, prodSeleccionado, elegirPresentacion, cerrarModalPres, presStock,
           mostrarTeclado, toggleTeclado,
           esPantallaVertical,
           wizardCajeroOcupado, wizardVerificando, cajeroWizardInfo, seleccionarZonaWizard,

@@ -1,1 +1,1 @@
-{"version":"2.8.259","build":"2.8.259 FIX CSS: los estilos de la Card v2 vivian en un style dentro del template Vue (no aplicaban) → movidos al head; botones con diseño real y reaccionando"}
+{"version":"2.8.260","build":"2.8.260 Vista Rapida (peek de analitica) en long-press/click-derecho + sheet de Presentaciones rediseniado + Parecidos con estado vacio (ya no muere en silencio) + palpitar honesto del boton PARECIDOS (memo por SKU)"}
