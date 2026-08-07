@@ -1,1 +1,1 @@
-{"version":"2.8.253","build":"2.8.253 stock cards v2: STOCK_ZONAS del payload directo + zona tolerante (ZONA-01=zona1=Zona 1) + log diagnostico"}
+{"version":"2.8.254","build":"2.8.254 fix: abrirAlternativas faltaba en el return del setup (template no la veia) — el boton Ver parecidos ya abre el sheet"}
