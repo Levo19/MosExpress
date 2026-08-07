@@ -1,1 +1,1 @@
-{"version":"2.8.251","build":"2.8.251 alternativas SOLO en busqueda manual: boton palpitante en card sin stock; escaneo limpio (producto en mano)"}
+{"version":"2.8.252","build":"2.8.252 FIX stock de cards: leia columnas Stock_zona legacy (muertas en cero-GAS) → ahora STOCK_ZONAS real; vuelven badges Sin stock y boton Ver parecidos"}

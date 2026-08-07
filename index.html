@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.251';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.252';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -10117,7 +10117,15 @@
                          }
                      }
                      const term = encodeURIComponent(String(base.Nombre || 'N/A').split(' ')[0].toLowerCase());
-                     const stockVal = (stockKey && base[stockKey] !== undefined && base[stockKey] !== '') ? (parseInt(base[stockKey]) || 0) : null;
+                     // [fix cero-GAS] PRODUCTO_BASE ya NO trae columnas Stock_<zona> (payload legacy
+                     // de la Hoja) → el stock de la card venía null SIEMPRE y el badge "Sin stock" +
+                     // el botón 🔄 jamás aparecían. Fuente real: STOCK_ZONAS (stockMap) por cod+zona.
+                     const stockVal = (() => {
+                         const cod = String(presBase.Cod_Barras || '').trim();
+                         const v = (cod && zona) ? stockMap.value[cod + '_' + zona] : undefined;
+                         if (v !== undefined) return parseFloat(v) || 0;
+                         return (stockKey && base[stockKey] !== undefined && base[stockKey] !== '') ? (parseInt(base[stockKey]) || 0) : null;   // legacy fallback
+                     })();
                      // [tramos] segmentos_precio del canónico (Factor=1) → al prodObj, para que el
                      // ADD DIRECTO del granel (click de card) aplique el tramo (no solo el picker de presentación).
                      let _segsProd = null;
