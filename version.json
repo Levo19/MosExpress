@@ -1,1 +1,1 @@
-{"version":"2.8.263","build":"2.8.263 analitica nace con esqueleto completo (no resumen-que-crece) + reintento auto si la descarga de catalogo es abortada + diagnostico [sustitutos] en consola"}
+{"version":"2.8.264","build":"2.8.264 FIX FINAL PARECIDOS: el regex de colapso de ceros habia perdido el backslash ((?=d) inerte) - ahora [0-9] probado ejecutando la linea real"}

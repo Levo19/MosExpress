@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.263';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.264';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9062,7 +9062,7 @@
         });
         // [2.8.261 FIX] Normalizador tolerante de claves: 'ZONA-01' ≡ 'zona1' ≡ 'Zona 1'.
         // Es la MISMA normalización que ya usaban las cards para su _szMap.
-        const _znk = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/0+(?=d)/g, '');
+        const _znk = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/0+(?=[0-9])/g, '');
         // [2.8.261 FIX] Gemelo normalizado de stockMap. RAÍZ DEL BUG: stockMap indexa con la
         // Zona_ID CRUDA del payload ('ZONA-01') pero config.zona del usuario es 'zona1' → el
         // lookup de _stockDeCod nunca casaba → devolvía null SIEMPRE → el botón 🔄 PARECIDOS
