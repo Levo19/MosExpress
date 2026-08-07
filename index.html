@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.262';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.263';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -439,6 +439,12 @@
     .pres-btn-sq:active { transform: scale(.9); }
     /* [rev100] .pres-btn (chip viejo) eliminado — la clase viva es .pres-btn-sq */
     .ana-enter { animation: anaSlideUp .28s cubic-bezier(.32,.72,.35,1.05); }
+    .ana-skel-row{display:flex;gap:8px;margin-bottom:10px}
+    .ana-skel-box{flex:1;height:58px;border-radius:12px;background:linear-gradient(100deg,#f3f4f6 40%,#e9ebef 50%,#f3f4f6 60%);background-size:200% 100%;animation:anaShimmer 1.3s linear infinite}
+    .ana-skel-chart{height:110px;border-radius:14px;margin-bottom:10px;background:linear-gradient(100deg,#f3f4f6 40%,#e9ebef 50%,#f3f4f6 60%);background-size:200% 100%;animation:anaShimmer 1.3s linear infinite}
+    .ana-skel-note{text-align:center;font-size:10px;color:#9ca3af;font-weight:700}
+    @keyframes anaShimmer{to{background-position:-200% 0}}
+    @media (prefers-reduced-motion: reduce){.ana-skel-box,.ana-skel-chart{animation:none}}
     @keyframes anaSlideUp { from { transform: translateY(46px); opacity: .3; } to { transform: none; opacity: 1; } }
     @media (prefers-reduced-motion: reduce) { .ana-enter { animation: none; } .pos-card:hover { transform: none; } }
     .product-pulse { animation: productGridPulse 0.75s ease-out; z-index: 10; position: relative; border-color:#10b981 !important; }
@@ -5025,7 +5031,12 @@
           <button class="ana-x" @click="cerrarAnaliticaPos()" aria-label="Cerrar analítica">×</button>
         </div>
         <div class="ana-body">
-          <div v-if="anaPos.cargando" class="ana-msg animate-pulse">Leyendo ventas de tu zona…</div>
+          <div v-if="anaPos.cargando" class="ana-skel">
+            <div class="ana-skel-row"><div class="ana-skel-box"></div><div class="ana-skel-box"></div><div class="ana-skel-box"></div><div class="ana-skel-box"></div></div>
+            <div class="ana-skel-chart"></div>
+            <div class="ana-skel-chart" style="height:56px"></div>
+            <div class="ana-skel-note">Leyendo ventas de tu zona…</div>
+          </div>
           <div v-else-if="anaPos.error" class="ana-msg ana-msg-err">⚠️ {{ anaPos.error }}</div>
           <template v-else-if="anaPos.data && anaPos.vm">
             <!-- Tendencia + zona (misma lógica anaPosTend, ahora como chips) -->
@@ -10659,6 +10670,7 @@
             }
         };
 
+        let _catRetries = 0;
         const sincronizarCatalogoBase = async (silent = false) => {
             if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 dbCargada.value = true;
@@ -10705,6 +10717,7 @@
                     if (Array.isArray(data.CLIENTES_FRECUENTES)) data.CLIENTES_FRECUENTES = markRaw(data.CLIENTES_FRECUENTES);
                     db.value = data;
                     dbCargada.value = true;
+                    _catRetries = 0;
                     await nextTick(); // ceder al UI antes del map
                     mapearCatalogoLocal();
                     // [P2] background → glow ambiental; primera carga/manual → toast normal.
@@ -10724,6 +10737,13 @@
             } catch (e) {
                 clearTimeout(timeoutId);
                 console.error("Fallo descarga catalogo", e);
+                // [2.8.263] abort por carrera al boot → reintentar solo (hasta 2 veces) para no
+                // quedar pegados a un cache viejo sin Sustitutos/promos frescas.
+                if (e && e.name === 'AbortError' && _catRetries < 2) {
+                    _catRetries++;
+                    console.warn('[catalogo] descarga abortada — reintento', _catRetries, 'en', 4 * _catRetries, 's');
+                    setTimeout(() => sincronizarCatalogoBase(true), 4000 * _catRetries);
+                }
                 // [v2.7.74 BUG CRÍTICO FIX] Solo dejar entrar si HAY datos válidos
                 // (cache previo en IDB con ZONAS_CONFIG con elementos). Antes
                 // siempre seteaba dbCargada=true aunque ZONAS_CONFIG estuviera
@@ -11851,6 +11871,17 @@
         // El stock de zona y el catálogo son las Únicas entradas del cálculo → al cambiar
         // cualquiera, el memo se tira entero (barato: se rellena perezosamente al render).
         watch([stockMapZ, db], () => { _altCache.clear(); });
+        // [diag 2.8.263] visible en consola del vendedor: ¿el payload trae Sustitutos y cuántos palpitan?
+        watch(db, () => { setTimeout(() => { try {
+            const PR = db.value.PRESENTACIONES || [];
+            const conS = PR.filter(p => Array.isArray(p.Sustitutos) && p.Sustitutos.length).length;
+            let palp = 0; const vistos = new Set();
+            PR.forEach(p => { const sku = String(p.SKU_Base).trim();
+                if (vistos.has(sku)) return; vistos.add(sku);
+                const st = _stockDeCod(p.Cod_Barras);
+                if (st !== null && st <= 0 && tieneAlternativas({ sku })) palp++; });
+            console.log('[sustitutos] vendibles con Sustitutos:', conS, '· productos que palpitan en tu zona:', palp, '· zona=', config.value.zona);
+        } catch(_){} }, 1500); });
         const elegirAlternativa = (it) => {
             cerrarAltSheet();
             const pres = (db.value.PRESENTACIONES || []).find(p => String(p.Cod_Barras).trim().toUpperCase() === String(it.cod).trim().toUpperCase());
