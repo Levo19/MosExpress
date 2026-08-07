@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.256';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.257';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4056,22 +4056,23 @@
                               :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '']">
                             <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
                             <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="absolute top-1.5 left-1.5 z-10 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md uppercase" title="Producto a granel — vendido por kilo">⚖️ kg</span>
-                            <div class="prod-img w-full bg-gray-200">
+                            <div class="prod-img w-full bg-gray-200 relative" :class="prod.stock !== null && prod.stock <= 0 ? 'card-agotado' : ''">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
+                               <span v-if="prod.stock !== null" class="stk-chip" :class="prod.stock > 0 ? 'stk-on' : 'stk-off'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : '') : 'Sin stock' }}</span>
+                               <button v-if="prod.stock !== null && prod.stock <= 0" @click.stop="abrirAlternativas(prod)" @touchstart.stop @touchend.stop
+                                       class="alt-over" title="Ver alternativas con stock para ofrecerle al cliente">🔄 PARECIDOS</button>
                             </div>
                             <div class="p-2.5 flex-1 flex flex-col justify-between bg-white relative" :class="prod.presentaciones && prod.presentaciones.length > 1 ? 'pr-12' : ''">
                                <button v-if="prod.presentaciones && prod.presentaciones.length > 1" @click.stop="abrirPresentaciones(prod)" @touchstart.stop @touchend.stop class="pres-btn-sq" :title="(prod.presentaciones.length - 1) + ' presentaciones'">
                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-4.5 h-4.5" style="width:18px;height:18px"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4-8 4-8-4 8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 11l8 4 8-4"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 15l8 4 8-4"/></svg>
                                  <span class="pres-btn-n">{{ prod.presentaciones.length - 1 }}</span>
                                </button>
-                               <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-4">{{ prod.nombreCorto }}</h3>
+                               <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-3">{{ prod.nombreCorto }}</h3>
+                               <div v-if="prod.cat" class="text-[8.5px] text-gray-400 font-bold truncate mt-0.5">{{ prod.cat }}</div>
                                <!-- [601] sin precio (PN aprobado sin precio) → sello ⛔ (la venta se bloquea en agregarCarritoObj) -->
                                <p v-if="Number(prod.precio) > 0" class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
                                <p v-else class="mt-2"><span class="inline-block text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border border-dashed border-red-400 text-red-600 bg-red-50" title="Aprobado sin precio — pídele al admin que lo ponga en MOS Catálogo">⛔ Sin precio</span></p>
-                               <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : ' uds') : 'Sin stock' }}</span>
-                               <button v-if="prod.stock !== null && prod.stock <= 0" @click.stop="abrirAlternativas(prod)"
-                                       class="alt-pulse mt-1 w-full text-[10px] font-black rounded-lg py-1.5 text-white"
-                                       title="Ver alternativas con stock para ofrecerle al cliente">🔄 Ver parecidos</button>
+
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
                          </div>
@@ -4855,6 +4856,13 @@
       </div>
     </div>
     <style>@keyframes altUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+.stk-chip{position:absolute;top:6px;right:6px;font-size:8.5px;font-weight:900;border-radius:99px;padding:2px 7px;z-index:5;transition:all .3s}
+.stk-on{background:rgba(255,255,255,.85);color:#059669;backdrop-filter:blur(2px)}
+.stk-off{background:#dc2626;color:#fff;animation:stkBreath 2.2s ease-in-out infinite}
+@keyframes stkBreath{0%,100%{opacity:1}50%{opacity:.62}}
+.card-agotado img{filter:grayscale(.75) opacity(.8);transition:filter .4s}
+.alt-over{position:absolute;left:6px;right:6px;bottom:6px;z-index:5;border:0;border-radius:10px;padding:5px 0;font-size:9px;font-weight:900;color:#fff;background:linear-gradient(135deg,#6366f1,#4f46e5);animation:altPulse 1.6s ease-in-out infinite;cursor:pointer}
+@media (prefers-reduced-motion:reduce){.stk-off,.alt-over{animation:none}}
 .alt-pulse{background:linear-gradient(135deg,#6366f1,#4f46e5);animation:altPulse 1.6s ease-in-out infinite}
 @keyframes altPulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.45)}50%{box-shadow:0 0 0 7px rgba(99,102,241,0)}}
 @media (prefers-reduced-motion:reduce){.alt-pulse{animation:none}}</style>
@@ -10195,7 +10203,8 @@
                          codSunat:     String(base.Cod_SUNAT     || ''),   // código producto SUNAT
                          tipoIgv:      parseInt(base.Tipo_IGV    || '1', 10), // 1=Gravado 2=Exonerado 3=Inafecto
                          unidadMedida: String(base.Unidad_Medida || 'NIU'),   // NIU=Unidad KGM=Kg ZZ=Servicio
-                         promoStr: pStr, imagen: `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`,
+                         promoStr: pStr, imagen: (base.Foto || `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`),
+                         cat: (base.Categoria && (base.Categoria.subcategoria || base.Categoria.categoria)) || '',
                          stock: stockVal,
                          segmentosPrecio: _segsProd   // [tramos] usado por el add directo del granel
                      });
@@ -11645,6 +11654,8 @@
             return v === undefined ? null : v;
         };
         const abrirAlternativas = (base) => {
+            try { playBeepOK && playBeepOK(); } catch(_){}
+            try { navigator.vibrate && navigator.vibrate(12); } catch(_){}
             try {
                 const sku = String(base.sku || '').trim();
                 const items = [];
