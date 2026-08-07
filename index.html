@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.266';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.267';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -439,11 +439,15 @@
     .pres-btn-sq:active { transform: scale(.9); }
     /* [rev100] .pres-btn (chip viejo) eliminado — la clase viva es .pres-btn-sq */
     .ana-enter { animation: anaSlideUp .28s cubic-bezier(.32,.72,.35,1.05); }
-    .card-ripple{position:absolute;border-radius:50%;pointer-events:none;transform:scale(0);opacity:.55;animation:cardRipple .62s ease-out forwards;z-index:6}
-    .ripple-verde{background:radial-gradient(circle,rgba(16,185,129,.38) 0%,rgba(16,185,129,.16) 45%,rgba(16,185,129,0) 70%)}
-    .ripple-rojo{background:radial-gradient(circle,rgba(220,38,38,.42) 0%,rgba(220,38,38,.16) 45%,rgba(220,38,38,0) 70%)}
-    @keyframes cardRipple{to{transform:scale(1);opacity:0}}
-    @media (prefers-reduced-motion: reduce){.card-ripple{display:none}}
+    .card-ripple{position:absolute;border-radius:50%;pointer-events:none;transform:scale(0);animation:cardRipple .85s cubic-bezier(.25,.6,.35,1) forwards;z-index:6}
+    .ripple-verde{background:radial-gradient(circle,rgba(16,185,129,.42) 0%,rgba(16,185,129,.30) 55%,rgba(16,185,129,.12) 78%,rgba(16,185,129,0) 100%)}
+    .ripple-rojo{background:radial-gradient(circle,rgba(220,38,38,.46) 0%,rgba(220,38,38,.32) 55%,rgba(220,38,38,.12) 78%,rgba(220,38,38,0) 100%)}
+    @keyframes cardRipple{0%{transform:scale(0);opacity:.85}55%{transform:scale(1);opacity:.55}100%{transform:scale(1.18);opacity:0}}
+    .card-wash{position:absolute;inset:0;pointer-events:none;z-index:5;opacity:0;animation:cardWash .8s ease-out forwards}
+    .wash-verde{background:rgba(16,185,129,.16)}
+    .wash-rojo{background:rgba(220,38,38,.18)}
+    @keyframes cardWash{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
+    @media (prefers-reduced-motion: reduce){.card-ripple,.card-wash{display:none}}
     .ana-skel-row{display:flex;gap:8px;margin-bottom:10px}
     .ana-skel-box{flex:1;height:58px;border-radius:12px;background:linear-gradient(100deg,#f3f4f6 40%,#e9ebef 50%,#f3f4f6 60%);background-size:200% 100%;animation:anaShimmer 1.3s linear infinite}
     .ana-skel-chart{height:110px;border-radius:14px;margin-bottom:10px;background:linear-gradient(100deg,#f3f4f6 40%,#e9ebef 50%,#f3f4f6 60%);background-size:200% 100%;animation:anaShimmer 1.3s linear infinite}
@@ -18814,8 +18818,11 @@
                     s.style.width = s.style.height = d + 'px';
                     s.style.left = (x - d / 2) + 'px';
                     s.style.top = (y - d / 2) + 'px';
+                    const w = document.createElement('span');
+                    w.className = 'card-wash ' + (sinStock ? 'wash-rojo' : 'wash-verde');
+                    card.appendChild(w);
                     card.appendChild(s);
-                    setTimeout(() => { try { s.remove(); } catch(_){} }, 700);
+                    setTimeout(() => { try { s.remove(); w.remove(); } catch(_){} }, 900);
                 }
                 if (sinStock) {
                     try { playBeepSuave?.(); } catch(_){}
