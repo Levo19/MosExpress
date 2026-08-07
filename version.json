@@ -1,1 +1,1 @@
-{"version":"2.8.261","build":"2.8.261 Analitica COMPLETA directa en long-press/click-derecho (se retira el peek de 2 pasos) + modal re-vestido con el lenguaje moderno + FIX RAIZ: stockMapZ normaliza zona (ZONA-01 = zona1) y devuelve la vida al boton PARECIDOS"}
+{"version":"2.8.262","build":"2.8.262 blindaje zona: _znk colapsa ceros (ZONA-01 = zona1 = Zona 01) para PARECIDOS/presStock"}
