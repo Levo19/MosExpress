@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.250';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.251';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4069,6 +4069,9 @@
                                <p v-if="Number(prod.precio) > 0" class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
                                <p v-else class="mt-2"><span class="inline-block text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border border-dashed border-red-400 text-red-600 bg-red-50" title="Aprobado sin precio — pídele al admin que lo ponga en MOS Catálogo">⛔ Sin precio</span></p>
                                <span v-if="prod.stock !== null" class="text-[9px] font-bold rounded px-1 py-0.5 mt-0.5 inline-block" :class="prod.stock > 10 ? 'text-emerald-700 bg-emerald-50' : prod.stock > 0 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : ' uds') : 'Sin stock' }}</span>
+                               <button v-if="prod.stock !== null && prod.stock <= 0" @click.stop="abrirAlternativas(prod)"
+                                       class="alt-pulse mt-1 w-full text-[10px] font-black rounded-lg py-1.5 text-white"
+                                       title="Ver alternativas con stock para ofrecerle al cliente">🔄 Ver parecidos</button>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
                          </div>
@@ -4851,7 +4854,10 @@
         </button>
       </div>
     </div>
-    <style>@keyframes altUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}</style>
+    <style>@keyframes altUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+.alt-pulse{background:linear-gradient(135deg,#6366f1,#4f46e5);animation:altPulse 1.6s ease-in-out infinite}
+@keyframes altPulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.45)}50%{box-shadow:0 0 0 7px rgba(99,102,241,0)}}
+@media (prefers-reduced-motion:reduce){.alt-pulse{animation:none}}</style>
     <div v-if="scanPreview" :key="scanPreview.id" :class="['scan-preview', 'kind-' + (scanPreview.kind || 'ok')]">
        <img v-if="scanPreview.imagen" :src="scanPreview.imagen" class="scan-preview-img" alt="">
        <div class="flex-1 min-w-0">
@@ -18759,7 +18765,7 @@
               if (sinStock) {
                   playBeepStockZero();
                   showScanPreview(prod, label + ' · SIN STOCK', 'stock', 'sin existencias');
-                  abrirAlternativas(prod);   // [SUSTITUTOS] ofrecer familia + parecidos con stock
+                  // [corrección dueño] escaneo = producto EN MANO: jamás sugerir aquí (estorba la venta)
               } else {
                   playBeepOK();
                   showScanPreview(prod, label, 'ok', eq ? 'equivalencia' : '');
