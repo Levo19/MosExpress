@@ -1,1 +1,1 @@
-{"version":"2.8.265","build":"2.8.265 FIX RAIZ 2: stockMapZ ahora bebe de db.STOCK_ZONAS del catalogo (stockZonas del RPC zona_stock esta vacio en el POS) - con 264 (regex ceros) el boton PARECIDOS queda completo"}
+{"version":"2.8.266","build":"2.8.266 onda circular desde el punto de click (verde=agrega, roja=sin stock, venta nunca bloqueada) + beep/vibracion al agregar + fuera el toast Sin Existencias que tapaba el carrito"}

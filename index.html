@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.265';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.266';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -439,6 +439,11 @@
     .pres-btn-sq:active { transform: scale(.9); }
     /* [rev100] .pres-btn (chip viejo) eliminado — la clase viva es .pres-btn-sq */
     .ana-enter { animation: anaSlideUp .28s cubic-bezier(.32,.72,.35,1.05); }
+    .card-ripple{position:absolute;border-radius:50%;pointer-events:none;transform:scale(0);opacity:.55;animation:cardRipple .62s ease-out forwards;z-index:6}
+    .ripple-verde{background:radial-gradient(circle,rgba(16,185,129,.38) 0%,rgba(16,185,129,.16) 45%,rgba(16,185,129,0) 70%)}
+    .ripple-rojo{background:radial-gradient(circle,rgba(220,38,38,.42) 0%,rgba(220,38,38,.16) 45%,rgba(220,38,38,0) 70%)}
+    @keyframes cardRipple{to{transform:scale(1);opacity:0}}
+    @media (prefers-reduced-motion: reduce){.card-ripple{display:none}}
     .ana-skel-row{display:flex;gap:8px;margin-bottom:10px}
     .ana-skel-box{flex:1;height:58px;border-radius:12px;background:linear-gradient(100deg,#f3f4f6 40%,#e9ebef 50%,#f3f4f6 60%);background-size:200% 100%;animation:anaShimmer 1.3s linear infinite}
     .ana-skel-chart{height:110px;border-radius:14px;margin-bottom:10px;background:linear-gradient(100deg,#f3f4f6 40%,#e9ebef 50%,#f3f4f6 60%);background-size:200% 100%;animation:anaShimmer 1.3s linear infinite}
@@ -4175,7 +4180,7 @@
                          <div v-if="!dbCargada" class="col-span-full py-10 text-center"><svg class="animate-spin w-8 h-8 mx-auto text-emerald-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                          
                          <!-- Productos Component -->
-                         <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
+                         <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="cardTapPOS($event, prod)"
                               @contextmenu.prevent="abrirAnaliticaPos(prod)"
                               @touchstart.passive="anaPosPressStart(prod)" @touchend="anaPosPressCancel" @touchmove.passive="anaPosPressCancel" @touchcancel="anaPosPressCancel"
                               :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '']">
@@ -18792,6 +18797,36 @@
         const modalPresentaciones = ref(false);
         const prodSeleccionado = ref(null);
 
+        // [2.8.266 UX dueño] Onda circular desde el punto de click (verde=entra al carrito,
+        // roja=sin stock en zona — la venta igual sale) + beep/vibración. Sin toasts que tapen el carrito.
+        const cardTapPOS = (e, prod) => {
+            try {
+                const sinStock = prod.stock !== null && prod.stock <= 0;
+                const card = e && e.currentTarget;
+                const rm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                if (card && !rm) {
+                    const r = card.getBoundingClientRect();
+                    const x = (typeof e.clientX === 'number' && e.clientX ? e.clientX : r.left + r.width / 2) - r.left;
+                    const y = (typeof e.clientY === 'number' && e.clientY ? e.clientY : r.top + r.height / 2) - r.top;
+                    const s = document.createElement('span');
+                    s.className = 'card-ripple ' + (sinStock ? 'ripple-rojo' : 'ripple-verde');
+                    const d = Math.max(r.width, r.height) * 2.2;
+                    s.style.width = s.style.height = d + 'px';
+                    s.style.left = (x - d / 2) + 'px';
+                    s.style.top = (y - d / 2) + 'px';
+                    card.appendChild(s);
+                    setTimeout(() => { try { s.remove(); } catch(_){} }, 700);
+                }
+                if (sinStock) {
+                    try { playBeepSuave?.(); } catch(_){}
+                    try { navigator.vibrate && navigator.vibrate([20, 60, 20]); } catch(_){}
+                } else {
+                    try { playBeepOK && playBeepOK(); } catch(_){}
+                    try { navigator.vibrate && navigator.vibrate(10); } catch(_){}
+                }
+            } catch(_){}
+            agregarOVerDetalle(prod);
+        };
         const agregarOVerDetalle = (prod) => { 
             // [2.8.208 Analítica POS] un long-press que ya abrió la analítica NO debe además
             // agregar al carrito (el click sintético llega después del touchend)
@@ -19187,9 +19222,8 @@
           const codEsc = _codEscaneadoTemp || prodObj.codBarrasEsc || String(prodObj.codBarras);
           _codEscaneadoTemp = null;
           // Avisar si stock <=0 o no registrado (no bloquea la venta)
-          if (prodObj.stock !== null && prodObj.stock <= 0) {
-              agregarToast('Sin Stock', prodObj.nombreCorto + ' — Sin existencias en esta zona');
-          }
+          // [2.8.266] sin toast de "Sin existencias": la onda roja + vibración del card ya avisan
+          // sin tapar el carrito (en escaneo lo dice el scanPreview 'SIN STOCK').
           const _esGranelProd = String(prodObj.unidadMedida || '').toUpperCase() === 'KGM';
           const idx = carrito.value.findIndex(i => i.codBarras === prodObj.codBarras);
           let finalIdx;
@@ -22624,7 +22658,7 @@
           iniciarRegistroManualDNI, confirmarClienteManualDNI,
           // [Bloque C UX] toggle origen + limpiar buscador/extranjero
           setClienteOrigen, limpiarBusqueda, limpiarExtranjero,
-          toasts, popover, agregarItemDesdePopover, agregarOVerDetalle,
+          toasts, popover, agregarItemDesdePopover, agregarOVerDetalle, cardTapPOS,
           // [2.8.208] Analítica de producto en POS
           anaPos, abrirAnaliticaPos, cerrarAnaliticaPos, anaPosPressStart, anaPosPressCancel, anaPosTend,
           anaPosPressingId, abrirPresentaciones, presentacionesDelPicker,
