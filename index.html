@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.264';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.265';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -9070,7 +9070,11 @@
         // stockMap crudo se deja intacto para sus consumidores actuales (card legacy, guiaZona).
         const stockMapZ = computed(() => {
             const m = {};
-            stockZonas.value.forEach(r => { m[_znk(r.Cod_Barras) + '_' + _znk(r.Zona_ID)] = parseFloat(r.Cantidad) || 0; });
+            // [2.8.265 FIX RAÍZ] Fuente = STOCK_ZONAS del catálogo (siempre viaja en el payload del
+            // POS). stockZonas (RPC zona_stock) solo se carga en guías/auditoría → en el POS estaba
+            // VACÍO y stockMapZ={} → _stockDeCod null → PARECIDOS muerto aunque todo lo demás estuviera bien.
+            const src = (db.value && Array.isArray(db.value.STOCK_ZONAS) && db.value.STOCK_ZONAS.length) ? db.value.STOCK_ZONAS : stockZonas.value;
+            src.forEach(r => { m[_znk(r.Cod_Barras) + '_' + _znk(r.Zona_ID)] = parseFloat(r.Cantidad) || 0; });
             return m;
         });
         // Pendiente si el usuario activo no llegó a 30 hoy
