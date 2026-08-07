@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.254';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.255';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -8352,6 +8352,48 @@
         // [quirúrgico 2026-07-19] abrirEtiqsModal eliminado: el template abre con etiqsModalAbierto = true directo (0 refs).
 
         // [NIVEL 4 corte-GAS] Marcado de etiquetas 100% Supabase (mos.etiqueta_marcar, SQL 373). Sin GAS.
+        // [PRECIOS EXPRESS] carril rápido money-safe: al detectar versión nueva CON venta en
+        // curso, parcha SOLO precios en sitio (el carrito conserva los suyos; el siguiente
+        // agregado ya cobra el nuevo). Payload ~KB vs catálogo completo de ~MB/8s.
+        let _precioSyncTs = null;
+        const _patchPreciosRapido = async () => {
+            try {
+                const _tk = await _mintTokenSB();
+                const desde = _precioSyncTs || new Date(Date.now() - 10 * 60000).toISOString();
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/precios_delta`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + (_tk || SUPABASE_ANON_KEY), 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { desde } })
+                }, 5000);
+                const d = await r.json().catch(() => null);
+                if (!d || d.ok === false) return;
+                if (d.ts) _precioSyncTs = d.ts;
+                const lista = Array.isArray(d.precios) ? d.precios : [];
+                if (!lista.length) return;
+                let n = 0;
+                lista.forEach(x => {
+                    const cod = String(x.cod || '').trim();
+                    (db.value.PRESENTACIONES || []).forEach(p2 => {
+                        if (String(p2.Cod_Barras).trim() === cod) {
+                            if (+p2.Precio_Venta !== +x.precio) n++;
+                            p2.Precio_Venta = x.precio; p2.Precio_Fijo = !!x.fijo;
+                        }
+                    });
+                    (productosCatalogo.value || []).forEach(pc => {
+                        if (String(pc.codBarras).trim() === cod) pc.precio = parseFloat(x.precio) || 0;
+                        (pc.presentaciones || []).forEach(pp => {
+                            if (String(pp.Cod_Barras).trim() === cod) { pp.Precio_Venta = x.precio; pp.Precio_Fijo = !!x.fijo; }
+                        });
+                    });
+                });
+                if (n) {
+                    try { playBeepOK && playBeepOK(); } catch(_){}
+                    try { navigator.vibrate && navigator.vibrate(15); } catch(_){}
+                    try { _dispararGlowCatalogo(); } catch(_){}
+                    console.log('[precios express] aplicados', n, 'precios en sitio (venta en curso intacta)');
+                }
+            } catch(_){}
+        };
         const _etiqMarcarSB = async (body) => {
           const _tk = await _mintTokenSB();
           const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/etiqueta_marcar`, {
@@ -10607,6 +10649,7 @@
                 if (String(remota) === String(_catVer)) { _catVerPendiente = false; return; } // sin cambios
                 // Hubo cambio en el maestro de productos/equivalencias.
                 if (_ventaEnCurso()) {
+                    _patchPreciosRapido();   // [PRECIOS EXPRESS] el precio no espera al carrito
                     // Diferir: NUNCA tocar el catálogo en medio de una venta. Se reintenta al cerrar
                     // la venta (próximo ciclo del poller, o el watcher de carrito vacío).
                     _catVerPendiente = true;
