@@ -1,1 +1,1 @@
-{"version":"2.8.252","build":"2.8.252 FIX stock de cards: leia columnas Stock_zona legacy (muertas en cero-GAS) → ahora STOCK_ZONAS real; vuelven badges Sin stock y boton Ver parecidos"}
+{"version":"2.8.253","build":"2.8.253 stock cards v2: STOCK_ZONAS del payload directo + zona tolerante (ZONA-01=zona1=Zona 1) + log diagnostico"}

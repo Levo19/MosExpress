@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.252';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.253';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -10060,6 +10060,13 @@
             // Busca columna Stock_<zona> — normaliza a minúsculas sin espacios (case-insensitive)
             const _normZona = s => s.toLowerCase().replace(/\s+/g, '');
             const zonaNorm  = _normZona(zona);
+            // [fix v2] mapa de stock DIRECTO del payload del catálogo (STOCK_ZONAS siempre viaja)
+            // con match de zona tolerante: 'ZONA-01' ≡ 'zona1' ≡ 'Zona 1'.
+            const _zn = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const _zonaN = _zn(zona);
+            const _szMap = {};
+            (db.value.STOCK_ZONAS || []).forEach(r => { if (_zn(r.Zona_ID) === _zonaN) _szMap[String(r.Cod_Barras).trim()] = parseFloat(r.Cantidad) || 0; });
+            try { console.log('[stock cards] zona=', zona, '· filas de mi zona:', Object.keys(_szMap).length, '· STOCK_ZONAS total:', (db.value.STOCK_ZONAS || []).length); } catch(_){}
             const stockKey  = zona ? (
                 Object.keys(db.value.PRODUCTO_BASE?.[0] || {}).find(k =>
                     k.toLowerCase().startsWith('stock_') && _normZona(k.slice(6)) === zonaNorm
@@ -10122,6 +10129,7 @@
                      // el botón 🔄 jamás aparecían. Fuente real: STOCK_ZONAS (stockMap) por cod+zona.
                      const stockVal = (() => {
                          const cod = String(presBase.Cod_Barras || '').trim();
+                         if (cod && _szMap[cod] !== undefined) return _szMap[cod];
                          const v = (cod && zona) ? stockMap.value[cod + '_' + zona] : undefined;
                          if (v !== undefined) return parseFloat(v) || 0;
                          return (stockKey && base[stockKey] !== undefined && base[stockKey] !== '') ? (parseInt(base[stockKey]) || 0) : null;   // legacy fallback
