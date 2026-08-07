@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.249';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.250';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4829,6 +4829,29 @@
     </div>
 
     <!-- Banner preview escaneo: aparece 1.2s al detectar producto -->
+    <!-- [SUSTITUTOS] Sin stock → alternativas (familia primero, luego parecidos IA) -->
+    <div v-if="altSheet" class="fixed inset-0 z-[95]" style="background:rgba(15,23,42,.45)" @click.self="cerrarAltSheet()">
+      <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl p-4" style="max-height:70vh;overflow-y:auto;animation:altUp .22s ease-out">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-xl">🔄</span>
+          <div class="flex-1 min-w-0">
+            <div class="font-black text-gray-800 text-sm">Sin stock de {{ altSheet.para }}</div>
+            <div class="text-[10px] text-gray-400 font-bold uppercase">Ofrécele al cliente una alternativa</div>
+          </div>
+          <button @click="cerrarAltSheet()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 font-black">×</button>
+        </div>
+        <button v-for="it in altSheet.items" :key="it.cod" @click="elegirAlternativa(it)"
+                class="w-full flex items-center gap-2 text-left rounded-2xl border p-2.5 mt-2 active:scale-[.98]"
+                :class="it.tipo === 'familia' ? 'border-emerald-200 bg-emerald-50/60' : 'border-indigo-200 bg-indigo-50/60'">
+          <span class="text-[9px] font-black rounded-full px-2 py-0.5"
+                :class="it.tipo === 'familia' ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white'">{{ it.tipo === 'familia' ? 'MISMO PRODUCTO' : 'PARECIDO' }}</span>
+          <span class="flex-1 min-w-0 text-xs font-bold text-gray-800 truncate">{{ it.nombre }}</span>
+          <span class="text-[10px] font-bold text-gray-400">{{ it.stock }} disp.</span>
+          <span class="text-sm font-black text-gray-800">S/ {{ it.precio.toFixed(2) }}</span>
+        </button>
+      </div>
+    </div>
+    <style>@keyframes altUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}</style>
     <div v-if="scanPreview" :key="scanPreview.id" :class="['scan-preview', 'kind-' + (scanPreview.kind || 'ok')]">
        <img v-if="scanPreview.imagen" :src="scanPreview.imagen" class="scan-preview-img" alt="">
        <div class="flex-1 min-w-0">
@@ -11546,6 +11569,44 @@
 
         // ── Preview banner (1.2s) ────────────────────────────
         const scanPreview = ref(null);
+        // [SUSTITUTOS] Sheet "Sin stock → alternativas": nivel 1 = misma familia con stock
+        // en la zona; nivel 2 = Sustitutos IA (campo nuevo del catálogo) con stock. Tocar
+        // una alternativa la agrega por el MISMO camino del escaneo (elegirPresentacion).
+        const altSheet = ref(null);
+        const cerrarAltSheet = () => { altSheet.value = null; };
+        const _stockDeCod = (cod) => {
+            const z = config.value.zona || '';
+            const v = stockMap.value[String(cod).trim() + '_' + z];
+            return v === undefined ? null : v;
+        };
+        const abrirAlternativas = (base) => {
+            try {
+                const sku = String(base.sku || '').trim();
+                const items = [];
+                (db.value.PRESENTACIONES || []).forEach(p => {
+                    if (String(p.SKU_Base).trim() !== sku) return;
+                    const st = _stockDeCod(p.Cod_Barras);
+                    if (st !== null && st > 0) items.push({ cod: String(p.Cod_Barras), nombre: p.Empaque, precio: +p.Precio_Venta || 0, stock: st, tipo: 'familia' });
+                });
+                const conSust = (db.value.PRESENTACIONES || []).find(p => String(p.SKU_Base).trim() === sku && Array.isArray(p.Sustitutos) && p.Sustitutos.length);
+                (conSust ? conSust.Sustitutos : []).forEach(s => {
+                    const st = _stockDeCod(s.cod);
+                    if (st === null || st <= 0) return;
+                    const pr = (db.value.PRESENTACIONES || []).find(p => String(p.Cod_Barras).trim() === String(s.cod).trim());
+                    items.push({ cod: String(s.cod), nombre: s.nombre, precio: pr ? (+pr.Precio_Venta || 0) : 0, stock: st, tipo: 'sustituto', motivo: s.motivo || '' });
+                });
+                if (!items.length) return;
+                altSheet.value = { para: base.nombreCorto || base.nombre || '', items: items.slice(0, 8) };
+            } catch (e) { /* nunca romper la venta por una sugerencia */ }
+        };
+        const elegirAlternativa = (it) => {
+            cerrarAltSheet();
+            const pres = (db.value.PRESENTACIONES || []).find(p => String(p.Cod_Barras).trim().toUpperCase() === String(it.cod).trim().toUpperCase());
+            if (!pres) return;
+            const base = productosCatalogo.value.find(p => String(p.sku).trim() === String(pres.SKU_Base).trim());
+            if (!base) return;
+            elegirPresentacion(base, pres);
+        };
         const showScanPreview = (prod, label, kind, extra) => {
             const id = Date.now();
             scanPreview.value = {
@@ -18698,6 +18759,7 @@
               if (sinStock) {
                   playBeepStockZero();
                   showScanPreview(prod, label + ' · SIN STOCK', 'stock', 'sin existencias');
+                  abrirAlternativas(prod);   // [SUSTITUTOS] ofrecer familia + parecidos con stock
               } else {
                   playBeepOK();
                   showScanPreview(prod, label, 'ok', eq ? 'equivalencia' : '');
@@ -22218,6 +22280,7 @@
           esPC, cobrarFx,   // [Atajos PC]
           modoPro, navColapsado, expandirNav, programarColapso, toggleModoPro, colorModulo,   // [Modo Pro / color]
           scanPreview, scanningPending, onScanInput, pulsingProductId,
+          altSheet, cerrarAltSheet, elegirAlternativa,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
           abrirModalPago, leerMontoEnVoz, buscarClienteAPI, buscandoCliente,
