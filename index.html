@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.257';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.258';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -4059,20 +4059,22 @@
                             <div class="prod-img w-full bg-gray-200 relative" :class="prod.stock !== null && prod.stock <= 0 ? 'card-agotado' : ''">
                                <img v-if="prod.imagen" :src="prod.imagen" loading="lazy" class="w-full h-full object-cover mix-blend-multiply">
                                <span v-if="prod.stock !== null" class="stk-chip" :class="prod.stock > 0 ? 'stk-on' : 'stk-off'">{{ prod.stock > 0 ? prod.stock + (String(prod.unidadMedida || '').toUpperCase() === 'KGM' ? ' kg' : '') : 'Sin stock' }}</span>
-                               <button v-if="prod.stock !== null && prod.stock <= 0" @click.stop="abrirAlternativas(prod)" @touchstart.stop @touchend.stop
-                                       class="alt-over" title="Ver alternativas con stock para ofrecerle al cliente">🔄 PARECIDOS</button>
                             </div>
-                            <div class="p-2.5 flex-1 flex flex-col justify-between bg-white relative" :class="prod.presentaciones && prod.presentaciones.length > 1 ? 'pr-12' : ''">
-                               <button v-if="prod.presentaciones && prod.presentaciones.length > 1" @click.stop="abrirPresentaciones(prod)" @touchstart.stop @touchend.stop class="pres-btn-sq" :title="(prod.presentaciones.length - 1) + ' presentaciones'">
-                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-4.5 h-4.5" style="width:18px;height:18px"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4-8 4-8-4 8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 11l8 4 8-4"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 15l8 4 8-4"/></svg>
-                                 <span class="pres-btn-n">{{ prod.presentaciones.length - 1 }}</span>
-                               </button>
+                            <div class="p-2 flex-1 flex flex-col bg-white relative">
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-3">{{ prod.nombreCorto }}</h3>
                                <div v-if="prod.cat" class="text-[8.5px] text-gray-400 font-bold truncate mt-0.5">{{ prod.cat }}</div>
                                <!-- [601] sin precio (PN aprobado sin precio) → sello ⛔ (la venta se bloquea en agregarCarritoObj) -->
                                <p v-if="Number(prod.precio) > 0" class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
                                <p v-else class="mt-2"><span class="inline-block text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border border-dashed border-red-400 text-red-600 bg-red-50" title="Aprobado sin precio — pídele al admin que lo ponga en MOS Catálogo">⛔ Sin precio</span></p>
 
+                            </div>
+                            <div class="cardv2-acts">
+                               <button class="cab" :class="prod.presentaciones && prod.presentaciones.length > 1 ? 'cab-pres' : 'cab-off'"
+                                       @click.stop="prod.presentaciones && prod.presentaciones.length > 1 && abrirPresentaciones(prod)" @touchstart.stop @touchend.stop>
+                                 🧱 <span v-if="prod.presentaciones && prod.presentaciones.length > 1">{{ prod.presentaciones.length - 1 }} PRESENT.</span><span v-else>PRESENT.</span>
+                               </button>
+                               <button class="cab" :class="prod.stock !== null && prod.stock <= 0 ? 'cab-alt' : 'cab-off'"
+                                       @click.stop="prod.stock !== null && prod.stock <= 0 && abrirAlternativas(prod)" @touchstart.stop @touchend.stop>🔄 PARECIDOS</button>
                             </div>
                             <div v-if="prod.promoStr" class="promo-stripe">🎯 {{ prod.promoStr }}</div>
                          </div>
@@ -4856,6 +4858,13 @@
       </div>
     </div>
     <style>@keyframes altUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+.cardv2-acts{display:flex;gap:5px;padding:0 6px 6px;background:#fff}
+.cab{flex:1;height:30px;border:0;border-radius:9px;font-size:8.5px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:3px;cursor:pointer;transition:transform .12s;white-space:nowrap;overflow:hidden}
+.cab:active{transform:scale(.95)}
+.cab-pres{background:#eef2ff;color:#4f46e5}
+.cab-alt{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;animation:altPulse 1.6s ease-in-out infinite}
+.cab-off{background:#f3f4f6;color:#c2c7d0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.cab-alt{animation:none}}
 .stk-chip{position:absolute;top:6px;right:6px;font-size:8.5px;font-weight:900;border-radius:99px;padding:2px 7px;z-index:5;transition:all .3s}
 .stk-on{background:rgba(255,255,255,.85);color:#059669;backdrop-filter:blur(2px)}
 .stk-off{background:#dc2626;color:#fff;animation:stkBreath 2.2s ease-in-out infinite}
