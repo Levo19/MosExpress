@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.260';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.261';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -857,38 +857,75 @@
 @keyframes altPulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.45)}50%{box-shadow:0 0 0 7px rgba(99,102,241,0)}}
 @media (prefers-reduced-motion:reduce){.alt-pulse{animation:none}}
 
-/* ── [2.8.260] Vista Rápida (peek de analítica) — mockup aprobado ── */
-.vr-velo{position:fixed;inset:0;z-index:75;background:rgba(17,24,39,.42);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:18px;animation:vrFade .16s ease-out}
-.vr-panel{position:relative;width:100%;max-width:360px;background:#fff;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:13px;animation:vrPop .18s cubic-bezier(.2,.9,.3,1.08)}
-@keyframes vrFade{from{opacity:0}to{opacity:1}}
-@keyframes vrPop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
-.vr-x{position:absolute;top:6px;right:6px;width:26px;height:26px;border:0;border-radius:99px;background:#f3f4f6;color:#6b7280;font-size:15px;font-weight:900;line-height:1;cursor:pointer;display:grid;place-items:center;z-index:2}
-.vr-x:active{transform:scale(.92)}
-.vr-head{display:flex;gap:10px;align-items:center;padding-right:24px}
-.vr-foto{width:44px;height:44px;border-radius:12px;background:#f3f4f6;display:grid;place-items:center;overflow:hidden;flex:0 0 44px}
-.vr-foto img{width:100%;height:100%;object-fit:cover;mix-blend-mode:multiply}
-.vr-ini{font-size:15px;font-weight:900;color:#c7ccd6;letter-spacing:1px}
-.vr-id{flex:1;min-width:0}
-.vr-nm{font-size:12px;font-weight:900;color:#111827;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.vr-sub{font-size:10px;color:#6b7280;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.vr-chip{font-size:9px;font-weight:900;border-radius:99px;padding:2px 8px;white-space:nowrap;flex:0 0 auto}
-.vr-chip-ok{background:rgba(255,255,255,.9);border:1px solid #d1fae5;color:#059669}
-.vr-chip-no{background:#dc2626;color:#fff}
-.vr-stats{display:flex;gap:8px;margin-top:10px}
-.vr-stat{flex:1;background:#f9fafb;border-radius:12px;padding:8px;text-align:center;min-width:0}
-.vr-n{font-size:14px;font-weight:900;color:#111827;line-height:1.15}
-.vr-n-cero{color:#dc2626}
-.vr-lb{font-size:8.5px;color:#9ca3af;font-weight:800;margin-top:1px}
-.vr-spark{width:100%;height:40px;margin-top:8px;display:block}
-.vr-acts{display:flex;gap:8px;margin-top:10px}
-.vr-b{flex:1;height:34px;border:0;border-radius:11px;font-weight:900;font-size:10.5px;cursor:pointer;transition:transform .12s;white-space:nowrap;overflow:hidden}
+/* ── [2.8.261] Botones de acción (lenguaje común de sheets/modales) ── */
+.vr-acts{display:flex;gap:8px}
+.vr-b{flex:1;height:36px;border:0;border-radius:11px;font-weight:900;font-size:10.5px;cursor:pointer;transition:transform .12s;white-space:nowrap;overflow:hidden}
 .vr-b:active{transform:scale(.96)}
 .vr-b-dark{background:#111827;color:#fff}
 .vr-b-pres{background:#eef2ff;color:#4f46e5}
 .vr-b-off{background:#f3f4f6;color:#c2c7d0;pointer-events:none}
-.vr-foot{font-size:9px;color:#9ca3af;margin-top:7px;text-align:center}
-.vr-err{font-size:10px;color:#dc2626;font-weight:800;margin-top:7px;text-align:center}
-@media (prefers-reduced-motion:reduce){.vr-velo,.vr-panel{animation:none}}
+
+/* ── [2.8.261] Modal de ANALÍTICA · piel moderna (mismo ADN que card v2 / presentaciones).
+   SOLO piel: cero cambios de cálculo, fuente de datos o lógica. ── */
+.ana-velo{position:fixed;inset:0;z-index:70;background:rgba(15,23,42,.45);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center}
+.ana-panel{position:relative;width:100%;max-width:460px;background:#fff;border-radius:24px 24px 0 0;box-shadow:0 10px 30px rgba(0,0,0,.12);max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+@media (min-width:640px){.ana-velo{align-items:center;padding:18px}.ana-panel{border-radius:24px;max-height:88vh}}
+.ana-head{display:flex;gap:10px;align-items:center;padding:14px;border-bottom:1px solid #f1f2f4;flex:0 0 auto}
+.ana-foto{width:44px;height:44px;border-radius:12px;background:#f3f4f6;display:grid;place-items:center;overflow:hidden;flex:0 0 44px}
+.ana-foto img{width:100%;height:100%;object-fit:cover;mix-blend-mode:multiply}
+.ana-ini{font-size:15px;font-weight:900;color:#c7ccd6;letter-spacing:1px}
+.ana-id{flex:1;min-width:0}
+.ana-nm{font-size:13px;font-weight:900;color:#111827;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ana-sub{font-size:10px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ana-chip{font-size:9px;font-weight:900;border-radius:99px;padding:2px 8px;white-space:nowrap;flex:0 0 auto}
+.ana-chip-ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#059669}
+.ana-chip-no{background:#dc2626;color:#fff;animation:stkBreath 2.2s ease-in-out infinite}
+.ana-x{width:30px;height:30px;border:0;border-radius:99px;background:#f3f4f6;color:#6b7280;font-size:17px;font-weight:900;line-height:1;cursor:pointer;flex:0 0 30px;display:grid;place-items:center}
+.ana-x:active{transform:scale(.92)}
+.ana-body{flex:1;min-height:0;overflow-y:auto;padding:12px 14px 14px;background:#fff}
+.ana-sec{margin-top:11px}
+.ana-chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.ana-tend{font-size:9px;font-weight:900;border-radius:99px;padding:3px 9px;white-space:nowrap;flex:0 0 auto}
+.ana-zona{font-size:9px;color:#9ca3af;font-weight:700}
+.ana-stats{display:flex;gap:8px}
+.ana-stat{flex:1;background:#f9fafb;border-radius:12px;padding:9px 5px;text-align:center;min-width:0}
+.ana-n{font-size:17px;font-weight:900;color:#111827;line-height:1.1}
+.ana-n-verde{color:#059669}
+.ana-n-indigo{color:#4f46e5}
+.ana-n-rojo{color:#dc2626}
+.ana-lb{font-size:8.5px;color:#9ca3af;font-weight:800;margin-top:3px;text-transform:uppercase;line-height:1.25}
+.ana-card{background:#f9fafb;border-radius:12px;padding:11px}
+.ana-ct{font-size:9.5px;font-weight:900;color:#6b7280;text-transform:uppercase;letter-spacing:.04em}
+.ana-ct-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.ana-leg{font-size:9px;color:#9ca3af;font-weight:700;white-space:nowrap}
+.ana-leg i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:3px;vertical-align:middle}
+.ana-dot-real{background:#059669}
+.ana-dot-pron{background:#eef2ff;border:1px dashed #c7d2fe;margin-left:7px}
+.ana-bars{display:flex;align-items:flex-end;gap:6px;height:96px}
+.ana-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
+.ana-slot{width:100%;height:100%;position:relative;display:flex;align-items:flex-end;justify-content:center}
+.ana-bar-pron{position:absolute;bottom:0;width:100%;border-radius:5px 5px 0 0;background:#eef2ff;border:1px dashed #c7d2fe}
+.ana-bar-real{position:relative;width:64%;border-radius:5px 5px 0 0;background:#059669}
+.ana-dow{font-size:8.5px;font-weight:900;line-height:1;color:#9ca3af}
+.ana-dow-hoy{color:#4f46e5;background:#eef2ff;border-radius:5px;padding:2px 4px}
+.ana-sems{display:flex;gap:7px;margin-top:8px}
+.ana-sem{flex:1;min-width:0}
+.ana-sem-track{display:flex;align-items:flex-end;gap:2px;height:56px;background:#fff;border-radius:9px;padding:4px}
+.ana-hb{flex:1;border-radius:2px;background:#059669}
+.ana-hb-0{flex:1;border-radius:2px;background:#e5e7eb}
+.ana-sem-lb{text-align:center;margin-top:4px;font-size:9px;font-weight:900;color:#6b7280}
+.ana-sem-lb b{color:#9ca3af;font-weight:800;font-size:8.5px}
+.ana-nota{font-size:9px;color:#9ca3af;margin-top:7px;line-height:1.5}
+.ana-aviso{border-radius:12px;padding:10px 12px;font-size:11px;line-height:1.5}
+.ana-aviso-info{background:#f0f9ff;color:#075985}
+.ana-aviso-amb{background:#fffbeb;color:#92400e;font-weight:800}
+.ana-insight{display:flex;align-items:center;gap:11px;border-radius:12px;padding:11px 12px}
+.ana-ins-ico{font-size:22px;line-height:1;flex:0 0 auto}
+.ana-ins-txt{font-size:11.5px;line-height:1.45;font-weight:600}
+.ana-msg{padding:36px 10px;text-align:center;font-size:12.5px;font-weight:800;color:#9ca3af}
+.ana-msg-err{color:#dc2626}
+.ana-acts{display:flex;gap:8px;padding:10px 14px 14px;border-top:1px solid #f1f2f4;flex:0 0 auto;background:#fff}
+@media (prefers-reduced-motion:reduce){.ana-chip-no{animation:none}}
 
 /* ── [2.8.260] Sheet de PRESENTACIONES (piel nueva, misma lógica) ── */
 .pv-velo{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
@@ -4133,7 +4170,7 @@
                          
                          <!-- Productos Component -->
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="agregarOVerDetalle(prod)"
-                              @contextmenu.prevent="abrirVistaRapida(prod)"
+                              @contextmenu.prevent="abrirAnaliticaPos(prod)"
                               @touchstart.passive="anaPosPressStart(prod)" @touchend="anaPosPressCancel" @touchmove.passive="anaPosPressCancel" @touchcancel="anaPosPressCancel"
                               :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '']">
                             <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
@@ -4969,111 +5006,88 @@
     </div>
     <!-- MODAL PRESENTACIONES -->
     <!-- ══ [2.8.208] ANALÍTICA DE PRODUCTO (click derecho / long-press en catálogo) ══ -->
-    <!-- ══ [2.8.260] VISTA RÁPIDA (peek de analítica) · click derecho / presión larga ══ -->
-    <div v-if="peekPos.abierto" class="vr-velo" @click.self="cerrarVistaRapida()">
-      <div class="vr-panel" role="dialog" aria-label="Vista rápida del producto">
-        <button class="vr-x" @click="cerrarVistaRapida()" aria-label="Cerrar vista rápida">×</button>
-        <div class="vr-head">
-          <div class="vr-foto">
-            <img v-if="peekPos.prod && peekPos.prod.imagen" :src="peekPos.prod.imagen" loading="lazy">
-            <span v-else class="vr-ini">{{ peekIni }}</span>
+    <!-- ══ [2.8.261] ANALÍTICA DE PRODUCTO · piel moderna, análisis COMPLETO directo ══
+         Long-press / click derecho abren esto YA (la Vista Rápida de 2 pasos se retiró).
+         Cero cambios de cálculo: mismas métricas, mismos avisos y las 2 series completas. -->
+    <div v-if="anaPos.abierto" class="ana-velo" @click.self="cerrarAnaliticaPos()">
+      <div class="ana-panel ana-enter" role="dialog" aria-label="Analítica del producto">
+        <div class="ana-head">
+          <div class="ana-foto">
+            <img v-if="(anaPos.data && anaPos.data.producto.foto) || (anaPos.prod && anaPos.prod.imagen)"
+                 :src="(anaPos.data && anaPos.data.producto.foto) || anaPos.prod.imagen" loading="lazy">
+            <span v-else class="ana-ini">{{ anaHdrIni }}</span>
           </div>
-          <div class="vr-id">
-            <div class="vr-nm">{{ peekPos.prod ? (peekPos.prod.nombreCorto || peekPos.prod.nombre || '') : '' }}</div>
-            <div class="vr-sub">{{ peekSub }}</div>
+          <div class="ana-id">
+            <div class="ana-nm">{{ anaPos.data ? anaPos.data.producto.nombre : (anaPos.prod ? (anaPos.prod.nombreCorto || anaPos.prod.nombre || 'Analítica de producto') : 'Analítica de producto') }}</div>
+            <div class="ana-sub">{{ anaHdrSub }}</div>
           </div>
-          <span v-if="peekStockTxt" class="vr-chip" :class="Number(peekPos.prod.stock) > 0 ? 'vr-chip-ok' : 'vr-chip-no'">{{ peekStockTxt }}</span>
+          <span v-if="anaHdrStock" class="ana-chip" :class="Number(anaPos.prod.stock) > 0 ? 'ana-chip-ok' : 'ana-chip-no'">{{ anaHdrStock }}</span>
+          <button class="ana-x" @click="cerrarAnaliticaPos()" aria-label="Cerrar analítica">×</button>
         </div>
-        <div class="vr-stats">
-          <div class="vr-stat"><div class="vr-n">{{ peekVM ? peekVM.ventas7 : '…' }}</div><div class="vr-lb">VENTAS 7D</div></div>
-          <div class="vr-stat"><div class="vr-n" :class="peekVM && peekVM.stockZona <= 0 ? 'vr-n-cero' : ''">{{ peekVM ? peekVM.stockZona : '…' }}</div><div class="vr-lb">TU ZONA</div></div>
-          <div class="vr-stat"><div class="vr-n" :class="peekVM && peekVM.stockAlmacen <= 0 ? 'vr-n-cero' : ''">{{ peekVM ? peekVM.stockAlmacen : '…' }}</div><div class="vr-lb">ALMACÉN</div></div>
-        </div>
-        <svg class="vr-spark" viewBox="0 0 300 40">
-          <polyline v-if="peekVM && peekVM.pts" :points="peekVM.pts" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle v-if="peekVM && peekVM.pts" :cx="peekVM.lx" :cy="peekVM.ly" r="3.5" fill="#059669"/>
-          <line v-if="!(peekVM && peekVM.pts)" x1="4" y1="30" x2="296" y2="30" stroke="#e5e7eb" stroke-width="2.5" stroke-linecap="round"/>
-        </svg>
-        <div class="vr-acts">
-          <button class="vr-b vr-b-dark" @click="vistaRapidaAnalisis()">📊 ANÁLISIS COMPLETO</button>
-          <button class="vr-b" :class="peekPres ? 'vr-b-pres' : 'vr-b-off'" @click="vistaRapidaPres()">🧱 PRESENTACIONES</button>
-        </div>
-        <p v-if="peekPos.error" class="vr-err">⚠️ {{ peekPos.error }}</p>
-        <div v-else class="vr-foot">{{ peekPos.cargando ? 'Leyendo ventas de tu zona…' : ('Últimos ' + (peekVM ? peekVM.dias : 7) + ' días · ventas de tu zona') }}</div>
-      </div>
-    </div>
-
-    <div v-if="anaPos.abierto" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[70] flex items-end sm:items-center justify-center backdrop-blur-sm" @click.self="cerrarAnaliticaPos()">
-      <div class="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden ana-enter">
-        <!-- header -->
-        <div class="p-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center gap-3 shrink-0">
-          <div class="w-12 h-12 rounded-xl bg-white/15 border border-white/25 overflow-hidden flex items-center justify-center shrink-0">
-            <img v-if="anaPos.data && anaPos.data.producto.foto" :src="anaPos.data.producto.foto" class="w-full h-full object-cover">
-            <span v-else class="text-xl">📈</span>
-          </div>
-          <div class="min-w-0 flex-1">
-            <h3 class="font-black text-sm leading-tight line-clamp-2">{{ anaPos.data ? anaPos.data.producto.nombre : 'Analítica de producto' }}</h3>
-            <p class="text-[10px] opacity-80 mt-0.5">{{ anaPos.data ? ('📍 ' + anaPos.data.zona + ' · ventas de tu zona · en tiempo real') : '' }}</p>
-          </div>
-          <span v-if="anaPos.data" class="text-[10px] font-black px-2 py-1 rounded-full border bg-white" :class="anaPosTend(anaPos.data.tendencia).cls">{{ anaPosTend(anaPos.data.tendencia).txt }}</span>
-          <button @click="cerrarAnaliticaPos()" class="text-white bg-black/20 rounded-full p-1.5 shrink-0"><svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg></button>
-        </div>
-        <!-- body -->
-        <div class="overflow-y-auto p-4 space-y-4 flex-1 bg-gray-50">
-          <div v-if="anaPos.cargando" class="py-10 text-center text-gray-400 text-sm font-bold animate-pulse">Leyendo ventas de tu zona…</div>
-          <div v-else-if="anaPos.error" class="py-8 text-center text-red-500 text-sm font-bold">⚠️ {{ anaPos.error }}</div>
+        <div class="ana-body">
+          <div v-if="anaPos.cargando" class="ana-msg animate-pulse">Leyendo ventas de tu zona…</div>
+          <div v-else-if="anaPos.error" class="ana-msg ana-msg-err">⚠️ {{ anaPos.error }}</div>
           <template v-else-if="anaPos.data && anaPos.vm">
+            <!-- Tendencia + zona (misma lógica anaPosTend, ahora como chips) -->
+            <div class="ana-chips">
+              <span class="ana-tend" :class="anaPosTend(anaPos.data.tendencia).cls">{{ anaPosTend(anaPos.data.tendencia).txt }}</span>
+              <span class="ana-zona">📍 {{ anaPos.data.zona }} · ventas de tu zona · en tiempo real</span>
+            </div>
             <!-- KPIs -->
-            <div class="grid grid-cols-4 gap-2 text-center">
-              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black text-indigo-600">{{ Math.round(anaPos.data.pronSemana) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Pronóstico<br>semana</div></div>
-              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black text-emerald-600">{{ Math.round(anaPos.data.vendidosSemana) }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Ya vendidos<br>semana</div></div>
-              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black" :class="anaPos.data.stockZona > 0 ? 'text-gray-800' : 'text-red-500'">{{ Math.round(anaPos.data.stockZona*1000)/1000 }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock<br>tu zona</div></div>
-              <div class="bg-white rounded-2xl border border-gray-200 p-2.5"><div class="text-lg font-black" :class="anaPos.data.stockAlmacen > 0 ? 'text-gray-800' : 'text-red-500'">{{ Math.round(anaPos.data.stockAlmacen*1000)/1000 }}</div><div class="text-[9px] font-bold text-gray-400 uppercase leading-tight">Stock<br>almacén</div></div>
+            <div class="ana-stats ana-sec">
+              <div class="ana-stat"><div class="ana-n ana-n-indigo">{{ Math.round(anaPos.data.pronSemana) }}</div><div class="ana-lb">Pronóstico<br>semana</div></div>
+              <div class="ana-stat"><div class="ana-n ana-n-verde">{{ Math.round(anaPos.data.vendidosSemana) }}</div><div class="ana-lb">Ya vendidos<br>semana</div></div>
+              <div class="ana-stat"><div class="ana-n" :class="anaPos.data.stockZona > 0 ? '' : 'ana-n-rojo'">{{ Math.round(anaPos.data.stockZona*1000)/1000 }}</div><div class="ana-lb">Stock<br>tu zona</div></div>
+              <div class="ana-stat"><div class="ana-n" :class="anaPos.data.stockAlmacen > 0 ? '' : 'ana-n-rojo'">{{ Math.round(anaPos.data.stockAlmacen*1000)/1000 }}</div><div class="ana-lb">Stock<br>almacén</div></div>
             </div>
             <!-- [2.8.210] Zona activa sin ventas pero OTRAS sí → decirlo (cero mudo genera desconfianza) -->
-            <div v-if="(anaPos.data.volumen4sem + anaPos.data.vendidosSemana) == 0 && anaPos.data.otrasZonas > 0" class="bg-sky-50 border border-sky-200 rounded-2xl px-3 py-2.5 text-[11px] text-sky-800 leading-snug">
+            <div v-if="(anaPos.data.volumen4sem + anaPos.data.vendidosSemana) == 0 && anaPos.data.otrasZonas > 0" class="ana-aviso ana-aviso-info ana-sec">
               ℹ️ <b>{{ anaPos.data.zona }}</b> no registra NINGUNA venta de este producto (ni en 4 semanas ni esta semana), pero
               <template v-for="(o, i) in anaPos.data.otrasZonasDetalle" :key="o.zona"><b> {{ o.zona }}</b> vendió <b>{{ Math.round(o.u) }}</b><span v-if="i < anaPos.data.otrasZonasDetalle.length - 1"> ·</span></template>.
               La analítica es de la zona de TU caja.
             </div>
             <!-- Insight de HOY (variable: rompió pronóstico / normal / día sin venta) -->
-            <div v-if="anaPos.vm.insight" class="border rounded-2xl p-3 flex items-center gap-3" :class="anaPos.vm.insight.cls">
-              <span class="text-2xl">{{ anaPos.vm.insight.ico }}</span>
-              <p class="text-xs leading-snug font-semibold">{{ anaPos.vm.insight.txt }}</p>
+            <div v-if="anaPos.vm.insight" class="ana-insight ana-sec" :class="anaPos.vm.insight.cls">
+              <span class="ana-ins-ico">{{ anaPos.vm.insight.ico }}</span>
+              <p class="ana-ins-txt">{{ anaPos.vm.insight.txt }}</p>
             </div>
             <!-- Esta semana: real vs pronóstico -->
-            <div class="bg-white rounded-2xl border border-gray-200 p-3">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-[10px] font-black text-gray-500 uppercase tracking-wide">Esta semana · real vs pronóstico</span>
-                <span class="text-[9px] text-gray-400"><span class="inline-block w-2 h-2 rounded-sm bg-emerald-500 mr-0.5"></span>real <span class="inline-block w-2 h-2 rounded-sm border border-dashed border-indigo-400 bg-indigo-50 ml-1.5 mr-0.5"></span>pronóstico</span>
+            <div class="ana-card ana-sec">
+              <div class="ana-ct-row">
+                <span class="ana-ct">Esta semana · real vs pronóstico</span>
+                <span class="ana-leg"><i class="ana-dot-real"></i>real<i class="ana-dot-pron"></i>pronóstico</span>
               </div>
-              <div class="flex items-end gap-1.5 h-24">
-                <div v-for="d in anaPos.data.semanaActual" :key="d.fecha" class="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                  <div class="w-full relative flex items-end justify-center h-full">
-                    <div class="absolute bottom-0 w-full rounded-t border border-dashed border-indigo-300 bg-indigo-50" :style="{ height: Math.max(4, (d.pron / anaPos.vm.maxAll) * 100) + '%' }"></div>
-                    <div v-if="d.u !== null" class="relative w-2/3 rounded-t bg-emerald-500" :style="{ height: Math.max(d.u > 0 ? 6 : 2, (d.u / anaPos.vm.maxAll) * 100) + '%' }"></div>
+              <div class="ana-bars">
+                <div v-for="d in anaPos.data.semanaActual" :key="d.fecha" class="ana-col">
+                  <div class="ana-slot">
+                    <div class="ana-bar-pron" :style="{ height: Math.max(4, (d.pron / anaPos.vm.maxAll) * 100) + '%' }"></div>
+                    <div v-if="d.u !== null" class="ana-bar-real" :style="{ height: Math.max(d.u > 0 ? 6 : 2, (d.u / anaPos.vm.maxAll) * 100) + '%' }"></div>
                   </div>
-                  <span class="text-[8.5px] font-black leading-none" :class="d.esHoy ? 'text-indigo-600 bg-indigo-100 rounded px-1 py-0.5' : 'text-gray-400'">{{ anaPos.vm.dowLbl[d.dow] }}</span>
+                  <span class="ana-dow" :class="d.esHoy ? 'ana-dow-hoy' : ''">{{ anaPos.vm.dowLbl[d.dow] }}</span>
                 </div>
               </div>
             </div>
             <!-- 4 semanas anteriores día a día -->
-            <div class="bg-white rounded-2xl border border-gray-200 p-3">
-              <span class="text-[10px] font-black text-gray-500 uppercase tracking-wide">Últimas 4 semanas · día a día</span>
-              <div class="flex gap-2 mt-2">
-                <div v-for="(sem, i) in anaPos.vm.semanas" :key="i" class="flex-1">
-                  <div class="flex items-end gap-[2px] h-14 bg-gray-50 rounded-lg p-1">
-                    <div v-for="d in sem" :key="d.fecha" class="flex-1 rounded-sm" :class="d.u > 0 ? 'bg-indigo-400' : 'bg-gray-200'" :style="{ height: Math.max(8, (d.u / anaPos.vm.maxAll) * 100) + '%' }" :title="d.fecha + ' · ' + d.u"></div>
+            <div class="ana-card ana-sec">
+              <span class="ana-ct">Últimas 4 semanas · día a día</span>
+              <div class="ana-sems">
+                <div v-for="(sem, i) in anaPos.vm.semanas" :key="i" class="ana-sem">
+                  <div class="ana-sem-track">
+                    <div v-for="d in sem" :key="d.fecha" :class="d.u > 0 ? 'ana-hb' : 'ana-hb-0'" :style="{ height: Math.max(8, (d.u / anaPos.vm.maxAll) * 100) + '%' }" :title="d.fecha + ' · ' + d.u"></div>
                   </div>
-                  <div class="text-center mt-1"><span class="text-[8.5px] font-bold text-gray-400">S{{ i + 1 }}</span> <span class="text-[9px] font-black text-gray-600">{{ anaPos.vm.totSem[i] }}u</span></div>
+                  <div class="ana-sem-lb"><b>S{{ i + 1 }}</b> {{ anaPos.vm.totSem[i] }}u</div>
                 </div>
               </div>
-              <p class="text-[9px] text-gray-400 mt-1.5">S4 = semana pasada · barras Lun→Dom · total {{ Math.round(anaPos.data.volumen4sem) }} uds en 4 semanas</p>
+              <p class="ana-nota">S4 = semana pasada · barras Lun→Dom · total {{ Math.round(anaPos.data.volumen4sem) }} uds en 4 semanas</p>
             </div>
             <!-- Vencimiento próximo en zona (si hay libro) -->
-            <div v-if="anaPos.data.vencProxZona" class="bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2 text-[11px] text-amber-800 font-bold">📅 Lote más próximo a vencer en tu zona: {{ anaPos.data.vencProxZona }}</div>
-            <p v-if="anaPos.data.producto.esPadreDe" class="text-[9px] text-gray-400 text-center">Analítica del producto padre (incluye {{ anaPos.data.producto.esPadreDe }} y demás presentaciones)</p>
+            <div v-if="anaPos.data.vencProxZona" class="ana-aviso ana-aviso-amb ana-sec">📅 Lote más próximo a vencer en tu zona: {{ anaPos.data.vencProxZona }}</div>
+            <p v-if="anaPos.data.producto.esPadreDe" class="ana-nota" style="text-align:center">Analítica del producto padre (incluye {{ anaPos.data.producto.esPadreDe }} y demás presentaciones)</p>
           </template>
+        </div>
+        <div class="ana-acts">
+          <button class="vr-b vr-b-dark" @click="cerrarAnaliticaPos()">✔ LISTO</button>
+          <button class="vr-b" :class="anaHdrPres ? 'vr-b-pres' : 'vr-b-off'" @click="anaPosVerPres()">🧱 PRESENTACIONES</button>
         </div>
       </div>
     </div>
@@ -9035,6 +9049,19 @@
             stockZonas.value.forEach(r => { m[r.Cod_Barras + '_' + r.Zona_ID] = parseFloat(r.Cantidad) || 0; });
             return m;
         });
+        // [2.8.261 FIX] Normalizador tolerante de claves: 'ZONA-01' ≡ 'zona1' ≡ 'Zona 1'.
+        // Es la MISMA normalización que ya usaban las cards para su _szMap.
+        const _znk = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        // [2.8.261 FIX] Gemelo normalizado de stockMap. RAÍZ DEL BUG: stockMap indexa con la
+        // Zona_ID CRUDA del payload ('ZONA-01') pero config.zona del usuario es 'zona1' → el
+        // lookup de _stockDeCod nunca casaba → devolvía null SIEMPRE → el botón 🔄 PARECIDOS
+        // no palpitaba en NINGÚN producto y el sheet de alternativas salía vacío.
+        // stockMap crudo se deja intacto para sus consumidores actuales (card legacy, guiaZona).
+        const stockMapZ = computed(() => {
+            const m = {};
+            stockZonas.value.forEach(r => { m[_znk(r.Cod_Barras) + '_' + _znk(r.Zona_ID)] = parseFloat(r.Cantidad) || 0; });
+            return m;
+        });
         // Pendiente si el usuario activo no llegó a 30 hoy
         const auditPendiente = computed(() => {
             if (!config.value.vendedor || !config.value.completado) return false;
@@ -11764,9 +11791,10 @@
         // una alternativa la agrega por el MISMO camino del escaneo (elegirPresentacion).
         const altSheet = ref(null);
         const cerrarAltSheet = () => { altSheet.value = null; };
+        // [2.8.261 FIX] Lookup por clave normalizada (ver stockMapZ). Lo usan el sheet de
+        // Parecidos, tieneAlternativas y el "N disp." del sheet de Presentaciones.
         const _stockDeCod = (cod) => {
-            const z = config.value.zona || '';
-            const v = stockMap.value[String(cod).trim() + '_' + z];
+            const v = stockMapZ.value[_znk(cod) + '_' + _znk(config.value.zona || '')];
             return v === undefined ? null : v;
         };
         const abrirAlternativas = (base) => {
@@ -11822,7 +11850,7 @@
         };
         // El stock de zona y el catálogo son las Únicas entradas del cálculo → al cambiar
         // cualquiera, el memo se tira entero (barato: se rellena perezosamente al render).
-        watch([stockMap, db], () => { _altCache.clear(); });
+        watch([stockMapZ, db], () => { _altCache.clear(); });
         const elegirAlternativa = (it) => {
             cerrarAltSheet();
             const pres = (db.value.PRESENTACIONES || []).find(p => String(p.Cod_Barras).trim().toUpperCase() === String(it.cod).trim().toUpperCase());
@@ -18760,7 +18788,7 @@
         // completas), pronóstico de ESTA semana por día (promedio del mismo día de semana),
         // tendencia con la MISMA lógica de MOS/zona, y stock almacén/zona EN TIEMPO REAL.
         // Fuente: RPC me.analitica_pos (SQL 531) — una sola llamada, fresca en cada apertura.
-        const anaPos = ref({ abierto:false, cargando:false, data:null, vm:null, error:'' });
+        const anaPos = ref({ abierto:false, prod:null, cargando:false, data:null, vm:null, error:'' });
         const anaPosPressingId = ref(null);   // card en long-press (feedback visual)
         let _anaPosTimer = null, _anaPosFired = false;
         const DOW_LBL = ['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -18777,8 +18805,9 @@
         const abrirAnaliticaPos = async (prod) => {
             const cb   = String(prod.codBarras || prod.cod_barras || '');
             const zona = String(config.value?.zona || '');
+            try { navigator.vibrate && navigator.vibrate(15); } catch(_) {}
             if (!cb || !zona) { try { agregarToast('Sin zona activa para analítica', 'warning'); } catch(_) {} return; }
-            anaPos.value = { abierto:true, cargando:true, data:null, vm:null, error:'' };
+            anaPos.value = { abierto:true, prod, cargando:true, data:null, vm:null, error:'' };
             try {
                 const d = await _anaPosRPC(cb, zona);
                 if (d && d.ok) {
@@ -18808,7 +18837,7 @@
                                 txt: 'Hoy (' + dow + ') no suele venderse este producto.' + (sz <= 0 && sa > 0 ? (' Si lo necesitas, almacén tiene ' + Math.round(sa) + '.') : '') };
                         }
                     }
-                    anaPos.value = { abierto:true, cargando:false, data:d, error:'', vm: {
+                    anaPos.value = { abierto:true, prod, cargando:false, data:d, error:'', vm: {
                         maxAll,
                         semanas: [1,2,3,4].map(w => H.filter(x => x.sem === w)),
                         totSem:  [1,2,3,4].map(w => Math.round(H.filter(x => x.sem === w).reduce((a,x) => a + (+x.u||0), 0))),
@@ -18816,9 +18845,9 @@
                         insight,
                         dowLbl: DOW_LBL
                     }};
-                } else anaPos.value = { abierto:true, cargando:false, data:null, vm:null, error:(d && d.error) || 'Sin datos' };
+                } else anaPos.value = { abierto:true, prod, cargando:false, data:null, vm:null, error:(d && d.error) || 'Sin datos' };
             } catch(e) {
-                anaPos.value = { abierto:true, cargando:false, data:null, vm:null, error:'Sin conexión' };
+                anaPos.value = { abierto:true, prod, cargando:false, data:null, vm:null, error:'Sin conexión' };
             }
         };
         const cerrarAnaliticaPos = () => { anaPos.value.abierto = false; };
@@ -18828,7 +18857,7 @@
             _anaPosTimer = setTimeout(() => {
                 _anaPosFired = true;
                 anaPosPressingId.value = null;
-                abrirVistaRapida(prod);
+                abrirAnaliticaPos(prod);
             }, 550);
         };
         const anaPosPressCancel = () => { clearTimeout(_anaPosTimer); anaPosPressingId.value = null; };
@@ -18839,76 +18868,30 @@
             NULA:        { txt:'∅ Sin rotar', cls:'bg-gray-100 text-gray-500 border-gray-300' }
         }[t] || { txt:'—', cls:'bg-gray-100 text-gray-500 border-gray-300' });
 
-        // ══ [2.8.260] VISTA RÁPIDA (peek de analítica) ═══════════════
-        // Click derecho / presión larga ya NO abren el modal pesado: abren un popover
-        // instantáneo (velo suave + vibración corta) con 3 stat-cards y sparkline. El
-        // panel se pinta AL INSTANTE con "…" y se rellena cuando llega el RPC.
-        // Desde ahí: 📊 ANÁLISIS COMPLETO (modal anaPos de siempre) o 🧱 PRESENTACIONES.
-        const peekPos = ref({ abierto:false, prod:null, cargando:false, error:'', d:null });
-        let _peekSeq = 0;
-        const abrirVistaRapida = (prod) => {
-            const cb   = String((prod && (prod.codBarras || prod.cod_barras)) || '');
-            const zona = String(config.value?.zona || '');
-            peekPos.value = { abierto:true, prod, cargando:true, error:'', d:null };
-            try { navigator.vibrate && navigator.vibrate(15); } catch(_) {}
-            if (!cb || !zona) { peekPos.value.cargando = false; peekPos.value.error = 'Sin zona activa para analítica'; return; }
-            const seq = ++_peekSeq;
-            (async () => {
-                try {
-                    const d = await _anaPosRPC(cb, zona);
-                    if (seq !== _peekSeq || !peekPos.value.abierto) return;
-                    if (d && d.ok) peekPos.value = { abierto:true, prod, cargando:false, error:'', d };
-                    else peekPos.value = { abierto:true, prod, cargando:false, error:(d && d.error) || 'Sin datos', d:null };
-                } catch(_) {
-                    if (seq !== _peekSeq || !peekPos.value.abierto) return;
-                    peekPos.value = { abierto:true, prod, cargando:false, error:'Sin conexión', d:null };
-                }
-            })();
-        };
-        const cerrarVistaRapida = () => { _peekSeq++; peekPos.value.abierto = false; };
-        const vistaRapidaAnalisis = () => { const p = peekPos.value.prod; cerrarVistaRapida(); if (p) abrirAnaliticaPos(p); };
-        const vistaRapidaPres     = () => { const p = peekPos.value.prod; cerrarVistaRapida(); if (p) abrirPresentaciones(p); };
-        const _peekKg = (p) => String((p && p.unidadMedida) || '').toUpperCase() === 'KGM';
-        const peekIni = computed(() => {
-            const p = peekPos.value.prod; if (!p) return '';
+        // ══ [2.8.261] Header rico del modal de analítica ══════════════════
+        // La Vista Rápida (peek de 2 pasos) se retiró: el dueño quiere el análisis COMPLETO
+        // directo. De ella sobrevive _anaPosRPC (puerta única al RPC), la vibración corta al
+        // abrir y estos helpers, que ahora leen anaPos.prod (el prod de la card) para pintar
+        // foto/nombre/categoría·precio/chip de stock AL INSTANTE, sin esperar al RPC.
+        const _anaKg = (p) => String((p && p.unidadMedida) || '').toUpperCase() === 'KGM';
+        const anaHdrIni = computed(() => {
+            const p = anaPos.value.prod; if (!p) return '📈';
             return String(p.nombreCorto || p.nombre || '?').trim().slice(0, 2).toUpperCase();
         });
-        const peekSub = computed(() => {
-            const p = peekPos.value.prod; if (!p) return '';
-            const pv = Number(p.precio || 0) > 0 ? ('S/ ' + Number(p.precio).toFixed(2) + (_peekKg(p) ? ' / kg' : '')) : '⛔ Sin precio';
+        const anaHdrSub = computed(() => {
+            const p = anaPos.value.prod; if (!p) return '';
+            const pv = Number(p.precio || 0) > 0 ? ('S/ ' + Number(p.precio).toFixed(2) + (_anaKg(p) ? ' / kg' : '')) : '⛔ Sin precio';
             return (p.cat ? (p.cat + ' · ') : '') + pv;
         });
-        const peekStockTxt = computed(() => {
-            const p = peekPos.value.prod; if (!p || p.stock === null || p.stock === undefined) return '';
-            return Number(p.stock) > 0 ? (p.stock + (_peekKg(p) ? ' kg' : ' uds')) : 'Sin stock';
+        const anaHdrStock = computed(() => {
+            const p = anaPos.value.prod; if (!p || p.stock === null || p.stock === undefined) return '';
+            return Number(p.stock) > 0 ? (p.stock + (_anaKg(p) ? ' kg' : ' uds')) : 'Sin stock';
         });
-        const peekPres = computed(() => {
-            const p = peekPos.value.prod;
+        const anaHdrPres = computed(() => {
+            const p = anaPos.value.prod;
             return !!(p && p.presentaciones && p.presentaciones.length > 1);
         });
-        // Serie REAL: últimos 7 días con dato (historial de 4 semanas + días ya vividos de
-        // la semana actual, deduplicados por fecha). Sparkline en viewBox 0 0 300 40.
-        const peekVM = computed(() => {
-            const d = peekPos.value.d; if (!d) return null;
-            const map = new Map();
-            (d.historial || []).forEach(x => { if (x && x.fecha) map.set(String(x.fecha), +x.u || 0); });
-            (d.semanaActual || []).forEach(x => { if (x && x.fecha && x.u !== null && x.u !== undefined) map.set(String(x.fecha), +x.u || 0); });
-            const dias = Array.from(map.entries()).sort((a, b) => a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0)).slice(-7);
-            const serie = dias.map(e => e[1]);
-            const n = serie.length;
-            const max = Math.max(1, ...serie);
-            const r1 = (v) => Math.round(v * 10) / 10;
-            const xy = serie.map((v, i) => [ n > 1 ? r1(i * (300 / (n - 1))) : 150, r1(36 - (v / max) * 30) ]);
-            return {
-                ventas7: Math.round(serie.reduce((a, b) => a + b, 0)),
-                stockZona:    Math.round((+d.stockZona    || 0) * 1000) / 1000,
-                stockAlmacen: Math.round((+d.stockAlmacen || 0) * 1000) / 1000,
-                dias: n,
-                pts: n >= 2 ? xy.map(p => p[0] + ',' + p[1]).join(' ') : '',
-                lx:  n >= 2 ? xy[n - 1][0] : 0,
-                ly:  n >= 2 ? xy[n - 1][1] : 0
-            };
-        });
+        const anaPosVerPres = () => { const p = anaPos.value.prod; cerrarAnaliticaPos(); if (p) abrirPresentaciones(p); };
 
         // [2.8.213] Descriptor limpio de una presentación: si el Empaque empieza con el nombre
         // del padre (o lo contiene al inicio tras normalizar), se recorta — queda solo el
@@ -19027,7 +19010,6 @@
         window.addEventListener('keydown', (ev) => {
             if (ev.key !== 'Escape') return;
             try {
-                if (peekPos.value && peekPos.value.abierto) { cerrarVistaRapida(); ev.preventDefault(); return; }
                 if (anaPos.value && anaPos.value.abierto) { cerrarAnaliticaPos(); ev.preventDefault(); return; }
                 if (modalPresentaciones.value) { cerrarModalPres(); ev.preventDefault(); return; }
                 if (popover.value && popover.value.visible) { popover.value.visible = false; ev.preventDefault(); return; }
@@ -22611,9 +22593,8 @@
           // [2.8.208] Analítica de producto en POS
           anaPos, abrirAnaliticaPos, cerrarAnaliticaPos, anaPosPressStart, anaPosPressCancel, anaPosTend,
           anaPosPressingId, abrirPresentaciones, presentacionesDelPicker,
-          // [2.8.260] Vista Rápida (peek de analítica)
-          peekPos, abrirVistaRapida, cerrarVistaRapida, vistaRapidaAnalisis, vistaRapidaPres,
-          peekVM, peekIni, peekSub, peekStockTxt, peekPres,
+          // [2.8.261] Header rico del modal de analítica
+          anaHdrIni, anaHdrSub, anaHdrStock, anaHdrPres, anaPosVerPres,
           getPosLeftClasses, getPosRightClasses, camaraAbierta,
           // [v2.7.78 CLEANUP] bHerramientas, imprimirMembrete, procesandoMembrete,
           // camaraHerramientasAbierta, toggleCamaraHerramientas — TODOS eliminados
