@@ -12,7 +12,7 @@ Postgres (RPCs por esquema `me.*` / `mos.*`) y Edge Functions (`mint-me`, `impri
 ## Estructura
 
 ```
-index.html    ← toda la app: Vue 3, 11 scripts inline (el grande es el setup())
+index.html    ← toda la app: Vue 3, 12 scripts inline (el grande es el setup(); el #2 es el PURGANTE)
 sw.js         ← Service Worker (VERSION + push FCM; NO intercepta *.supabase.co)
 radio.html    ← pantalla publicitaria SmartTV (ES5, GET RPC public.radio_productos)
 version.json  ← el auto-update compara contra `var V` del index
@@ -44,7 +44,7 @@ Assets compartidos servidos desde el repo MOS (levo19.github.io/MOS/assets/):
 
 1. **Ediciones por STRINGS EXACTOS** con assert de unicidad (jamás regex glotones
    sobre bloques con llaves). Un regex `[\s\S]*?` ya tumbó la app una vez.
-2. **Validar tras editar**: extraer los 11 scripts inline y `node --check` cada uno;
+2. **Validar tras editar**: extraer los 12 scripts inline y `node --check` cada uno;
    verificar que el template no use claves fuera del return del setup (pantalla blanca).
 3. **Ritual de versión en CADA deploy** (los 3 son obligatorios o hay bucle de update):
    - `sw.js` → `const VERSION`

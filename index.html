@@ -7,7 +7,8 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.267';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.268';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
       try {
@@ -23,6 +24,234 @@
             }
           }).catch(function () {});
       } catch (e) {}
+    })();
+  </script>
+  <script>
+    /* ══════════════════════════════════════════════════════════════════════════════
+       PURGANTE · purga remota one-shot (SQL 658)
+       ──────────────────────────────────────────────────────────────────────────────
+       El MASTER sube mos.config.MOS_PURGANTE_TOKEN y, al siguiente arranque, ESTE
+       equipo se limpia UNA sola vez: mata todos los SW, borra las cachés, vacía el
+       storage basura y el catálogo de IndexedDB, RE-SIEMBRA la lista blanca sagrada
+       y recarga limpio contra la última versión.
+
+       ME ES UN POS: acá se cobra dinero. Las leyes son más duras que en MOS.
+         1. JAMÁS puede impedir que la app abra ni retrasar el cobro. Todo en
+            try/catch, sin await del boot. Sin red = la app arranca normal.
+         2. purganteToken '0' / ausente = DESARMADO ⇒ no hace nada.
+         3. La lista blanca incluye TODA la cola offline de ventas, las mutaciones de
+            dinero pendientes, las ventas fantasma, el carrito, la caja y la sesión.
+            Se fotografía en memoria ANTES de tocar nada y se respalda en
+            sessionStorage por si la pestaña muere a mitad de purga.
+         4. De IndexedDB se borra SOLO la clave del catálogo. La base 'mosexpress_idb'
+            NO se elimina: ahí vive session_snapshot_v1, la red de seguridad de la caja.
+         5. Tres candados anti-bucle: mosexpress_purgante_done, guard en
+            sessionStorage y el '?pv=' de la URL.
+       ══════════════════════════════════════════════════════════════════════════════ */
+    (function () {
+      'use strict';
+      var APP = 'mosExpress', DEV_KEY = 'mosexpress_deviceId';
+      var K_DONE = 'mosexpress_purgante_done', K_PEND = 'mosexpress_purgante_pend', K_BAK = '__purgante_bak';
+      var SB = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
+      var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+
+      /* ── LISTA BLANCA SAGRADA · ME ─────────────────────────────────────────────
+         Es la unión de las _PROTEGIDAS que ya usaba lsSet MÁS las seis que esa lista
+         se estaba olvidando (caja_payload, cobrados_sesion, extras_sesion,
+         mut_dinero_pend, session_dia, es_extension), todas con dinero o sesión dentro. */
+      var BLANCA = [
+        // ── DINERO NO ENVIADO — si esto se pierde, se perdió plata cobrada ──
+        'pending_sales',                  // LA cola offline de ventas
+        'mosexpress_pendingSales',        // alias legacy en equipos viejos
+        'mosexpress_ventas_fantasma',     // ventas rechazadas con ticket impreso y efectivo cobrado
+        'mosexpress_mut_dinero_pend',     // mutaciones de dinero con reintento
+        'mosexpress_ventas_hoy',          // el GC conserva a propósito las syncStatus != 'synced'
+        '_mos_syncing',                   // mutex del drenado: soltarlo permitiría un sync concurrente = duplicados
+        // ── venta en curso ──
+        'mosexpress_carrito', 'mosexpress_carrito_locked',
+        // ── caja / turno / sesión ──
+        'mosexpress_config', 'mosexpress_caja_activa', 'mosexpress_caja_payload',
+        'mosexpress_session_date', 'mosexpress_session_dia', 'mosexpress_session_start',
+        'mosexpress_cobrados_sesion', 'mosexpress_extras_sesion',
+        'mosexpress_es_extension', 'mosexpress_no_recovery', 'mosexpress_boot_es_login',
+        // ── identidad del equipo. Los cachés de verificación se conservan: sin ellos
+        //    un equipo sin señal no puede re-verificar y queda fail-closed (no vende).
+        'mosexpress_deviceId', 'mosexpress_device_auth_date', 'mosexpress_device_auth_id',
+        'mosexpress_device_auth_date_lima', 'mosexpress_device_verify_version', 'mos_device_auth_directo',
+        // ── permisos concedidos por el MASTER (borrarlos cierra la app antes de tiempo,
+        //    o abre un bypass del bloqueo horario en el caso de seg_fuera_cache_*) ──
+        'ext_horario_hasta', 'seg_fuera_cache_mosExpress', 'me_desbloqueo_hasta',
+        // ── conveniencia que el propio logout ya preserva a propósito, y progreso del
+        //    curso (no es re-descargable: lo ganó la persona) ──
+        'mosexpress_ultimos_users', 'me_academy_v1',
+        // ── el propio purgante ──
+        K_DONE, K_PEND
+      ];
+      /* Prefijos: mosexpress_guias_<ZONA> contiene guías optimistas G-LOCAL aún no
+         reconciliadas con el servidor; audit_registros_<VENDEDOR> son los registros
+         de auditoría del día; mos_membrete_cola_ es cola de impresión; y
+         mos_jefa_aplicada_ es la marca de "este pedido de jefa YA se aplicó" —
+         perderla permitiría aplicarlo dos veces. */
+      var BLANCA_PFX = ['mosexpress_guias_', 'mosexpress_audit_registros_', 'mos_membrete_cola_', 'mos_jefa_aplicada_'];
+      var CACHES_VIVOS = ['da-device-cache'];
+      // IndexedDB: se borra la CLAVE del catálogo, NO la base (ver ley 4 arriba).
+      var IDB_CLAVES = [{ db: 'mosexpress_idb', store: 'kv', claves: ['mosexpress_db'] }];
+
+      function g(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+      function s(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+      function protegida(k) {
+        if (BLANCA.indexOf(k) > -1) return true;
+        for (var i = 0; i < BLANCA_PFX.length; i++) if (k.lastIndexOf(BLANCA_PFX[i], 0) === 0) return true;
+        return false;
+      }
+      function rpc(fn, payload, keep, signal) {
+        return fetch(SB + '/rest/v1/rpc/' + fn, {
+          method: 'POST', keepalive: !!keep, cache: 'no-store', signal: signal || undefined,
+          headers: {
+            apikey: ANON, Authorization: 'Bearer ' + ANON,
+            'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      // ── 0 · RESCATE de una purga interrumpida ──────────────────────────────────
+      try {
+        var bak = sessionStorage.getItem(K_BAK);
+        if (bak) {
+          var o = JSON.parse(bak), rec = 0;
+          for (var bk in o) if (Object.prototype.hasOwnProperty.call(o, bk) && g(bk) === null) { s(bk, o[bk]); rec++; }
+          sessionStorage.removeItem(K_BAK);
+          if (rec) console.log('🧹 PURGANTE: rescatadas ' + rec + ' claves sagradas de una purga interrumpida');
+        }
+      } catch (_) {}
+
+      // ── 0b · TELEMETRÍA DIFERIDA (se purgó sin red) ────────────────────────────
+      try {
+        var pend = g(K_PEND);
+        if (pend) {
+          var pj = JSON.parse(pend); pj.reintento = true;
+          rpc('purgante_reportar', { p: pj }).then(function (r) {
+            if (r && r.ok) { try { localStorage.removeItem(K_PEND); } catch (_) {} }
+          }).catch(function () {});
+        }
+      } catch (_) {}
+
+      // ── 1 · ¿el servidor ordenó purga? ─────────────────────────────────────────
+      var ac = null, tid = null;
+      try { ac = new AbortController(); tid = setTimeout(function () { try { ac.abort(); } catch (_) {} }, 7000); } catch (_) {}
+      try {
+        rpc('get_flags', {}, false, ac && ac.signal)
+          .then(function (r) { return r && r.ok ? r.json() : null; })
+          .then(function (f) {
+            try { clearTimeout(tid); } catch (_) {}
+            var tok = (f && f.purganteToken != null) ? String(f.purganteToken) : '0';
+            if (!tok || tok === '0') return;
+            if (g(K_DONE) === tok) return;
+            try { if (String(location.search).indexOf('pv=' + tok) > -1) { s(K_DONE, tok); return; } } catch (_) {}
+            try { if (sessionStorage.getItem('__purgante_' + tok) === '1') return; } catch (_) {}
+            purgar(tok);
+          })
+          .catch(function () { try { clearTimeout(tid); } catch (_) {} });
+      } catch (_) {}
+
+      // ── 2 · la purga ───────────────────────────────────────────────────────────
+      function purgar(tok) {
+        var ver = ''; try { ver = String(window.__ME_V || ''); } catch (_) {}
+        var est = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
+        console.log('%c 🧹 PURGANTE ' + tok + ' — limpiando este equipo (una sola vez) ', 'background:#a855f7;color:#fff;' + est);
+
+        // (i) fotografía de la lista blanca ANTES de tocar nada
+        var snap = {}, n = 0;
+        try {
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && protegida(k)) { snap[k] = localStorage.getItem(k); n++; }
+          }
+        } catch (_) {}
+        try { sessionStorage.setItem(K_BAK, JSON.stringify(snap)); } catch (_) {}
+
+        var tareas = [];
+        try {
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            tareas.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+              return Promise.all(rs.map(function (r) { return r.unregister().catch(function () {}); }));
+            }).catch(function () {}));
+          }
+        } catch (_) {}
+        try {
+          if (window.caches && caches.keys) {
+            tareas.push(caches.keys().then(function (ks) {
+              return Promise.all(ks.filter(function (x) { return CACHES_VIVOS.indexOf(x) === -1; })
+                .map(function (x) { return caches.delete(x).catch(function () {}); }));
+            }).catch(function () {}));
+          }
+        } catch (_) {}
+        // (iv) IndexedDB: SOLO la clave del catálogo. Se abre sin declarar versión y
+        //      solo si la base YA existe — abrirla de cero crearía una base sin el
+        //      store 'kv' y ROMPERÍA el wrapper de ME (que abre en versión 1).
+        try {
+          if (window.indexedDB && indexedDB.databases) {
+            tareas.push(indexedDB.databases().then(function (dbs) {
+              var hay = (dbs || []).map(function (d) { return d && d.name; });
+              return Promise.all(IDB_CLAVES.filter(function (x) { return hay.indexOf(x.db) > -1; }).map(function (x) {
+                return new Promise(function (res) {
+                  var t = setTimeout(res, 4000);
+                  try {
+                    var rq = indexedDB.open(x.db);
+                    rq.onerror = rq.onblocked = function () { clearTimeout(t); res(); };
+                    rq.onsuccess = function () {
+                      try {
+                        var db = rq.result;
+                        if (!db.objectStoreNames.contains(x.store)) { db.close(); clearTimeout(t); return res(); }
+                        var tx = db.transaction(x.store, 'readwrite'), st = tx.objectStore(x.store);
+                        x.claves.forEach(function (c) { try { st.delete(c); } catch (_) {} });
+                        tx.oncomplete = tx.onerror = tx.onabort = function () { try { db.close(); } catch (_) {} clearTimeout(t); res(); };
+                      } catch (_) { clearTimeout(t); res(); }
+                    };
+                  } catch (_) { clearTimeout(t); res(); }
+                });
+              }));
+            }).catch(function () {}));
+          }
+        } catch (_) {}
+
+        var yaFue = false;
+        var fin = function () {
+          if (yaFue) return; yaFue = true;
+          try { localStorage.clear(); } catch (_) {}
+          var kk;
+          for (kk in snap) if (Object.prototype.hasOwnProperty.call(snap, kk)) s(kk, snap[kk]);
+          var ok = 0; for (kk in snap) if (g(kk) === snap[kk]) ok++;
+          try { sessionStorage.clear(); } catch (_) {}
+          s(K_DONE, tok);
+          // ME ya tiene su propio mecanismo para re-bajar el catálogo tras un update:
+          // se reutiliza en vez de inventar otro. Va DESPUÉS del clear, obviamente.
+          s('mosexpress_force_resync', '1');
+          try { sessionStorage.setItem('__purgante_' + tok, '1'); } catch (_) {}
+          var rep = {
+            device: g(DEV_KEY) || '', app: APP, token: tok, version_antes: ver,
+            ua: String(navigator.userAgent || '').slice(0, 400)
+          };
+          s(K_PEND, JSON.stringify(rep));
+          try {
+            rpc('purgante_reportar', { p: rep }, true).then(function (r) {
+              if (r && r.ok) { try { localStorage.removeItem(K_PEND); } catch (_) {} }
+            }).catch(function () {});
+          } catch (_) {}
+          console.log('🧹 PURGANTE ' + tok + ': ' + ok + '/' + n + ' claves sagradas conservadas. Recargando limpio…');
+          // SIN setTimeout a propósito: la app vieja sigue viva y escribiendo hasta que
+          // el navegador se lleve el documento. Cada milisegundo de espera entre el clear
+          // y el replace es una ventana para que un caché recién purgado se vuelva a
+          // escribir. El fetch de telemetría ya salió con keepalive: sobrevive la navegación.
+          try {
+            var q = location.search ? (location.search + '&pv=' + tok) : ('?pv=' + tok);
+            location.replace(location.origin + location.pathname + q + location.hash);
+          } catch (_) { try { location.reload(); } catch (__) {} }
+        };
+        Promise.all(tareas).then(fin, fin);
+        setTimeout(fin, 9000);   // watchdog: en iOS un unregister se puede colgar
+      }
     })();
   </script>
   <link rel="manifest" href="manifest.json">
@@ -58,7 +287,10 @@
             try { sessionStorage.setItem('_meAutoHeal', '1'); } catch (e) {}
             var jobs = [];
             try { if ('serviceWorker' in navigator) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }).catch(function () {})); } catch (e) {}
-            try { if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }).catch(function () {})); } catch (e) {}
+            // [658] 'da-device-cache' es la TERCERA réplica del mosexpress_deviceId (LS → IDB → Cache).
+            //   Borrarla en la auto-sanación dejaba la identidad colgando de dos patas; combinada con un
+            //   "borrar datos del sitio" el equipo renacía como dispositivo NUEVO → esperando aprobación.
+            try { if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k !== 'da-device-cache'; }).map(function (k) { return caches.delete(k); })); }).catch(function () {})); } catch (e) {}
             Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
             return;   // recargando con caché limpia → Vue baja fresco; el UUID (localStorage) intacto
           }
