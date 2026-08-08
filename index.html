@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.268';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.269';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -8784,6 +8784,34 @@
                 }
             } catch(_){}
         };
+        // [2.8.269 · STOCK DE ZONA EXPRESS] Hermano de _patchPreciosRapido, para el otro dato
+        // vital: el stock de la zona. Lo dispara el realtime de me.ops_meta['stock_zonas'].
+        // Parcha SOLO el stock (jamás precios: nada de dinero pasa por acá) y NO toca el carrito.
+        // Reemplaza el array entero para que stockMapZ (computed) se recalcule: los arrays del
+        // payload son markRaw, así que mutarlos en sitio no dispararía reactividad.
+        let _szPatchTimer = null;
+        const _patchStockZonasRapido = async () => {
+            try {
+                // Si hay una venta cerrándose o una guía procesándose, no se toca el estado a
+                // media escritura: el siguiente bump (o el poller) lo vuelve a intentar.
+                if (procesando.value || procesandoGuia.value) return;
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_stock`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {} })
+                }, 8000);
+                const d = await r.json().catch(() => null);
+                if (!r.ok || !d || d.ok !== true || !Array.isArray(d.stock)) return;
+                stockZonas.value = d.stock;
+                try { lsSet('mosexpress_stock_zonas', JSON.stringify(d.stock)); } catch(_) {}
+                if (db.value && Array.isArray(db.value.STOCK_ZONAS)) {
+                    db.value.STOCK_ZONAS = markRaw(d.stock);
+                }
+                console.log('[stock zona express] ' + d.stock.length + ' filas parchadas (venta en curso intacta)');
+            } catch(_) {}
+        };
         const _etiqMarcarSB = async (body) => {
           const _tk = await _mintTokenSB();
           const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/etiqueta_marcar`, {
@@ -11166,6 +11194,22 @@
                         // _chequearVersionCatalogo, que consulta la versión, compara vs baseline,
                         // DIFIERE si hay venta en curso y re-descarga money-safe. Mismo flujo del poller.
                         try { _chequearVersionCatalogo(); } catch(_) {}
+                    }
+                );
+                // [2.8.269 · STOCK DE ZONA EN VIVO] me.ops_meta dominio 'stock_zonas' sube con
+                // cualquier cambio del stock de la zona (venta de otro cajero de la misma zona,
+                // guía que aterriza, traslado, auditoría). Antes el POS solo se enteraba con una
+                // re-descarga COMPLETA del catálogo → el stock de zona podía estar horas viejo.
+                // Ahora se parcha SOLO el stock, sin tocar precios ni el carrito.
+                channel.on('postgres_changes',
+                    { event: 'UPDATE', schema: 'me', table: 'ops_meta' },
+                    (payload) => {
+                        try {
+                            const rec = (payload && (payload.new || (payload.data && payload.data.record))) || {};
+                            if (String(rec.dominio || '') !== 'stock_zonas') return;
+                            if (_szPatchTimer) clearTimeout(_szPatchTimer);
+                            _szPatchTimer = setTimeout(() => { _szPatchTimer = null; _patchStockZonasRapido(); }, 1200);
+                        } catch(_) {}
                     }
                 );
                 channel.subscribe((status) => {
