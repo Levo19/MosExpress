@@ -1,1 +1,1 @@
-{"version":"2.8.269","build":"2.8.269 stock de zona en vivo: realtime me.ops_meta + parche quirurgico sin tocar precios ni carrito"}
+{"version":"2.8.270","build":"2.8.270 promociones con horario: _promoVigente y _promoIsVigente validan Hora_Desde/Hora_Hasta en TZ Peru (vacio = todo el dia)"}

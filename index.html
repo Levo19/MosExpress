@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.269';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.270';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -10561,6 +10561,14 @@
                 const hasta = pr.Vigencia_Hasta ? String(pr.Vigencia_Hasta).substring(0,10) : '';
                 if (desde && _hoyStr < desde) return false;
                 if (hasta && _hoyStr > hasta) return false;
+                // [666] ventana horaria (TZ Perú). Sin Hora_Desde/Hora_Hasta ⇒ todo el día.
+                const _hd = pr.Hora_Desde ? String(pr.Hora_Desde).substring(0,5) : '';
+                const _hh = pr.Hora_Hasta ? String(pr.Hora_Hasta).substring(0,5) : '';
+                if (_hd && _hh) {
+                    const _ahora = new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Lima', hour12: false, hour: '2-digit', minute: '2-digit' }).substring(0,5);
+                    if (_hd <= _hh) { if (_ahora < _hd || _ahora > _hh) return false; }
+                    else            { if (_ahora < _hd && _ahora > _hh) return false; }   // ventana que cruza medianoche
+                }
                 return true;
             };
 
@@ -19659,6 +19667,14 @@
           const hasta = pr.Vigencia_Hasta ? String(pr.Vigencia_Hasta).substring(0,10) : '';
           if (desde && hoy < desde) return false;
           if (hasta && hoy > hasta) return false;
+          // [666] ventana horaria (TZ Perú). Sin Hora_Desde/Hora_Hasta ⇒ todo el día.
+          const _hd = pr.Hora_Desde ? String(pr.Hora_Desde).substring(0,5) : '';
+          const _hh = pr.Hora_Hasta ? String(pr.Hora_Hasta).substring(0,5) : '';
+          if (_hd && _hh) {
+              const _ahora = new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Lima', hour12: false, hour: '2-digit', minute: '2-digit' }).substring(0,5);
+              if (_hd <= _hh) { if (_ahora < _hd || _ahora > _hh) return false; }
+              else            { if (_ahora < _hd && _ahora > _hh) return false; }   // ventana que cruza medianoche
+          }
           return true;
         };
         // Helper: parsear items de combo
