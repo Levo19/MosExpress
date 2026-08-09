@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.272';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.273';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -648,6 +648,33 @@
     .scan-preview-tag  { font-size: 9px; font-weight: 800; letter-spacing: 0.1em; opacity: 0.9; text-transform: uppercase; }
     .scan-preview-name { font-size: 14px; font-weight: 800; line-height: 1.15; }
     .scan-preview-meta { font-size: 11px; opacity: 0.9; margin-top: 2px; }
+    /* ══ [2.8.273] DESAMBIGUACIÓN DE CÓDIGOS DUPLICADOS ═══════════════════════════════
+       El fabricante reusa el MISMO código de barras físico para varias presentaciones/
+       sabores; logística lo desempata agregando una LETRA al código interno (…036A/…036B).
+       Al escanear la RAÍZ pelada el POS no adivina: FILTRA el grid a las N variantes y
+       muestra este banner. Es una AYUDA, nunca un bloqueo — la ✕ devuelve el catálogo. */
+    @keyframes dupBannerIn {
+      0%   { opacity: 0; transform: translateY(-12px) scale(.985); }
+      60%  { opacity: 1; transform: translateY(2px)   scale(1.004); }
+      100% { opacity: 1; transform: translateY(0)     scale(1); }
+    }
+    .dup-banner {
+      animation: dupBannerIn .28s cubic-bezier(.22,1,.36,1) both;
+      background: linear-gradient(135deg, #6366f1, #4338ca);
+      color: #fff;
+    }
+    .dup-banner-code { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+    /* chip del sufijo dentro de la card: el POR QUÉ hay dos productos iguales */
+    .dup-chip {
+      display: inline-block; font-size: 8.5px; font-weight: 900; line-height: 1;
+      padding: 2.5px 5px; border-radius: 5px; letter-spacing: .03em;
+      background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe;
+      font-variant-numeric: tabular-nums;
+    }
+    .dup-card { box-shadow: 0 0 0 2px #818cf8, 0 8px 20px -10px rgba(99,102,241,.6) !important; }
+    @media (prefers-reduced-motion: reduce) {
+      .dup-banner { animation: none; }
+    }
     @keyframes productGridPulse {
       0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16,185,129,0); }
       30%  { transform: scale(1.06); box-shadow: 0 0 0 12px rgba(16,185,129,0.55); border-color:#10b981; }
@@ -4454,6 +4481,22 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 
                 <!-- Panel Izquierdo: Grid Catalogo -->
                 <section class="panel-transition bg-white flex flex-col border-r border-gray-200 overflow-hidden self-stretch" :class="getPosLeftClasses()">
+                  <!-- [2.8.273] BANNER DE CÓDIGO COMPARTIDO: el barcode escaneado lo usan N productos
+                       (el fabricante repite el código, logística desempata con una letra: …036A/…036B).
+                       El grid queda filtrado a esas N variantes. Es una AYUDA, no un bloqueo: la ✕ devuelve
+                       el catálogo completo y el vendedor puede buscar a mano. La venta nunca se traba. -->
+                  <div v-if="dupBanner" class="dup-banner flex items-center gap-2 px-3 py-2.5 shadow-md shrink-0">
+                     <span class="text-lg leading-none shrink-0">🔀</span>
+                     <div class="flex-1 min-w-0">
+                        <p class="text-[12.5px] font-black leading-tight">
+                           {{ dupBanner.n }} productos comparten el código
+                           <span class="dup-banner-code">{{ dupBanner.raiz }}</span>
+                        </p>
+                        <p class="text-[10.5px] font-bold opacity-85 leading-tight mt-0.5">Toca el correcto — mira la letra al final del código</p>
+                     </div>
+                     <button @click="limpiarFiltroDup()" title="Ver todo el catálogo"
+                             class="shrink-0 w-11 h-11 -my-1 flex items-center justify-center rounded-xl bg-white/15 active:bg-white/30 text-white font-black text-lg active:scale-95 transition">✕</button>
+                  </div>
                   <main class="flex-1 overflow-y-auto p-3 scrollbar-hide min-h-0 pb-nav">
                      <div class="grid gap-3" :class="uiState.splitScreen && !uiState.isMobile ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'">
                          <div v-if="!dbCargada" class="col-span-full py-10 text-center"><svg class="animate-spin w-8 h-8 mx-auto text-emerald-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
@@ -4462,7 +4505,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                          <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="cardTapPOS($event, prod)"
                               @contextmenu.prevent="abrirAnaliticaPos(prod)"
                               @touchstart.passive="anaPosPressStart(prod)" @touchend="anaPosPressCancel" @touchmove.passive="anaPosPressCancel" @touchcancel="anaPosPressCancel"
-                              :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '']">
+                              :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '', dupSufijos[prod.idUnico] ? 'dup-card' : '']">
                             <span v-if="prod.promoStr" class="promo-star" title="Producto con promoción activa">⭐</span>
                             <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="absolute top-1.5 left-1.5 z-10 bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md uppercase" title="Producto a granel — vendido por kilo">⚖️ kg</span>
                             <div class="prod-img w-full bg-gray-200 relative" :class="prod.stock !== null && prod.stock <= 0 ? 'card-agotado' : ''">
@@ -4472,6 +4515,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                             <div class="p-2 flex-1 flex flex-col bg-white relative">
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-3">{{ prod.nombreCorto }}</h3>
                                <div v-if="prod.cat" class="text-[8.5px] text-gray-400 font-bold truncate mt-0.5">{{ prod.cat }}</div>
+                               <!-- [2.8.273] chip del SUFIJO: explica POR QUÉ hay dos cards con el mismo barcode -->
+                               <div v-if="dupSufijos[prod.idUnico]" class="mt-1"><span class="dup-chip">{{ dupSufijos[prod.idUnico] }}</span></div>
                                <!-- [601] sin precio (PN aprobado sin precio) → sello ⛔ (la venta se bloquea en agregarCarritoObj) -->
                                <p v-if="Number(prod.precio) > 0" class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
                                <p v-else class="mt-2"><span class="inline-block text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border border-dashed border-red-400 text-red-600 bg-red-50" title="Aprobado sin precio — pídele al admin que lo ponga en MOS Catálogo">⛔ Sin precio</span></p>
@@ -10694,6 +10739,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             });
             productosCatalogo.value = prodsText;
             productosFiltrados.value = prodsText;
+            // [2.8.273] reconstruir el índice de FAMILIAS de código duplicado con el catálogo fresco
+            try { _dupReconstruirIndice(); } catch(e) { console.warn('[dup] índice', e); }
 
             // Refrescar estacion desde ZONAS_CONFIG para que siempre tenga los campos actuales.
             // Prioriza idEstacion (único). Fallback a (Zona_ID + Estacion_Nombre) con trim/upper
@@ -12015,6 +12062,31 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     const osc = ctx.createOscillator(); const gain = ctx.createGain();
                     osc.connect(gain); gain.connect(ctx.destination);
                     osc.type = 'sine'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+                    gain.gain.setValueAtTime(v, ctx.currentTime + t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                    osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
+                });
+            } catch(e) {}
+        };
+
+        // [2.8.273] Sonido de "ELIGE" — código de barras compartido por N productos.
+        // NO es el beep de OK (nada entró al carrito todavía) ni el de error (no hay nada roto):
+        // es un arpegio corto con pregunta al final (sube–baja–sube) que el vendedor aprende a
+        // leer como "decide tú". Vibración con doble golpe, distinta del pulso único del OK.
+        const playBeepElige = () => {
+            try { if ('vibrate' in navigator) navigator.vibrate([25, 55, 25, 55, 70]); } catch(e) {}
+            if (!soundEnabled.value) return;
+            try {
+                const ctx = _audioCtx(); if (!ctx) return;
+                if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_e) {} }
+                [
+                    { t: 0.00, f: 880,  v: 0.55, d: 0.07 },
+                    { t: 0.09, f: 660,  v: 0.55, d: 0.07 },
+                    { t: 0.18, f: 1046, v: 0.65, d: 0.15 },
+                ].forEach(({ t, f, v, d }) => {
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'triangle'; osc.frequency.setValueAtTime(f, ctx.currentTime + t);
                     gain.gain.setValueAtTime(v, ctx.currentTime + t);
                     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
                     osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + d + 0.01);
@@ -19222,7 +19294,108 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // Normaliza texto para búsqueda fuzzy: minúsculas, sin tildes, sin caracteres especiales
         const _normTxt = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '');
 
+        // ══ [2.8.273] DESAMBIGUACIÓN DE CÓDIGOS DUPLICADOS ══════════════════════════════
+        // PROBLEMA REAL: el fabricante imprime el MISMO código de barras físico en varias
+        // presentaciones/sabores (CABALLO DE ORO AZUL y DORADO comparten 7758725000036).
+        // Logística lo desempata agregando una LETRA al código INTERNO: …036A / …036B.
+        // Hay 8 raíces así en el catálogo (17 productos con sufijo); una llega a 5 miembros
+        // (7750464444799 = LA CHINA TAMARINDO en pelado + …799A/B/C/D de FOCH).
+        //
+        // REGLA: raíz = el código en MAYÚSCULAS, sin espacios, con las letras finales quitadas,
+        // y SOLO si queda [0-9]{6,}. La FAMILIA son todas las presentaciones cuyo código sea
+        // la raíz pelada o raíz+letras. Si la familia toca 2+ productos DISTINTOS (SKU_Base) y
+        // el código escaneado NO es un código interno resoluble (o sea: vino pelado, o traía
+        // sufijo pero ese sufijo no existe) ⇒ AMBIGUO: se FILTRA el grid a esas N variantes.
+        // Escanear el código interno completo (…036A) resuelve directo, sin fricción.
+        //
+        // Todo client-side sobre el catálogo YA en memoria: índice precalculado al mapear,
+        // lookup O(1) por raíz. Cero RPC, cero round-trip, cero latencia en el 99% de escaneos.
+        // Y JAMÁS bloquea la venta: es un filtro con ✕, no un modal.
+
+        // Normaliza un código para comparar: sin espacios (incl. NBSP/tab), MAYÚSCULAS.
+        const _dupNormCod = (c) => String(c === null || c === undefined ? '' : c)
+              .replace(/[ \t\r\n\u00a0\u2007\u202f]+/g, '').toUpperCase();
+        // Raíz = código sin las letras finales. '' si no es numérico-con-sufijo-opcional.
+        const _dupRaiz = (c) => {
+            const n = _dupNormCod(c);
+            const m = n.match(/^([0-9]{6,})[A-Z]*$/);
+            return m ? m[1] : '';
+        };
+        // Índice raíz → [{ cod, skuBase }]. Se reconstruye en cada mapearCatalogoLocal.
+        let _dupIdx = Object.create(null);
+        const _dupReconstruirIndice = () => {
+            const idx = Object.create(null);
+            const PR = (db.value && db.value.PRESENTACIONES) || [];
+            for (let i = 0; i < PR.length; i++) {
+                const cod = _dupNormCod(PR[i].Cod_Barras);
+                if (!cod) continue;
+                const raiz = _dupRaiz(cod);
+                if (!raiz) continue;
+                (idx[raiz] || (idx[raiz] = [])).push({ cod, skuBase: String(PR[i].SKU_Base || '').trim() });
+            }
+            // Solo conservar raíces con 2+ PRODUCTOS distintos: lo demás es ruido (un mismo
+            // producto con varias presentaciones NO es ambigüedad, es su escalera normal).
+            const fin = Object.create(null);
+            Object.keys(idx).forEach(r => {
+                const skus = {};
+                idx[r].forEach(x => { if (x.skuBase) skus[x.skuBase] = 1; });
+                if (Object.keys(skus).length > 1) fin[r] = idx[r];
+            });
+            _dupIdx = fin;
+            try { console.log('[dup] familias de código duplicado:', Object.keys(fin).length); } catch(_) {}
+        };
+
+        // Estado del filtro de desambiguación (va al return: el template solo ve lo retornado)
+        const dupBanner  = ref(null);   // { raiz, n }
+        const dupSufijos = ref({});     // idUnico → '…036A'  (chip que explica POR QUÉ hay dos)
+
+        // ¿El código escaneado es ambiguo? Devuelve { raiz, variantes:[{prod,cod,sufijo}] } o null.
+        const _dupFamilia = (codigo) => {
+            const cod  = _dupNormCod(codigo);
+            const raiz = _dupRaiz(cod);
+            if (!raiz) return null;
+            const fam = _dupIdx[raiz];
+            if (!fam || fam.length < 2) return null;
+            const sufijoEscaneado = cod.slice(raiz.length);   // '' si vino pelado
+            // Código interno COMPLETO y existente (…036A) ⇒ el vendedor ya eligió: no molestar.
+            if (sufijoEscaneado && fam.some(x => x.cod === cod)) return null;
+            // Armar las variantes en el orden del código (A, B, C…) sin repetir producto.
+            const vistos = {};
+            const variantes = [];
+            fam.slice().sort((a, b) => a.cod < b.cod ? -1 : (a.cod > b.cod ? 1 : 0)).forEach(x => {
+                if (!x.skuBase || vistos[x.skuBase]) return;
+                const prod = productosCatalogo.value.find(p => String(p.sku).trim() === x.skuBase);
+                if (!prod) return;
+                vistos[x.skuBase] = 1;
+                variantes.push({ prod, cod: x.cod, sufijo: '…' + x.cod.slice(Math.max(0, raiz.length - 3)) });
+            });
+            return variantes.length > 1 ? { raiz, variantes } : null;
+        };
+
+        // Aplica el filtro: el grid queda con las N variantes + banner. NO toca el carrito.
+        const _dupAplicarFiltro = (famObj) => {
+            const sufijos = {};
+            famObj.variantes.forEach(v => { sufijos[v.prod.idUnico] = v.sufijo; });
+            productosFiltrados.value = famObj.variantes.map(v => v.prod);
+            dupSufijos.value = sufijos;
+            dupBanner.value  = { raiz: famObj.raiz, n: famObj.variantes.length };
+            // El input se vacía SIN pasar por filtrarCatalogo (que borraría el filtro recién puesto).
+            bBuscador.value = '';
+            playBeepElige();
+        };
+
+        // ✕ del banner / Escape / al agregar algo al carrito → catálogo completo de vuelta.
+        const limpiarFiltroDup = () => {
+            if (!dupBanner.value) return;
+            dupBanner.value = null;
+            dupSufijos.value = {};
+            bBuscador.value = '';
+            productosFiltrados.value = productosCatalogo.value;
+        };
+
         const filtrarCatalogo = () => {
+           // Cualquier búsqueda manual manda sobre el filtro de desambiguación.
+           if (dupBanner.value) { dupBanner.value = null; dupSufijos.value = {}; }
            const raw = bBuscador.value.trim();
            if(!raw) { productosFiltrados.value = productosCatalogo.value; return; }
            // Si parece código de barras (solo números), filtro exacto
@@ -19582,6 +19755,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 if (anaPos.value && anaPos.value.abierto) { cerrarAnaliticaPos(); ev.preventDefault(); return; }
                 if (modalPresentaciones.value) { cerrarModalPres(); ev.preventDefault(); return; }
                 if (popover.value && popover.value.visible) { popover.value.visible = false; ev.preventDefault(); return; }
+                if (dupBanner.value) { limpiarFiltroDup(); ev.preventDefault(); return; }   // [2.8.273]
                 if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); ev.preventDefault(); return; }
             } catch(_) {}
         });
@@ -19624,6 +19798,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                   showScanPreview(prod, label, 'ok', eq ? 'equivalencia' : '');
               }
           };
+
+          // 1.5º [2.8.273] ¿CÓDIGO COMPARTIDO POR VARIOS PRODUCTOS? El fabricante reusa el mismo
+          // barcode físico en varias presentaciones/sabores; logística desempata con una LETRA en
+          // el código interno (…036A / …036B). Si la raíz escaneada toca 2+ productos distintos,
+          // el POS NO adivina: filtra el grid a esas N variantes y deja que el vendedor toque la
+          // correcta (un tap). No hay modal, no hay diálogo, la venta jamás se traba.
+          const _fam = _dupFamilia(searchCode);
+          if (_fam) {
+              _dupAplicarFiltro(_fam);   // limpia bBuscador sin pisar el filtro y suena el "elige"
+              return;
+          }
 
           // 2º Buscar directamente en PRESENTACIONES (exacto)
           const presMatch = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras).trim().toUpperCase() === searchCode);
@@ -19712,6 +19897,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // [2.8.214 PERF] filtrarCatalogo re-renderiza TODO el grid — solo hace falta si
           // había texto en el buscador (causa de la lentitud al elegir presentación).
           if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); }
+          // [2.8.273] el vendedor ya eligió su variante del código compartido → catálogo completo de vuelta
+          try { limpiarFiltroDup(); } catch(_) {}
           // [v2.8.245] Empezó una venta → despertar el motor de voz AHORA, no cuando el
           // cajero toque Cobrar (ahí ya sería tarde y se oiría el retraso de 1-3s).
           try { _ttsWarm(); } catch(_) {}
@@ -23151,6 +23338,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           esPC, cobrarFx,   // [Atajos PC]
           modoPro, navColapsado, expandirNav, programarColapso, toggleModoPro, colorModulo,   // [Modo Pro / color]
           scanPreview, scanningPending, onScanInput, pulsingProductId,
+          dupBanner, dupSufijos, limpiarFiltroDup,   // [2.8.273] desambiguación de códigos duplicados
           altSheet, cerrarAltSheet, elegirAlternativa, abrirAlternativas, tieneAlternativas,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
