@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.271';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.272';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1142,6 +1142,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
    invisible centrado (los ✕ de 12px de ancho eran imposibles de acertar con el dedo). */
 .me-hit{position:relative}
 .me-hit::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;min-width:100%;min-height:100%}
+/* Los cerrar ✕ de los sheets medían 30-32px: se les da 44px de área táctil real sin
+   cambiar un pixel de su aspecto. */
+.ana-x, .pv-x { position: relative; }
+.ana-x::after, .pv-x::after { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:44px; height:44px; }
 
 /* ── [2.8.261] Botones de acción (lenguaje común de sheets/modales) ── */
 .vr-acts{display:flex;gap:8px}
@@ -4020,7 +4024,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <p class="text-xs font-black text-emerald-700 uppercase tracking-wider">Tip {{ wizTutorial.idx + 1 }}/{{ wizTutorial.pasos.length }}</p>
                 <p class="text-sm text-gray-700 font-semibold leading-snug">{{ wizTutorial.pasos[wizTutorial.idx].texto }}</p>
               </div>
-              <button @click="wizTutorialClose" class="text-gray-300 hover:text-gray-500 text-lg leading-none">×</button>
+              <button @click="wizTutorialClose" aria-label="Cerrar consejo" class="me-hit text-gray-300 hover:text-gray-500 text-lg leading-none">×</button>
             </div>
             <div class="flex justify-between items-center mt-2">
               <div class="flex gap-1">
@@ -7153,7 +7157,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                                 <div v-else class="flex items-center gap-2 flex-1">
                                     <img :src="item.fotoDev" class="w-10 h-10 rounded-lg object-cover ring-1 ring-emerald-400/50">
                                     <span class="text-[10px] text-emerald-300 font-bold">✓ Foto OK</span>
-                                    <button @click="item.fotoDev = ''" class="ml-auto text-rose-400 text-xs">✕ quitar</button>
+                                    <button @click="item.fotoDev = ''" class="me-hit ml-auto text-rose-400 text-xs px-2 py-2">✕ quitar</button>
                                 </div>
                             </div>
                             <input v-model="item.notaItem" placeholder="Comentario (opcional)..."
