@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.270';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.271';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -10221,6 +10221,8 @@
           // en lugar de forzar wizard nuevo (que perdería tickets/movimientos).
           if (!config.value.completado) {
             verificarCajaPorDeviceId();
+            // [2.8.271] ¿este equipo YA es extensión de una sesión viva? → entra solo, sin re-vincular.
+            try { _extRestaurarVinculoAlAbrir(); } catch(_) {}
           }
 
           // [v2.7.0] GUARD LOCAL ELIMINADO — el cron 23h de MOS (cierreNocturnoTodos)
@@ -13586,15 +13588,18 @@
         // lo registra cada overlay para que _extDetener pueda cerrarlo (timers rotT/pollT/autoT) al cerrar sesión.
         let _extOverlayPplCerrar = null;
         const _extEsExtension = ref(false);   // [v2] este equipo es una EXTENSIÓN (oculta "Cerrar sesión", muestra badge)
+        // [2.8.271 · anti-cuelgue] TODA RPC de extensión va con timeout duro. Antes era `fetch` pelado:
+        // una petición que nunca resolvía (red móvil que se cae a mitad del handshake) dejaba el `await`
+        // colgado para siempre y con él la pantalla del 2º equipo en "cargando eterno".
         const _extRpc = async (fn, body) => {
             try {
                 const token = await _mintTokenSB();
                 if (!token) return null;   // sin token → NO GAS, degradar en silencio
-                const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
                     body: JSON.stringify({ p: body || {} })
-                });
+                }, 12000);
                 return r.ok ? await r.json() : null;
             } catch (e) { return null; }
         };
@@ -13643,8 +13648,22 @@
             if (nombreArg && zonaArg) { nombre = nombreArg; zona = zonaArg; rol = rolArg || 'vendedor'; manual = true; }
             else { const cw = config.value; if (!cw || !cw.completado || !cw.zona || !cw.vendedor) return; nombre = cw.vendedor; zona = cw.zona; rol = cw.esCajero ? 'cajero' : 'vendedor'; }
             const dev = _extDevId(); if (!dev) return;
+            // [2.8.271 · anti-duplicado] El guard se toma ANTES del await. Antes se tomaba DESPUÉS de la
+            // RPC: dos toques (o el ghost-click de móvil) dentro de la latencia creaban DOS solicitudes y
+            // DOS overlays apilados — el de arriba se quedaba "Esperando el QR…" para siempre aunque el de
+            // abajo llegara a vincular. En PROD quedaron pares de requests a 4 ms de distancia.
+            _extPedirAbierto = true;
             const res = await _extRpc('pedir_extension', { nombre, zona, deviceId: dev, rol, pushToken: (_pushTokenActual || '') });
             if (!res || !res.ok || !res.needsApproval || !res.idReq) {   // 1er device / ya atado / off → nada
+                _extPedirAbierto = false;
+                // [2.8.271 GARANTÍA (b)] YA VINCULADO = CAMINO FELIZ, no error. Si el servidor dice que este
+                // equipo ya está atado (el caso clásico: el canje sí entró pero el cliente se colgó antes de
+                // guardar nada), entramos directo con los datos de la sesión en vez de dejarlo varado.
+                if (res && res.alreadyLinked && res.data) {
+                    try { agregarToast('✓ Este equipo ya está vinculado', 'Entrando a la sesión de ' + (res.data.nombre || nombre) + '…', 'success', 4000); } catch(e) {}
+                    _extAplicarSesionExtension(res.data);
+                    return;
+                }
                 // [v2.8.191 P1] mensajes HONESTOS por caso (antes un solo toast "no tiene
                 // sesión activa" mentía cuando en realidad este equipo YA estaba vinculado).
                 if (manual) { try {
@@ -13658,7 +13677,6 @@
                 } catch(e) {} }
                 return;
             }
-            _extPedirAbierto = true;
             _extHaptic([40, 60, 40]);
             // [v2 QR estilo WhatsApp] Sin código: el 2º equipo espera a que el principal muestre el QR y
             // la cámara se abre SOLA para escanearlo. Escanear el QR (tener ambos equipos a la mano) es la
@@ -13684,13 +13702,34 @@
                     // [v2 QR] el principal aceptó y emitió QR → dejar de esperar y ABRIR LA CÁMARA a escanear.
                     if (st.estado === 'QR') {
                         done = true; if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; }
-                        _extEscanearQR(res.idReq, dev, ov);
+                        _extEscanearQR(res.idReq, dev, ov, { nombre, zona, rol });
                     }
-                    else if (st.estado === 'APROBADA') { _extHaptic([10, 30, 10]); _extBurst(ov); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado!'; w.style.color = '#10b981'; } setTimeout(cerrar, 900); }
+                    // [2.8.271] APROBADA acá = el vínculo ya entró (canje de un intento anterior / carrera).
+                    // Antes solo se cerraba el modal y el equipo quedaba en el picker de avatares sin entrar:
+                    // ahora jalamos la sesión real del servidor y ENTRAMOS.
+                    else if (st.estado === 'APROBADA') {
+                        done = true; if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; }
+                        _extHaptic([10, 30, 10]); _extBurst(ov);
+                        const w = ov.querySelector('#_extWait'); if (w) { w.textContent = '✓ ¡Vinculado! Entrando…'; w.style.color = '#10b981'; }
+                        const mi = await _extRpc('extension_mi_estado', { deviceId: dev });
+                        try { ov.remove(); } catch (e) {}
+                        _extPedirAbierto = false;
+                        if (mi && mi.ok && mi.vinculado && mi.data) _extAplicarSesionExtension(mi.data);
+                        else if (st.idDia) _extAplicarSesionExtension({ idDia: st.idDia, nombre, zona, rol });
+                    }
                     else if (st.estado === 'RECHAZADA' || st.estado === 'EXPIRADA' || st.estado === 'NO_ENCONTRADA') { _extHaptic([80]); const w = ov.querySelector('#_extWait'); if (w) { w.textContent = st.estado === 'EXPIRADA' ? 'Expiró — reintenta' : 'Rechazado'; w.style.color = '#ef4444'; } setTimeout(cerrar, 1400); }
                 } catch (e) { /* fail-safe */ }
             }, 1500);   // [fix QR-demora] 2.5s→1.5s: la cámara se abre más rápido apenas el principal emite el QR
-            setTimeout(() => { if (!done) cerrar(); }, 130000);
+            // [2.8.271 GARANTÍA (c)] el timeout de espera ya NO cierra en silencio: deja un estado claro
+            // con "Reintentar" (antes el overlay desaparecía sin explicar nada y parecía que se colgó).
+            setTimeout(() => {
+                if (done) return;
+                done = true; if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; }
+                _extCardError(ov, 'El otro equipo no mostró el QR',
+                    'Pedile a ' + nombre + ' que toque “📲 Mostrar QR” en su equipo y volvé a intentar.',
+                    () => { _extPedirAbierto = false; try { ov.remove(); } catch (e) {} _extPedir(nombre, zona, rol); },
+                    () => { _extRpc('rechazar_extension', { idReq: res.idReq }); cerrar(); });
+            }, 130000);
         };
         // ── [v2 avatar-tap] MODO EXTENSIÓN en el Paso 2: el botón "2º equipo" lleva al Paso 2 (la MISMA
         // vista de tiendas/avatares en vivo, sin modal aparte → no rompe el wizard). Ahí tocas a tu
@@ -13710,8 +13749,35 @@
         // ── [v2 QR] LADO SOLICITANTE: escanear el QR que muestra el principal (reusa html5-qrcode) ──
         let _extQrScanner = null;
         const _extPararScanner = async () => { try { if (_extQrScanner) { await _extQrScanner.stop(); _extQrScanner.clear(); } } catch (e) {} _extQrScanner = null; };
-        const _extEscanearQR = (idReq, dev, ov) => {
+        // [2.8.271] Soltar la cámara SIN que nadie la espere. stop() de html5-qrcode puede colgarse
+        // indefinidamente en móvil; acá se dispara y se olvida (el ref se libera al toque para que un
+        // reintento cree un scanner nuevo). NUNCA se hace `await` de esto en un camino de UI.
+        const _extSoltarCamara = () => {
+            const s = _extQrScanner; _extQrScanner = null;
+            if (!s) return;
+            try { Promise.resolve(s.stop()).then(() => { try { s.clear(); } catch (e) {} }).catch(() => {}); } catch (e) {}
+        };
+        // [2.8.271 GARANTÍA (c)] Card de ERROR con reintentar: reemplaza cualquier spinner mudo.
+        const _extCardError = (ov, titulo, detalle, onReintentar, onCerrar) => {
             try {
+                const card = ov.querySelector('._extCard'); if (!card) return;
+                card.innerHTML = `
+                    <div style="text-align:center">
+                        <div style="font-size:34px">⚠️</div>
+                        <div style="font-weight:800;color:#e2e8f0;font-size:16px;margin-top:6px">${_extEsc(titulo)}</div>
+                        <div style="color:#94a3b8;font-size:12px;margin-top:6px">${_extEsc(detalle)}</div>
+                        <div style="display:flex;gap:10px;margin-top:16px">
+                            <button class="_extBtn _extBtnNo" id="_extErrX">Cerrar</button>
+                            <button class="_extBtn _extBtnOk" id="_extErrR">🔁 Reintentar</button>
+                        </div>
+                    </div>`;
+                const r = card.querySelector('#_extErrR'); if (r) r.onclick = () => { try { onReintentar && onReintentar(); } catch (e) {} };
+                const x = card.querySelector('#_extErrX'); if (x) x.onclick = () => { try { onCerrar && onCerrar(); } catch (e) {} };
+            } catch (e) {}
+        };
+        const _extEscanearQR = (idReq, dev, ov, ses) => {
+            try {
+                const nombreSes = (ses && ses.nombre) || '', zonaSes = (ses && ses.zona) || '', rolSes = (ses && ses.rol) || 'vendedor';
                 const card = ov.querySelector('._extCard');
                 if (card) card.innerHTML = `
                     <div class="_extBeamLine"></div>
@@ -13723,29 +13789,76 @@
                         <button class="_extBtn _extBtnNo" id="_extScanX" style="margin-top:12px;width:100%">Cancelar</button>
                     </div>`;
                 const msg = ov.querySelector('#_extScanMsg');
-                const cerrarScan = async () => { await _extPararScanner(); _extPedirAbierto = false; try { ov.remove(); } catch (e) {} };
+                let finalizado = false, canjeando = false, wdT = null, autoT = null;
+                const cerrarScan = () => {
+                    // [2.8.271] SIN await: soltar la cámara nunca puede retrasar el cierre del overlay.
+                    if (autoT) { clearTimeout(autoT); autoT = null; }
+                    if (wdT) { clearTimeout(wdT); wdT = null; }
+                    _extSoltarCamara(); _extPedirAbierto = false; try { ov.remove(); } catch (e) {}
+                };
                 const xBtn = ov.querySelector('#_extScanX'); if (xBtn) xBtn.onclick = () => { _extRpc('rechazar_extension', { idReq }); cerrarScan(); };
-                if (typeof Html5Qrcode === 'undefined') { if (msg) { msg.textContent = 'No se pudo abrir la cámara'; msg.style.color = '#ef4444'; } return; }
-                let canjeando = false;
+                // [2.8.271 GARANTÍA (a)] CERRAR EL VÍNCULO: persistir PRIMERO, soltar la cámara DESPUÉS y
+                // sin bloquear. En 2.8.270 esto hacía `await _extPararScanner()` ANTES de guardar nada:
+                // html5-qrcode.stop() puede NO resolver nunca en móvil (track de video en transición) y ese
+                // await se comía todo lo que venía detrás → pantalla eterna en "Vinculando…", cero estado
+                // local guardado y, tras F5, wizard inicial otra vez. Esa era la causa raíz del incidente.
+                const finalizar = (data) => {
+                    if (finalizado) return; finalizado = true;
+                    if (wdT) { clearTimeout(wdT); wdT = null; }
+                    if (autoT) { clearTimeout(autoT); autoT = null; }
+                    try { _extAplicarSesionExtension(data); } catch (e) {}       // ① persiste + transiciona YA
+                    try { _extHaptic([10, 30, 10]); _extBurst(ov); } catch (e) {} // ② feedback
+                    if (msg) { msg.textContent = '✓ ¡Sos extensión de ' + (data.nombre || '') + '!'; msg.style.color = '#10b981'; }
+                    _extSoltarCamara();                                           // ③ cámara: fire-and-forget
+                    setTimeout(() => { try { ov.remove(); } catch (e) {} }, 900);
+                };
+                // [2.8.271 GARANTÍA (c)] cualquier error real muestra estado claro + reintentar. Jamás spinner mudo.
+                const errorScan = (titulo, detalle) => {
+                    if (finalizado) return;
+                    if (wdT) { clearTimeout(wdT); wdT = null; }
+                    if (autoT) { clearTimeout(autoT); autoT = null; }
+                    _extSoltarCamara();
+                    _extCardError(ov, titulo, detalle,
+                        () => { _extPedirAbierto = false; try { ov.remove(); } catch (e) {} _extPedir(nombreSes, zonaSes, rolSes); },
+                        () => { _extRpc('rechazar_extension', { idReq }); cerrarScan(); });
+                };
+                // [2.8.271] WATCHDOG del canje: si a los 9 s seguimos en "Vinculando…" (RPC que no vuelve,
+                // respuesta con otro shape, cámara colgada…), NO nos quedamos esperando: preguntamos al
+                // servidor cuál es el estado REAL de este equipo y actuamos según eso.
+                const armarWatchdog = () => {
+                    if (wdT) clearTimeout(wdT);
+                    wdT = setTimeout(async () => {
+                        if (finalizado) return;
+                        const mi = await _extRpc('extension_mi_estado', { deviceId: dev });
+                        if (finalizado) return;
+                        if (mi && mi.ok && mi.vinculado && mi.data) { finalizar(mi.data); return; }   // sí entró: seguimos felices
+                        canjeando = false;
+                        if (msg) { msg.textContent = 'No respondió — apuntá otra vez al QR…'; msg.style.color = '#f59e0b'; }
+                    }, 9000);
+                };
+                if (typeof Html5Qrcode === 'undefined') { errorScan('No se pudo abrir la cámara', 'Este equipo no cargó el lector de códigos. Revisa tu conexión y reintenta.'); return; }
                 _extQrScanner = new Html5Qrcode('_extCam', { verbose: false });
                 _extQrScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, async (txt) => {
                     try {
-                        if (canjeando) return;
+                        if (canjeando || finalizado) return;
                         const m = String(txt || '').match(/^EXTQR:([^:]+):([A-Za-z0-9]+)$/);
                         if (!m || m[1] !== idReq) { if (msg) msg.textContent = 'Ese no es el código correcto…'; return; }  // otro QR
                         canjeando = true; _extHaptic([15]); if (msg) { msg.textContent = 'Vinculando…'; msg.style.color = '#38bdf8'; }
+                        armarWatchdog();
                         const r = await _extRpc('extension_canjear_qr', { idReq, qrToken: m[2], deviceId: dev, pushToken: (_pushTokenActual || '') });
-                        if (r && r.ok && r.data) {
-                            await _extPararScanner(); _extHaptic([10, 30, 10]); _extBurst(ov);
-                            if (msg) { msg.textContent = '✓ ¡Sos extensión de ' + (r.data.nombre || '') + '!'; msg.style.color = '#10b981'; }
-                            setTimeout(() => { try { ov.remove(); } catch (e) {} _extAplicarSesionExtension(r.data); }, 900);
-                        } else {
-                            canjeando = false;   // token rotó/venció → el principal ya emitió otro; seguir escaneando
-                            if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? 'Código vencido, apuntá otra vez…' : 'Reintenta el escaneo…'; msg.style.color = '#f59e0b'; }
-                        }
-                    } catch (e) { canjeando = false; }
-                }, () => { /* no-match frame, ignorar */ }).catch(() => { if (msg) { msg.textContent = 'Permití la cámara para escanear'; msg.style.color = '#ef4444'; } });
-                setTimeout(() => { if (_extQrScanner) cerrarScan(); }, 120000);   // auto-cierre 2 min
+                        if (finalizado) return;
+                        if (wdT) { clearTimeout(wdT); wdT = null; }
+                        if (r && r.ok && r.data) { finalizar(r.data); return; }
+                        // [2.8.271] el canje no devolvió datos: puede haber entrado igual (respuesta perdida) →
+                        // confirmamos contra el servidor antes de decidir que falló.
+                        const mi = await _extRpc('extension_mi_estado', { deviceId: dev });
+                        if (finalizado) return;
+                        if (mi && mi.ok && mi.vinculado && mi.data) { finalizar(mi.data); return; }
+                        canjeando = false;   // token rotó/venció → el principal ya emitió otro; seguir escaneando
+                        if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? 'Código vencido, apuntá otra vez…' : 'Reintenta el escaneo…'; msg.style.color = '#f59e0b'; }
+                    } catch (e) { canjeando = false; if (wdT) { clearTimeout(wdT); wdT = null; } if (msg) msg.textContent = 'Reintenta el escaneo…'; }
+                }, () => { /* no-match frame, ignorar */ }).catch(() => { errorScan('Permití la cámara', 'MOSexpress necesita la cámara para leer el QR del equipo principal.'); });
+                autoT = setTimeout(() => { if (!finalizado) errorScan('Se agotó el tiempo', 'El código dejó de estar disponible. Pedile al equipo principal que lo muestre otra vez.'); }, 120000);
             } catch (e) { /* fail-safe: el POS sigue */ }
         };
         // aplica la sesión heredada: la extensión JALA nombre/rol/zona (no editables), elige impresora en el wizard.
@@ -13768,11 +13881,17 @@
                 configWizard.value.zona     = zonaHer;
                 configWizard.value.esCajero = (String(data.rol || '').toUpperCase() === 'CAJERO');
                 configWizard.value.esExtension = true;
-                localStorage.setItem('mosexpress_es_extension', JSON.stringify({ idDia: data.idDia, principal: data.principalDeviceId, nombre: data.nombre, ts: Date.now() }));
+                // [2.8.271] la marca guarda TAMBIÉN zona y rol → si el equipo se recarga antes de elegir
+                // impresora, el boot reconstruye el wizard de extensión sin depender de la red.
+                localStorage.setItem('mosexpress_es_extension', JSON.stringify({
+                    idDia: data.idDia, principal: data.principalDeviceId, nombre: data.nombre,
+                    zona: zonaHer, rol: String(data.rol || ''), ts: Date.now()
+                }));
                 try { _extVigilarCierre(); } catch (e) {}   // empieza a vigilar el cierre del principal
+                try { _wizCargarImpresorasZona(); } catch (e) {}   // [2.8.271] el Paso 3 llega con impresoras listas
                 // llevar al paso de ESTACIÓN (impresora) del wizard — lo único editable de una extensión
                 // (puede elegir la MISMA impresora del principal u otra). Zona y rol se heredan (no editables).
-                try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch (e) {}
+                try { if (!config.value.completado && typeof wizStep !== 'undefined' && wizStep) wizStep.value = 3; } catch (e) {}
                 agregarToast('🔗 Extensión creada', 'Elige tu impresora y listo · el equipo principal manda', 'success', 6000);
             } catch (e) { /* fail-safe */ }
         };
@@ -13895,6 +14014,47 @@
                     } catch (e) { /* fail-safe */ }
                 }, 8000);   // [fix cascada] 15s→8s: la extensión se cierra más rápido cuando el principal cierra
             } catch (e) {}
+        };
+        // [2.8.271 GARANTÍA (b)] IDEMPOTENCIA AL ABRIR. Un equipo que YA está vinculado JAMÁS debe volver a
+        // ver el wizard de "vincular": al arrancar sin sesión propia le preguntamos al servidor el estado
+        // REAL de este deviceId (mos.extension_mi_estado · SQL 723) y, si es extensión de una sesión viva,
+        // entra directo. Cubre el caso del incidente: el canje SÍ entró en el servidor pero el cliente se
+        // colgó antes de guardar nada local → tras F5 arrancaba "como equipo nuevo" y solo conseguía el
+        // toast "este dispositivo ya está vinculado", sin camino para entrar.
+        const _extRestaurarVinculoAlAbrir = async () => {
+            try {
+                if (config.value.completado) return;
+                const dev = _extDevId(); if (!dev) return;
+                const info = _extInfoExt();   // el day-guard de boot ya purgó marcas de otro día
+                // ① optimista: con marca local completa reconstruimos YA (sirve también sin red)
+                if (info && info.idDia && info.zona) {
+                    _extAplicarSesionExtension({ idDia: info.idDia, nombre: info.nombre, zona: info.zona, rol: info.rol, principalDeviceId: info.principal });
+                }
+                // ② fuente de verdad: el servidor. Reintenta: en un arranque en frío (equipo sin catálogo
+                // en cache) el token de dispositivo puede no estar acuñado todavía en el 1er intento.
+                let mi = null;
+                for (let i = 0; i < 8; i++) {
+                    mi = await _extRpc('extension_mi_estado', { deviceId: dev });
+                    if (mi && mi.ok) break;
+                    if (config.value.completado) return;
+                    await new Promise(r => setTimeout(r, 10000));
+                }
+                if (!mi || !mi.ok) { console.warn('[ME] extension_mi_estado sin respuesta — el wizard normal sigue disponible'); return; }
+                if (config.value.completado) return;             // el operador ya entró por su cuenta
+                if (mi.vinculado && mi.data) {
+                    if (!(info && info.idDia)) {
+                        try { agregarToast('✓ Este equipo ya está vinculado', 'Entrando a la sesión de ' + (mi.data.nombre || '') + '…', 'success', 5000); } catch (e) {}
+                    }
+                    _extAplicarSesionExtension(mi.data);
+                } else if (info && info.idDia) {
+                    // marca local fantasma (el principal cerró): limpiar y devolver el wizard normal
+                    try { localStorage.removeItem('mosexpress_es_extension'); } catch (e) {}
+                    if (_extCierreTimer) { clearInterval(_extCierreTimer); _extCierreTimer = null; }
+                    _extEsExtension.value = false;
+                    try { configWizard.value.esExtension = false; } catch (e) {}
+                    try { if (typeof wizStep !== 'undefined' && wizStep) wizStep.value = 1; } catch (e) {}
+                }
+            } catch (e) { /* fail-safe: el wizard normal sigue disponible */ }
         };
         const _extIniciar = () => {
             // Si YA soy extensión (link previo o restaurado en boot): NO me registro como principal; solo vigilo el cierre.
