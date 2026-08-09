@@ -1,3 +1,13 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<!-- [2.8.272] Faltaban el doctype, el charset y el VIEWPORT. Sin viewport el celular
+     abría la Academy a ~980px y la escalaba: letra ilegible y desborde horizontal
+     (medido: 79-100px de exceso a 390px en Chromium y WebKit). Sin charset, cualquier
+     servidor que no mande utf-8 mostraba "guÃ­a" en lugar de "guía". -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
 <title>ME Academy · Capacitación Día 1</title>
 <style>
   :root{
@@ -43,8 +53,22 @@
   .xpbar > i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--gold));transition:width .6s cubic-bezier(.2,.9,.3,1)}
   .xplbl{font-weight:800;font-size:12px;color:var(--gold);display:flex;align-items:center;gap:5px;white-space:nowrap}
   .top .sp{flex:1}
-  .icobtn{border:1px solid var(--line);background:var(--surf);color:var(--ink);width:38px;height:38px;border-radius:11px;cursor:pointer;font-size:16px}
+  .icobtn{border:1px solid var(--line);background:var(--surf);color:var(--ink);min-width:40px;height:40px;border-radius:11px;cursor:pointer;font-size:16px;touch-action:manipulation;-webkit-tap-highlight-color:rgba(0,0,0,0)}
   .icobtn:hover{background:var(--surf2)}
+  .icobtn:active{scale:.94;filter:brightness(.9)}
+  /* [2.8.272] En móvil angosto la barra superior desbordaba 92px: logo + XP + 4 botones
+     no entraban en una línea y nada encogía. Ahora la barra de XP baja a su propia fila
+     y el logo se recorta con puntos suspensivos. */
+  @media(max-width:560px){
+    .top{gap:8px;padding:10px 12px;flex-wrap:wrap}
+    .top .sp{display:none}
+    .logo{font-size:14px;min-width:0;flex:1 1 auto;overflow:hidden}
+    .logo>div{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .logo small{display:none}
+    .xplbl{margin-left:auto}
+    .xpbar{order:9;flex:1 1 100%;max-width:none}
+    .icobtn{flex:0 0 auto;font-size:15px}
+  }
 
   .wrap{display:grid;grid-template-columns:290px 1fr;gap:22px;max-width:1180px;margin:0 auto;padding:22px 18px 60px}
   @media(max-width:860px){ .wrap{grid-template-columns:1fr;gap:14px} .side{order:2} }
@@ -62,7 +86,8 @@
   .mod-t small{display:block;color:var(--ink3);font-weight:600;font-size:11px}
   .lessons{padding:2px 6px 8px 6px;display:none}
   .mod.open .lessons{display:block}
-  .les{display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink2)}
+  .les{display:flex;align-items:center;gap:9px;padding:11px 8px;min-height:42px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink2);touch-action:manipulation;-webkit-tap-highlight-color:rgba(0,0,0,0)}
+  .les:active{scale:.99;filter:brightness(1.15)}
   .les:hover{background:var(--surf2);color:var(--ink)}
   .les.active{background:color-mix(in srgb,var(--brand) 16%,transparent);color:var(--ink)}
   .les .st{width:20px;height:20px;border-radius:99px;display:grid;place-items:center;font-size:11px;flex-shrink:0;
@@ -102,7 +127,8 @@
   .tip .ti{font-size:20px;filter:drop-shadow(0 0 6px rgba(167,139,250,.5))}
   .tip div{font-size:14px;color:var(--ink);font-weight:600;line-height:1.5}
   .tip b{color:var(--violet);letter-spacing:.03em}
-  .tipspk{border:1px solid var(--line);background:var(--surf);border-radius:8px;cursor:pointer;font-size:12px;padding:1px 6px;margin-left:4px}
+  .tipspk{border:1px solid var(--line);background:var(--surf);border-radius:9px;cursor:pointer;font-size:13px;min-width:44px;height:36px;padding:0 8px;margin-left:4px;vertical-align:middle;touch-action:manipulation}
+  .tipspk:active{scale:.94;filter:brightness(.9)}
   kbd{background:var(--surf);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 7px;font-weight:800;font-size:12px}
 
   /* ===== POS SIMULATOR ===== */
@@ -111,8 +137,11 @@
   .sim-top .pill{margin-left:auto;background:#0e2a20;color:#4fe0ac;border:1px solid #16543f;border-radius:99px;padding:3px 9px;font-size:11px}
   .sim{display:grid;grid-template-columns:1fr 240px;min-height:360px}
   @media(max-width:620px){ .sim{grid-template-columns:1fr} }
-  .grid{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:9px;align-content:start;max-height:420px;overflow:auto}
-  .prod{position:relative;background:#131f36;border:1px solid #223251;border-radius:14px;padding:10px 9px 12px;cursor:pointer;text-align:left;transition:transform .09s,box-shadow .15s,border-color .15s;color:#eaf1fb}
+  .grid{padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:9px;align-content:start;grid-auto-rows:max-content;max-height:460px;overflow:auto}
+  /* grid-auto-rows:max-content es obligatorio: con max-height + filas `auto` el
+     navegador repartía la altura entre las filas y recortaba la tarjeta (la barra
+     🧱/🔄 y la cinta de promo se veían a medias). */
+  .prod{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;background:#131f36;border:1px solid #223251;border-radius:14px;padding:10px 9px 12px;cursor:pointer;text-align:left;transition:transform .09s,box-shadow .15s,border-color .15s;color:#eaf1fb}
   .prod:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(0,0,0,.35)}
   .prod:hover{border-color:#3a4f78}
   .prod:active{transform:scale(.96)}
@@ -124,6 +153,27 @@
   .prod.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
   .sq.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.5)}50%{box-shadow:0 0 0 8px rgba(251,191,36,0)}}
+
+  /* ── tarjeta v2 (réplica de la card real de ME 2.8.272): chip de stock, barra
+        [🧱 · 🔄], cinta de promoción y la onda verde/roja al agregar ── */
+  .prod .stk{position:absolute;top:7px;right:7px;font-size:9.5px;font-weight:900;border-radius:99px;padding:2px 7px;z-index:3}
+  .prod .stk.on{background:#0e2a20;color:#4fe0ac;border:1px solid #16543f}
+  .prod .stk.off{background:var(--rose);color:#fff;animation:stkbreath 2.2s ease-in-out infinite}
+  @keyframes stkbreath{0%,100%{opacity:1}50%{opacity:.6}}
+  .prod.agotado .emo{filter:grayscale(1);opacity:.45}
+  .prod.agotado .nm{opacity:.65}
+  .pacts{display:flex;gap:6px;margin-top:auto;padding-top:9px}
+  .pab{flex:1 1 0;min-width:0;height:30px;border-radius:9px;font-size:11.5px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;white-space:nowrap;overflow:hidden}
+  .pab.pres{background:#20304f;color:#cfe0ff}
+  .pab.pres:hover{background:#2a3d63}
+  .pab.alt{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;animation:pulse 1.6s infinite}
+  .pab.off{background:#16223a;color:#3f4f6e;cursor:default}
+  .pab.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
+  .promoband{display:block;margin:9px -9px -12px -9px;flex:0 0 auto;padding:5px 8px;background:linear-gradient(90deg,var(--gold),var(--gold2));color:#3b2600;font-size:9.5px;font-weight:900;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .onda{position:absolute;inset:0;pointer-events:none;z-index:2;animation:ondago .8s ease-out forwards}
+  .onda.v{background:radial-gradient(circle at center,rgba(16,185,129,.6),transparent 72%)}
+  .onda.r{background:radial-gradient(circle at center,rgba(244,63,94,.6),transparent 72%)}
+  @keyframes ondago{0%{opacity:.95;transform:scale(.35)}100%{opacity:0;transform:scale(1.25)}}
 
   .cartp{background:#0d1526;border-left:1px solid #1f2b44;display:flex;flex-direction:column;min-height:360px}
   @media(max-width:620px){ .cartp{border-left:0;border-top:1px solid #1f2b44} }
@@ -238,7 +288,8 @@
   .wizdots i{width:26px;height:5px;border-radius:99px;background:rgba(255,255,255,.25);display:block}
   .wizdots i.on{background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.6)}
   .sil{width:36px;height:36px;border-radius:11px;color:#fff;font-weight:900;display:grid;place-items:center;font-size:15px;flex-shrink:0}
-  .metab{border:2px solid #e2e8f0;background:#fff;color:#334155;border-radius:99px;padding:6px 13px;font-weight:800;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .metab{border:2px solid #e2e8f0;background:#fff;color:#334155;border-radius:99px;padding:0 14px;min-height:40px;font-weight:800;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;touch-action:manipulation}
+  .metab:active{scale:.96;filter:brightness(.93)}
   .metab.on{background:#059669;color:#fff;border-color:transparent}
   .metab.hl{outline:3px solid var(--gold);outline-offset:2px;animation:pulse 1.2s infinite}
   .metab .bdg{background:rgba(0,0,0,.08);border-radius:99px;font-size:10px;padding:1px 6px;font-weight:900}
@@ -264,6 +315,8 @@
 
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
+</head>
+<body>
 
 <div class="top">
   <div class="logo"><span class="dot">🛒</span><div>ME Academy<br><small>Capacitación · Día 1</small></div></div>
@@ -404,19 +457,24 @@ function emo(n){n=(n||'').toLowerCase();
 }
 
 /* ---------- catálogo real (muestras del catálogo vivo de ME) ---------- */
+/* s = stock de TU zona (0 = agotado · null = sin dato, no se pinta chip)
+   alt = productos parecidos CON stock (lo que abre el botón 🔄)
+   promo = la cinta 🎯 que se ve al pie de la tarjeta */
 var CAT=[
-  {n:'SIBARITA PANQUITA 31.2GR',p:1.00,pres:[{t:'Caja x12',f:12,p:11.00}]},
-  {n:'KERO ALOE BEBIDA UVA 300ML',p:2.80,pres:[{t:'Sixpack',f:6,p:16.00}]},
-  {n:'GLORIA QUESO PARMESANO 35GR',p:4.60},
-  {n:'LAIVE LECHE SIN LACTOSA 1LT',p:5.50,pres:[{t:'Caja x6',f:6,p:31.00}]},
-  {n:'NORSAL SAL YODADA MESA',p:1.00},
-  {n:'ALACENA KETCHUP 100GR',p:3.00},
-  {n:'WMY PANCO BLANCO 230GR',p:6.00},
-  {n:'SAN YAN SILLAO OSCURO 1.79LT',p:16.00},
-  {n:'PATITO DETERGENTE 4KG',p:30.00},
-  {n:'AZÚCAR IMPALPABLE',p:10.50,granel:true},
-  {n:'KIWICHA REAL',p:12.00,granel:true},
-  {n:'AGROIND. ALGARROBINA 500ML',p:5.00}
+  {n:'SIBARITA PANQUITA 31.2GR',p:1.00,s:24,pres:[{t:'Caja x12',f:12,p:11.00}]},
+  {n:'KERO ALOE BEBIDA UVA 300ML',p:2.80,s:9,pres:[{t:'Sixpack',f:6,p:16.00}]},
+  {n:'GLORIA QUESO PARMESANO 35GR',p:4.60,s:0,alt:[
+    {t:'GLORIA QUESO PARMESANO 90GR',p:9.90,s:7},
+    {t:'BONLE QUESO PARMESANO 40GR',p:4.90,s:12}]},
+  {n:'LAIVE LECHE SIN LACTOSA 1LT',p:5.50,s:6,promo:'Lleva 3 por S/ 15.00',pres:[{t:'Caja x6',f:6,p:31.00}]},
+  {n:'NORSAL SAL YODADA MESA',p:1.00,s:40},
+  {n:'ALACENA KETCHUP 100GR',p:3.00,s:12},
+  {n:'WMY PANCO BLANCO 230GR',p:6.00,s:0},
+  {n:'SAN YAN SILLAO OSCURO 1.79LT',p:16.00,s:3},
+  {n:'PATITO DETERGENTE 4KG',p:30.00,s:5},
+  {n:'AZÚCAR IMPALPABLE',p:10.50,s:7.5,granel:true},
+  {n:'KIWICHA REAL',p:12.00,s:9.25,granel:true},
+  {n:'AGROIND. ALGARROBINA 500ML',p:5.00,s:15,promo:'-15% Dcto desde 6 u.'}
 ];
 
 /* ---------- estado ---------- */
@@ -429,8 +487,12 @@ var COURSE=[
  {id:'pos',ico:'🛒',t:'Vender (POS)',sub:'El corazón de tu caja',les:[
    {id:'pos-intro',t:'Bienvenida a tu caja',kind:'intro'},
    {id:'pos-venta',t:'Tu primera venta',kind:'sim'},
-   {id:'pos-pres',t:'Presentaciones (pack y fracción)',kind:'sim'},
+   {id:'pos-card',t:'La tarjeta por dentro: stock y la onda',kind:'sim'},
+   {id:'pos-pres',t:'🧱 Presentaciones (pack y fracción)',kind:'sim'},
+   {id:'pos-agotado',t:'🔄 Parecidos: cuando algo se agotó',kind:'sim'},
+   {id:'pos-promo',t:'Promociones: la cinta 🎯',kind:'sim'},
    {id:'pos-granel',t:'Vender a granel (por kilo)',kind:'sim'},
+   {id:'pos-scan',t:'Escanear: la venta nunca se traba',kind:'flow'},
    {id:'pos-cobrar',t:'Cobrar y dar vuelto',kind:'sim'},
    {id:'pos-ana',t:'Analítica: mantén presionado',kind:'sim'},
  ]},
@@ -456,7 +518,10 @@ var COURSE=[
 var FLAT=[]; COURSE.forEach(function(m){m.les.forEach(function(l){l.mod=m;FLAT.push(l)})});
 function idx(id){for(var i=0;i<FLAT.length;i++) if(FLAT[i].id===id) return i; return 0}
 function isDone(id){return !!ST.done[id]}
-function unlocked(i){ if(i===0) return true; return isDone(FLAT[i-1].id); }
+/* Candado secuencial. La lección YA APROBADA nunca se vuelve a cerrar: al agregar
+   lecciones nuevas a mitad del curso, el alumno de siempre conserva el acceso a todo
+   lo que ya ganó (su progreso vive por id en me_academy_v1, no por posición). */
+function unlocked(i){ if(i===0) return true; if(isDone(FLAT[i].id)) return true; return isDone(FLAT[i-1].id); }
 var current=null;
 for(var i=0;i<FLAT.length;i++){ if(!isDone(FLAT[i].id)){current=FLAT[i].id;break} }
 if(!current) current=FLAT[0].id;
@@ -556,8 +621,8 @@ function renderIntro(l){
     +'No necesitas saber nada de antes. Vamos <b>paso a paso</b>, tocando botones de verdad, '
     +'y no te dejo avanzar hasta que te salga bien. Si te equivocas, no pasa nada: aquí nada se rompe. 💚</p>'
     +'<div class="statgrid">'
-    +'<div class="stat"><div class="v">3</div><div class="k">módulos: Vender · Caja · Herramientas</div></div>'
-    +'<div class="stat"><div class="v">18</div><div class="k">lecciones cortas con práctica</div></div>'
+    +'<div class="stat"><div class="v">'+(COURSE.length-1)+'</div><div class="k">módulos: Vender · Caja · Herramientas</div></div>'
+    +'<div class="stat"><div class="v">'+FLAT.length+'</div><div class="k">lecciones cortas con práctica</div></div>'
     +'<div class="stat"><div class="v">⭐ '+TOTAL_XP+'</div><div class="k">estrellas por ganar hoy</div></div>'
     +'</div>'
     +'<div class="coach">'+cab(46)+'<div class="msg">Regla de oro: <b>si dudas, mira arriba</b> — siempre te digo qué tocar. ¿Listo? Dale a <b>Siguiente</b>.</div></div>'
@@ -573,10 +638,14 @@ function cartTotal(){var t=0;sim.cart.forEach(function(c){t+=c.amt});return Math
 /* ---------- TIPS / ATAJOS REALES de ME ---------- */
 var TIPS={
  'pos-venta':'La <b>pistola de código</b> escanea y agrega el producto <b>solo</b> — ni toques la pantalla. Y aunque la pantalla esté en descanso, al escanear lo agrega igual.',
- 'pos-pres':'El <b>cuadradito ▦</b> abre presentaciones; tocar el resto de la tarjeta agrega <b>1 unidad</b> directo. No los confundas.',
+ 'pos-card':'El número del chip verde es el stock de <b>TU zona</b>, no el del almacén. Si dice <b>Sin stock</b> igual puedes vender: ME te avisa, no te bloquea.',
+ 'pos-pres':'El botón <b>🧱</b> abre presentaciones; tocar el resto de la tarjeta agrega <b>1 unidad</b> directo. No los confundas.',
+ 'pos-agotado':'El botón <b>🔄</b> solo late (morado) cuando de verdad hay un parecido <b>con stock</b>. Si está apagado, no hay nada que ofrecer — avisa al almacén.',
+ 'pos-promo':'Tú no descuentas nada a mano: la promo se aplica <b>sola</b> en el carrito al llegar a la cantidad. Si el total no baja, es que aún falta una unidad.',
+ 'pos-scan':'La venta NUNCA se traba por el escáner ni por la señal. Lo único que sí bloquea es un producto <b>⛔ sin precio</b>: eso lo arregla el admin en MOS.',
  'pos-granel':'Pesa <b>primero</b> en la balanza y recién teclea los gramos — ME hace la multiplicación, tú no calculas nada.',
  'pos-cobrar':'En PC: <kbd>barra espaciadora</kbd> = <b>COBRAR</b>, y otra vez <kbd>espacio</kbd> = <b>CONFIRMAR</b>. <kbd>Esc</kbd> cierra cualquier ventana. ¡Cobras sin soltar la mano!',
- 'pos-ana':'En PC es más rápido aún: <b>click derecho</b> sobre el producto abre su analítica al toque.',
+ 'pos-ana':'En PC es más rápido aún: <b>click derecho</b> sobre el producto abre su analítica al toque. En celular basta con <b>medio segundo</b> de presión.',
  'caja-tickets':'Atajo: la tecla <kbd>/</kbd> te lleva al POS al instante desde donde estés.',
  'caja-reimp':'Hay un botón para <b>reimprimir el último ticket</b> sin buscarlo en la lista.',
  'caja-imp':'El puntito del chip 🖨 se actualiza solo: <b style="color:var(--brand2)">🟢</b> = online, <b style="color:var(--rose)">🔴</b> = apagada. Solo puedes cambiar a impresoras de TU zona, y el cambio pide clave de admin.',
@@ -633,28 +702,50 @@ function drawGrid(opts){
   opts=opts||{};
   var g=$('#grid'); if(!g)return; g.innerHTML='';
   CAT.forEach(function(p,i){
-    var b=document.createElement('button'); b.className='prod'; b.setAttribute('data-i',i);
-    var sq=(!opts.noPres && (p.pres&&p.pres.length))?'<span class="sq" data-sq="'+i+'" title="Presentaciones">▦</span>':'';
-    b.innerHTML='<span class="emo">'+emo(p.n)+'</span><span class="nm">'+p.n+'</span><span class="pr tnum">'+money(p.p)+(p.granel?'/kg':'')+'</span>'+sq;
+    var agot=(p.s===0);
+    /* DIV y no <button>: el <button> envuelve su contenido en una caja anónima que
+       recorta los hijos en bloque — la barra 🧱/🔄 y la cinta de promo salían cortadas. */
+    var b=document.createElement('div'); b.className='prod'+(agot?' agotado':''); b.setAttribute('data-i',i);
+    b.setAttribute('role','button'); b.setAttribute('tabindex','0');
+    var npres=(p.pres&&p.pres.length)||0, hayAlt=!!(p.alt&&p.alt.length);
+    var stk=(p.s===null||p.s===undefined)?''
+      :(agot?'<span class="stk off">Sin stock</span>'
+            :'<span class="stk on">'+p.s+(p.granel?' kg':'')+'</span>');
+    var acts=opts.noPres?'':('<span class="pacts">'
+      +'<span class="pab '+(npres?'pres':'off')+'" data-pres="'+i+'" title="Presentaciones">🧱'+(npres?'<b>'+npres+'</b>':'')+'</span>'
+      +'<span class="pab '+((agot&&hayAlt)?'alt':'off')+'" data-alt="'+i+'" title="Productos parecidos">🔄</span></span>');
+    b.innerHTML='<span class="emo">'+emo(p.n)+'</span>'+stk+'<span class="nm">'+p.n+'</span>'
+      +'<span class="pr tnum">'+money(p.p)+(p.granel?'/kg':'')+'</span>'+acts
+      +(p.promo?'<span class="promoband">🎯 '+p.promo+'</span>':'');
     g.appendChild(b);
   });
   g.addEventListener('click',function(e){
-    var sq=e.target.closest('[data-sq]'); if(sq){ e.stopPropagation(); openPres(+sq.getAttribute('data-sq')); return; }
+    var sq=e.target.closest('[data-sq],[data-pres]');
+    if(sq){ e.stopPropagation(); var ip=+(sq.getAttribute('data-pres')||sq.getAttribute('data-sq'));
+      if(CAT[ip].pres&&CAT[ip].pres.length) openPres(ip); return; }
+    var al=e.target.closest('[data-alt]');
+    if(al){ e.stopPropagation(); var ia=+al.getAttribute('data-alt');
+      if(CAT[ia].s===0&&CAT[ia].alt&&CAT[ia].alt.length) openAlt(ia); return; }
     var pb=e.target.closest('.prod'); if(!pb) return;
     var i=+pb.getAttribute('data-i'), p=CAT[i];
     if(p.granel){ openGranel(i); return; }
+    // La onda: VERDE si hay stock, ROJA si está agotado — pero la venta sale IGUAL.
+    onda(pb, p.s===0);
     addToCart({nm:p.n, sub:'1 unidad', amt:p.p}); emit('add',{i:i});
   });
-  // long-press for analítica
+  // long-press for analítica (en ME real son 550 ms)
   var timer=null,moved=false;
-  g.addEventListener('pointerdown',function(e){var pb=e.target.closest('.prod'); if(!pb||e.target.closest('[data-sq]'))return; moved=false;
-    timer=setTimeout(function(){ openAna(+pb.getAttribute('data-i')); },600);});
+  g.addEventListener('pointerdown',function(e){var pb=e.target.closest('.prod'); if(!pb||e.target.closest('[data-sq],[data-pres],[data-alt]'))return; moved=false;
+    timer=setTimeout(function(){ openAna(+pb.getAttribute('data-i')); },550);});
   g.addEventListener('pointermove',function(){moved=true;});
   g.addEventListener('pointerup',function(){clearTimeout(timer)});
   g.addEventListener('pointerleave',function(){clearTimeout(timer)});
   paintCart();
 }
 function addToCart(line){ line.amt=Math.round(line.amt*100)/100; sim.cart.push(line); paintCart(); SFX.add(); }
+/* onda verde/roja al agregar (igual que el ripple de la card real de ME) */
+function onda(el,roja){ try{ var s=document.createElement('span'); s.className='onda '+(roja?'r':'v');
+  el.appendChild(s); setTimeout(function(){ try{s.remove()}catch(e){} },850); }catch(e){} }
 function paintCart(){
   var box=$('#items'); if(!box)return;
   if(!sim.cart.length){ box.innerHTML='<div class="empty">Toca un producto<br>para agregarlo 👆</div>'; }
@@ -689,6 +780,27 @@ function openPres(i){
   Array.prototype.forEach.call(o.querySelectorAll('[data-pk]'),function(el){
     el.addEventListener('click',function(){ var r=rows[+el.getAttribute('data-pk')];
       addToCart({nm:p.n, sub:r.t, amt:r.p}); o.remove(); emit('pres',{i:i,f:r.f}); });
+  });
+}
+/* Sheet de PARECIDOS — lo que abre el botón 🔄 de una tarjeta agotada */
+function openAlt(i){
+  var p=CAT[i], rows=p.alt||[];
+  var inner='<div style="padding:16px 18px;border-bottom:1px solid var(--line)"><div style="font-weight:900;font-size:16px">🔄 Parecidos con stock</div>'
+    +'<div style="color:var(--ink3);font-size:12.5px;margin-top:2px">En lugar de <b>'+p.n+'</b>, que está agotado</div></div><div style="padding:12px">';
+  if(!rows.length){
+    inner+='<div class="sheet-vacio" style="text-align:center;padding:22px 10px 10px"><div style="font-size:38px;opacity:.5">🫙</div>'
+      +'<div style="font-weight:900;margin-top:8px">Nada parecido con stock</div>'
+      +'<div style="color:var(--ink3);font-size:12px;margin-top:5px">Avísale al almacén. La venta del producto agotado igual se puede hacer.</div></div>';
+  } else {
+    rows.forEach(function(a,k){ inner+='<button class="opt" data-ak="'+k+'" style="width:100%;margin-bottom:8px"><span class="k">🔁</span>'
+      +'<span style="flex:1"><b>'+a.t+'</b><div style="font-size:11.5px;color:var(--ink3)">quedan '+a.s+' en tu zona</div></span>'
+      +'<span class="amt tnum" style="font-weight:900;color:var(--brand2)">'+money(a.p)+'</span></button>'; });
+  }
+  inner+='</div>';
+  var o=modal(inner);
+  Array.prototype.forEach.call(o.querySelectorAll('[data-ak]'),function(el){
+    el.addEventListener('click',function(){ var a=rows[+el.getAttribute('data-ak')];
+      addToCart({nm:a.t, sub:'parecido sugerido', amt:a.p}); o.remove(); emit('alt',{i:i,k:+el.getAttribute('data-ak')}); });
   });
 }
 function openGranel(i){
@@ -753,20 +865,60 @@ function openCobrar(){
 var SIMS={
  'pos-venta':{
    why:'Es lo que harás 200 veces al día: pasar un producto a la boleta. Aquí es un solo toque.',
-   body:'<p>La pantalla tiene dos partes: a la <b>izquierda los productos</b> (cada cuadrito es uno) y a la <b>derecha el carrito</b> (lo que le vas a cobrar al cliente).</p><p>Regla simple: <b>tocar un producto = lo agrega al carrito</b>. Nada más.</p>',
+   body:'<p>La pantalla tiene dos partes: a la <b>izquierda los productos</b> (cada tarjeta es uno) y a la <b>derecha el carrito</b> (lo que le vas a cobrar al cliente).</p><p>Regla simple: <b>tocar una tarjeta = agrega 1 unidad al carrito</b>. Nada más. Al tocarla verás una <b>onda verde</b>: es ME diciéndote “lo tomé”.</p>',
    init:function(){ sim.cart=[]; drawGrid(); startMission([
      {text:'Toca <b>NORSAL SAL YODADA</b> para agregarla.', event:'add', hl:function(){return prodEl('NORSAL')}, match:function(p){return /NORSAL/.test(CAT[p.i].n)}},
      {text:'¡Bien! Ahora agrega la <b>ALGARROBINA</b>.', event:'add', hl:function(){return prodEl('ALGARROBINA')}, match:function(p){return /ALGARROBINA/.test(CAT[p.i].n)}},
      {text:'Ya tienes 2 en el carrito. 🎉 Mira el TOTAL a la derecha.', event:'never'}
    ]); }
  },
+ 'pos-card':{
+   why:'Cada tarjeta te está hablando antes de que la toques: cuánto queda, si hay promoción y si vale la pena ofrecer otra cosa. Leerla bien te ahorra caminatas al almacén.',
+   body:'<p>Mira una tarjeta de arriba a abajo:</p>'
+     +'<ul class="steplist">'
+     +'<li><span class="n">1</span><div><b>Chip de stock</b> (arriba a la derecha). Verde con un número = eso queda <b>en TU zona</b>. Rojo <b>“Sin stock”</b> = tu zona está en cero y la foto se pone gris.</div></li>'
+     +'<li><span class="n">2</span><div><b>Nombre y precio</b>. Si dice <b>“/kg”</b> es a granel (eso lo ves más adelante).</div></li>'
+     +'<li><span class="n">3</span><div><b>Barra de abajo</b>: el botón <b>🧱</b> con un número son las presentaciones, y el <b>🔄</b> son los productos parecidos.</div></li>'
+     +'<li><span class="n">4</span><div><b>Cinta 🎯</b> al pie: ese producto tiene una promoción activa ahora mismo.</div></li>'
+     +'</ul>'
+     +'<p>Y lo más importante: <b>“Sin stock” NO bloquea la venta</b>. Si el cliente tiene el producto en la mano, véndelo. ME pinta la onda <b>roja</b> en vez de verde para que sepas que ese número quedó en negativo y hay que avisar al almacén — pero la venta entra igual.</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'Mira el <b>chip verde</b> de <b>NORSAL SAL YODADA</b>: dice cuánto queda en tu zona. Tócala para agregarla y fíjate en la <b>onda verde</b>.', event:'add', hl:function(){return stkEl('NORSAL')}, match:function(p){return /NORSAL/.test(CAT[p.i].n)}},
+     {text:'Ahora toca <b>WMY PANCO BLANCO</b>, que está <b>Sin stock</b> (foto gris, chip rojo). El cliente lo tiene en la mano: véndelo igual.', event:'add', hl:function(){return prodEl('PANCO')}, match:function(p){return /PANCO/.test(CAT[p.i].n)}},
+     {text:'¿Viste? La onda salió <b>roja</b> y la venta entró igual. Rojo = “avisa al almacén”, nunca “no vendas”. 🎉', event:'never'}
+   ]); }
+ },
  'pos-pres':{
    why:'Un mismo producto se puede vender suelto, en pack (más barato por unidad) o en fracción. El cliente elige.',
-   body:'<p>Los productos con un <b>cuadradito ▦ abajo a la derecha</b> tienen presentaciones. Tócalo para elegir: <b>1 unidad</b>, un <b>pack</b> (📦, trae varias) o una <b>fracción</b> (✂️, una parte).</p>',
+   body:'<p>Las tarjetas con el botón <b>🧱</b> encendido (y un número al lado) tienen presentaciones. El número te dice <b>cuántas presentaciones extra</b> hay además de la unidad suelta.</p>'
+     +'<p>Tócalo para elegir: <b>1 unidad</b>, un <b>pack</b> (📦, trae varias) o una <b>fracción</b> (✂️, una parte). Ojo: <b>🧱 abre el menú, tocar el resto de la tarjeta agrega 1 unidad directo</b>.</p>',
    init:function(){ sim.cart=[]; drawGrid(); startMission([
-     {text:'Toca el <b>cuadradito ▦</b> del <b>KERO ALOE</b> (no el producto, el cuadradito).', event:'presopen', hl:function(){return sqEl('KERO')}, match:function(p){return /KERO/.test(CAT[p.i].n)}},
+     {text:'Toca el botón <b>🧱</b> del <b>KERO ALOE</b> (el botón de abajo, no el resto de la tarjeta).', event:'presopen', hl:function(){return sqEl('KERO')}, match:function(p){return /KERO/.test(CAT[p.i].n)}},
      {text:'Elige la presentación <b>📦 Sixpack</b> (6 unidades).', event:'pres', match:function(p){return p.f===6}},
      {text:'¡Perfecto! Vendiste un pack completo. 🎉', event:'never'}
+   ]); }
+ },
+ 'pos-agotado':{
+   why:'“No hay” es una venta perdida. ME te dice al instante qué otra cosa SÍ tienes en tu zona para ofrecerle al cliente, sin que camines al almacén.',
+   body:'<p>Cuando una tarjeta está <b>Sin stock</b>, el botón <b>🔄</b> se pone morado y <b>late</b>. Eso significa una sola cosa: <b>hay algo parecido CON stock en tu zona</b>.</p>'
+     +'<p>Si el <b>🔄</b> está apagado (gris), no hay nada que ofrecer — ahí toca avisar al almacén.</p>'
+     +'<p>El sheet de parecidos te muestra dos familias: otras <b>presentaciones del mismo producto</b> (otro tamaño, un pack) y los <b>sustitutos</b> que el admin dejó configurados (otra marca equivalente). Cada fila trae el <b>precio</b> y <b>cuánto queda</b>. Tocas una y se va al carrito.</p>'
+     +'<p>Y si el cliente insiste en el agotado: <b>véndeselo igual</b>. Parecidos es una ayuda para no perder la venta, no una barrera.</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'El cliente pide <b>GLORIA QUESO PARMESANO 35GR</b> y está agotado. Mira su botón <b>🔄</b> morado latiendo — tócalo.', event:'altopen', hl:function(){return altEl('PARMESANO')}, match:function(p){return /PARMESANO/.test(CAT[p.i].n)}},
+     {text:'Ofrécele el <b>BONLE QUESO PARMESANO 40GR</b>: mismo precio y quedan 12 en tu zona.', event:'alt', match:function(p){return /BONLE/.test((CAT[p.i].alt[p.k]||{}).t||'')}},
+     {text:'¡Venta salvada! 🎉 Ahora fíjate: el <b>WMY PANCO</b> también está agotado, pero su 🔄 está <b>apagado</b> — ahí no hay parecidos y le avisas al almacén.', event:'never'}
+   ]); }
+ },
+ 'pos-promo':{
+   why:'Las promociones las arma el admin desde MOS. Tú no las calculas ni las tecleas: solo tienes que reconocerlas y dejar que ME haga la cuenta.',
+   body:'<p>Un producto en promoción se reconoce por dos señales: la <b>⭐ estrella</b> arriba y la <b>cinta dorada 🎯</b> al pie de la tarjeta, que dice la condición exacta (por ejemplo <i>“Lleva 3 por S/ 15.00”</i> o <i>“-15% Dcto desde 6 u.”</i>).</p>'
+     +'<p><b>¿Cómo se cobra una promo?</b> Igual que todo lo demás: agregas las unidades al carrito y listo. Cuando llegas a la cantidad de la cinta, <b>ME baja el precio solo</b> — el total del carrito cambia y en la línea aparece la marca de la promo.</p>'
+     +'<p>Nunca descuentes a mano ni cambies el precio: si el total no bajó, es que todavía falta una unidad para cumplir la condición. Léele la cinta al cliente: <i>“llevando una más le sale más barato”</i>. Eso es vender.</p>',
+   init:function(){ sim.cart=[]; drawGrid(); startMission([
+     {text:'Busca la tarjeta con la <b>cinta 🎯 dorada</b>: <b>LAIVE LECHE SIN LACTOSA</b>, “Lleva 3 por S/ 15.00”. Agrégala.', event:'add', hl:function(){return prodEl('LAIVE')}, match:function(p){return /LAIVE/.test(CAT[p.i].n)}},
+     {text:'El cliente lleva 3. Tócala <b>dos veces más</b> hasta completar las 3 unidades.', event:'add', match:function(){var n=0;sim.cart.forEach(function(c){if(/LAIVE/.test(c.nm))n++});return n>=3}},
+     {text:'Con 3 en el carrito la promo ya se cumple y ME hace el descuento solo. Tú no tocaste ni un precio. 🎉', event:'never'}
    ]); }
  },
  'pos-granel':{
@@ -793,16 +945,21 @@ var SIMS={
  },
  'pos-ana':{
    why:'Antes de pedir mercadería o dudar de un precio, puedes ver cómo se vende un producto en TU zona.',
-   body:'<p>Truco pro: <b>mantén presionado</b> un producto (aguántalo ~1 segundo) y se abre su <b>analítica</b>: cuánto se vendió cada día de la semana y cuál fue el mejor día.</p>',
+   body:'<p>Truco pro: <b>mantén presionado</b> un producto (medio segundo basta) y se abre su <b>analítica</b>: cuánto se vendió cada día de la semana en TU zona, el pronóstico del día y cuál fue el mejor día. En PC es <b>click derecho</b>.</p>'
+     +'<p>Ojo: presiona sobre la <b>foto o el nombre</b>, no sobre los botones 🧱 / 🔄 de abajo — esos abren sus propias ventanas.</p>',
    init:function(){ sim.cart=[]; drawGrid(); startMission([
-     {text:'<b>Mantén presionado</b> el <b>PATITO DETERGENTE</b> (aguántalo 1 seg).', event:'anaopen', hl:function(){return prodEl('PATITO')}, match:function(p){return /PATITO/.test(CAT[p.i].n)}},
+     {text:'<b>Mantén presionado</b> el <b>PATITO DETERGENTE</b> (medio segundo).', event:'anaopen', hl:function(){return prodEl('PATITO')}, match:function(p){return /PATITO/.test(CAT[p.i].n)}},
      {text:'Mira su semana y cierra con <b>Entendido</b>.', event:'ana'},
      {text:'¡Ya eres un cajero con datos! 🎉', event:'never'}
    ]); }
  }
 };
 function prodEl(key){var r=null;Array.prototype.forEach.call(document.querySelectorAll('.prod'),function(e){if(new RegExp(key).test(e.textContent))r=e});return r}
-function sqEl(key){var p=prodEl(key);return p?p.querySelector('.sq'):null}
+/* sqEl quedó del diseño viejo (el cuadradito ▦). Hoy las presentaciones viven en el
+   botón 🧱 de la barra de la tarjeta; se mantiene el nombre para no romper misiones. */
+function sqEl(key){var p=prodEl(key);return p?(p.querySelector('[data-pres]')||p.querySelector('.sq')):null}
+function altEl(key){var p=prodEl(key);return p?p.querySelector('[data-alt]'):null}
+function stkEl(key){var p=prodEl(key);return p?p.querySelector('.stk'):null}
 
 /* hook cobrar button + pres/granel/ana "open" events via delegation after render */
 function afterRender(){
@@ -819,6 +976,7 @@ function afterRender(){
 /* wrap openPres/openGranel/openAna to emit *open events */
 var _openPres=openPres; openPres=function(i){emit('presopen',{i:i});_openPres(i)};
 var _openGranel=openGranel; openGranel=function(i){emit('granelopen',{i:i});_openGranel(i)};
+var _openAlt=openAlt; openAlt=function(i){emit('altopen',{i:i});_openAlt(i)};
 
 /* ======================= SIMULADOR CAJA / TICKETS (réplica de la Caja real de ME) ======================= */
 var TICKETS=[
@@ -1054,6 +1212,40 @@ function fopt(act,ico,t,sub){return '<button class="fopt" data-act="'+act+'"><sp
 function fhead(t,sub){return '<div class="fhead">'+t+(sub?' <span class="fnote">· '+sub+'</span>':'')+'</div>'}
 
 var FLOWS={
+ 'pos-scan':{
+  top:'🔫 ME · Escaneando en caja',
+  why:'La caja no se puede parar. ME está hecho para que ni el escáner, ni la señal, ni el stock en cero te dejen con el cliente esperando. Hay UNA sola cosa que sí frena la venta, y no la arreglas tú.',
+  body:'<p>Con la <b>pistola de código</b> apuntas y disparas: el producto entra al carrito <b>solo</b>, sin tocar la pantalla. Funciona incluso con la pantalla en descanso.</p>'
+    +'<p>¿Y si algo falla? Casi nada te detiene:</p>'
+    +'<ul class="steplist">'
+    +'<li><span class="n">1</span><div><b>El código no está en el catálogo</b> → ME te avisa y lo buscas por nombre en el buscador. La venta sigue.</div></li>'
+    +'<li><span class="n">2</span><div><b>Se cayó el internet</b> → arriba sale la barra ámbar “SIN CONEXIÓN”. <b>Sigue vendiendo</b>: la venta queda EN COLA y sube sola cuando vuelve la señal.</div></li>'
+    +'<li><span class="n">3</span><div><b>El producto dice “Sin stock”</b> → onda roja y a cobrar igual.</div></li>'
+    +'<li><span class="n">4</span><div><b>El producto dice ⛔ Sin precio</b> → <b>ESTO SÍ bloquea</b>. Es un producto aprobado al que nadie le puso precio. No inventes un precio: avisa al admin, lo pone en MOS y en un minuto se destraba solo.</div></li>'
+    +'</ul>',
+  done:'🔫 Nada te detiene<br><span class="fnote">Solo el ⛔ Sin precio bloquea, y ese lo arregla el admin. Todo lo demás: sigue vendiendo.</span>',
+  steps:[
+   {ok:'seguir',say:'Estás cobrando y de golpe se cae el internet 📴. Sale la barra ámbar. ¿Qué haces?',
+    screen:'<div class="fnote" style="text-align:center;margin-bottom:6px">⚠ SIN CONEXIÓN · la venta queda EN COLA y sube sola</div>'
+      +fhead('El cliente está esperando')
+      +fopt('seguir','✅','Sigo cobrando normal','la venta se guarda y sube sola al volver la señal')
+      +fopt('x1','✋','Le digo que espere a que vuelva el internet','...y que se le derrita el helado')
+      +fopt('x2','📝','Lo anoto en un papel y después lo tecleo','así se pierden las ventas'),
+    no:'No. Sin conexión ME <b>igual vende</b>: la venta entra EN COLA y sube sola. Nunca pares la caja por la señal.'},
+   {ok:'vender',say:'Vuelve la señal ✅. Ahora escaneas un producto y su tarjeta dice <b>Sin stock</b>, pero el cliente lo tiene en la mano.',
+    screen:fhead('Chip rojo: Sin stock')
+      +fopt('vender','🛒','Se lo vendo igual y aviso al almacén','la onda sale roja, la venta entra')
+      +fopt('x1','🚫','Le digo que no puedo venderlo','no existe en ME ese bloqueo')
+      +fopt('x2','🔧','Le sumo stock a mano al producto','tú no tocas el stock desde la caja'),
+    no:'“Sin stock” es un <b>aviso</b>, no un candado. Se vende igual y le avisas al almacén para que cuadre.'},
+   {ok:'admin',say:'Último: escaneas y aparece el sello <b>⛔ Sin precio</b>. ME no te deja agregarlo.',
+    screen:fhead('⛔ Sin precio de venta','único caso que SÍ bloquea')
+      +fopt('admin','📣','Aviso al admin para que le ponga precio en MOS','se destraba solo en ~1 minuto')
+      +fopt('x1','💭','Le pongo el precio que yo creo','jamás: es plata de la tienda')
+      +fopt('x2','🎁','Se lo regalo para salir del paso','tampoco'),
+    no:'Nunca inventes un precio. El admin lo carga en MOS Catálogo y el catálogo de tu caja se refresca solo.'}
+  ]
+ },
  'caja-abrir':{
   top:'🔑 ME · Inicio de sesión (wizard)',
   why:'Sin abrir tu turno no puedes vender. El wizard de ME te pregunta 3 cosas: quién eres, en qué tienda entras y con cuánto sencillo arrancas.',
@@ -1343,7 +1535,19 @@ var EXAMQ=[
   tip:'Los membretes se imprimen en el almacén. Tú la pegas y la marcas 📌 Pegada en Alertas precio.'},
  {q:'Son las 11 pm, ME está bloqueado y falta cobrar una venta. ¿Qué haces?',
   opts:['Toco el candado y pido permiso de 1 hora al admin','Aprieto F5 hasta que abra','Uso la caja de otra zona'],a:0,
-  tip:'El bloqueo no se fuerza: se pide permiso y el admin aprueba desde su celular.'}
+  tip:'El bloqueo no se fuerza: se pide permiso y el admin aprueba desde su celular.'},
+ {q:'La tarjeta del producto tiene el chip rojo “Sin stock” y el cliente lo trae en la mano. ¿Qué haces?',
+  opts:['No se lo vendo, el sistema no deja','Se lo vendo igual: sale la onda roja y aviso al almacén','Le sumo stock desde mi caja y recién lo vendo'],a:1,
+  tip:'“Sin stock” avisa, no bloquea. Onda roja = la venta entra y el almacén tiene que cuadrar ese producto.'},
+ {q:'Piden un producto agotado y su botón 🔄 está morado latiendo. ¿Qué significa?',
+  opts:['Que el producto se está actualizando','Que hay algo parecido CON stock en mi zona para ofrecerle','Que hay que reiniciar la app'],a:1,
+  tip:'🔄 solo late cuando de verdad hay un parecido con stock. Si está apagado, no hay nada que ofrecer: avisa al almacén.'},
+ {q:'Un producto tiene la cinta 🎯 “Lleva 3 por S/ 15.00” y el cliente lleva 3. ¿Qué haces?',
+  opts:['Los agrego normal: ME baja el precio solo','Cambio el precio a mano en la línea','Cobro 2 y le regalo 1'],a:0,
+  tip:'Las promos se aplican solas en el carrito. Tú nunca tocas precios: si el total no baja, falta una unidad.'},
+ {q:'Escaneas y aparece el sello ⛔ Sin precio. ¿Qué haces?',
+  opts:['Le pongo el precio que yo creo que vale','Aviso al admin: lo carga en MOS y se destraba solo','Se lo regalo para no demorar'],a:1,
+  tip:'⛔ Sin precio es lo ÚNICO que bloquea la venta, y lo arregla el admin desde MOS Catálogo.'}
 ];
 function renderExam(l){
   return '<div class="lead"><div class="eyebrow">🎓 Examen final</div><h1>'+l.t+'</h1></div>'
@@ -1434,3 +1638,6 @@ var _renderAll=renderAll; renderAll=function(){ save(); renderSide(); $('#stage'
 renderAll();
 })();
 </script>
+
+</body>
+</html>
