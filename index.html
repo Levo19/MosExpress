@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.277';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.278';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -92,7 +92,7 @@
          de auditoría del día; mos_membrete_cola_ es cola de impresión; y
          mos_jefa_aplicada_ es la marca de "este pedido de jefa YA se aplicó" —
          perderla permitiría aplicarlo dos veces. */
-      /* [v2.8.277] mosexpress_guia_draft_* son GUÍAS A MEDIO HACER que todavía no se
+      /* [v2.8.278] mosexpress_guia_draft_* son GUÍAS A MEDIO HACER que todavía no se
          enviaron: una purga que se las lleve destruye trabajo del cajero. Van protegidas. */
       var BLANCA_PFX = ['mosexpress_guias_', 'mosexpress_audit_registros_', 'mos_membrete_cola_', 'mos_jefa_aplicada_', 'mosexpress_guia_draft_'];
       var CACHES_VIVOS = ['da-device-cache'];
@@ -3204,7 +3204,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       .nav-sweep { position:absolute; top:0; bottom:0; width:35%; pointer-events:none; z-index:2;
                    background:linear-gradient(100deg, transparent, rgba(255,255,255,.7), transparent); transform:skewX(-18deg); animation: navSweep .9s ease-out .2s both; }
 
-      /* ════════ [v2.8.277] BORRADORES PERSISTENTES DE GUÍAS (gd-*) ════════ */
+      /* ════════ [v2.8.278] BORRADORES PERSISTENTES DE GUÍAS (gd-*) ════════ */
       /* Latido suave del 📋: "te falta terminar algo" sin gritar. */
       @keyframes gdLatido { 0%,100%{transform:scale(1)} 10%{transform:scale(1.20)} 22%{transform:scale(1)} 34%{transform:scale(1.11)} 48%{transform:scale(1)} }
       .gd-latido { display:inline-block; animation: gdLatido 2.6s ease-in-out infinite; }
@@ -5140,7 +5140,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         </button>
     </nav>
 
-    <!-- [v2.8.277] CHIP "FALTA TERMINAR" — persistente mientras haya un borrador con productos.
+    <!-- [v2.8.278] CHIP "FALTA TERMINAR" — persistente mientras haya un borrador con productos.
          Vive fuera del módulo (z-[45] < modales z-[70]) para que el cajero lo vea desde Ventas. -->
     <button v-if="guiaDraftsVivos.length && !modoGuias && !modoRecibirWH && config.completado && dispositivoAutorizado === true"
             @click="abrirGuiasBorrador()" data-gd-chip
@@ -7127,7 +7127,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             </button>
         </div>
 
-        <!-- [v2.8.277] AVISO DE RETOMA — aparece cuando se restauró un borrador de HOY -->
+        <!-- [v2.8.278] AVISO DE RETOMA — aparece cuando se restauró un borrador de HOY -->
         <div v-if="guiaDraftAviso && guiaDraftAviso.tipo !== 'RECIBIR'" class="gd-aviso mx-3 mt-2 rounded-2xl px-3 py-2.5 flex items-center gap-2.5 shrink-0" data-gd-aviso>
             <span class="text-xl gd-latido shrink-0">📋</span>
             <div class="flex-1 min-w-0">
@@ -7144,7 +7144,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             <button @click="guiaDraftCerrarAviso()" class="w-7 h-7 rounded-full bg-white/10 text-white font-black text-xs shrink-0">✕</button>
         </div>
 
-        <!-- [v2.8.277] BANDEJA FLOTANTE "📋 N en curso" — un tap retoma cualquiera de los 3 tipos -->
+        <!-- [v2.8.278] BANDEJA FLOTANTE "📋 N en curso" — un tap retoma cualquiera de los 3 tipos -->
         <div v-if="guiaDraftsVivos.length || guiaDraftsEnVuelo.length" class="mx-3 mt-2 shrink-0" data-gd-bandeja>
             <button @click="guiaDraftToggleBandeja()" data-gd-bandeja-btn
                     class="w-full gd-bandeja-btn rounded-xl px-3 py-2 flex items-center gap-2 active:scale-[.99] transition-transform">
@@ -7582,7 +7582,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <div v-if="rwGuia && rwGuia.verificada" class="bg-amber-900/40 border border-amber-600/50 rounded-lg px-3 py-2 text-[11px] text-amber-200 font-bold">
                     ⚠ Esta guía ya fue recibida antes. Si "Cerrar ingreso" no se reenviará (idempotente).
                 </div>
-                <!-- [v2.8.277] conteo retomado de un borrador de HOY -->
+                <!-- [v2.8.278] conteo retomado de un borrador de HOY -->
                 <div v-if="guiaDraftAviso && guiaDraftAviso.tipo === 'RECIBIR'" class="gd-aviso rounded-lg px-3 py-2 flex items-center gap-2.5" data-gd-aviso-rw>
                     <span class="text-lg gd-latido shrink-0">📋</span>
                     <div class="flex-1 min-w-0">
@@ -7953,7 +7953,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     const v = localStorage.getItem(k);
                     if (v) _backup[k] = v;
                   });
-                  // [v2.8.277] los borradores de guía (trabajo sin enviar) también se respaldan
+                  // [v2.8.278] los borradores de guía (trabajo sin enviar) también se respaldan
                   try {
                     for (let _i = 0; _i < localStorage.length; _i++) {
                       const _k = localStorage.key(_i);
@@ -9219,7 +9219,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         };
 
         // ── Reloj de inactividad del flujo de guía (2 h → cerrar todo y volver a ventas) ──
-        // [v2.8.277] El dueño lo subió de 5 min a 2 HORAS: cerrar el flujo a los 5 min mientras
+        // [v2.8.278] El dueño lo subió de 5 min a 2 HORAS: cerrar el flujo a los 5 min mientras
         // el cajero atendía una cola dejaba la guía olvidada. Ahora, además, al cerrarse el flujo
         // el borrador queda guardado y el chip "📋 falta terminar" lo recuerda desde Ventas.
         const GUIA_INACTIVIDAD_MS = 2 * 60 * 60 * 1000;
@@ -9232,7 +9232,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             } catch(_){}
             currentModule.value = 'POS'; // todos los caminos vuelven a VENTAS — ahí el scan es de venta
             if (porInactividad) {
-                // [v2.8.277] el trabajo NO se pierde: se fuerza el guardado y el chip lo recuerda.
+                // [v2.8.278] el trabajo NO se pierde: se fuerza el guardado y el chip lo recuerda.
                 let _gdPend = 0;
                 try { _gdGuardarYa(); _gdPend = (guiaDraftsVivos.value || []).length; } catch(_){}
                 if (_gdPend) {
@@ -10405,7 +10405,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
               try { agregarToast('🌙 Nuevo día', 'La sesión de ayer se cerró. Iniciá sesión para empezar el día.', 'info', 5000); } catch(_){}
           }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
-          // [v2.8.277] el chip "📋 falta terminar" debe verse desde Ventas, sin abrir Guías.
+          // [v2.8.278] el chip "📋 falta terminar" debe verse desde Ventas, sin abrir Guías.
           if (config.value.completado && config.value.vendedor) {
               try { guiaZona.value = guiaZona.value || config.value.zona || ''; _gdRefrescarVivos(); } catch(_){}
           }
@@ -14339,7 +14339,18 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             wizStep.value = 2;
         };
 
+        // [278] Pedido del dueño: el nombre se escribe SIEMPRE igual — MAYÚSCULAS, sin tildes y
+        // solo letras/espacios. Así "Jesús ", "jesus" y "JESUS" son el MISMO nombre y una persona
+        // no se fractura en varias fichas automáticas (cada variante creaba un personal virtual).
+        const _wizNombreNorm = (s) => String(s || '')
+            .normalize('NFD').replace(/[̀-ͯ]/g, '')   // quita tildes/diéresis
+            .toUpperCase()
+            .replace(/[^A-Z ]+/g, '')                            // solo letras y espacios
+            .replace(/ {2,}/g, ' ')
+            .replace(/^ +/, '');
         const wizOnNombreInput = () => {
+            const limpio = _wizNombreNorm(configWizard.value.vendedor);
+            if (limpio !== configWizard.value.vendedor) configWizard.value.vendedor = limpio;
             // intenta sugerir avatar color en vivo
         };
 
@@ -15304,7 +15315,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             lsSet('mosexpress_session_date', new Date().toDateString());
             lsSet('mosexpress_session_dia', _meDiaLima());   // [v2.8.191] día de negocio en TZ Perú (canónico)
             _cargarAuditHoy();
-            try { guiaZona.value = guiaZona.value || config.value.zona || ''; _gdRefrescarVivos(); } catch(_){}   // [v2.8.277]
+            try { guiaZona.value = guiaZona.value || config.value.zona || ''; _gdRefrescarVivos(); } catch(_){}   // [v2.8.278]
 
             // [CERO-GAS] Push "vendedor conectado" a master+admin vía Edge `push` (antes GAS
             // notificarInicioSesionVendedor). esCajero=true → se omite (la apertura de caja ya avisa).
@@ -22118,7 +22129,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         };
 
         // ════════════════════════════════════════════════════════════════════════════
-        // [v2.8.277] BORRADORES PERSISTENTES DE GUÍAS — el trabajo a medio hacer no se pierde
+        // [v2.8.278] BORRADORES PERSISTENTES DE GUÍAS — el trabajo a medio hacer no se pierde
         // ────────────────────────────────────────────────────────────────────────────
         // Clave:  mosexpress_guia_draft_<TIPO>_<ZONA>_<VENDEDOR>   ·  TIPO = SALIDA | ENTRADA | RECIBIR
         // JSON:   { v, tipo, subtipo, zona, zonaDestino, obs, items[], guiaWH, fecha, tocadoEn,
@@ -22463,7 +22474,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             guiaTab.value = 'salida';
             guiaZona.value = config.value.zona || (zonasUnicas.value[0] || '');
             _resetGuiaForm();
-            // [v2.8.277] BORRADORES: el reset de arriba solo limpia la MEMORIA. Aquí se relee el
+            // [v2.8.278] BORRADORES: el reset de arriba solo limpia la MEMORIA. Aquí se relee el
             //   disco, se descartan los de otro día y se RETOMA el de hoy más reciente.
             guiaDraftAviso.value = null; guiaDraftDescartando.value = ''; guiaDraftBandeja.value = false;
             try { _gdRefrescarVivos(); _gdAutoRestaurarAlAbrir(); } catch(e) { console.warn('[gd] abrir', e); }
@@ -22473,7 +22484,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         };
 
         const cerrarGuias = () => {
-            try { _gdGuardarYa(); } catch(_){}   // [v2.8.277] el borrador baja a disco ANTES de salir
+            try { _gdGuardarYa(); } catch(_){}   // [v2.8.278] el borrador baja a disco ANTES de salir
             modoGuias.value = false;
             if (camaraGuiaAbierta.value) toggleCamaraGuia();
         };
@@ -22484,7 +22495,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             if (subtipo === 'SALIDA_JEFA') guiaObs.value = 'Pedido de jefa';
             else if (subtipo === 'SALIDA_DEVOLUCION_WH') guiaObs.value = 'Devolución a almacén';
             else guiaObs.value = '';
-            // [v2.8.277] Limpiar los items aquí es CORRECTO (se empieza otra guía). Lo único que
+            // [v2.8.278] Limpiar los items aquí es CORRECTO (se empieza otra guía). Lo único que
             //   se agrega es el aviso: dentro de un tipo solo vive UN borrador, así que si había
             //   trabajo guardado de otro subtipo, el nuevo lo reemplaza y el cajero se entera.
             try {
@@ -22668,13 +22679,13 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             rwResultado.value = null;
             rwBusq.value = '';
             rwCargando.value = false;
-            // [v2.8.277] BORRADORES: si hay un conteo de HOY sin cerrar, se retoma (no se vacía).
+            // [v2.8.278] BORRADORES: si hay un conteo de HOY sin cerrar, se retoma (no se vacía).
             guiaDraftAviso.value = null; guiaDraftDescartando.value = '';
             try { _gdRefrescarVivos(); _gdRestaurar('RECIBIR'); } catch(e) { console.warn('[gd] abrir rw', e); }
         };
 
         const cerrarRecibirWH = () => {
-            try { _gdGuardarYa(); } catch(_){}   // [v2.8.277] el conteo baja a disco ANTES de salir
+            try { _gdGuardarYa(); } catch(_){}   // [v2.8.278] el conteo baja a disco ANTES de salir
             if (guiaDraftAviso.value && guiaDraftAviso.value.tipo === 'RECIBIR') guiaDraftAviso.value = null;
             if (rwCamara.value) rwToggleCamara();
             modoRecibirWH.value = false;
@@ -22767,7 +22778,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 .map(i => ({ codBarra: i.codBarra, cantidad: Number(i.cantidad) || 0 }))
                 .filter(i => i.cantidad > 0);
             if (!escaneados.length || !rwGuia.value) return;
-            // [v2.8.277] el conteo queda marcado `envio` (la RPC de cierre es idempotente por guía WH).
+            // [v2.8.278] el conteo queda marcado `envio` (la RPC de cierre es idempotente por guía WH).
             try { _gdMarcarEnviando('RECIBIR', { idGuia: 'WH:' + rwGuia.value.idGuiaWH, localId: '', subtipo: 'RECIBIR_WH', zona: guiaZona.value || '', guiaWH: rwGuia.value, items: rwEscaneadosArr.value }); } catch(_){}
             rwCargando.value = true;
             try {
@@ -22779,7 +22790,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 });
                 if (!d || !d.ok) { playBeepError(); agregarToast('Error', (d && d.error) || 'No se pudo cerrar el ingreso'); return; }
                 rwResultado.value = d.data;
-                // [v2.8.277] ingreso registrado → el borrador del conteo ya cumplió.
+                // [v2.8.278] ingreso registrado → el borrador del conteo ya cumplió.
                 try { _gdBorrar('RECIBIR'); guiaDraftAviso.value = null; _gdRefrescarVivos(); } catch(_){}
                 rwPaso.value = 'resultado';
                 if (rwCamara.value) rwToggleCamara();
@@ -22965,7 +22976,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                             const msg = d.idGuiaEntrada
                                 ? `${d.idGuia} + traslado a ${destinoSnap} confirmados`
                                 : `${d.idGuia} registrada`;
-                            // [v2.8.277] confirmación REAL del servidor → el borrador ya cumplió.
+                            // [v2.8.278] confirmación REAL del servidor → el borrador ya cumplió.
                             try { _gdConfirmarEnviado(payload.idGuia); } catch(_){}
                             agregarToast('Guía sincronizada ✓', msg);
                             if (modoGuias.value) listarGuiasHistorial();
@@ -23076,7 +23087,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             setTimeout(() => { if (guiaCelebraId.value === _localId) guiaCelebraId.value = null; }, 2400);
             agregarToast('Guía creada ✓', _esManualCiclo ? 'Abierta · ciérrala cuando termines de contar' : 'Registrando en segundo plano...', 'success');
 
-            // [v2.8.277] ANTIDUPLICADO: el borrador NO se borra aquí. Queda marcado `envio` con el
+            // [v2.8.278] ANTIDUPLICADO: el borrador NO se borra aquí. Queda marcado `envio` con el
             //   idGuia idempotente + una copia de los items. Solo _postGuiaBackground lo borra al
             //   confirmar el servidor; si nunca confirma, al reabrir se contrasta con el historial.
             try {
@@ -23202,7 +23213,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     if (r.ok && d && d.ok === true && Array.isArray(d.guias)) {
                         guiaHistorial.value = _mergeGuiasHistorial(d.guias);   // [v2.8.39] merge-guard
                         localStorage.setItem(cacheKey, JSON.stringify(guiaHistorial.value));
-                        _gdHistFreshAt = Date.now();   // [v2.8.277] el servidor respondió DE VERDAD
+                        _gdHistFreshAt = Date.now();   // [v2.8.278] el servidor respondió DE VERDAD
                     }
                 }
             } catch(e) { /* usa cache */ }
@@ -23920,7 +23931,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           guiaGruposPorDia, guiaContadores, guiaHora, esGuiaIngreso, esGuiaVentasAuto,
           guiaBuscarHistorial, setGuiaFiltro, deshacerQuitarItem,
           cerrarHoldStart, cerrarHoldEnd, esGuiaLocalEnVuelo: _esGuiaLocalEnVuelo,
-          // [v2.8.277] Borradores persistentes de guías (bandeja, chip, aviso, sello)
+          // [v2.8.278] Borradores persistentes de guías (bandeja, chip, aviso, sello)
           guiaDraftsVivos, guiaDraftsEnVuelo, guiaDraftAviso, guiaDraftBandeja,
           guiaDraftDescartando, guiaDraftSello, guiaDraftFresh, guiaDraftHace,
           guiaDraftRetomar, guiaDraftToggleBandeja, guiaDraftPedirDescartar,
