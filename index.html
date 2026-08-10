@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.273';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.274';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1955,7 +1955,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=2.0.28"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=2.0.29"></script>
   <script src="https://levo19.github.io/MOS/assets/auth/extensor-horario.js?v=1.0.3"></script>
   <script src="https://levo19.github.io/MOS/assets/adhesivo/preview.js?v=1.1.0"></script>
   <script>
@@ -18810,22 +18810,54 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // [CERO-GAS auth] Acuña el JWT de dispositivo ME por la Edge `mint-me` (Supabase, claim app='mosExpress',
         // valida deviceId contra mos.dispositivos server-side). GAS MINT_TOKEN queda solo como kill-switch ante
         // fallo/timeout de la Edge. Cachea hasta ~30s antes de exp. Un solo helper → ~17 call-sites heredan el cambio.
-        const _mintTokenSB = async () => {
-            const now = Math.floor(Date.now()/1000);
-            if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
+        // [2.8.274] UN intento del mint, con timeout parametrizable y conexión FRESCA
+        // (cache:'no-store'). Mismo cuerpo de antes; sólo se extrajo para poder reintentar.
+        const _mintMeIntento = async (timeoutMs) => {
             // [CERO-GAS / CERO-FALLBACK] Solo Edge mint-me (Supabase). Sin fallback GAS MINT_TOKEN: si el Edge
             // falla, throw → el caller lo maneja (fail-closed; no se acuña token por otra vía).
             const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/mint-me`, {
                 method:'POST',
+                cache:'no-store',
                 headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
                 body: JSON.stringify({ deviceId: deviceId.value })
-            }, 6000);
+            }, timeoutMs || 6000);
             const d = await res.json().catch(() => null);
-            if (res.ok && d && d.ok === true && d.token) {
-                _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 1800);
-                return d.token;
-            }
+            if (res.ok && d && d.ok === true && d.token) return d;
             throw new Error('mint-me: ' + ((d && d.error) || 'sin token'));
+        };
+        // [2.8.274] PACIENCIA ESCALONADA + dedupe en vuelo. Es el MISMO patrón que WH ya
+        // tiene probado en producción (js/api.js _mintConReintentos, 2.13.536).
+        //  · 3 intentos con timeout creciente 6s→9s→12s y esperas 0.4s/1s entre ellos:
+        //    al volver de segundo plano el socket está muerto y el POST se cancela solo
+        //    aunque la Edge esté sana (medida real: 387-859ms). Reintenta la app, no el cajero.
+        //  · _mintMeEnVuelo: los ~88 call-sites que piden token a la vez en el arranque
+        //    comparten UN solo POST en lugar de disparar una ráfaga (la avalancha que
+        //    entierra el POST de auth). El token se sigue cacheando ~30min igual que antes.
+        // NO cambia el manejo de un mint fallido: el caller sigue recibiendo throw y la
+        // venta sigue tratándolo como INFRA (imprime local + encola, idempotente).
+        let _mintMeEnVuelo = null;
+        const _mintTokenSB = async () => {
+            const now = Math.floor(Date.now()/1000);
+            if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
+            if (_mintMeEnVuelo) return _mintMeEnVuelo;
+            _mintMeEnVuelo = (async () => {
+                const planes = [{ t:6000, espera:400 }, { t:9000, espera:1000 }, { t:12000, espera:0 }];
+                let ultimo;
+                for (let i = 0; i < planes.length; i++) {
+                    try {
+                        const d = await _mintMeIntento(planes[i].t);
+                        const n = Math.floor(Date.now()/1000);
+                        _sbTok.token = d.token; _sbTok.exp = d.exp || (n + 1800);
+                        return d.token;
+                    } catch (e) {
+                        ultimo = e;
+                        if (planes[i].espera) await new Promise(r => setTimeout(r, planes[i].espera));
+                    }
+                }
+                throw ultimo;
+            })();
+            try { return await _mintMeEnVuelo; }
+            finally { _mintMeEnVuelo = null; }
         };
 
         // [CERO-GAS push] Envía un push a una AUDIENCIA vía Edge `push` (resuelve tokens de mos.push_tokens
