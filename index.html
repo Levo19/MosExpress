@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.274';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.275';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -648,7 +648,7 @@
     .scan-preview-tag  { font-size: 9px; font-weight: 800; letter-spacing: 0.1em; opacity: 0.9; text-transform: uppercase; }
     .scan-preview-name { font-size: 14px; font-weight: 800; line-height: 1.15; }
     .scan-preview-meta { font-size: 11px; opacity: 0.9; margin-top: 2px; }
-    /* ══ [2.8.273] DESAMBIGUACIÓN DE CÓDIGOS DUPLICADOS ═══════════════════════════════
+    /* ══ [2.8.275] DESAMBIGUACIÓN DE CÓDIGOS DUPLICADOS ═══════════════════════════════
        El fabricante reusa el MISMO código de barras físico para varias presentaciones/
        sabores; logística lo desempata agregando una LETRA al código interno (…036A/…036B).
        Al escanear la RAÍZ pelada el POS no adivina: FILTRA el grid a las N variantes y
@@ -1955,7 +1955,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     }, 10000);
   })();
   </script>
-  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=2.0.29"></script>
+  <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=2.0.28"></script>
   <script src="https://levo19.github.io/MOS/assets/auth/extensor-horario.js?v=1.0.3"></script>
   <script src="https://levo19.github.io/MOS/assets/adhesivo/preview.js?v=1.1.0"></script>
   <script>
@@ -4481,7 +4481,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 
                 <!-- Panel Izquierdo: Grid Catalogo -->
                 <section class="panel-transition bg-white flex flex-col border-r border-gray-200 overflow-hidden self-stretch" :class="getPosLeftClasses()">
-                  <!-- [2.8.273] BANNER DE CÓDIGO COMPARTIDO: el barcode escaneado lo usan N productos
+                  <!-- [2.8.275] BANNER DE CÓDIGO COMPARTIDO: el barcode escaneado lo usan N productos
                        (el fabricante repite el código, logística desempata con una letra: …036A/…036B).
                        El grid queda filtrado a esas N variantes. Es una AYUDA, no un bloqueo: la ✕ devuelve
                        el catálogo completo y el vendedor puede buscar a mano. La venta nunca se traba. -->
@@ -4515,7 +4515,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                             <div class="p-2 flex-1 flex flex-col bg-white relative">
                                <h3 class="font-bold text-gray-800 text-[11px] leading-tight line-clamp-3">{{ prod.nombreCorto }}</h3>
                                <div v-if="prod.cat" class="text-[8.5px] text-gray-400 font-bold truncate mt-0.5">{{ prod.cat }}</div>
-                               <!-- [2.8.273] chip del SUFIJO: explica POR QUÉ hay dos cards con el mismo barcode -->
+                               <!-- [2.8.275] chip del SUFIJO: explica POR QUÉ hay dos cards con el mismo barcode -->
                                <div v-if="dupSufijos[prod.idUnico]" class="mt-1"><span class="dup-chip">{{ dupSufijos[prod.idUnico] }}</span></div>
                                <!-- [601] sin precio (PN aprobado sin precio) → sello ⛔ (la venta se bloquea en agregarCarritoObj) -->
                                <p v-if="Number(prod.precio) > 0" class="text-posPrimary font-black text-sm mt-2">S/ {{ Number(prod.precio || 0).toFixed(2) }} <span v-if="String(prod.unidadMedida || '').toUpperCase() === 'KGM'" class="text-[9px] text-gray-400 font-semibold">/ kg</span> </p>
@@ -10739,7 +10739,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             });
             productosCatalogo.value = prodsText;
             productosFiltrados.value = prodsText;
-            // [2.8.273] reconstruir el índice de FAMILIAS de código duplicado con el catálogo fresco
+            // [2.8.275] reconstruir el índice de FAMILIAS de código duplicado con el catálogo fresco
             try { _dupReconstruirIndice(); } catch(e) { console.warn('[dup] índice', e); }
 
             // Refrescar estacion desde ZONAS_CONFIG para que siempre tenga los campos actuales.
@@ -12069,7 +12069,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             } catch(e) {}
         };
 
-        // [2.8.273] Sonido de "ELIGE" — código de barras compartido por N productos.
+        // [2.8.275] Sonido de "ELIGE" — código de barras compartido por N productos.
         // NO es el beep de OK (nada entró al carrito todavía) ni el de error (no hay nada roto):
         // es un arpegio corto con pregunta al final (sube–baja–sube) que el vendedor aprende a
         // leer como "decide tú". Vibración con doble golpe, distinta del pulso único del OK.
@@ -18810,54 +18810,22 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // [CERO-GAS auth] Acuña el JWT de dispositivo ME por la Edge `mint-me` (Supabase, claim app='mosExpress',
         // valida deviceId contra mos.dispositivos server-side). GAS MINT_TOKEN queda solo como kill-switch ante
         // fallo/timeout de la Edge. Cachea hasta ~30s antes de exp. Un solo helper → ~17 call-sites heredan el cambio.
-        // [2.8.274] UN intento del mint, con timeout parametrizable y conexión FRESCA
-        // (cache:'no-store'). Mismo cuerpo de antes; sólo se extrajo para poder reintentar.
-        const _mintMeIntento = async (timeoutMs) => {
+        const _mintTokenSB = async () => {
+            const now = Math.floor(Date.now()/1000);
+            if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
             // [CERO-GAS / CERO-FALLBACK] Solo Edge mint-me (Supabase). Sin fallback GAS MINT_TOKEN: si el Edge
             // falla, throw → el caller lo maneja (fail-closed; no se acuña token por otra vía).
             const res = await _meFetchTimeout(`${SUPABASE_URL}/functions/v1/mint-me`, {
                 method:'POST',
-                cache:'no-store',
                 headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
                 body: JSON.stringify({ deviceId: deviceId.value })
-            }, timeoutMs || 6000);
+            }, 6000);
             const d = await res.json().catch(() => null);
-            if (res.ok && d && d.ok === true && d.token) return d;
+            if (res.ok && d && d.ok === true && d.token) {
+                _sbTok.token = d.token; _sbTok.exp = d.exp || (now + 1800);
+                return d.token;
+            }
             throw new Error('mint-me: ' + ((d && d.error) || 'sin token'));
-        };
-        // [2.8.274] PACIENCIA ESCALONADA + dedupe en vuelo. Es el MISMO patrón que WH ya
-        // tiene probado en producción (js/api.js _mintConReintentos, 2.13.536).
-        //  · 3 intentos con timeout creciente 6s→9s→12s y esperas 0.4s/1s entre ellos:
-        //    al volver de segundo plano el socket está muerto y el POST se cancela solo
-        //    aunque la Edge esté sana (medida real: 387-859ms). Reintenta la app, no el cajero.
-        //  · _mintMeEnVuelo: los ~88 call-sites que piden token a la vez en el arranque
-        //    comparten UN solo POST en lugar de disparar una ráfaga (la avalancha que
-        //    entierra el POST de auth). El token se sigue cacheando ~30min igual que antes.
-        // NO cambia el manejo de un mint fallido: el caller sigue recibiendo throw y la
-        // venta sigue tratándolo como INFRA (imprime local + encola, idempotente).
-        let _mintMeEnVuelo = null;
-        const _mintTokenSB = async () => {
-            const now = Math.floor(Date.now()/1000);
-            if (_sbTok.token && (_sbTok.exp - now) > 30) return _sbTok.token;
-            if (_mintMeEnVuelo) return _mintMeEnVuelo;
-            _mintMeEnVuelo = (async () => {
-                const planes = [{ t:6000, espera:400 }, { t:9000, espera:1000 }, { t:12000, espera:0 }];
-                let ultimo;
-                for (let i = 0; i < planes.length; i++) {
-                    try {
-                        const d = await _mintMeIntento(planes[i].t);
-                        const n = Math.floor(Date.now()/1000);
-                        _sbTok.token = d.token; _sbTok.exp = d.exp || (n + 1800);
-                        return d.token;
-                    } catch (e) {
-                        ultimo = e;
-                        if (planes[i].espera) await new Promise(r => setTimeout(r, planes[i].espera));
-                    }
-                }
-                throw ultimo;
-            })();
-            try { return await _mintMeEnVuelo; }
-            finally { _mintMeEnVuelo = null; }
         };
 
         // [CERO-GAS push] Envía un push a una AUDIENCIA vía Edge `push` (resuelve tokens de mos.push_tokens
@@ -19326,7 +19294,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // Normaliza texto para búsqueda fuzzy: minúsculas, sin tildes, sin caracteres especiales
         const _normTxt = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '');
 
-        // ══ [2.8.273] DESAMBIGUACIÓN DE CÓDIGOS DUPLICADOS ══════════════════════════════
+        // ══ [2.8.275] DESAMBIGUACIÓN DE CÓDIGOS DUPLICADOS ══════════════════════════════
         // PROBLEMA REAL: el fabricante imprime el MISMO código de barras físico en varias
         // presentaciones/sabores (CABALLO DE ORO AZUL y DORADO comparten 7758725000036).
         // Logística lo desempata agregando una LETRA al código INTERNO: …036A / …036B.
@@ -19787,7 +19755,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 if (anaPos.value && anaPos.value.abierto) { cerrarAnaliticaPos(); ev.preventDefault(); return; }
                 if (modalPresentaciones.value) { cerrarModalPres(); ev.preventDefault(); return; }
                 if (popover.value && popover.value.visible) { popover.value.visible = false; ev.preventDefault(); return; }
-                if (dupBanner.value) { limpiarFiltroDup(); ev.preventDefault(); return; }   // [2.8.273]
+                if (dupBanner.value) { limpiarFiltroDup(); ev.preventDefault(); return; }   // [2.8.275]
                 if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); ev.preventDefault(); return; }
             } catch(_) {}
         });
@@ -19831,7 +19799,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
               }
           };
 
-          // 1.5º [2.8.273] ¿CÓDIGO COMPARTIDO POR VARIOS PRODUCTOS? El fabricante reusa el mismo
+          // 1.5º [2.8.275] ¿CÓDIGO COMPARTIDO POR VARIOS PRODUCTOS? El fabricante reusa el mismo
           // barcode físico en varias presentaciones/sabores; logística desempata con una LETRA en
           // el código interno (…036A / …036B). Si la raíz escaneada toca 2+ productos distintos,
           // el POS NO adivina: filtra el grid a esas N variantes y deja que el vendedor toque la
@@ -19929,7 +19897,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // [2.8.214 PERF] filtrarCatalogo re-renderiza TODO el grid — solo hace falta si
           // había texto en el buscador (causa de la lentitud al elegir presentación).
           if (bBuscador.value) { bBuscador.value = ''; filtrarCatalogo(); }
-          // [2.8.273] el vendedor ya eligió su variante del código compartido → catálogo completo de vuelta
+          // [2.8.275] el vendedor ya eligió su variante del código compartido → catálogo completo de vuelta
           try { limpiarFiltroDup(); } catch(_) {}
           // [v2.8.245] Empezó una venta → despertar el motor de voz AHORA, no cuando el
           // cajero toque Cobrar (ahí ya sería tarde y se oiría el retraso de 1-3s).
@@ -23370,7 +23338,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           esPC, cobrarFx,   // [Atajos PC]
           modoPro, navColapsado, expandirNav, programarColapso, toggleModoPro, colorModulo,   // [Modo Pro / color]
           scanPreview, scanningPending, onScanInput, pulsingProductId,
-          dupBanner, dupSufijos, limpiarFiltroDup,   // [2.8.273] desambiguación de códigos duplicados
+          dupBanner, dupSufijos, limpiarFiltroDup,   // [2.8.275] desambiguación de códigos duplicados
           altSheet, cerrarAltSheet, elegirAlternativa, abrirAlternativas, tieneAlternativas,
           welcomeOverlay, dismissWelcome,
           idleScreen, idleConfig, ocultarSalvapantalla,
