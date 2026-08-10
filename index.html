@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.276';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.277';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -92,7 +92,9 @@
          de auditoría del día; mos_membrete_cola_ es cola de impresión; y
          mos_jefa_aplicada_ es la marca de "este pedido de jefa YA se aplicó" —
          perderla permitiría aplicarlo dos veces. */
-      var BLANCA_PFX = ['mosexpress_guias_', 'mosexpress_audit_registros_', 'mos_membrete_cola_', 'mos_jefa_aplicada_'];
+      /* [v2.8.277] mosexpress_guia_draft_* son GUÍAS A MEDIO HACER que todavía no se
+         enviaron: una purga que se las lleve destruye trabajo del cajero. Van protegidas. */
+      var BLANCA_PFX = ['mosexpress_guias_', 'mosexpress_audit_registros_', 'mos_membrete_cola_', 'mos_jefa_aplicada_', 'mosexpress_guia_draft_'];
       var CACHES_VIVOS = ['da-device-cache'];
       // IndexedDB: se borra la CLAVE del catálogo, NO la base (ver ley 4 arriba).
       var IDB_CLAVES = [{ db: 'mosexpress_idb', store: 'kv', claves: ['mosexpress_db'] }];
@@ -3201,6 +3203,28 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       @keyframes navSweep { 0%{left:-40%} 100%{left:140%} }
       .nav-sweep { position:absolute; top:0; bottom:0; width:35%; pointer-events:none; z-index:2;
                    background:linear-gradient(100deg, transparent, rgba(255,255,255,.7), transparent); transform:skewX(-18deg); animation: navSweep .9s ease-out .2s both; }
+
+      /* ════════ [v2.8.277] BORRADORES PERSISTENTES DE GUÍAS (gd-*) ════════ */
+      /* Latido suave del 📋: "te falta terminar algo" sin gritar. */
+      @keyframes gdLatido { 0%,100%{transform:scale(1)} 10%{transform:scale(1.20)} 22%{transform:scale(1)} 34%{transform:scale(1.11)} 48%{transform:scale(1)} }
+      .gd-latido { display:inline-block; animation: gdLatido 2.6s ease-in-out infinite; }
+      .gd-aviso { background:linear-gradient(90deg, rgba(245,158,11,.24), rgba(180,83,9,.16)); border:1px solid rgba(245,158,11,.5); box-shadow:0 6px 20px rgba(245,158,11,.16); animation: gSlideInItem .26s ease-out both; }
+      .gd-bandeja-btn { background:rgba(245,158,11,.13); border:1px solid rgba(245,158,11,.38); }
+      .gd-fila { background:rgba(255,255,255,.05); border:1px solid rgba(245,158,11,.3); }
+      .gd-fila-vuelo { background:rgba(59,130,246,.10); border:1px solid rgba(59,130,246,.32); }
+      @keyframes gdSello { 0%{opacity:0; transform:translateY(-3px)} 14%{opacity:.95; transform:none} 68%{opacity:.9} 100%{opacity:0} }
+      .gd-sello { font-size:10px; font-weight:800; color:#6ee7b7; animation: gdSello 2.2s ease-out both; }
+      .gd-alerta { font-size:10px; font-weight:800; color:#fda4af; margin-top:2px; }
+      /* Chip global "falta terminar": vive fuera del módulo (z bajo la nav de modales). */
+      @keyframes gdChipPulse { 0%,100%{box-shadow:0 10px 22px rgba(245,158,11,.34)} 50%{box-shadow:0 10px 32px rgba(245,158,11,.78)} }
+      .gd-chip { background:linear-gradient(135deg,#b45309,#f59e0b); border:1px solid rgba(255,255,255,.35); animation: gdChipPulse 2.4s ease-in-out infinite; }
+      /* Entrada escalonada de las líneas al RETOMAR un borrador. */
+      @keyframes gdIn { from{opacity:0; transform:translateX(-16px) scale(.97)} to{opacity:1; transform:none} }
+      .g-draft-in { animation: gdIn .34s cubic-bezier(.22,1,.36,1) both; }
+      .g-draft-in:nth-child(2){animation-delay:.04s} .g-draft-in:nth-child(3){animation-delay:.08s}
+      .g-draft-in:nth-child(4){animation-delay:.12s} .g-draft-in:nth-child(5){animation-delay:.16s}
+      .g-draft-in:nth-child(6){animation-delay:.20s} .g-draft-in:nth-child(7){animation-delay:.24s}
+      .g-draft-in:nth-child(8){animation-delay:.28s} .g-draft-in:nth-child(9){animation-delay:.32s}
   </style>
 
   <div id="app" class="h-full flex flex-col relative" v-cloak>
@@ -4718,7 +4742,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     <p class="text-sm text-gray-500 font-bold mt-1">Registra movimientos de stock por zona o realiza una auditoría de conteo.</p>
                  </div>
                  <div class="grid grid-cols-2 gap-3">
-                    <button @click="abrirGuias" class="bg-amber-500 text-white font-black py-6 rounded-2xl shadow-xl active:scale-95 transition-transform flex flex-col items-center gap-2">
+                    <button @click="abrirGuias" data-guia-abrir class="bg-amber-500 text-white font-black py-6 rounded-2xl shadow-xl active:scale-95 transition-transform flex flex-col items-center gap-2">
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
                         <span class="text-sm uppercase tracking-wider">Guías</span>
                     </button>
@@ -5115,6 +5139,18 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             TOOLS
         </button>
     </nav>
+
+    <!-- [v2.8.277] CHIP "FALTA TERMINAR" — persistente mientras haya un borrador con productos.
+         Vive fuera del módulo (z-[45] < modales z-[70]) para que el cajero lo vea desde Ventas. -->
+    <button v-if="guiaDraftsVivos.length && !modoGuias && !modoRecibirWH && config.completado && dispositivoAutorizado === true"
+            @click="abrirGuiasBorrador()" data-gd-chip
+            class="gd-chip fixed right-3 bottom-[76px] z-[45] flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-2xl active:scale-95 transition-transform">
+        <span class="text-lg gd-latido">📋</span>
+        <span class="text-left leading-tight">
+            <span class="block text-[11px] font-black text-white">{{ guiaDraftsVivos.length === 1 ? 'Guía a medio hacer' : guiaDraftsVivos.length + ' guías a medio hacer' }}</span>
+            <span class="block text-[10px] font-bold text-amber-50/90">{{ guiaDraftsVivos[0].etiqueta }} · {{ guiaDraftsVivos[0].nItems }} prod. · toca para terminar</span>
+        </span>
+    </button>
 
     <!-- POPOVERS & TOASTS (IGUAL A LA v1) -->
     <div v-if="popover.visible" class="fixed inset-0 bg-gray-900 bg-opacity-70 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" @click.self="popover.visible=false">
@@ -7077,7 +7113,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             </div>
             <div class="flex items-center gap-2">
                 <button v-if="guiaFlujo === 'form'" @click="guiaFlujo = 'tipo'" class="bg-white/20 text-white font-black text-xs px-3 py-1.5 rounded-lg">← Volver</button>
-                <button @click="cerrarGuias" class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
+                <button @click="cerrarGuias" data-guia-cerrar class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
             </div>
         </div>
 
@@ -7089,6 +7125,51 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 Historial
                 <span v-if="trasladosPendientes.length" class="absolute top-1 right-1 w-2 h-2 bg-amber-400 rounded-full"></span>
             </button>
+        </div>
+
+        <!-- [v2.8.277] AVISO DE RETOMA — aparece cuando se restauró un borrador de HOY -->
+        <div v-if="guiaDraftAviso && guiaDraftAviso.tipo !== 'RECIBIR'" class="gd-aviso mx-3 mt-2 rounded-2xl px-3 py-2.5 flex items-center gap-2.5 shrink-0" data-gd-aviso>
+            <span class="text-xl gd-latido shrink-0">📋</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-white font-black text-xs leading-tight">Retomamos tu guía a medio hacer</p>
+                <p class="text-amber-100/90 text-[11px] font-bold truncate">{{ guiaDraftAviso.etiqueta }} · {{ guiaDraftAviso.nItems }} producto(s) · {{ guiaDraftAviso.hace }}</p>
+                <p v-if="guiaDraftAviso.alertas" class="text-rose-300 text-[10px] font-black mt-0.5">⚠ {{ guiaDraftAviso.alertas }} línea(s) cambiaron · revísalas</p>
+            </div>
+            <button v-if="guiaDraftDescartando !== guiaDraftAviso.tipo" @click="guiaDraftPedirDescartar(guiaDraftAviso.tipo)"
+                    class="text-[10px] font-black text-gray-200 bg-white/10 px-2.5 py-2 rounded-lg active:scale-95 shrink-0">Descartar</button>
+            <template v-else>
+                <button @click="guiaDraftDescartarConfirmado()" data-gd-descartar-si class="text-[10px] font-black text-white bg-rose-600 px-2.5 py-2 rounded-lg active:scale-95 shrink-0">Sí, descartar</button>
+                <button @click="guiaDraftCancelarDescartar()" class="text-[10px] font-black text-gray-200 bg-white/10 px-2 py-2 rounded-lg active:scale-95 shrink-0">No</button>
+            </template>
+            <button @click="guiaDraftCerrarAviso()" class="w-7 h-7 rounded-full bg-white/10 text-white font-black text-xs shrink-0">✕</button>
+        </div>
+
+        <!-- [v2.8.277] BANDEJA FLOTANTE "📋 N en curso" — un tap retoma cualquiera de los 3 tipos -->
+        <div v-if="guiaDraftsVivos.length || guiaDraftsEnVuelo.length" class="mx-3 mt-2 shrink-0" data-gd-bandeja>
+            <button @click="guiaDraftToggleBandeja()" data-gd-bandeja-btn
+                    class="w-full gd-bandeja-btn rounded-xl px-3 py-2 flex items-center gap-2 active:scale-[.99] transition-transform">
+                <span class="text-base gd-latido">📋</span>
+                <span class="text-[11px] font-black text-amber-200 uppercase tracking-wider">{{ guiaDraftsVivos.length + guiaDraftsEnVuelo.length }} en curso</span>
+                <span class="ml-auto text-[10px] font-black text-gray-400">{{ guiaDraftBandeja ? '▲ ocultar' : '▼ ver' }}</span>
+            </button>
+            <div v-if="guiaDraftBandeja" class="mt-1.5 space-y-1.5">
+                <div v-for="d in guiaDraftsVivos" :key="'gdv-' + d.tipo" @click="guiaDraftRetomar(d.tipo)" :data-gd-fila="d.tipo"
+                     class="gd-fila rounded-xl px-3 py-2 flex items-center gap-3 active:scale-[.99] transition-transform cursor-pointer">
+                    <span class="text-lg shrink-0">{{ d.tipo === 'SALIDA' ? '↓' : d.tipo === 'ENTRADA' ? '↑' : '📥' }}</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white font-black text-xs truncate">{{ d.etiqueta }}<span v-if="d.reintento" class="ml-1.5 text-[9px] font-black bg-rose-600 text-white px-1.5 py-0.5 rounded uppercase">reenviar</span></p>
+                        <p class="text-gray-400 text-[10px] font-bold truncate">{{ d.nItems }} producto(s) · {{ d.nUnid }} unid. · {{ d.zona }} · {{ d.hace }}</p>
+                    </div>
+                    <span class="text-[10px] font-black text-amber-300 shrink-0">Retomar →</span>
+                </div>
+                <div v-for="d in guiaDraftsEnVuelo" :key="'gde-' + d.tipo" class="gd-fila-vuelo rounded-xl px-3 py-2 flex items-center gap-3">
+                    <span class="text-lg shrink-0">⏳</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white font-black text-xs truncate">{{ d.etiqueta }}</p>
+                        <p class="text-blue-300/80 text-[10px] font-bold truncate">Enviándose · {{ d.nItems }} producto(s) · no la vuelvas a armar</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- TAB: SALIDA — selector de subtipo / formulario -->
@@ -7149,17 +7230,18 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <div class="flex-1 space-y-2 overflow-y-auto">
                     <!-- [v2.8.30] Contador en vivo (réplica WH) -->
                     <div v-if="guiaItems.length" class="flex items-center justify-between px-1 pb-1 sticky top-0 z-10">
-                        <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}</span>
+                        <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}<span v-if="guiaDraftSello" class="gd-sello ml-2" data-gd-sello>☁ guardado</span></span>
                         <span class="text-[11px] font-black text-gray-400">{{ guiaTotalUnidades }} unid.</span>
                     </div>
                     <div v-for="(item, idx) in guiaItems" :key="idx"
                          :data-guia-row="item.cod_barras"
                          class="bg-gray-800 rounded-xl px-3 py-2.5 transition-all relative"
-                         :class="[guiaSubtipo === 'SALIDA_DEVOLUCION_WH' && item.estadoDev && item.estadoDev !== 'BUEN_ESTADO' ? 'ring-2 ring-rose-500/40 bg-gradient-to-br from-gray-800 to-rose-950/30' : '', item.cod_barras === guiaFreshCb ? 'g-slide-in' : '']">
+                         :class="[guiaSubtipo === 'SALIDA_DEVOLUCION_WH' && item.estadoDev && item.estadoDev !== 'BUEN_ESTADO' ? 'ring-2 ring-rose-500/40 bg-gradient-to-br from-gray-800 to-rose-950/30' : '', item.cod_barras === guiaFreshCb ? 'g-slide-in' : '', guiaDraftFresh.includes(item.cod_barras) ? 'g-draft-in' : '', item.draftAlerta ? 'ring-1 ring-rose-500/50' : '']">
                         <div class="flex items-center gap-3">
                             <div class="flex-1 min-w-0">
                                 <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
                                 <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }} · Stock: {{ item.stockActual !== null ? item.stockActual : '?' }}</p>
+                                <p v-if="item.draftAlerta" class="gd-alerta" data-gd-alerta>⚠ {{ item.draftAlerta }}</p>
                             </div>
                             <div class="flex items-center gap-1.5">
                                 <button @click="item._cantidadStr = null; item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
@@ -7287,15 +7369,16 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <div class="flex-1 space-y-2 overflow-y-auto">
                     <!-- [v2.8.30] Contador en vivo (réplica WH) -->
                     <div v-if="guiaItems.length" class="flex items-center justify-between px-1 pb-1 sticky top-0 z-10">
-                        <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}</span>
+                        <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}<span v-if="guiaDraftSello" class="gd-sello ml-2" data-gd-sello>☁ guardado</span></span>
                         <span class="text-[11px] font-black text-gray-400">{{ guiaTotalUnidades }} unid.</span>
                     </div>
                     <div v-for="(item, idx) in guiaItems" :key="idx" :data-guia-row="item.cod_barras"
                          class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5 relative transition-all"
-                         :class="item.cod_barras === guiaFreshCb ? 'g-slide-in' : ''">
+                         :class="[item.cod_barras === guiaFreshCb ? 'g-slide-in' : '', guiaDraftFresh.includes(item.cod_barras) ? 'g-draft-in' : '', item.draftAlerta ? 'ring-1 ring-rose-500/50' : '']">
                         <div class="flex-1 min-w-0">
                             <p class="text-white font-bold text-sm truncate">{{ item.nombre }}<span v-if="item.unidadMedida === 'KGM'" class="ml-1 inline-block bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase align-middle">⚖️ kg</span></p>
                             <p class="text-gray-500 text-xs font-mono">{{ item.cod_barras }}</p>
+                            <p v-if="item.draftAlerta" class="gd-alerta" data-gd-alerta>⚠ {{ item.draftAlerta }}</p>
                         </div>
                         <div class="flex items-center gap-1.5">
                             <button @click="item._cantidadStr = null; item.cantidad = parseFloat(Math.max(0.01, item.cantidad - (item.unidadMedida === 'KGM' ? 0.1 : 1)).toFixed(3))" class="w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-center">-</button>
@@ -7466,7 +7549,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <p class="text-white font-black text-base uppercase tracking-widest leading-none">Recibir guía · {{ guiaZona }}</p>
                 <p class="text-emerald-100 text-xs mt-0.5">{{ rwGuia ? ('Guía ' + rwGuia.idGuiaWH) : 'Escanea el código de la guía de almacén' }}</p>
             </div>
-            <button @click="cerrarRecibirWH" class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
+            <button @click="cerrarRecibirWH" data-rw-cerrar class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black text-lg">✕</button>
         </div>
 
         <!-- PASO A: escanear / teclear el idGuiaWH -->
@@ -7499,6 +7582,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <div v-if="rwGuia && rwGuia.verificada" class="bg-amber-900/40 border border-amber-600/50 rounded-lg px-3 py-2 text-[11px] text-amber-200 font-bold">
                     ⚠ Esta guía ya fue recibida antes. Si "Cerrar ingreso" no se reenviará (idempotente).
                 </div>
+                <!-- [v2.8.277] conteo retomado de un borrador de HOY -->
+                <div v-if="guiaDraftAviso && guiaDraftAviso.tipo === 'RECIBIR'" class="gd-aviso rounded-lg px-3 py-2 flex items-center gap-2.5" data-gd-aviso-rw>
+                    <span class="text-lg gd-latido shrink-0">📋</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white font-black text-[11px] leading-tight">Retomamos tu conteo a medio hacer</p>
+                        <p class="text-amber-100/90 text-[10px] font-bold truncate">{{ guiaDraftAviso.nItems }} producto(s) · {{ guiaDraftAviso.hace }}</p>
+                    </div>
+                    <button v-if="guiaDraftDescartando !== 'RECIBIR'" @click="guiaDraftPedirDescartar('RECIBIR')" class="text-[10px] font-black text-gray-200 bg-white/10 px-2 py-1.5 rounded-lg active:scale-95 shrink-0">Descartar</button>
+                    <button v-else @click="guiaDraftDescartarConfirmado()" class="text-[10px] font-black text-white bg-rose-600 px-2 py-1.5 rounded-lg active:scale-95 shrink-0">Sí, descartar</button>
+                    <button @click="guiaDraftCerrarAviso()" class="w-6 h-6 rounded-full bg-white/10 text-white font-black text-[10px] shrink-0">✕</button>
+                </div>
                 <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-lg px-3 py-2 text-[11px] text-emerald-300 font-bold text-center">
                     Paso 2 de 2 · Escanea los productos <b>uno tras otro</b>. La cámara queda abierta y la lista crece sola.
                 </div>
@@ -7521,7 +7615,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             </div>
             <div class="flex-1 overflow-y-auto p-3 space-y-2">
                 <p v-if="!rwEscaneadosArr.length" class="text-gray-600 text-center py-10 text-sm">Escanea o teclea un código para empezar a contar.</p>
-                <div v-for="(item, idx) in rwEscaneadosArr" :key="item.codBarra" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
+                <div v-for="(item, idx) in rwEscaneadosArr" :key="item.codBarra" :data-rw-row="item.codBarra" class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5">
                     <div class="flex-1 min-w-0">
                         <p class="text-white font-bold text-sm truncate">{{ item.descripcion }}</p>
                         <p class="text-gray-500 text-xs font-mono">{{ item.codBarra }}</p>
@@ -7859,6 +7953,13 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     const v = localStorage.getItem(k);
                     if (v) _backup[k] = v;
                   });
+                  // [v2.8.277] los borradores de guía (trabajo sin enviar) también se respaldan
+                  try {
+                    for (let _i = 0; _i < localStorage.length; _i++) {
+                      const _k = localStorage.key(_i);
+                      if (_k && _k.lastIndexOf('mosexpress_guia_draft_', 0) === 0) _backup[_k] = localStorage.getItem(_k);
+                    }
+                  } catch(_) {}
                   localStorage.clear();
                   Object.keys(_backup).forEach(k => {
                     try { localStorage.setItem(k, _backup[k]); } catch(_){}
@@ -9117,8 +9218,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             nextTick(() => { try { ctx.run(); } catch(_){} });
         };
 
-        // ── Reloj de inactividad del flujo de guía (5 min → cerrar todo y volver a ventas) ──
-        const GUIA_INACTIVIDAD_MS = 5 * 60 * 1000;
+        // ── Reloj de inactividad del flujo de guía (2 h → cerrar todo y volver a ventas) ──
+        // [v2.8.277] El dueño lo subió de 5 min a 2 HORAS: cerrar el flujo a los 5 min mientras
+        // el cajero atendía una cola dejaba la guía olvidada. Ahora, además, al cerrarse el flujo
+        // el borrador queda guardado y el chip "📋 falta terminar" lo recuerda desde Ventas.
+        const GUIA_INACTIVIDAD_MS = 2 * 60 * 60 * 1000;
         let _guiaInactivTimer = null;
         const _cerrarTodoFlujoGuia = (porInactividad) => {
             try {
@@ -9128,6 +9232,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             } catch(_){}
             currentModule.value = 'POS'; // todos los caminos vuelven a VENTAS — ahí el scan es de venta
             if (porInactividad) {
+                // [v2.8.277] el trabajo NO se pierde: se fuerza el guardado y el chip lo recuerda.
+                let _gdPend = 0;
+                try { _gdGuardarYa(); _gdPend = (guiaDraftsVivos.value || []).length; } catch(_){}
+                if (_gdPend) {
+                    try { agregarToast('📋 Te falta terminar una guía', 'La guardamos. Toca el chip 📋 para retomarla cuando puedas.', 'warning', 9000); } catch(_){}
+                }
                 try { agregarToast('Guía cerrada por inactividad', 'Volviste a Ventas. El escaneo ahora suma a la venta.', 'info', 5000); } catch(_){}
                 nextTick(() => { try { if (scannerInput.value) scannerInput.value.focus({ preventScroll: true }); } catch(_){} });
             }
@@ -10295,6 +10405,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
               try { agregarToast('🌙 Nuevo día', 'La sesión de ayer se cerró. Iniciá sesión para empezar el día.', 'info', 5000); } catch(_){}
           }
           if (config.value.completado && config.value.vendedor) _cargarAuditHoy();
+          // [v2.8.277] el chip "📋 falta terminar" debe verse desde Ventas, sin abrir Guías.
+          if (config.value.completado && config.value.vendedor) {
+              try { guiaZona.value = guiaZona.value || config.value.zona || ''; _gdRefrescarVivos(); } catch(_){}
+          }
           // [v2.8.9] Reanudar el pulso de presencia si se restauró una sesión activa
           // (reload de la PWA con turno ya iniciado). Se detiene al cerrar sesión.
           // [v2.8.191] mosexpress_boot_es_login (one-shot): la retoma con PIN y el
@@ -15190,6 +15304,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             lsSet('mosexpress_session_date', new Date().toDateString());
             lsSet('mosexpress_session_dia', _meDiaLima());   // [v2.8.191] día de negocio en TZ Perú (canónico)
             _cargarAuditHoy();
+            try { guiaZona.value = guiaZona.value || config.value.zona || ''; _gdRefrescarVivos(); } catch(_){}   // [v2.8.277]
 
             // [CERO-GAS] Push "vendedor conectado" a master+admin vía Edge `push` (antes GAS
             // notificarInicioSesionVendedor). esCajero=true → se omite (la apertura de caja ya avisa).
@@ -22002,6 +22117,333 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             } catch(e) { console.warn('Error cargando stock zonas', e); }
         };
 
+        // ════════════════════════════════════════════════════════════════════════════
+        // [v2.8.277] BORRADORES PERSISTENTES DE GUÍAS — el trabajo a medio hacer no se pierde
+        // ────────────────────────────────────────────────────────────────────────────
+        // Clave:  mosexpress_guia_draft_<TIPO>_<ZONA>_<VENDEDOR>   ·  TIPO = SALIDA | ENTRADA | RECIBIR
+        // JSON:   { v, tipo, subtipo, zona, zonaDestino, obs, items[], guiaWH, fecha, tocadoEn,
+        //           envio: null | { idGuia, localId, ts, items[] }, reintento }
+        // LEYES (decisiones del dueño):
+        //  1. El borrador es un ESPEJO del formulario. JAMÁS es fuente de verdad de stock/venta/cobro.
+        //  2. UNO por tipo: los tres coexisten; dentro de un tipo el nuevo reemplaza al anterior.
+        //  3. Muere al final del día (fecha local, mismo criterio que la auditoría). Uno de ayer NO se
+        //     restaura.
+        //  4. Solo se borra cuando su guía se CONFIRMA con éxito en el servidor, o cuando el usuario
+        //     la descarta a mano (con confirmación, nunca automático).
+        //  5. ANTIDUPLICADO: antes de confirmar, el borrador queda marcado `envio` con el idGuia
+        //     idempotente. Al reabrir NO se ofrece a ciegas: se contrasta contra el historial REAL
+        //     del servidor (zona_guias_listar vía listarGuiasHistorial). Ver _gdResolverEnvios.
+        //  6. Las fotos de devolución NO se persisten (cuota de localStorage): la línea se marca
+        //     "vuelve a tomar la foto" y el gate puedeConfirmarDevolucion sigue exigiéndola.
+        // ════════════════════════════════════════════════════════════════════════════
+        const GD_PFX   = 'mosexpress_guia_draft_';
+        const GD_TIPOS = ['SALIDA', 'ENTRADA', 'RECIBIR'];
+        const GD_ETIQ  = {
+            SALIDA_JEFA:          'Pedido de jefa',
+            SALIDA_MOVIMIENTO:    'Movimiento a otra zona',
+            SALIDA_DEVOLUCION_WH: 'Devolución al almacén',
+            ENTRADA_ALMACEN:      'Entrada de almacén',
+            ENTRADA_LIBRE:        'Ingreso libre',
+            RECIBIR_WH:           'Recibir guía de almacén'
+        };
+        // Un POST de guía reintenta hasta 3 veces con backoff (~70s peor caso). Antes de ese
+        // umbral un borrador marcado `envio` NO se ofrece como retomable: todavía puede llegar.
+        const GD_MIN_VUELO_MS = 90 * 1000;
+
+        const guiaDraftsVivos      = ref([]);   // retomables: de HOY, con productos y sin envío en vuelo
+        const guiaDraftsEnVuelo    = ref([]);   // marcados `envio` y todavía sin resolver
+        const guiaDraftAviso       = ref(null); // banner tras retomar
+        const guiaDraftBandeja     = ref(false);
+        const guiaDraftDescartando = ref('');   // tipo con confirmación de descarte abierta
+        const guiaDraftSello       = ref(false);// sello "☁ guardado"
+        const guiaDraftFresh       = ref([]);   // códigos con animación de entrada al retomar
+        let _gdTimer = null, _gdSelloTimer = null, _gdFreshTimer = null;
+        let _gdHistFreshAt = 0;                 // ts de la última respuesta REAL de zona_guias_listar
+
+        const _gdHoy = () => new Date().toDateString();
+        const _gdKey = (tipo) => GD_PFX + tipo + '_' + (guiaZona.value || '-') + '_' + (config.value.vendedor || '-');
+        // El TIPO sale del SUBTIPO, no del tab: cambiar de tab no mueve los items de sitio.
+        const _gdTipoDeSubtipo = (s) => { const t = String(s || ''); return t.indexOf('SALIDA') === 0 ? 'SALIDA' : (t.indexOf('ENTRADA') === 0 ? 'ENTRADA' : null); };
+        const _gdLeer = (tipo) => {
+            try {
+                const raw = localStorage.getItem(_gdKey(tipo));
+                if (!raw) return null;
+                const o = JSON.parse(raw);
+                return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null;
+            } catch(_) { return null; }
+        };
+        const _gdEscribir = (tipo, obj) => { try { return lsSet(_gdKey(tipo), JSON.stringify(obj)); } catch(_) { return false; } };
+        const _gdBorrar   = (tipo) => { try { localStorage.removeItem(_gdKey(tipo)); } catch(_){} };
+
+        const guiaDraftHace = (ts) => {
+            const s = Math.max(0, Math.round((Date.now() - (Number(ts) || 0)) / 1000));
+            if (s < 60) return 'recién';
+            const m = Math.round(s / 60);
+            if (m < 60) return 'hace ' + m + ' min';
+            const h = Math.floor(m / 60);
+            return 'hace ' + h + ' h' + ((m % 60) ? ' ' + (m % 60) + ' min' : '');
+        };
+
+        // Copia serializable: sin el buffer de tipeo y SIN la foto (dataURL pesado → cuota).
+        const _gdLimpiarItems = (arr) => (arr || []).map(i => {
+            const o = Object.assign({}, i);
+            delete o._cantidadStr;
+            delete o.draftAlerta;
+            if (o.fotoDev) { o.fotoDev = ''; o.fotoPerdida = true; }
+            return o;
+        });
+
+        const _gdResumen = (tipo, d) => {
+            const e   = d.envio || null;
+            const its = (d.items && d.items.length) ? d.items : ((e && e.items) || []);
+            const sub = d.subtipo || (e && e.subtipo) || (tipo === 'RECIBIR' ? 'RECIBIR_WH' : '');
+            const un  = its.reduce((a, i) => a + (parseFloat(i.cantidad) || 0), 0);
+            return {
+                tipo: tipo, subtipo: sub, etiqueta: GD_ETIQ[sub] || tipo,
+                zona: d.zona || guiaZona.value || '', nItems: its.length,
+                nUnid: Number.isInteger(un) ? String(un) : parseFloat(un.toFixed(3)).toString(),
+                tocadoEn: d.tocadoEn || 0, hace: guiaDraftHace(d.tocadoEn || 0),
+                reintento: !!d.reintento, enVuelo: !!e
+            };
+        };
+
+        // Relee los 3 tipos: descarta silenciosamente los de otro día (sin envío) y arma la bandeja.
+        const _gdRefrescarVivos = () => {
+            const vivos = [], vuelo = [];
+            GD_TIPOS.forEach(t => {
+                const d = _gdLeer(t);
+                if (!d) return;
+                if (d.envio) { vuelo.push(_gdResumen(t, d)); return; }
+                if (d.fecha !== _gdHoy()) { _gdBorrar(t); return; }
+                if ((d.items || []).length) vivos.push(_gdResumen(t, d));
+                else _gdBorrar(t);
+            });
+            vivos.sort((a, b) => b.tocadoEn - a.tocadoEn);
+            guiaDraftsVivos.value   = vivos;
+            guiaDraftsEnVuelo.value = vuelo;
+        };
+
+        const _gdPersistir = (tipo, campos) => {
+            const prev  = _gdLeer(tipo);
+            const envio = (prev && prev.envio) ? prev.envio : null;
+            const items = campos.items || [];
+            if (!items.length && !envio) { _gdBorrar(tipo); return; }
+            const ok = _gdEscribir(tipo, {
+                v: 1, tipo: tipo, subtipo: campos.subtipo || '', zona: guiaZona.value || '',
+                zonaDestino: campos.zonaDestino || '', obs: campos.obs || '', items: items,
+                guiaWH: campos.guiaWH || (prev && prev.guiaWH) || null,
+                fecha: _gdHoy(), tocadoEn: Date.now(), envio: envio, reintento: false
+            });
+            if (!ok || !items.length) return;
+            guiaDraftSello.value = true;
+            if (_gdSelloTimer) clearTimeout(_gdSelloTimer);
+            _gdSelloTimer = setTimeout(() => { guiaDraftSello.value = false; }, 2200);
+        };
+
+        // Guardado inmediato (lo usan el debounce, el cierre del módulo y pagehide/F5).
+        const _gdGuardarYa = () => {
+            if (_gdTimer) { clearTimeout(_gdTimer); _gdTimer = null; }
+            try {
+                if (!config.value.vendedor || !guiaZona.value) return;
+                if (modoGuias.value && guiaFlujo.value === 'form') {
+                    const tipo = _gdTipoDeSubtipo(guiaSubtipo.value);
+                    if (tipo) _gdPersistir(tipo, {
+                        subtipo: guiaSubtipo.value,
+                        zonaDestino: guiaZonaDestino.value || '',
+                        obs: guiaObs.value || '',
+                        items: _gdLimpiarItems(guiaItems.value)
+                    });
+                }
+                if (modoRecibirWH.value && rwPaso.value === 'escaneo' && rwGuia.value) {
+                    _gdPersistir('RECIBIR', {
+                        subtipo: 'RECIBIR_WH', zonaDestino: '', obs: '',
+                        items: (rwEscaneadosArr.value || []).map(i => ({ codBarra: i.codBarra, descripcion: i.descripcion, cantidad: i.cantidad })),
+                        guiaWH: rwGuia.value
+                    });
+                }
+            } catch(e) { console.warn('[gd] guardar', e); }
+            try { _gdRefrescarVivos(); } catch(_){}
+        };
+        const _gdAutoguardar = () => {
+            if (_gdTimer) clearTimeout(_gdTimer);
+            _gdTimer = setTimeout(_gdGuardarYa, 400);
+        };
+
+        // Al retomar: el catálogo pudo cambiar. Se MARCA la línea, nunca se rompe la lista.
+        const _gdRevalidar = (items) => {
+            let tocados = 0;
+            const out = (items || []).map(i => {
+                const o   = Object.assign({}, i);
+                const cod = String(o.cod_barras || '');
+                const pres = (db.value.PRESENTACIONES || []).find(p => String(p.Cod_Barras) === cod);
+                if (!pres) {
+                    const eq = (db.value.EQUIVALENCIAS || []).find(x => String(x.Cod_Alias) === cod);
+                    if (!eq) { o.draftAlerta = 'Ya no está en el catálogo · verifica el código'; tocados++; }
+                } else {
+                    const base = (db.value.PRODUCTO_BASE || []).find(b => b.SKU_Base === pres.SKU_Base);
+                    const nom  = (base ? base.Nombre : pres.SKU_Base) + ' · ' + pres.Empaque;
+                    if (o.nombre && nom !== o.nombre) { o.nombre = nom; o.draftAlerta = 'El producto cambió de nombre'; tocados++; }
+                    try { o.stockActual = stockMap.value[cod + '_' + guiaZona.value] ?? null; } catch(_){}
+                }
+                if (o.fotoPerdida) { o.fotoPerdida = false; o.fotoDev = ''; o.draftAlerta = 'Vuelve a tomar la foto'; tocados++; }
+                return o;
+            });
+            return { items: out, tocados: tocados };
+        };
+
+        const _gdRestaurar = (tipo) => {
+            const d = _gdLeer(tipo);
+            if (!d || d.envio || d.fecha !== _gdHoy() || !(d.items || []).length) return false;
+            let alertas = 0;
+            if (tipo === 'RECIBIR') {
+                if (!d.guiaWH) return false;
+                rwGuia.value   = d.guiaWH;
+                rwIdGuia.value = d.guiaWH.idGuiaWH || '';
+                rwEscaneadosArr.value = d.items.map(i => Object.assign({}, i));
+                rwPaso.value = 'escaneo';
+            } else {
+                const rev = _gdRevalidar(d.items);
+                alertas = rev.tocados;
+                guiaTab.value         = (tipo === 'SALIDA') ? 'salida' : 'entrada';
+                guiaSubtipo.value     = d.subtipo || '';
+                guiaZonaDestino.value = d.zonaDestino || '';
+                guiaObs.value         = d.obs || '';
+                guiaItems.value       = rev.items;
+                guiaFlujo.value       = 'form';
+            }
+            const r = _gdResumen(tipo, d);
+            guiaDraftAviso.value = { tipo: tipo, etiqueta: r.etiqueta, nItems: r.nItems, hace: r.hace, alertas: alertas };
+            guiaDraftDescartando.value = '';
+            guiaDraftFresh.value = (d.items || []).map(i => String(i.cod_barras || i.codBarra || ''));
+            if (_gdFreshTimer) clearTimeout(_gdFreshTimer);
+            _gdFreshTimer = setTimeout(() => { guiaDraftFresh.value = []; }, 800);
+            try { if (navigator.vibrate) navigator.vibrate([12, 40, 12]); } catch(_){}
+            try { playBeepOK?.(); } catch(_){}
+            return true;
+        };
+
+        // Al abrir el módulo NO se limpia a ciegas: se retoma el borrador de HOY más reciente.
+        const _gdAutoRestaurarAlAbrir = () => {
+            const cand = (guiaDraftsVivos.value || []).filter(d => d.tipo === 'SALIDA' || d.tipo === 'ENTRADA');
+            if (!cand.length) return false;
+            return _gdRestaurar(cand[0].tipo);
+        };
+
+        // ── ANTIDUPLICADO ───────────────────────────────────────────────────────────
+        const _gdMarcarEnviando = (tipo, envio) => {
+            if (!tipo) return;
+            try {
+                const prev = _gdLeer(tipo) || {};
+                _gdEscribir(tipo, {
+                    v: 1, tipo: tipo, subtipo: envio.subtipo || prev.subtipo || '',
+                    zona: envio.zona || guiaZona.value || '', zonaDestino: envio.zonaDestino || '',
+                    obs: envio.obs || '', items: [], guiaWH: envio.guiaWH || null,
+                    fecha: _gdHoy(), tocadoEn: Date.now(), reintento: false,
+                    envio: { idGuia: envio.idGuia || '', localId: envio.localId || '', ts: Date.now(), items: _gdLimpiarItems(envio.items || []) }
+                });
+            } catch(e) { console.warn('[gd] marcar enviando', e); }
+            try { _gdRefrescarVivos(); } catch(_){}
+        };
+        const _gdLimpiarEnvio = (tipo) => {
+            const d = _gdLeer(tipo);
+            if (!d) return;
+            if ((d.items || []).length) { d.envio = null; _gdEscribir(tipo, d); }
+            else _gdBorrar(tipo);
+        };
+        // La guía se confirmó en el servidor → el borrador ya cumplió su función.
+        const _gdConfirmarEnviado = (idGuia) => {
+            try {
+                GD_TIPOS.forEach(t => {
+                    const d = _gdLeer(t);
+                    if (!d || !d.envio) return;
+                    if (String(d.envio.idGuia) !== String(idGuia)) return;
+                    _gdLimpiarEnvio(t);
+                });
+                _gdRefrescarVivos();
+            } catch(e) { console.warn('[gd] confirmar', e); }
+        };
+        // El envío NO llegó al servidor → el contenido vuelve a ser un borrador retomable.
+        const _gdEnvioARetomable = (tipo, d) => {
+            const e = d.envio || {};
+            const items = ((d.items || []).length ? d.items : (e.items || []));
+            if (!items.length) { _gdBorrar(tipo); return; }
+            _gdEscribir(tipo, {
+                v: 1, tipo: tipo, subtipo: d.subtipo || e.subtipo || (tipo === 'RECIBIR' ? 'RECIBIR_WH' : ''),
+                zona: d.zona || guiaZona.value || '', zonaDestino: d.zonaDestino || '', obs: d.obs || '',
+                items: items, guiaWH: d.guiaWH || null, fecha: _gdHoy(), tocadoEn: Date.now(),
+                envio: null, reintento: true
+            });
+        };
+        // Resuelve TODO borrador marcado `envio` contra la realidad del servidor. Nunca se ofrece
+        // a ciegas: sin respuesta del servidor el borrador se queda quieto marcado "⏳ enviándose".
+        const _gdResolverEnvios = async () => {
+            const pend = [];
+            GD_TIPOS.forEach(t => { const d = _gdLeer(t); if (d && d.envio) pend.push({ t: t, d: d }); });
+            if (!pend.length) return;
+            const antes = _gdHistFreshAt;
+            try { await listarGuiasHistorial(); } catch(_){}
+            const fresco = _gdHistFreshAt > antes;          // ¿el servidor respondió de verdad?
+            const hist   = guiaHistorial.value || [];
+            pend.forEach(p => {
+                const e = p.d.envio || {};
+                // RECIBIR: recibir_guia_wh_cerrar es idempotente por guía WH → retomar no duplica.
+                if (p.t === 'RECIBIR') {
+                    if (p.d.fecha !== _gdHoy()) { _gdBorrar(p.t); return; }
+                    _gdEnvioARetomable(p.t, p.d);
+                    return;
+                }
+                // registrar_guia_directo devuelve el MISMO idGuia que mandamos (idempotente por él),
+                // así que el historial real es la prueba de existencia.
+                if (hist.some(g => String(g.id_guia) === String(e.idGuia))) { _gdLimpiarEnvio(p.t); return; }
+                if (Date.now() - (e.ts || 0) < GD_MIN_VUELO_MS) return;   // aún puede estar reintentando
+                if (!fresco) return;                                      // sin verdad del servidor: no se toca
+                if (p.d.fecha !== _gdHoy()) {
+                    _gdBorrar(p.t);
+                    try { agregarToast('⚠ Una guía de ayer no se registró', ((e.items || []).length) + ' producto(s) · avísale al admin', 'warning', 9000); } catch(_){}
+                    return;
+                }
+                _gdEnvioARetomable(p.t, p.d);
+                try { agregarToast('La guía no llegó al servidor', 'Quedó lista para rehacerla en 📋 en curso', 'warning', 9000); } catch(_){}
+            });
+            try { _gdRefrescarVivos(); } catch(_){}
+        };
+
+        // ── API del template ────────────────────────────────────────────────────────
+        const guiaDraftToggleBandeja = () => { _gdRefrescarVivos(); guiaDraftBandeja.value = !guiaDraftBandeja.value; };
+        const guiaDraftCerrarAviso   = () => { guiaDraftAviso.value = null; guiaDraftDescartando.value = ''; };
+        const guiaDraftCancelarDescartar = () => { guiaDraftDescartando.value = ''; };
+        const guiaDraftPedirDescartar    = (tipo) => { guiaDraftDescartando.value = tipo; };
+        const guiaDraftRetomar = (tipo) => {
+            guiaDraftBandeja.value = false;
+            if (tipo === 'RECIBIR') { try { abrirRecibirWH(); } catch(_){} return; }
+            _gdRestaurar(tipo);
+        };
+        const guiaDraftDescartarConfirmado = () => {
+            const tipo = guiaDraftDescartando.value;
+            if (!tipo) return;
+            _gdBorrar(tipo);
+            guiaDraftDescartando.value = '';
+            if (guiaDraftAviso.value && guiaDraftAviso.value.tipo === tipo) guiaDraftAviso.value = null;
+            if (tipo === 'RECIBIR') {
+                if (modoRecibirWH.value) { rwEscaneadosArr.value = []; rwGuia.value = null; rwIdGuia.value = ''; rwPaso.value = 'guia'; }
+            } else if (modoGuias.value && _gdTipoDeSubtipo(guiaSubtipo.value) === tipo) {
+                try { _resetGuiaForm(); } catch(_){}
+            }
+            _gdRefrescarVivos();
+            try { playWhooshGuia?.(); } catch(_){}
+            try { if (navigator.vibrate) navigator.vibrate([12, 30]); } catch(_){}
+            try { agregarToast('Borrador descartado', 'Empiezas de cero.', 'info', 3500); } catch(_){}
+        };
+        // Chip global "falta terminar" → abre el módulo (que ya retoma solo).
+        const abrirGuiasBorrador = async () => { try { await abrirGuias(); } catch(_){} };
+
+        // Autoguardado con debounce: cualquier cambio del formulario en curso baja a disco.
+        watch([modoGuias, modoRecibirWH, guiaFlujo, guiaSubtipo, guiaZonaDestino, guiaObs, guiaItems, rwPaso, rwEscaneadosArr],
+              () => { _gdAutoguardar(); }, { deep: true });
+        // F5 / cierre de pestaña: no esperar al debounce.
+        try { window.addEventListener('pagehide', () => { try { _gdGuardarYa(); } catch(_){} }); } catch(_){}
+        try { window.addEventListener('beforeunload', () => { try { _gdGuardarYa(); } catch(_){} }); } catch(_){}
+
         const _resetGuiaForm = () => {
             guiaItems.value = [];
             guiaBusq.value = '';
@@ -22021,11 +22463,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             guiaTab.value = 'salida';
             guiaZona.value = config.value.zona || (zonasUnicas.value[0] || '');
             _resetGuiaForm();
+            // [v2.8.277] BORRADORES: el reset de arriba solo limpia la MEMORIA. Aquí se relee el
+            //   disco, se descartan los de otro día y se RETOMA el de hoy más reciente.
+            guiaDraftAviso.value = null; guiaDraftDescartando.value = ''; guiaDraftBandeja.value = false;
+            try { _gdRefrescarVivos(); _gdAutoRestaurarAlAbrir(); } catch(e) { console.warn('[gd] abrir', e); }
             listarGuiasHistorial(); // precarga historial mientras el usuario opera en salida/entrada
+            try { _gdResolverEnvios(); } catch(_){}   // antiduplicado de borradores marcados `envio`
             await cargarStockZonas();
         };
 
         const cerrarGuias = () => {
+            try { _gdGuardarYa(); } catch(_){}   // [v2.8.277] el borrador baja a disco ANTES de salir
             modoGuias.value = false;
             if (camaraGuiaAbierta.value) toggleCamaraGuia();
         };
@@ -22036,6 +22484,19 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             if (subtipo === 'SALIDA_JEFA') guiaObs.value = 'Pedido de jefa';
             else if (subtipo === 'SALIDA_DEVOLUCION_WH') guiaObs.value = 'Devolución a almacén';
             else guiaObs.value = '';
+            // [v2.8.277] Limpiar los items aquí es CORRECTO (se empieza otra guía). Lo único que
+            //   se agrega es el aviso: dentro de un tipo solo vive UN borrador, así que si había
+            //   trabajo guardado de otro subtipo, el nuevo lo reemplaza y el cajero se entera.
+            try {
+                const _tAnt = _gdTipoDeSubtipo(subtipo);
+                const _prev = _tAnt ? _gdLeer(_tAnt) : null;
+                if (_prev && !_prev.envio && _prev.fecha === _gdHoy() && (_prev.items || []).length && _prev.subtipo !== subtipo) {
+                    agregarToast('Reemplazaste tu borrador', (GD_ETIQ[_prev.subtipo] || _prev.subtipo) + ' · ' + _prev.items.length + ' producto(s) quedó descartado', 'warning', 7000);
+                    _gdBorrar(_tAnt);
+                }
+                guiaDraftAviso.value = null; guiaDraftDescartando.value = '';
+                _gdRefrescarVivos();
+            } catch(e) { console.warn('[gd] subtipo', e); }
             guiaItems.value = [];
             guiaFlujo.value = 'form';
             try { playBeepSuave?.(); } catch(_){}
@@ -22207,9 +22668,14 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             rwResultado.value = null;
             rwBusq.value = '';
             rwCargando.value = false;
+            // [v2.8.277] BORRADORES: si hay un conteo de HOY sin cerrar, se retoma (no se vacía).
+            guiaDraftAviso.value = null; guiaDraftDescartando.value = '';
+            try { _gdRefrescarVivos(); _gdRestaurar('RECIBIR'); } catch(e) { console.warn('[gd] abrir rw', e); }
         };
 
         const cerrarRecibirWH = () => {
+            try { _gdGuardarYa(); } catch(_){}   // [v2.8.277] el conteo baja a disco ANTES de salir
+            if (guiaDraftAviso.value && guiaDraftAviso.value.tipo === 'RECIBIR') guiaDraftAviso.value = null;
             if (rwCamara.value) rwToggleCamara();
             modoRecibirWH.value = false;
         };
@@ -22301,6 +22767,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 .map(i => ({ codBarra: i.codBarra, cantidad: Number(i.cantidad) || 0 }))
                 .filter(i => i.cantidad > 0);
             if (!escaneados.length || !rwGuia.value) return;
+            // [v2.8.277] el conteo queda marcado `envio` (la RPC de cierre es idempotente por guía WH).
+            try { _gdMarcarEnviando('RECIBIR', { idGuia: 'WH:' + rwGuia.value.idGuiaWH, localId: '', subtipo: 'RECIBIR_WH', zona: guiaZona.value || '', guiaWH: rwGuia.value, items: rwEscaneadosArr.value }); } catch(_){}
             rwCargando.value = true;
             try {
                 const d = await _rwRpc('recibir_guia_wh_cerrar', {
@@ -22311,6 +22779,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 });
                 if (!d || !d.ok) { playBeepError(); agregarToast('Error', (d && d.error) || 'No se pudo cerrar el ingreso'); return; }
                 rwResultado.value = d.data;
+                // [v2.8.277] ingreso registrado → el borrador del conteo ya cumplió.
+                try { _gdBorrar('RECIBIR'); guiaDraftAviso.value = null; _gdRefrescarVivos(); } catch(_){}
                 rwPaso.value = 'resultado';
                 if (rwCamara.value) rwToggleCamara();
                 try { if (d.data.estado === 'COMPLETO') playBeepOK(); else if (navigator.vibrate) navigator.vibrate(60); } catch(_){}
@@ -22495,6 +22965,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                             const msg = d.idGuiaEntrada
                                 ? `${d.idGuia} + traslado a ${destinoSnap} confirmados`
                                 : `${d.idGuia} registrada`;
+                            // [v2.8.277] confirmación REAL del servidor → el borrador ya cumplió.
+                            try { _gdConfirmarEnviado(payload.idGuia); } catch(_){}
                             agregarToast('Guía sincronizada ✓', msg);
                             if (modoGuias.value) listarGuiasHistorial();
                         }
@@ -22603,6 +23075,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             guiaCelebraId.value = _localId;
             setTimeout(() => { if (guiaCelebraId.value === _localId) guiaCelebraId.value = null; }, 2400);
             agregarToast('Guía creada ✓', _esManualCiclo ? 'Abierta · ciérrala cuando termines de contar' : 'Registrando en segundo plano...', 'success');
+
+            // [v2.8.277] ANTIDUPLICADO: el borrador NO se borra aquí. Queda marcado `envio` con el
+            //   idGuia idempotente + una copia de los items. Solo _postGuiaBackground lo borra al
+            //   confirmar el servidor; si nunca confirma, al reabrir se contrasta con el historial.
+            try {
+                _gdMarcarEnviando(_gdTipoDeSubtipo(subtipoSnap), {
+                    idGuia: idGuiaSnap, localId: _localId, subtipo: subtipoSnap, zona: zonaSnap,
+                    zonaDestino: destinoSnap, obs: payload.observacion || '',
+                    items: guiaItems.value
+                });
+            } catch(e) { console.warn('[gd] confirmar guia', e); }
 
             // 3. Liberar el form inmediatamente — usuario puede agregar otra guía sin esperar
             _resetGuiaForm();
@@ -22719,6 +23202,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     if (r.ok && d && d.ok === true && Array.isArray(d.guias)) {
                         guiaHistorial.value = _mergeGuiasHistorial(d.guias);   // [v2.8.39] merge-guard
                         localStorage.setItem(cacheKey, JSON.stringify(guiaHistorial.value));
+                        _gdHistFreshAt = Date.now();   // [v2.8.277] el servidor respondió DE VERDAD
                     }
                 }
             } catch(e) { /* usa cache */ }
@@ -23436,6 +23920,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           guiaGruposPorDia, guiaContadores, guiaHora, esGuiaIngreso, esGuiaVentasAuto,
           guiaBuscarHistorial, setGuiaFiltro, deshacerQuitarItem,
           cerrarHoldStart, cerrarHoldEnd, esGuiaLocalEnVuelo: _esGuiaLocalEnVuelo,
+          // [v2.8.277] Borradores persistentes de guías (bandeja, chip, aviso, sello)
+          guiaDraftsVivos, guiaDraftsEnVuelo, guiaDraftAviso, guiaDraftBandeja,
+          guiaDraftDescartando, guiaDraftSello, guiaDraftFresh, guiaDraftHace,
+          guiaDraftRetomar, guiaDraftToggleBandeja, guiaDraftPedirDescartar,
+          guiaDraftCancelarDescartar, guiaDraftDescartarConfirmado, guiaDraftCerrarAviso,
+          abrirGuiasBorrador,
           // [BUILD 1] Recibir guía de almacén (WH→ME por escaneo)
           modoRecibirWH, rwPaso, rwIdGuia, rwGuia, rwEscaneadosArr, rwResultado, rwBusq, rwCargando, rwCamara, rwTotalEscaneado,
           abrirRecibirWH, cerrarRecibirWH, rwToggleCamara, rwCargarGuia, rwEscanearItem, rwCerrarIngreso,
