@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.278';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.279';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -3853,7 +3853,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
 
             <!-- Input para usuario nuevo -->
             <div class="mb-3">
-              <input v-model="configWizard.vendedor" type="text" placeholder="✏ Tipea tu nombre completo"
+              <input id="wizNombreInput" v-model="configWizard.vendedor" type="text" placeholder="✏ Tipea tu nombre completo"
                      @input="wizOnNombreInput"
                      class="w-full p-3 border-2 border-gray-100 rounded-xl focus:border-emerald-400 outline-none font-bold text-gray-800">
             </div>
@@ -4091,6 +4091,49 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       </div>
     </div>
     
+    <!-- ═══════════════════════════════════════════════════════════
+         [v2.8.279] YA HAY ALGUIEN CON ESE NOMBRE EN ESTA TIENDA
+         Dos personas con el mismo nombre en la misma zona caen en la
+         MISMA ficha del día: la venta cobrada y la comisión de los dos
+         se mezclan. No se bloquea sin salida: se ofrecen los dos
+         caminos reales (otro nombre · atar este equipo por QR).
+    ═══════════════════════════════════════════════════════════ -->
+    <div v-if="nzAviso" class="absolute inset-0 z-[60] bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden"
+           style="animation: scaleIn .3s cubic-bezier(.34,1.56,.64,1)">
+        <div class="bg-gradient-to-br from-amber-400 to-amber-500 px-5 py-4 text-center">
+          <div class="text-4xl mb-1">🙋</div>
+          <h3 class="text-lg font-black text-white leading-tight">Ese nombre ya está trabajando acá</h3>
+        </div>
+        <div class="p-5">
+          <p class="text-sm text-gray-700 font-semibold leading-snug text-center">
+            Ya hay un <b class="text-amber-700">{{ nzAviso.nombre }}</b> trabajando en
+            <b>{{ nzAviso.zonaNombre }}</b> desde las <b>{{ nzAviso.hora }}</b>
+            <span class="text-gray-500">&nbsp;({{ nzAviso.equipos }} equipo{{ nzAviso.equipos === 1 ? "" : "s" }}).</span>
+          </p>
+          <p class="mt-2 text-[11px] text-gray-500 leading-snug text-center">
+            💡 Si entran dos con el mismo nombre en la misma tienda, <b>sus ventas y su comisión se mezclan</b> en una sola ficha del día. Por eso hay que distinguirlos.
+          </p>
+          <div class="mt-4 space-y-2">
+            <button @click="nzOtraPersona"
+                    class="w-full py-3 px-3 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg active:scale-95 transition-all text-center">
+              <span class="block font-black text-sm">🙋 Soy otra persona</span>
+              <span class="block text-[11px] font-bold text-white/85 mt-0.5">Entrar como “{{ nzAviso.sugerencia }}” (cambia la letra por la inicial de tu apellido)</span>
+            </button>
+            <button @click="nzSoyYo"
+                    class="w-full py-3 px-3 rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 text-white shadow-lg active:scale-95 transition-all text-center">
+              <span class="block font-black text-sm">📲 Soy yo, en otro equipo</span>
+              <span class="block text-[11px] font-bold text-white/85 mt-0.5">Atar este equipo a mi sesión por QR, sin abrir otra caja</span>
+            </button>
+            <button @click="nzCerrar"
+                    class="w-full py-2 rounded-2xl bg-gray-100 text-gray-500 font-bold text-xs active:scale-95 transition-all">
+              Volver
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- LECTOR DE CÓDIGOS CÁMARA FRONT -->
     <div v-show="camaraAbierta" class="absolute z-40 top-14 left-0 right-0 max-w-md mx-auto bg-black rounded-b-3xl shadow-2xl overflow-hidden">
        <div id="reader" width="100%" class="bg-black"></div>
@@ -14348,6 +14391,93 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             .replace(/[^A-Z ]+/g, '')                            // solo letras y espacios
             .replace(/ {2,}/g, ' ')
             .replace(/^ +/, '');
+        // ══ [v2.8.279] GUARD DE NOMBRE DUPLICADO EN LA MISMA ZONA ══
+        // Pedido del dueño: "si mañana vienen los dos Jesus... por programa tú lo obligas: le
+        // dices ya existe JESUS en esta zona. Si eres otra persona usa otro nombre; si eres el
+        // mismo, usa la extensión de dispositivo".
+        // El daño que evita: la identidad de ME es MEX:<NOMBRE>|<ZONA>, así que dos personas
+        // con el mismo nombre en la misma tienda comparten la ficha del día → venta cobrada y
+        // comisión mezcladas. El mismo nombre en OTRA zona convive sin problema (es normal).
+        // REGLA DE ORO: esto es un chequeo, no un peaje. Si la RPC falla, tarda >3 s, o el
+        // equipo está offline, SE DEJA PASAR y solo queda el aviso en consola. Nadie se queda
+        // sin vender por un guard.
+        const nzAviso = ref(null);
+        let _nzEnVuelo = false;
+        const _nzRpcOcupado = (nombre, zona) => {
+            // _extRpc ya mintea el token y trae su propio timeout duro; acá se le pone además un
+            // techo blando de 3 s: pasado eso el wizard sigue como si nada.
+            const llamada = _extRpc('nombre_zona_ocupado', { nombre: nombre, zona: zona, deviceId: _extDevId() });
+            const reloj = new Promise(res => setTimeout(() => res({ __lento: true }), 3000));
+            return Promise.race([llamada, reloj]);
+        };
+        // Devuelve true si se puede seguir; false si se abrió el aviso y hay que frenar.
+        const nzPuedeEntrar = async (zInfo) => {
+            try {
+                if (_nzEnVuelo) return false;                                  // doble toque / ghost-click
+                if (extModo.value || configWizard.value.esExtension) return true;  // la extensión ES la salida buena
+                const nombre = _wizNombreNorm(configWizard.value.vendedor || '');
+                const zona   = (zInfo && zInfo.zona) || configWizard.value.zona || '';
+                if (!nombre || !zona) return true;
+                _nzEnVuelo = true;
+                const r = await _nzRpcOcupado(nombre, zona);
+                _nzEnVuelo = false;
+                if (!r || r.__lento || r.ok !== true) { console.warn('[nombre-zona] chequeo omitido (sin respuesta útil), se deja pasar', r); return true; }
+                if (r.ocupado !== true) return true;
+                nzAviso.value = {
+                    nombre: r.nombre || nombre,
+                    nombreReal: r.nombreReal || r.nombre || nombre,
+                    zonaId: r.zonaReal || zona,
+                    zonaNombre: (zInfo && zInfo.zonaNombre) || r.zonaReal || zona,
+                    hora: r.horaIngresoTxt || '--:--',
+                    equipos: Number(r.equipos || 1),
+                    rol: String(r.rol || 'VENDEDOR'),
+                    sugerencia: r.sugerencia || (nombre + ' A')
+                };
+                wizBeep('error');
+                try { navigator.vibrate && navigator.vibrate([12, 45, 12]); } catch (e) {}
+                return false;
+            } catch (e) {
+                _nzEnVuelo = false;
+                console.warn('[nombre-zona] chequeo omitido por error, se deja pasar:', e);
+                return true;   // fail-open SIEMPRE
+            }
+        };
+        const nzCerrar = () => { wizBeep('tap'); nzAviso.value = null; };
+        // Camino A · "soy otra persona": vuelve al campo con la primera variante libre ya escrita.
+        const nzOtraPersona = () => {
+            const a = nzAviso.value; nzAviso.value = null;
+            if (!a) return;
+            wizBeep('tap');
+            try { navigator.vibrate && navigator.vibrate(8); } catch (e) {}
+            configWizard.value.vendedor = _wizNombreNorm(a.sugerencia);
+            wizZonaExpandida.value = null;
+            wizStep.value = 1;
+            setTimeout(() => {
+                try {
+                    const el = document.getElementById('wizNombreInput');
+                    if (!el) return;
+                    el.focus();
+                    const fin = String(el.value || '').length;
+                    el.setSelectionRange(fin, fin);
+                } catch (e) {}
+            }, 140);
+        };
+        // Camino B · "soy yo, en otro equipo": directo al flujo de extensión por QR que ya existe.
+        // Se manda el nombre TAL COMO está guardado (nombreReal): pedir_extension reconstruye el
+        // id_dia a partir de él y upper('Jesús') no es 'JESUS'.
+        const nzSoyYo = () => {
+            const a = nzAviso.value; nzAviso.value = null;
+            if (!a) return;
+            wizBeep('next');
+            try { navigator.vibrate && navigator.vibrate([10, 30, 10]); } catch (e) {}
+            extModo.value = true;                 // si cancela el QR, cae en el picker de avatares
+            wizStep.value = 2;
+            try { _wizIniciarPollingPresencia(); } catch (e) {}
+            setTimeout(() => {
+                try { _extPedir(a.nombreReal, a.zonaId, String(a.rol || 'vendedor').toLowerCase()); } catch (e) {}
+            }, 80);
+        };
+
         const wizOnNombreInput = () => {
             const limpio = _wizNombreNorm(configWizard.value.vendedor);
             if (limpio !== configWizard.value.vendedor) configWizard.value.vendedor = limpio;
@@ -14391,6 +14521,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
             const m = configWizard.value.monto;
             if (m == null || m === '' || Number(m) < 0) { wizBeep('error'); return; }
+            if (!(await nzPuedeEntrar(zInfo))) return;   // [2.8.279] ¿ese nombre ya trabaja acá?
             wizBeep('next');
             try { navigator.vibrate && navigator.vibrate(10); } catch(_){}
             configWizard.value.esCajero = true;
@@ -14403,6 +14534,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
 
         // ── [v2.8.9] Zona viva: +Vendedor (sin monto) → estación directo ──
         const wizZonaAddVendedor = async (zInfo) => {
+            if (!(await nzPuedeEntrar(zInfo))) return;   // [2.8.279] ¿ese nombre ya trabaja acá?
             wizBeep('next');
             try { navigator.vibrate && navigator.vibrate(8); } catch(_){}
             await seleccionarZonaWizard(zInfo.zona);  // deja esCajero=false, monto=0
@@ -23901,6 +24033,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           wizFastTrack, wizDictarMonto, wizGuardarUserEnHistorial, wizBeep,
           // [v2 avatar-tap] modo extensión: botón "2º equipo" → Paso 2 → tocar avatar del compañero
           extModo, wizEntrarModoExtension, wizSalirModoExtension, wizExtTocar,
+          nzAviso, nzCerrar, nzOtraPersona, nzSoyYo,   // [2.8.279] guard de nombre duplicado
           wizTutorial, wizTutorialNext, wizTutorialClose, wizTutorialOpen,
           // [v2.5.40] Chip impresora live + cambio impresora
           meImpresoraEstado,

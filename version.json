@@ -1,1 +1,1 @@
-{"version":"2.8.278","build":"2.8.278 el nombre del wizard se normaliza al escribir: MAYUSCULAS, sin tildes y solo letras — asi una misma persona no se fractura en varias fichas"}
+{"version":"2.8.279","build":"2.8.279 guard de nombre duplicado en la misma tienda: si ya hay un JESUS trabajando en esa zona desde otro equipo, el wizard no deja entrar y ofrece los dos caminos — otro nombre (con sugerencia lista) o atar este equipo por QR"}
