@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.279';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.280';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -5287,10 +5287,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
          </div>
        </div>
 
-       <!-- Meta diaria — colectiva de la zona -->
-       <div v-if="parseFloat(idleScreen.meta) > 0" class="idle-meta">
+       <!-- Meta diaria — política REAL de la zona (729/730 vía me.meta_progreso_zona).
+            Privacidad: VENDEDOR ve solo la barra de progreso; CAJERO/ADMIN ven barra + montos. -->
+       <div v-if="idleScreen.metaTiene" class="idle-meta">
          <div class="idle-meta-head">
-           <span>🎯 Meta de zona · S/ {{ idleScreen.meta }}</span>
+           <span v-if="idleScreen.verMonto">🎯 Meta del día · S/ {{ idleScreen.meta }}</span>
+           <span v-else>🎯 Meta del día</span>
            <span :class="['idle-meta-pct', idleScreen.metaSuperada ? 'superada' : '']">
              {{ Math.round(idleScreen.metaPct) }}%
            </span>
@@ -5299,13 +5301,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
            <div :class="['idle-meta-fill', idleScreen.metaSuperada ? 'superada' : '']"
                 :style="{ width: Math.min(100, idleScreen.metaPct) + '%' }"></div>
          </div>
-         <div class="idle-meta-msg">
+         <div v-if="idleScreen.verMonto" class="idle-meta-msg">
            <template v-if="idleScreen.metaSuperada">
              🎉 ¡Meta superada! La zona va {{ Math.round(idleScreen.metaPct - 100) }}% sobre el objetivo
            </template>
            <template v-else>
              La zona lleva <strong>S/ {{ idleScreen.totalZona }}</strong> · Faltan <strong>S/ {{ idleScreen.metaFalta }}</strong>
            </template>
+         </div>
+         <div v-else class="idle-meta-msg">
+           <template v-if="idleScreen.metaSuperada">🎉 ¡Meta del día superada!</template>
+           <template v-else>cada venta acerca la meta 💪</template>
          </div>
        </div>
 
@@ -10604,13 +10610,13 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                       const _cfgCache = localStorage.getItem('mosexpress_mos_config');
                       if (_cfgCache) {
                           mosConfig.value = JSON.parse(_cfgCache);
-                          const _metaCache = parseFloat(mosConfig.value.evalMetaCajero) || 0;
-                          if (_metaCache > 0) idleConfig.value.metaDiaria = _metaCache;
+                          // [754] evalMetaCajero ya no alimenta la meta del salvapantallas
+                          // (la meta real viene de me.meta_progreso_zona, política 729/730).
                       }
                   } catch(_e) {}
                   // Sincronizar impresoras + config MOS desde ProyectoMOS_DB
                   _syncImpresorasFromProyectoMOS();
-                  _cargarConfigMos(); // refresca meta y otros parametros del ecosistema
+                  _cargarConfigMos(); // refresca parametros del ecosistema
                   // Si el SW acaba de actualizar la app → forzar resync del catálogo
                   // para traer cambios de productos/precios/series del nuevo deploy
                   const forceResync = localStorage.getItem('mosexpress_force_resync') === '1';
@@ -11129,12 +11135,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 if (j && j.ok && j.data) {
                     mosConfig.value = j.data;
                     localStorage.setItem('mosexpress_mos_config', JSON.stringify(j.data));
-                    // Sincronizar meta diaria desde evalMetaCajero (CONFIG_MOS)
-                    const _meta = parseFloat(j.data.evalMetaCajero) || 0;
-                    if (_meta > 0) {
-                        idleConfig.value.metaDiaria = _meta;
-                        localStorage.setItem('mosexpress_meta_diaria', String(_meta));
-                    }
+                    // [754] evalMetaCajero ya NO alimenta el salvapantallas: era la clave global
+                    // congelada. La meta viene de la política de la zona (me.meta_progreso_zona).
                 }
             } catch(e) {
                 // Si falla, intentar restaurar de cache local
@@ -12559,6 +12561,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             tickets: 0, totalHoy: '0.00',
             totalZona: '0.00',
             meta: '0.00', metaPct: 0, metaFalta: '0.00', metaSuperada: false,
+            metaTiene: false,      // [754] la zona TIENE meta configurada (política 729: sin default)
+            verMonto: false,       // [754] privacidad: vendedor solo barra; cajero/admin barra + montos
             wakeLockActivo: false,
             particles: []
         });
@@ -12569,8 +12573,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const idleConfig = ref({
             wakeLockEnabled: true,
             saverEnabled:    true,
-            saverMinutos:    2,
-            metaDiaria:      parseFloat(localStorage.getItem('mosexpress_meta_diaria') || '1000') || 1000
+            saverMinutos:    2
+            // [754] metaDiaria eliminada: leía la clave global muerta evalMetaCajero con
+            // default 1000 inventado. La meta real es la política de la ZONA (729/730)
+            // y llega por me.meta_progreso_zona (ver _refrescarMetaZona).
         });
 
         let _wakeLockSentinel = null;
@@ -12630,13 +12636,54 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             _idleTimer = setTimeout(mostrarSalvapantalla, ms);
         };
 
+        // ── [754] Meta del salvapantallas = política de la ZONA (729/730, vigencia por día,
+        //    SIN default) vía me.meta_progreso_zona. Cache local para modo offline. Mientras
+        //    la salva está visible se refresca cada 60s (antes quedaba congelada).
+        let _idleMetaInterval = null;
+        const _aplicarMetaZona = (d) => {
+            if (!d) return;
+            const pct = parseFloat(d.pct) || 0;
+            idleScreen.value.metaTiene    = !!d.tieneMeta;
+            idleScreen.value.meta         = (parseFloat(d.metaDiaria) || 0).toFixed(2);
+            idleScreen.value.totalZona    = (parseFloat(d.lleva) || 0).toFixed(2);
+            idleScreen.value.metaFalta    = (parseFloat(d.faltan) || 0).toFixed(2);
+            idleScreen.value.metaPct      = Math.min(200, pct);
+            idleScreen.value.metaSuperada = pct >= 100;
+        };
+        const _refrescarMetaZona = async () => {
+            const zona = String(config.value.zona || '').trim();
+            if (!zona) { idleScreen.value.metaTiene = false; return; }
+            try {
+                const _tk = await _mintTokenSB();
+                if (!_tk) throw new Error('sin token');
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/meta_progreso_zona`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { zona } })
+                }, 8000);
+                const j = await r.json().catch(() => null);
+                if (j && j.ok && j.data) {
+                    _aplicarMetaZona(j.data);
+                    localStorage.setItem('mosexpress_meta_zona_cache', JSON.stringify(j.data));
+                    return;
+                }
+                throw new Error((j && j.error) || 'sin data');
+            } catch (_) {
+                // Offline / fallo → último dato bueno conocido (si existe)
+                try { _aplicarMetaZona(JSON.parse(localStorage.getItem('mosexpress_meta_zona_cache') || 'null')); } catch (__) {}
+            }
+        };
+
         // ── Mostrar salvapantalla ────────────────────────────
         const mostrarSalvapantalla = () => {
-            // No interrumpir tareas críticas
-            if (modalPago.value) return;
-            if (camaraAbierta.value) return;
-            if (welcomeOverlay.value.visible) return;
-            if (!config.value.completado) return;
+            // No interrumpir tareas críticas — pero RE-ARMAR el timer: antes un guard
+            // (p.ej. modal de pago abierto justo al vencer) mataba la salva hasta la
+            // próxima actividad del usuario.
+            if (modalPago.value || camaraAbierta.value || welcomeOverlay.value.visible || !config.value.completado) {
+                if (_idleTimer) clearTimeout(_idleTimer);
+                _idleTimer = setTimeout(mostrarSalvapantalla, 60 * 1000);
+                return;
+            }
 
             // Inicializar datos
             const _now = new Date();
@@ -12669,28 +12716,15 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 _total = _money(_total + (parseFloat(v.total) || 0));
             });
 
-            // 2. STATS DE ZONA (suma colectiva de todos los vendedores de la zona, hoy)
-            // ventasZona ya viene filtrado por timestamp >= sessionStart en el polling con `desde`.
-            // Aún así filtramos por timestamp para sumar solo del día actual.
-            const _hoy0 = new Date(); _hoy0.setHours(0, 0, 0, 0);
-            const _hoyTs = _hoy0.getTime();
-            let _totalZona = 0;
-            (ventasZona.value || []).forEach(v => {
-                if ((v.timestamp || 0) < _hoyTs) return;
-                if (v.anulada) return;
-                const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
-                if (!_esConDinero(m)) return;
-                _totalZona = _money(_totalZona + (parseFloat(v.total) || 0));
-            });
-            // Si por algún motivo no hay polling (vendedor sin polling activo),
-            // fallback al total personal para que la barra muestre algo en lugar de cero.
-            if (_totalZona === 0 && _total > 0) _totalZona = _total;
-
-            // Cálculo de progreso hacia meta — usa el total DE ZONA (colectivo)
-            const _meta = parseFloat(idleConfig.value.metaDiaria) || 0;
-            const _pct  = _meta > 0 ? Math.min(200, (_totalZona / _meta) * 100) : 0;
-            const _falta = Math.max(0, _meta - _totalZona);
-            const _superada = _totalZona >= _meta;
+            // 2. [754] META DE ZONA: ya no se calcula acá (el cálculo local mentía — para el
+            // vendedor "la zona" era su propio total, y para el cajero era solo su caja).
+            // Viene del server (me.meta_progreso_zona = todas las cajas de la zona, hoy Lima):
+            // primero el último dato cacheado (pintado instantáneo) y enseguida el fresco.
+            try { _aplicarMetaZona(JSON.parse(localStorage.getItem('mosexpress_meta_zona_cache') || 'null')); } catch (_) {}
+            _refrescarMetaZona();
+            // Privacidad: vendedor SOLO barra; cajero/admin/master barra + montos.
+            const _rolIdle = String(config.value.rol || '').toUpperCase();
+            const _verMonto = !!config.value.esCajero || _rolIdle === 'ADMIN' || _rolIdle === 'MASTER';
 
             // Frase aleatoria
             const _q = _frasesMotivacion[Math.floor(Math.random() * _frasesMotivacion.length)];
@@ -12717,11 +12751,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 quote: _q, quoteFading: false,
                 tickets: _ticks,
                 totalHoy: _total.toFixed(2),
-                totalZona: _totalZona.toFixed(2),
-                meta: _meta.toFixed(2),
-                metaPct: _pct,
-                metaFalta: _falta.toFixed(2),
-                metaSuperada: _superada,
+                verMonto: _verMonto,   // [754] los campos de meta los setea _aplicarMetaZona
                 particles: _parts
             };
 
@@ -12742,6 +12772,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     idleScreen.value.quoteFading = false;
                 }, 500);
             }, 8000);
+
+            // [754] Meta EN VIVO mientras la salva está visible (antes quedaba congelada:
+            // una salva de 30 min mostraba números de hace 30 min).
+            if (_idleMetaInterval) clearInterval(_idleMetaInterval);
+            _idleMetaInterval = setInterval(() => { _refrescarMetaZona(); }, 60000);
         };
 
         // ── Ocultar salvapantalla ────────────────────────────
@@ -12761,6 +12796,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             idleScreen.value.fading = true;
             if (_idleClockInterval) { clearInterval(_idleClockInterval); _idleClockInterval = null; }
             if (_idleQuoteInterval) { clearInterval(_idleQuoteInterval); _idleQuoteInterval = null; }
+            if (_idleMetaInterval)  { clearInterval(_idleMetaInterval);  _idleMetaInterval  = null; }   // [754]
             setTimeout(() => {
                 idleScreen.value.visible = false;
                 idleScreen.value.fading = false;
