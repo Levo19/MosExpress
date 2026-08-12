@@ -15,31 +15,29 @@ firebase.initializeApp({
 });
 
 const _fcmMsg = firebase.messaging();
+// ⚠️ [740/755] NO llamar showNotification aquí para los avisos VISIBLES: llegaban DOS veces.
+// El SDK de Firebase, al recibir un push cuyo payload trae `notification`, PRIMERO la muestra
+// él mismo y RECIÉN DESPUÉS invoca este handler (firebase-messaging-compat 10.12.0). Mostrarla
+// aquí otra vez la duplicaba (y la del SDK no lleva `tag`, así que ni se colapsaban entre sí).
+// Este handler queda SOLO para los comandos data-only (sin `notification`), que el SDK no muestra.
 _fcmMsg.onBackgroundMessage(payload => {
-  // Comandos data-only (audio_start, audio_stop, gps_locate) → reenviar al cliente sin notificación
   if (payload.data && payload.data.action) {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
       clients.forEach(c => c.postMessage({ type: 'mos_command', data: payload.data }));
     });
-    return; // no mostrar notificación visible
   }
-  const title = payload.notification?.title || 'MosExpress';
-  const body  = payload.notification?.body  || '';
-  // [Mensajería] Preservar idNotif/mensajeId para deep-link al hacer click.
-  const pd = payload.data || {};
-  self.registration.showNotification(title, {
-    body,
-    icon:    'https://levo19.github.io/MOS/icon-192.png',
-    badge:   'https://levo19.github.io/MOS/icon-192.png',
-    tag:     'me-push',
-    vibrate: [200, 100, 200],
-    data:    { idNotif: pd.idNotif || '', mensajeId: pd.mensajeId || (pd.extra && pd.extra.mensajeId) || null }
-  });
+  // Aviso visible → ya lo mostró el SDK. No hacer nada más.
 });
 
 // ── [Mensajería] Click en notificación → enfocar app + deep-link a la bandeja ──
+// [755] La notificación ahora la muestra el SDK: sus datos viajan en event.notification.data.FCM_MSG
+// (antes los poníamos nosotros planos en `data`). Leer AMBOS formatos para no perder el deep-link.
 self.addEventListener('notificationclick', event => {
-  const d = (event.notification && event.notification.data) || {};
+  const raw = (event.notification && event.notification.data) || {};
+  const fcmData = (raw.FCM_MSG && raw.FCM_MSG.data) || {};
+  const d = {
+    mensajeId: raw.mensajeId || fcmData.mensajeId || (fcmData.extra && fcmData.extra.mensajeId) || null
+  };
   event.notification.close();
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -72,7 +70,7 @@ self.addEventListener('notificationclick', event => {
 //           y allowlist CAJA_NO_ABIERTA sin GAS · H4 sync-loop GAS sin reintento infinito · H7 editar_cliente
 //           bloquea CPE por TIPO · MED10 RECHAZADO canónico · MED13 cola NV persiste fantasma · MED14 estadoCajas
 //           col8 prefijo · MED16 serie NV desde Supabase · LOW19b auth.idEstacion). 2 directrices verificadas.
-const VERSION = '2.8.280';
+const VERSION = '2.8.281';
 const CACHE   = 'mosexpress-v' + VERSION;
 const ASSETS  = [
   './',
