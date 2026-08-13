@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.283';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.284';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -12640,6 +12640,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         //    SIN default) vía me.meta_progreso_zona. Cache local para modo offline. Mientras
         //    la salva está visible se refresca cada 60s (antes quedaba congelada).
         let _idleMetaInterval = null;
+        let _idleStatsRefrescar = null;   // [755b] recalc de stats personales, seteado por la salva
         const _aplicarMetaZona = (d) => {
             if (!d) return;
             const pct = parseFloat(d.pct) || 0;
@@ -12701,20 +12702,28 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             const _esConDinero = (m) => m && m !== 'ANULADO' && m !== 'POR_COBRAR' && m !== 'CREDITO';
 
             // 1. STATS PERSONALES (lo que TÚ has hecho en tu sesión)
-            const _fuentePers = config.value.esCajero
-                ? (ventasZona.value && ventasZona.value.length ? ventasZona.value : (ventasHoy.value || []))
-                : (ventasHoy.value || []);
-            let _ticks = 0, _total = 0;
-            _fuentePers.forEach(v => {
-                if ((v.timestamp || 0) < _startTs) return;
-                if (v.anulada) return;
-                const vendV = String(v.raw_data?.auth?.vendedor || '').trim().toUpperCase();
-                if (_miNombre && vendV && vendV !== _miNombre) return;
-                const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
-                if (!_esConDinero(m)) return;
-                _ticks++;
-                _total = _money(_total + (parseFloat(v.total) || 0));
-            });
+            // [755b] extraído a función para refrescarse EN VIVO cada 60s junto con la meta
+            // (antes una salva de 30 min mostraba tus ventas de hace 30 min).
+            const _statsPersonalesIdle = () => {
+                const _fuentePers = config.value.esCajero
+                    ? (ventasZona.value && ventasZona.value.length ? ventasZona.value : (ventasHoy.value || []))
+                    : (ventasHoy.value || []);
+                let _ticks = 0, _total = 0;
+                _fuentePers.forEach(v => {
+                    if ((v.timestamp || 0) < _startTs) return;
+                    if (v.anulada) return;
+                    const vendV = String(v.raw_data?.auth?.vendedor || '').trim().toUpperCase();
+                    if (_miNombre && vendV && vendV !== _miNombre) return;
+                    const m = String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase().trim();
+                    if (!_esConDinero(m)) return;
+                    _ticks++;
+                    _total = _money(_total + (parseFloat(v.total) || 0));
+                });
+                idleScreen.value.tickets  = _ticks;
+                idleScreen.value.totalHoy = _total.toFixed(2);
+            };
+            _idleStatsRefrescar = _statsPersonalesIdle;   // el tick de 60s la reusa
+            _statsPersonalesIdle();
 
             // 2. [754] META DE ZONA: ya no se calcula acá (el cálculo local mentía — para el
             // vendedor "la zona" era su propio total, y para el cajero era solo su caja).
@@ -12749,8 +12758,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 cajero: (config.value.vendedor || '') + (config.value.esCajero ? ' · Cajero' : ' · Vendedor'),
                 zona: config.value.zona || config.value.estacion?.Estacion_Nombre || '',
                 quote: _q, quoteFading: false,
-                tickets: _ticks,
-                totalHoy: _total.toFixed(2),
+                // [755b] tickets/totalHoy los setea _statsPersonalesIdle (ya corrió arriba y refresca cada 60s)
                 verMonto: _verMonto,   // [754] los campos de meta los setea _aplicarMetaZona
                 particles: _parts
             };
@@ -12776,7 +12784,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // [754] Meta EN VIVO mientras la salva está visible (antes quedaba congelada:
             // una salva de 30 min mostraba números de hace 30 min).
             if (_idleMetaInterval) clearInterval(_idleMetaInterval);
-            _idleMetaInterval = setInterval(() => { _refrescarMetaZona(); }, 60000);
+            _idleMetaInterval = setInterval(() => {
+                _refrescarMetaZona();
+                if (_idleStatsRefrescar) { try { _idleStatsRefrescar(); } catch (_) {} }   // [755b] 🛒/💰 en vivo
+            }, 60000);
         };
 
         // ── Ocultar salvapantalla ────────────────────────────
