@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.282';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.283';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -14188,27 +14188,51 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? (viaLector ? 'Código vencido — escanea de nuevo con el lector…' : 'Código vencido, apuntá otra vez…') : 'Reintenta el escaneo…'; msg.style.color = '#f59e0b'; }
                     } catch (e) { canjeando = false; if (wdT) { clearTimeout(wdT); wdT = null; } if (msg) msg.textContent = 'Reintenta el escaneo…'; }
                 };
-                // [2.8.282] LECTOR físico (PC sin cámara): el lector tipea el payload + Enter en el input.
-                // Enter procesa; si el lector no manda Enter, una pausa de 400ms tras la ráfaga también procesa.
+                // [2.8.283] LECTOR físico: el lector tipea el payload en el input y se procesa AL INSTANTE.
+                // El payload tiene estructura conocida (EXTQR + idReq + token de 12 chars md5) → se calcula
+                // el largo total esperado y se dispara apenas entra el último carácter — sin esperar Enter
+                // ni pausas. Enter y una pausa corta (150ms) quedan de red por si el largo variara.
                 const hidInp = ov.querySelector('#_extScanHid');
+                const _strip = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
+                const _lenEsperado = _strip('EXTQR' + idReq).length + 12;   // token = substr(md5,1,12)
                 if (hidInp) {
                     let hidT = null;
                     const procesarHid = () => {
-                        const v = hidInp.value; hidInp.value = '';
-                        if (!v || finalizado) return;
+                        const v = hidInp.value; if (!v || finalizado) return;
                         const tok = parsearQrTxt(v);
-                        if (!tok) { if (msg) { msg.textContent = 'Ese código no corresponde — apunta el lector al QR del principal…'; msg.style.color = '#f59e0b'; } return; }
+                        if (!tok) {
+                            // aún incompleto o basura: si ya alcanzó el largo esperado y no parsea, avisar y limpiar
+                            if (_strip(v).length >= _lenEsperado) { hidInp.value = ''; if (msg) { msg.textContent = 'Ese código no corresponde — apunta el lector al QR del principal…'; msg.style.color = '#f59e0b'; } }
+                            return;
+                        }
+                        hidInp.value = '';
                         canjear(tok, true);
                     };
                     hidInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (hidT) { clearTimeout(hidT); hidT = null; } procesarHid(); } });
-                    hidInp.addEventListener('input', () => { if (hidT) clearTimeout(hidT); hidT = setTimeout(procesarHid, 400); });
+                    hidInp.addEventListener('input', () => {
+                        if (hidT) clearTimeout(hidT);
+                        // disparo INSTANTÁNEO al completarse el largo esperado; debounce corto como red
+                        if (_strip(hidInp.value).length >= _lenEsperado) { procesarHid(); return; }
+                        hidT = setTimeout(procesarHid, 150);
+                    });
+                    // [2.8.283] FOCUS AUTOMÁTICO Y PEGAJOSO en escritorio: la PC con lector no debe
+                    // requerir clic previo. En móvil NO (el teclado en pantalla taparía la cámara).
+                    const esEscritorio = (() => { try { return matchMedia('(pointer: fine)').matches && !('ontouchstart' in window); } catch (e) { return false; } })();
+                    if (esEscritorio) {
+                        setTimeout(() => { try { hidInp.focus(); } catch (e) {} }, 120);
+                        hidInp.addEventListener('blur', () => { if (!finalizado && ov.isConnected) setTimeout(() => { try { hidInp.focus(); } catch (e) {} }, 80); });
+                    }
                 }
                 // [2.8.282] Sin cámara (PC) ya NO es error fatal: el modo LECTOR queda como protagonista.
                 const modoLector = (motivo) => {
                     if (finalizado) return;
                     const cam = ov.querySelector('#_extCam'); if (cam) cam.style.display = 'none';
-                    if (msg) { msg.textContent = motivo + ' — usa el lector de códigos en el campo de abajo.'; msg.style.color = '#f59e0b'; }
-                    if (hidInp) { try { hidInp.focus(); } catch (e) {} }
+                    if (msg) { msg.textContent = motivo + ' — el campo del lector ya está listo: solo escanea.'; msg.style.color = '#f59e0b'; }
+                    if (hidInp) {
+                        try { hidInp.focus(); } catch (e) {}
+                        // en modo lector el focus es pegajoso SIEMPRE (también tablets sin cámara)
+                        hidInp.addEventListener('blur', () => { if (!finalizado && ov.isConnected) setTimeout(() => { try { hidInp.focus(); } catch (e) {} }, 80); });
+                    }
                 };
                 if (typeof Html5Qrcode === 'undefined') { modoLector('Este equipo no tiene cámara disponible'); }
                 else {
