@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.281';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.282';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -14096,6 +14096,13 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         <div style="color:#94a3b8;font-size:12px;margin:4px 0 10px">Apuntá al QR que muestra el equipo principal.</div>
                         <div id="_extCam" style="width:240px;height:240px;margin:0 auto;border-radius:14px;overflow:hidden;background:#0b1220"></div>
                         <div id="_extScanMsg" style="color:#64748b;font-size:11px;margin-top:8px">Buscando código…</div>
+                        <!-- [2.8.282] PC sin cámara: el LECTOR físico tipea el contenido del QR (EXTQR:…) + Enter.
+                             Se apunta el lector al QR de la pantalla del principal y cae en este input. -->
+                        <div style="margin-top:10px;border-top:1px dashed #334155;padding-top:8px">
+                            <div style="color:#94a3b8;font-size:11px;margin-bottom:5px">🔫 ¿PC sin cámara? Haz clic aquí y escanea el QR con tu <b>lector</b>:</div>
+                            <input id="_extScanHid" autocomplete="off" spellcheck="false" placeholder="escanea aquí con el lector…"
+                                   style="width:100%;box-sizing:border-box;background:#0b1220;border:1px solid #334155;border-radius:10px;color:#e2e8f0;font-size:12px;padding:8px 10px;text-align:center;outline:none">
+                        </div>
                         <button class="_extBtn _extBtnNo" id="_extScanX" style="margin-top:12px;width:100%">Cancelar</button>
                     </div>`;
                 const msg = ov.querySelector('#_extScanMsg');
@@ -14146,16 +14153,29 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         if (msg) { msg.textContent = 'No respondió — apuntá otra vez al QR…'; msg.style.color = '#f59e0b'; }
                     }, 9000);
                 };
-                if (typeof Html5Qrcode === 'undefined') { errorScan('No se pudo abrir la cámara', 'Este equipo no cargó el lector de códigos. Revisa tu conexión y reintenta.'); return; }
-                _extQrScanner = new Html5Qrcode('_extCam', { verbose: false });
-                _extQrScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, async (txt) => {
+                // [2.8.282] Parser COMPARTIDO cámara/lector. La cámara entrega el texto limpio
+                // (EXTQR:<idReq>:<token>). El LECTOR físico lo TIPEA como teclado y el layout
+                // (Español-LatAm) puede mutilar los ":" — se tolera comparando solo los caracteres
+                // alfanuméricos del prefijo+idReq y extrayendo el token con su caso intacto.
+                const parsearQrTxt = (txt) => {
+                    const raw = String(txt || '').trim();
+                    const m = raw.match(/^EXTQR:([^:]+):([A-Za-z0-9]+)$/);
+                    if (m) return (m[1] === idReq) ? m[2] : null;
+                    const strip = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
+                    const rawS = strip(raw), esperado = strip('EXTQR' + idReq);
+                    if (rawS.length <= esperado.length) return null;
+                    if (rawS.slice(0, esperado.length).toUpperCase() !== esperado.toUpperCase()) return null;
+                    const token = rawS.slice(esperado.length);
+                    return /^[A-Za-z0-9]{4,}$/.test(token) ? token : null;
+                };
+                // [2.8.282] Canje FACTORIZADO: lo usan la cámara y el lector con la misma lógica
+                // (watchdog, confirmación contra el server, token rotado).
+                const canjear = async (qrToken, viaLector) => {
                     try {
                         if (canjeando || finalizado) return;
-                        const m = String(txt || '').match(/^EXTQR:([^:]+):([A-Za-z0-9]+)$/);
-                        if (!m || m[1] !== idReq) { if (msg) msg.textContent = 'Ese no es el código correcto…'; return; }  // otro QR
                         canjeando = true; _extHaptic([15]); if (msg) { msg.textContent = 'Vinculando…'; msg.style.color = '#38bdf8'; }
                         armarWatchdog();
-                        const r = await _extRpc('extension_canjear_qr', { idReq, qrToken: m[2], deviceId: dev, pushToken: (_pushTokenActual || '') });
+                        const r = await _extRpc('extension_canjear_qr', { idReq, qrToken, deviceId: dev, pushToken: (_pushTokenActual || '') });
                         if (finalizado) return;
                         if (wdT) { clearTimeout(wdT); wdT = null; }
                         if (r && r.ok && r.data) { finalizar(r.data); return; }
@@ -14165,9 +14185,41 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         if (finalizado) return;
                         if (mi && mi.ok && mi.vinculado && mi.data) { finalizar(mi.data); return; }
                         canjeando = false;   // token rotó/venció → el principal ya emitió otro; seguir escaneando
-                        if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? 'Código vencido, apuntá otra vez…' : 'Reintenta el escaneo…'; msg.style.color = '#f59e0b'; }
+                        if (msg) { msg.textContent = (r && r.error === 'QR_VENCIDO') ? (viaLector ? 'Código vencido — escanea de nuevo con el lector…' : 'Código vencido, apuntá otra vez…') : 'Reintenta el escaneo…'; msg.style.color = '#f59e0b'; }
                     } catch (e) { canjeando = false; if (wdT) { clearTimeout(wdT); wdT = null; } if (msg) msg.textContent = 'Reintenta el escaneo…'; }
-                }, () => { /* no-match frame, ignorar */ }).catch(() => { errorScan('Permití la cámara', 'MOSexpress necesita la cámara para leer el QR del equipo principal.'); });
+                };
+                // [2.8.282] LECTOR físico (PC sin cámara): el lector tipea el payload + Enter en el input.
+                // Enter procesa; si el lector no manda Enter, una pausa de 400ms tras la ráfaga también procesa.
+                const hidInp = ov.querySelector('#_extScanHid');
+                if (hidInp) {
+                    let hidT = null;
+                    const procesarHid = () => {
+                        const v = hidInp.value; hidInp.value = '';
+                        if (!v || finalizado) return;
+                        const tok = parsearQrTxt(v);
+                        if (!tok) { if (msg) { msg.textContent = 'Ese código no corresponde — apunta el lector al QR del principal…'; msg.style.color = '#f59e0b'; } return; }
+                        canjear(tok, true);
+                    };
+                    hidInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (hidT) { clearTimeout(hidT); hidT = null; } procesarHid(); } });
+                    hidInp.addEventListener('input', () => { if (hidT) clearTimeout(hidT); hidT = setTimeout(procesarHid, 400); });
+                }
+                // [2.8.282] Sin cámara (PC) ya NO es error fatal: el modo LECTOR queda como protagonista.
+                const modoLector = (motivo) => {
+                    if (finalizado) return;
+                    const cam = ov.querySelector('#_extCam'); if (cam) cam.style.display = 'none';
+                    if (msg) { msg.textContent = motivo + ' — usa el lector de códigos en el campo de abajo.'; msg.style.color = '#f59e0b'; }
+                    if (hidInp) { try { hidInp.focus(); } catch (e) {} }
+                };
+                if (typeof Html5Qrcode === 'undefined') { modoLector('Este equipo no tiene cámara disponible'); }
+                else {
+                    _extQrScanner = new Html5Qrcode('_extCam', { verbose: false });
+                    _extQrScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, (txt) => {
+                        if (canjeando || finalizado) return;
+                        const tok = parsearQrTxt(txt);
+                        if (!tok) { if (msg) msg.textContent = 'Ese no es el código correcto…'; return; }  // otro QR
+                        canjear(tok, false);
+                    }, () => { /* no-match frame, ignorar */ }).catch(() => { modoLector('No se pudo abrir la cámara'); });
+                }
                 autoT = setTimeout(() => { if (!finalizado) errorScan('Se agotó el tiempo', 'El código dejó de estar disponible. Pedile al equipo principal que lo muestre otra vez.'); }, 120000);
             } catch (e) { /* fail-safe: el POS sigue */ }
         };
