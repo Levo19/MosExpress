@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.284';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.285';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -441,15 +441,12 @@
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    /* Estilos Dark Mode / Base */
+    /* Base del MODO CLARO (no tocar: es la piel por defecto de la app) */
     body { background-color: #f9fafb; color: #1f2937; }
-    .dark-mode body { background-color: #111827; color: #f9fafb; }
-    .dark-mode .bg-white { background-color: #1f2937; border-color: #374151; }
-    .dark-mode .bg-gray-50 { background-color: #111827; }
-    .dark-mode .text-gray-800 { color: #f9fafb; }
-    .dark-mode .text-gray-500 { color: #9ca3af; }
-    .dark-mode input, .dark-mode select { background-color: #374151; color: white; border-color: #4b5563; }
-    .dark-mode .border-gray-200, .dark-mode .border-gray-100 { border-color: #374151; }
+    /* [RETHEME OSCURO] Las 7 reglas `.dark-mode …` que vivían aquí se retiraron:
+       eran un parche de 4 grises sin sistema y una de ellas (`.dark-mode body`)
+       jamás aplicaba. El tema oscuro completo vive ahora en la CAPA ADITIVA del
+       final de este mismo <style> (buscar "[RETHEME OSCURO] CAPA ADITIVA"). */
     /* Safe area iOS PWA */
     :root { --safe-b: env(safe-area-inset-bottom, 0px); }
     nav.fixed.bottom-0 { padding-bottom: var(--safe-b); height: calc(4rem + var(--safe-b)); }
@@ -1274,6 +1271,391 @@ button:not(:disabled):not([aria-disabled="true"]):active,
 .sv-t{font-size:13px;font-weight:900;color:#374151;margin-top:10px}
 .sv-s{font-size:10.5px;color:#9ca3af;font-weight:600;margin-top:5px;line-height:1.5}
 @media (prefers-reduced-motion:reduce){.pv-sheet{animation:none}}
+
+    /* ══════════════════════════════════════════════════════════════════════════
+       [RETHEME OSCURO] CAPA ADITIVA DEL TEMA OSCURO
+       ──────────────────────────────────────────────────────────────────────────
+       Filosofía (el mismo lenguaje de warehouseMos): ELEVACIÓN POR CLARIDAD (lo
+       más cercano al ojo es lo más claro), JERARQUÍA TIPOGRÁFICA DE 3 NIVELES y
+       ESTADOS COMO TINTE TRANSLÚCIDO + texto claro del mismo color. La idea no es
+       OPACAR sino CONTRASTAR: por eso el texto primario es #e2e8f0 y JAMÁS #fff
+       (el blanco puro sobre #0f172a llega a ~15:1 y agota la vista en turnos
+       largos; #e2e8f0 da ~11:1, que se lee cómodo toda la jornada).
+
+       REGLAS DE LA CAPA
+       1) TODO selector empieza con `body.dark-mode` → el modo claro no cambia ni
+          un píxel. Sin @media(prefers-color-scheme): el tema es decisión del
+          usuario (toggle en Herramientas), no del sistema operativo.
+       2) Vive al FINAL del <style> principal A PROPÓSITO: varias reglas empatan en
+          especificidad con las de arriba (p.ej. `.pos-card` vs `.bg-gray-50`) y el
+          desempate por ORDEN DE FUENTE es justamente el que queremos.
+       3) `body.dark-mode .clase` = (0,2,1) y le gana a cualquier utilidad Tailwind
+          del CDN (0,1,0) sin importar cuándo la inyecte el CDN en runtime.
+
+       [BUG A · corregido] Antes la regla era `.dark-mode body {...}` y NUNCA
+       aplicaba: la clase `dark-mode` vive EN el <body>, así que el selector
+       correcto es `body.dark-mode`. Efecto del bug: el fondo raíz se quedaba claro
+       mientras el color heredado seguía oscuro → texto invisible sobre las
+       superficies que sí se oscurecían.
+
+       NO se tocan (ya nacieron oscuras y son la referencia estética de esta capa):
+       los modales genéricos (.me-modal-generic-…), el salvapantallas (.idle-…), el
+       overlay de sync (.sync-…), #meUpdateOverlay, #meCerradoOverlay, las pieles de
+       Guías (.g-… y .gd-…) y los backdrops bg-gray-950.
+       OJO al editar estos comentarios: un "asterisco+barra" suelto CIERRA el
+       comentario y se come la regla siguiente (nos pasó con ".g-…/.gd-…").
+       ══════════════════════════════════════════════════════════════════════════ */
+
+    /* ── 1. TOKENS + RAÍZ ──────────────────────────────────────────────────── */
+    body.dark-mode {
+      /* Superficies: escalones de elevación */
+      --dk-bg:        #0f172a;   /* lienzo raíz (slate-900) */
+      --dk-surface:   #1e293b;   /* tarjeta / panel (slate-800) */
+      --dk-raised:    #263449;   /* elevado: hover, cabeceras, inputs */
+      --dk-raised-2:  #31415a;   /* [extra] lo que va ENCIMA de un elevado */
+      --dk-overlay:   #0b1220;   /* backdrops profundos */
+      --dk-border:    rgba(148,163,184,.16);
+      --dk-border-hi: rgba(148,163,184,.28);
+      /* Texto: 3 niveles. El nivel 3 es SOLO placeholder/decoración (como texto de
+         lectura no pasa AA; por eso las etiquetas apagadas usan el nivel 2). */
+      --dk-text:      #e2e8f0;   /* primario ~11:1 — JAMÁS #fff */
+      --dk-text-2:    #94a3b8;   /* secundario / etiquetas (5.3:1 sobre surface) */
+      --dk-text-3:    #64748b;   /* placeholders y decoración pura */
+      /* Acentos desaturados por módulo */
+      --dk-primary:   #34d399;   /* POS */
+      --dk-blue:      #60a5fa;   /* CAJA */
+      --dk-orange:    #fb923c;   /* TOOLS */
+      /* Estados: tinte translúcido + texto claro del mismo color */
+      --dk-ok-bg:     rgba(52,211,153,.12);  --dk-ok-tx:   #6ee7b7;
+      --dk-warn-bg:   rgba(251,191,36,.12);  --dk-warn-tx: #fcd34d;
+      --dk-err-bg:    rgba(248,113,113,.12); --dk-err-tx:  #fca5a5;
+      --dk-info-bg:   rgba(96,165,250,.12);  --dk-info-tx: #93c5fd;
+      /* [extra] familia violeta: presentaciones/duplicados usan indigo en claro */
+      --dk-violet-bg: rgba(129,140,248,.14); --dk-violet-tx: #c7d2fe;
+      /* Raíz — este par de líneas es el fix del BUG A */
+      background-color: var(--dk-bg);
+      color: var(--dk-text);
+    }
+
+    /* ── 2. SUPERFICIES ────────────────────────────────────────────────────── */
+    body.dark-mode .bg-white    { background-color: var(--dk-surface); }
+    body.dark-mode .bg-gray-50  { background-color: var(--dk-bg); }
+    body.dark-mode .bg-gray-100,
+    body.dark-mode .bg-gray-200,
+    body.dark-mode .bg-gray-300,
+    body.dark-mode .bg-slate-50 { background-color: var(--dk-raised); }
+    /* Lo que se apoya SOBRE un elevado (píldora activa de los segmentados
+       `bg-gray-100 > bg-white`) sube un escalón más, nunca baja: si no, la
+       elevación quedaría invertida y el control activo se vería hundido. */
+    body.dark-mode .bg-gray-100 .bg-white { background-color: var(--dk-raised-2); }
+    /* Estados de las utilidades gris: sin esto el hover/disabled se apagaba,
+       porque la regla de arriba les ganaba en especificidad. */
+    body.dark-mode .hover\:bg-gray-100:hover,
+    body.dark-mode .hover\:bg-gray-200:hover,
+    body.dark-mode .hover\:bg-gray-300:hover,
+    body.dark-mode .disabled\:bg-gray-200:disabled,
+    body.dark-mode .disabled\:bg-gray-300:disabled { background-color: var(--dk-raised-2); }
+    body.dark-mode .focus\:bg-white:focus { background-color: var(--dk-raised); }
+    /* Puntitos/perillas que SÍ deben seguir siendo blancos (perilla del switch,
+       dot pulsante de los banners de color). La clase no existe en modo claro. */
+    body.dark-mode .dk-solido { background-color: #fff; }
+
+    /* ── 3. JERARQUÍA DEL POS (catálogo + carrito) ─────────────────────────────
+       En claro el panel del catálogo es `bg-white` y sus cards `bg-gray-50`: el
+       CONTENEDOR es más claro que su CONTENIDO. Traducido literal a oscuro, la
+       elevación quedaría al revés (cards más oscuras que el panel que las
+       contiene). Aquí se corrige la traducción: los DOS paneles del POS son
+       LIENZO (--dk-bg) y todo lo que vive dentro (cards, cabecera, líneas del
+       carrito, footer del COBRAR) es TARJETA (--dk-surface). Catálogo y carrito
+       comparten el mismo plano de fondo y la elevación apunta siempre al usuario. */
+    body.dark-mode section.panel-transition.bg-white { background-color: var(--dk-bg); }
+    body.dark-mode .pos-card { background-color: var(--dk-surface); border-color: var(--dk-border); }
+    body.dark-mode .pos-card .bg-white,
+    body.dark-mode .cardv2-acts { background-color: var(--dk-surface); }
+    /* El hover del catálogo se apoyaba en una sombra verde que en oscuro no se ve:
+       pasa a ser aro + sombra profunda. */
+    body.dark-mode .pos-card:hover {
+      box-shadow: 0 0 0 1px var(--dk-primary), 0 12px 28px -10px rgba(0,0,0,.7);
+      border-color: var(--dk-primary) !important;
+    }
+    /* [FOTOS · no cambiar sin leer esto] Las fotos del catálogo se recortan con
+       `mix-blend-mode: multiply` contra el fondo de su contenedor. Multiplicar
+       contra una superficie oscura da NEGRO: el producto DESAPARECERÍA. Por eso el
+       plato de la foto se queda CLARO también en oscuro (slate-300): la foto se
+       ve, queda un punto más apagada que en claro (x0.8) y lee como "placa de
+       foto", no como parche blanco. Vale para el grid y para las miniaturas de los
+       sheets de analítica/presentaciones. */
+    body.dark-mode .prod-img,
+    body.dark-mode .ana-foto,
+    body.dark-mode .pv-foto { background-color: #cbd5e1; }
+    /* Un BOTÓN nunca es lienzo. Varios controles usan en claro el gris de fondo
+       (bg-gray-50) porque ahí es "un poco más oscuro que la tarjeta blanca"; en
+       oscuro esa misma traducción los hundiría por debajo de su propia tarjeta
+       (se veía en las teclas del keypad del PIN). Suben a elevado. */
+    body.dark-mode button.bg-gray-50,
+    body.dark-mode [role="button"].bg-gray-50 { background-color: var(--dk-raised); }
+
+    /* ── 4. TEXTOS · 3 niveles ────────────────────────────────────────────────
+       Los 9 grises de Tailwind colapsan a 3. text-gray-400 (169 usos) NO baja al
+       nivel 3 aunque sea el gris más apagado del claro: #64748b sobre superficie
+       da 2.9:1 y ahí van etiquetas REALES ("Comprobante", "Cliente", precio
+       unitario del carrito). El nivel 3 queda para placeholders y adornos. */
+    body.dark-mode .text-gray-900,
+    body.dark-mode .text-gray-800,
+    body.dark-mode .text-slate-900,
+    body.dark-mode .text-slate-800,
+    body.dark-mode .text-slate-700 { color: var(--dk-text); }
+    body.dark-mode .text-gray-700,
+    body.dark-mode .text-gray-600,
+    body.dark-mode .text-gray-500,
+    body.dark-mode .text-gray-400 { color: var(--dk-text-2); }
+    body.dark-mode .text-gray-300,
+    body.dark-mode .text-gray-200 { color: var(--dk-text-3); }
+    /* Acento del POS: #10b981 sobre superficie da 4.4:1 (justo bajo AA); el
+       emerald desaturado del sistema da 7.3:1 y se ve más fino. */
+    body.dark-mode .text-posPrimary { color: var(--dk-primary); }
+
+    /* ── 5. CAMPOS ────────────────────────────────────────────────────────────
+       El :not() sube la especificidad a (0,3,1) A PROPÓSITO: así el campo gana
+       contra la utilidad de fondo que traiga puesta (bg-gray-50, bg-blue-50…) y
+       TODOS los campos de la app se ven iguales. Checkbox/radio/range quedan
+       fuera: los pinta el navegador y forzarles fondo los rompe. */
+    body.dark-mode input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+      background-color: var(--dk-raised);
+      color: var(--dk-text);
+      border-color: var(--dk-border-hi);
+    }
+    body.dark-mode select,
+    body.dark-mode textarea {
+      background-color: var(--dk-raised);
+      color: var(--dk-text);
+      border-color: var(--dk-border-hi);
+    }
+    body.dark-mode input::placeholder,
+    body.dark-mode textarea::placeholder { color: var(--dk-text-3); }
+
+    /* ── 6. BORDES ────────────────────────────────────────────────────────── */
+    body.dark-mode .border-gray-100,
+    body.dark-mode .border-gray-200,
+    body.dark-mode .border-gray-300,
+    body.dark-mode .border-slate-200 { border-color: var(--dk-border); }
+    /* Bordes de estado → el mismo color al ~35%: translúcido se funde con su tinte */
+    body.dark-mode .border-red-100,
+    body.dark-mode .border-red-200,
+    body.dark-mode .border-red-300,
+    body.dark-mode .border-rose-200,
+    body.dark-mode .border-rose-300    { border-color: rgba(248,113,113,.35); }
+    body.dark-mode .border-emerald-200,
+    body.dark-mode .border-emerald-300 { border-color: rgba(52,211,153,.35); }
+    body.dark-mode .border-amber-200,
+    body.dark-mode .border-amber-300   { border-color: rgba(251,191,36,.35); }
+    body.dark-mode .border-blue-200,
+    body.dark-mode .border-sky-300     { border-color: rgba(96,165,250,.35); }
+    body.dark-mode .border-indigo-200,
+    body.dark-mode .border-indigo-300  { border-color: rgba(129,140,248,.35); }
+
+    /* ── 7. ESTADOS SEMÁNTICOS (tinte + texto claro del color) ─────────────── */
+    body.dark-mode .bg-emerald-50,
+    body.dark-mode .bg-emerald-100 { background-color: var(--dk-ok-bg); }
+    body.dark-mode .bg-amber-50,
+    body.dark-mode .bg-amber-100,
+    body.dark-mode .bg-amber-200,
+    body.dark-mode .bg-orange-50   { background-color: var(--dk-warn-bg); }
+    body.dark-mode .bg-red-50,
+    body.dark-mode .bg-red-100,
+    body.dark-mode .bg-rose-50,
+    body.dark-mode .bg-rose-100    { background-color: var(--dk-err-bg); }
+    body.dark-mode .bg-blue-50,
+    body.dark-mode .bg-blue-100,
+    body.dark-mode .bg-sky-50,
+    body.dark-mode .bg-sky-100     { background-color: var(--dk-info-bg); }
+    body.dark-mode .bg-indigo-50,
+    body.dark-mode .bg-indigo-100,
+    body.dark-mode .bg-purple-50   { background-color: var(--dk-violet-bg); }
+    body.dark-mode .hover\:bg-emerald-50:hover,
+    body.dark-mode .hover\:bg-emerald-200:hover { background-color: rgba(52,211,153,.2); }
+    body.dark-mode .hover\:bg-amber-50:hover,
+    body.dark-mode .hover\:bg-amber-100:hover   { background-color: rgba(251,191,36,.2); }
+    body.dark-mode .hover\:bg-red-50:hover,
+    body.dark-mode .hover\:bg-red-100:hover     { background-color: rgba(248,113,113,.2); }
+    /* Los 5 degradados claros de la app pierden el degradado y adoptan el tinte
+       plano de su familia: un degradado entre dos claros no existe en oscuro. */
+    body.dark-mode .from-emerald-50 { background-image: none; background-color: var(--dk-ok-bg); }
+    body.dark-mode .from-amber-50   { background-image: none; background-color: var(--dk-warn-bg); }
+    body.dark-mode .from-sky-50     { background-image: none; background-color: var(--dk-info-bg); }
+    body.dark-mode .from-indigo-50  { background-image: none; background-color: var(--dk-violet-bg); }
+    /* Textos oscuros de cada familia (viven sobre el tinte de su propio color) */
+    body.dark-mode .text-emerald-900,
+    body.dark-mode .text-emerald-800,
+    body.dark-mode .text-emerald-700,
+    body.dark-mode .text-emerald-600,
+    body.dark-mode .text-emerald-500 { color: var(--dk-ok-tx); }
+    body.dark-mode .text-amber-900,
+    body.dark-mode .text-amber-800,
+    body.dark-mode .text-amber-700,
+    body.dark-mode .text-amber-600,
+    body.dark-mode .text-amber-500,
+    body.dark-mode .text-orange-700  { color: var(--dk-warn-tx); }
+    body.dark-mode .text-red-900,
+    body.dark-mode .text-red-800,
+    body.dark-mode .text-red-700,
+    body.dark-mode .text-red-600,
+    body.dark-mode .text-red-500,
+    body.dark-mode .text-rose-700,
+    body.dark-mode .text-rose-600    { color: var(--dk-err-tx); }
+    body.dark-mode .text-blue-700,
+    body.dark-mode .text-blue-600,
+    body.dark-mode .text-blue-500,
+    body.dark-mode .text-sky-700,
+    body.dark-mode .text-sky-600     { color: var(--dk-info-tx); }
+    body.dark-mode .text-indigo-900,
+    body.dark-mode .text-indigo-700,
+    body.dark-mode .text-indigo-600,
+    body.dark-mode .text-indigo-500,
+    body.dark-mode .text-purple-700  { color: var(--dk-violet-tx); }
+    /* El tinte de estado ACLARA la superficie (12% de color sobre slate-800), así
+       que el gris de nivel 2 se queda corto encima: medido 4.34:1 en la fila
+       informativa del checklist SUNAT. Dentro de un tinte, el texto neutro sube al
+       nivel 1 — es contenido de la tarjeta de color, no una etiqueta apagada. */
+    body.dark-mode :is(.bg-emerald-50,.bg-emerald-100,.bg-amber-50,.bg-amber-100,.bg-orange-50,
+                       .bg-red-50,.bg-red-100,.bg-rose-50,.bg-rose-100,.bg-blue-50,.bg-blue-100,
+                       .bg-sky-50,.bg-sky-100,.bg-indigo-50,.bg-indigo-100,.bg-purple-50)
+                  :is(.text-gray-500,.text-gray-400) { color: var(--dk-text); }
+
+    /* ── 8. SOMBRAS ───────────────────────────────────────────────────────────
+       Una sombra negra sobre fondo negro no existe: en oscuro la elevación la dan
+       el color de la superficie y un aro de 1px. Las flotantes grandes sí guardan
+       una sombra profunda para despegarse del lienzo. */
+    body.dark-mode .shadow-sm,
+    body.dark-mode .shadow,
+    body.dark-mode .shadow-md  { box-shadow: none; }
+    body.dark-mode .shadow-lg,
+    body.dark-mode .shadow-xl,
+    body.dark-mode .shadow-2xl { box-shadow: 0 0 0 1px var(--dk-border), 0 12px 32px rgba(0,0,0,.45); }
+    /* Las 2 sombras arbitrarias (panel carrito y nav) y el footer del COBRAR: la
+       clase arbitraria no se puede nombrar cómodamente → se atacan por elemento. */
+    body.dark-mode section.panel-transition.bg-gray-50 { box-shadow: none; }
+    body.dark-mode nav[data-nav-root] { box-shadow: none; border-top-color: var(--dk-border); }
+    body.dark-mode footer.bg-white { box-shadow: none; border-color: var(--dk-border); }
+
+    /* ── 9. NAV · glow de refresco del catálogo ───────────────────────────────
+       El keyframe claro vuelve a border-top-color:#e5e7eb en 0% y 100% → en oscuro
+       daba un FLASH de línea blanca al terminar. Variante propia con el borde del
+       sistema. (Color literal y no var(): el valor se congela en el keyframe.) */
+    @keyframes navCatGlowDark {
+      0%   { box-shadow: none; border-top-color: rgba(148,163,184,.16); }
+      16%  { box-shadow: inset 0 0 0 120px rgba(16,185,129,.20), 0 -3px 44px 9px rgba(16,185,129,.55); border-top-color: #10b981; }
+      45%  { box-shadow: inset 0 0 0 120px rgba(16,185,129,.10), 0 -2px 26px 3px rgba(16,185,129,.30); border-top-color: #34d399; }
+      100% { box-shadow: none; border-top-color: rgba(148,163,184,.16); }
+    }
+    body.dark-mode nav.nav-catalogo-glow { animation-name: navCatGlowDark; }
+
+    /* ── 10. TOASTS ───────────────────────────────────────────────────────────
+       El de éxito ya nacía oscuro (bg-gray-900) y sobre un lienzo oscuro se
+       confundía con el fondo: pasa a superficie + aro verde para despegarse. Los
+       de error/aviso los resuelven los tintes de la sección 7. */
+    body.dark-mode .toast-anim.bg-gray-900 {
+      background-color: var(--dk-surface);
+      border-color: rgba(52,211,153,.35);
+    }
+    body.dark-mode .toast-anim .text-emerald-300 { color: var(--dk-ok-tx); }
+
+    /* ── 11. PIELES CON COLOR FIJO (no usan utilidades Tailwind) ───────────── */
+
+    /* 11.1 Card v2 del POS: barra de acciones y chips */
+    body.dark-mode .cab-pres { background: var(--dk-violet-bg); color: var(--dk-violet-tx); box-shadow: inset 0 0 0 1px rgba(129,140,248,.32); }
+    body.dark-mode .cab-pres:active { background: rgba(129,140,248,.24); }
+    body.dark-mode .cab-off  { background: var(--dk-raised); color: var(--dk-text-3); }
+    /* El chip de stock vive SOBRE la placa clara de la foto → se invierte a oscuro */
+    body.dark-mode .stk-on   { background: rgba(15,23,42,.78); color: var(--dk-ok-tx); }
+    body.dark-mode .dup-chip { background: var(--dk-violet-bg); color: var(--dk-violet-tx); border-color: rgba(129,140,248,.35); }
+    body.dark-mode .pres-btn-sq { background: var(--dk-violet-bg); color: var(--dk-violet-tx); border-color: rgba(129,140,248,.35); }
+    body.dark-mode .pres-btn-sq:hover { background: rgba(129,140,248,.24); }
+
+    /* 11.2 Botones comunes de sheets/modales */
+    body.dark-mode .vr-b-dark { background: var(--dk-raised-2); color: var(--dk-text); }
+    body.dark-mode .vr-b-pres { background: var(--dk-violet-bg); color: var(--dk-violet-tx); }
+    body.dark-mode .vr-b-off  { background: var(--dk-raised); color: var(--dk-text-3); }
+
+    /* 11.3 Líneas de promo del carrito y banner de combo: su texto café/verde
+       oscuro sobre un tinte translúcido quedaba invisible en oscuro. */
+    body.dark-mode .cart-incentivo { color: var(--dk-warn-tx); }
+    body.dark-mode .cart-aplicada  { color: var(--dk-ok-tx); }
+    body.dark-mode .combo-banner   { background: var(--dk-warn-bg); border-color: rgba(251,191,36,.45); }
+
+    /* 11.4 Sheet de ANALÍTICA */
+    body.dark-mode .ana-velo  { background: rgba(2,6,23,.72); }
+    body.dark-mode .ana-panel { background: var(--dk-surface); box-shadow: 0 0 0 1px var(--dk-border), 0 -12px 40px rgba(0,0,0,.55); }
+    body.dark-mode .ana-body  { background: var(--dk-surface); }
+    body.dark-mode .ana-acts  { background: var(--dk-surface); border-top-color: var(--dk-border); }
+    body.dark-mode .ana-head  { border-bottom-color: var(--dk-border); }
+    body.dark-mode .ana-nm,
+    body.dark-mode .ana-n     { color: var(--dk-text); }
+    body.dark-mode .ana-sub,
+    body.dark-mode .ana-ct,
+    body.dark-mode .ana-lb,
+    body.dark-mode .ana-zona,
+    body.dark-mode .ana-leg,
+    body.dark-mode .ana-dow,
+    body.dark-mode .ana-nota,
+    body.dark-mode .ana-msg,
+    body.dark-mode .ana-sem-lb,
+    body.dark-mode .ana-sem-lb b,
+    body.dark-mode .ana-skel-note { color: var(--dk-text-2); }
+    body.dark-mode .ana-n-verde   { color: var(--dk-ok-tx); }
+    body.dark-mode .ana-n-indigo  { color: var(--dk-violet-tx); }
+    body.dark-mode .ana-n-rojo,
+    body.dark-mode .ana-msg-err   { color: var(--dk-err-tx); }
+    body.dark-mode .ana-stat,
+    body.dark-mode .ana-card      { background: var(--dk-raised); }
+    body.dark-mode .ana-x         { background: var(--dk-raised); color: var(--dk-text-2); }
+    body.dark-mode .ana-chip-ok   { background: var(--dk-ok-bg); border-color: rgba(52,211,153,.35); color: var(--dk-ok-tx); }
+    body.dark-mode .ana-sem-track { background: var(--dk-surface); }
+    body.dark-mode .ana-hb-0      { background: rgba(148,163,184,.22); }
+    body.dark-mode .ana-bar-real,
+    body.dark-mode .ana-dot-real  { background: var(--dk-primary); }
+    body.dark-mode .ana-bar-pron,
+    body.dark-mode .ana-dot-pron  { background: var(--dk-violet-bg); border-color: rgba(129,140,248,.45); }
+    body.dark-mode .ana-dow-hoy   { background: var(--dk-violet-bg); color: var(--dk-violet-tx); }
+    body.dark-mode .ana-aviso-info { background: var(--dk-info-bg); color: var(--dk-info-tx); }
+    body.dark-mode .ana-aviso-amb  { background: var(--dk-warn-bg); color: var(--dk-warn-tx); }
+    body.dark-mode .ana-skel-box,
+    body.dark-mode .ana-skel-chart { background: linear-gradient(100deg, #263449 40%, #31415a 50%, #263449 60%); background-size: 200% 100%; }
+
+    /* 11.5 Sheet de PRESENTACIONES */
+    body.dark-mode .pv-velo  { background: rgba(2,6,23,.72); }
+    body.dark-mode .pv-sheet { background: var(--dk-surface); box-shadow: 0 0 0 1px var(--dk-border), 0 -12px 40px rgba(0,0,0,.55); }
+    body.dark-mode .pv-tt,
+    body.dark-mode .pv-n1,
+    body.dark-mode .pv-pv    { color: var(--dk-text); }
+    body.dark-mode .pv-sub,
+    body.dark-mode .pv-n2,
+    body.dark-mode .pv-st,
+    body.dark-mode .pv-nota  { color: var(--dk-text-2); }
+    body.dark-mode .pv-x     { background: var(--dk-raised); color: var(--dk-text-2); }
+    body.dark-mode .pv-fila  { background: var(--dk-violet-bg); border-color: rgba(129,140,248,.4); }
+    body.dark-mode .pv-fila.pv-base { background: var(--dk-ok-bg); border-color: rgba(52,211,153,.4); }
+    body.dark-mode .pv-tag   { background: var(--dk-primary); color: #04211a; }
+
+    /* 11.6 Estado vacío compartido de sheets */
+    body.dark-mode .sv-t { color: var(--dk-text); }
+    body.dark-mode .sv-s { color: var(--dk-text-2); }
+
+    /* 11.7 KPI cards del turno */
+    body.dark-mode .me-kpi-card { background-color: var(--dk-surface); border-color: var(--dk-border); }
+    body.dark-mode .me-kpi-num  { color: var(--dk-text); }
+    body.dark-mode .me-kpi-lbl  { color: var(--dk-text-2); }
+
+    /* 11.8 WIZARD de login — el verde esmeralda ES la marca y no cambia de color:
+       solo baja un paso de luminosidad para que de noche no deslumbre. */
+    body.dark-mode .wiz-bg {
+      background: linear-gradient(135deg, #022c22 0%, #065f46 25%, #04382c 60%, #022c22 100%);
+      background-size: 200% 200%;
+    }
+    body.dark-mode .wiz-user-card { background: var(--dk-raised); }
+    body.dark-mode .wiz-user-card:hover { border-color: var(--dk-primary); box-shadow: 0 0 0 1px var(--dk-primary); }
+    body.dark-mode .wiz-cajero-chip { background: var(--dk-warn-bg); border-color: rgba(251,191,36,.5); }
+    body.dark-mode .wiz-add-cajero.is-locked { background: var(--dk-raised); color: var(--dk-text-3); }
   </style>
   <style>
     /* ── Update overlay ─────────────────────────────── */
@@ -2034,7 +2416,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
   // de verificación lo maneja DeviceAuth.init() arriba. Verificado por grep.
   </script>
 </head>
-<body class="h-screen flex flex-col font-sans overflow-hidden select-none" :class="{'dark-mode': false}">
+<!-- [RETHEME OSCURO · BUG B] Se quitó el `:class="{'dark-mode': false}"` que colgaba
+     aquí: Vue monta en #app, así que ese binding NUNCA se evaluaba (quedaba como
+     atributo literal en el HTML) y encima mentía diciendo que el tema estaba
+     apagado. Quien pone y quita la clase es toggleDarkMode()/la rehidratación del
+     arranque, directo sobre document.body. -->
+<body class="h-screen flex flex-col font-sans overflow-hidden select-none">
 
   <!-- ── [v2.5.34] Candado de verificación dispositivo (pre-Vue) ──────
        Bloquea TODA la app antes de que Vue arranque. Es la primera línea
@@ -4621,7 +5008,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                    </div>
                    <!-- [v2.8.232] Banner carrito offline: se puede vender igual; la venta entra EN COLA y sube sola -->
                    <div v-if="offlineMode" class="bg-amber-500 text-white text-[11px] font-black text-center py-1.5 px-3 shrink-0 flex items-center justify-center gap-1.5">
-                       <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                       <span class="w-2 h-2 bg-white dk-solido rounded-full animate-pulse"></span>
                        SIN CONEXIÓN · puedes vender: la venta queda EN COLA y sube sola
                    </div>
                    
@@ -4852,7 +5239,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                           <span class="text-sm font-bold text-gray-700">Modo nocturno</span>
                        </div>
                        <button @click="toggleDarkMode" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="darkMode ? 'bg-posPrimary' : 'bg-gray-300'">
-                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="darkMode ? 'translate-x-6' : 'translate-x-1'"></span>
+                          <span class="inline-block h-4 w-4 transform rounded-full bg-white dk-solido shadow transition-transform" :class="darkMode ? 'translate-x-6' : 'translate-x-1'"></span>
                        </button>
                     </div>
 
@@ -4866,7 +5253,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                           </div>
                        </div>
                        <button @click="toggleModoPro" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="modoPro ? 'bg-indigo-500' : 'bg-gray-300'">
-                          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" :class="modoPro ? 'translate-x-6' : 'translate-x-1'"></span>
+                          <span class="inline-block h-4 w-4 transform rounded-full bg-white dk-solido shadow transition-transform" :class="modoPro ? 'translate-x-6' : 'translate-x-1'"></span>
                        </button>
                     </div>
 
@@ -5119,7 +5506,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             <span :class="cajaAbierta ? 'bg-emerald-200' : 'bg-red-500 animate-pulse'" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full"></span>
         </div>
         <div class="flex-1 relative" style="background:#ea580c">
-            <span v-if="etiqsPendientes.length > 0" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+            <span v-if="etiqsPendientes.length > 0" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white dk-solido animate-pulse"></span>
         </div>
         <div class="absolute left-1/2 -translate-x-1/2 top-[3px] w-10 h-1 rounded-full bg-white/70"></div>
     </div>
@@ -7274,7 +7661,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     </button>
                 </div>
-                <div v-show="camaraGuiaAbierta" class="rounded-xl overflow-hidden"><div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
+                <div v-show="camaraGuiaAbierta" class="rounded-xl overflow-hidden"><div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white dk-solido rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
                 <!-- Lista items -->
                 <div class="flex-1 space-y-2 overflow-y-auto">
                     <!-- [v2.8.30] Contador en vivo (réplica WH) -->
@@ -7414,7 +7801,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     </button>
                 </div>
-                <div v-show="camaraGuiaAbierta && guiaTab==='entrada'" class="rounded-xl overflow-hidden"><div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
+                <div v-show="camaraGuiaAbierta && guiaTab==='entrada'" class="rounded-xl overflow-hidden"><div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white dk-solido rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div><div id="reader-guia" class="bg-black w-full"></div><button @click="toggleCamaraGuia" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button></div>
                 <div class="flex-1 space-y-2 overflow-y-auto">
                     <!-- [v2.8.30] Contador en vivo (réplica WH) -->
                     <div v-if="guiaItems.length" class="flex items-center justify-between px-1 pb-1 sticky top-0 z-10">
@@ -7655,7 +8042,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 </div>
                 <div v-show="rwCamara" class="rounded-xl overflow-hidden">
                     <div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5">
-                        <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · apunta producto tras producto
+                        <span class="w-2 h-2 bg-white dk-solido rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · apunta producto tras producto
                     </div>
                     <div id="reader-recibir-wh" class="bg-black w-full"></div>
                     <button @click="rwToggleCamara" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button>
@@ -7744,7 +8131,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             </div>
             <!-- Visor de cámara -->
             <div v-show="camaraAuditAbierta" class="mt-2 rounded-xl overflow-hidden">
-                <div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div>
+                <div class="bg-emerald-600 text-white text-[11px] font-black text-center py-1 flex items-center justify-center gap-1.5"><span class="w-2 h-2 bg-white dk-solido rounded-full animate-pulse"></span> ESCANEANDO EN CONTINUO · producto tras producto</div>
                 <div id="reader-audit" class="bg-black w-full"></div>
                 <button @click="toggleCamaraAudit" class="w-full bg-red-500 text-white p-2 font-bold text-xs">✕ Cerrar cámara</button>
             </div>
