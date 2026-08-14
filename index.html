@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.285';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.286';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -7932,6 +7932,29 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                                     </span>
                                 </button>
                             </div>
+                            <!-- [787] ✏ Editar CABECERA (modelo WH: observación + zona destino — NO toca stock ni líneas) -->
+                            <button v-if="!esGuiaVentasAuto(g)" @click="editarGuiaCab(g)"
+                                    class="w-full mt-2 bg-gray-700/60 hover:bg-gray-600 text-gray-300 font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                                ✏ {{ editGuiaCabId === g.id_guia ? 'Cancelar edición' : 'Editar observación' + (g.tipo === 'SALIDA_MOVIMIENTO' ? ' / destino' : '') }}
+                            </button>
+                            <div v-if="editGuiaCabId === g.id_guia" class="mt-2 bg-gray-900/60 border border-gray-700 rounded-xl p-3 space-y-2">
+                                <div v-if="g.tipo === 'SALIDA_MOVIMIENTO'">
+                                    <label class="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1 block">Zona destino</label>
+                                    <select v-model="editGuiaDest" class="w-full bg-gray-800 text-white font-bold px-3 py-2.5 rounded-xl border border-blue-500/50 outline-none text-sm">
+                                        <option value="">— Seleccionar zona —</option>
+                                        <option v-for="z in zonasUnicas.filter(z => z !== g.zona_id)" :key="z" :value="z">{{ z }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Observación</label>
+                                    <textarea v-model="editGuiaObs" rows="2" placeholder="Nota de la guía…"
+                                              class="w-full bg-gray-800 text-white px-3 py-2.5 rounded-xl border border-gray-600 outline-none text-sm resize-none"></textarea>
+                                </div>
+                                <button @click="guardarGuiaCab(g)"
+                                        class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black text-xs py-2.5 rounded-xl active:scale-95">
+                                    💾 Guardar cambios
+                                </button>
+                            </div>
                             <p v-if="esGuiaAbierta(g) && !esGuiaVentasAuto(g)" class="text-[10px] text-emerald-400/70 text-center mt-1.5">Mantén presionado para cerrar</p>
                         </div>
                     </div>
@@ -9535,6 +9558,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const guiaDetallando = ref(null); // guía expandida en historial
         const guiaDetalle = ref([]); // items del guiaDetallando
         const reabriendoGuiaId = ref(null); // [v2.8.30] id de la guía que se está reabriendo (lock UI)
+        // [787] edición de CABECERA de guía (modelo WH: observación + zona destino, sin tocar stock)
+        const editGuiaCabId = ref(null);
+        const editGuiaObs   = ref('');
+        const editGuiaDest  = ref('');
         const cerrandoGuiaId = ref(null);   // [CUTOVER] id de la guía que se está cerrando (lock UI)
         // [v2.8.39] Historial estilo WH: filtro + búsqueda + celebración + undo
         const guiaFiltro = ref('todos');    // 'todos' | 'ingreso' | 'salida' | 'abiertas'
@@ -24002,6 +24029,41 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // Reabre una guía CERRADA: pide clave admin (online MOS + fallback offline) y llama
         // me.reabrir_guia_zona directo a Supabase. Patrón optimista: parchea el estado local a
         // ABIERTA ANTES del refresh (si no, el próximo listarGuias la repintaría CERRADA).
+        // [787] ✏ EDITAR CABECERA de guía — réplica fiel del modelo WH (actualizar_guia):
+        // solo metadata (observación · zona destino del movimiento), JAMÁS stock ni líneas.
+        // Optimista: pinta ya, red detrás, revierte con aviso si falla. Sin clave (igual que WH).
+        const editarGuiaCab = (g) => {
+            if (editGuiaCabId.value === g.id_guia) { editGuiaCabId.value = null; return; }
+            editGuiaCabId.value = g.id_guia;
+            editGuiaObs.value   = g.observacion || '';
+            editGuiaDest.value  = g.zona_destino || '';
+        };
+        const guardarGuiaCab = async (g) => {
+            const obs  = (editGuiaObs.value || '').trim();
+            const dest = editGuiaDest.value || '';
+            if (g.tipo === 'SALIDA_MOVIMIENTO' && !dest) { agregarToast('Falta la zona destino', 'Selecciónala antes de guardar', 'warning'); return; }
+            const prev = { obs: g.observacion, dest: g.zona_destino };
+            g.observacion = obs; if (g.tipo === 'SALIDA_MOVIMIENTO') g.zona_destino = dest;
+            editGuiaCabId.value = null;
+            try {
+                const tk = await _mintTokenSB();
+                if (!tk) throw new Error('sin conexión — reintenta');
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/editar_guia_cabecera`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idGuia: g.id_guia, observacion: obs,
+                        zonaDestino: (g.tipo === 'SALIDA_MOVIMIENTO' ? dest : undefined),
+                        usuario: config.value.vendedor || '' } })
+                }, 10000);
+                const d = await r.json().catch(() => null);
+                if (!d || d.ok !== true) throw new Error((d && d.error) || 'el servidor no guardó');
+                agregarToast('✓ Guía actualizada', g.id_guia, 'success', 2000);
+            } catch (e) {
+                g.observacion = prev.obs; g.zona_destino = prev.dest;   // revertir lo optimista
+                agregarToast('⚠ No se guardó la edición', e.message || String(e), 'error');
+            }
+        };
+
         const reabrirGuia = (guia) => {
             if (!guia || !guia.id_guia) return;
             if (!esGuiaCerrada(guia)) { agregarToast('Guía ya abierta', 'No requiere reabrir'); return; }
@@ -24568,6 +24630,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           guiaBuscarItem, quitarItemGuia, fmtCantGuia, confirmarGuia, listarGuiasHistorial, expandirGuia, imprimirGuia,
           // [v2.8.30] UX moderna + candado de guías
           guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, esGuiaReabrible, reabrirGuia, reabriendoGuiaId,
+          editGuiaCabId, editGuiaObs, editGuiaDest, editarGuiaCab, guardarGuiaCab,   // [787] editar cabecera
+
           cerrandoGuiaId,
           // [v2.8.39] Historial estilo WH: día/filtros/búsqueda · hold-to-confirm · undo · helpers
           guiaFiltro, guiaBusqHist, guiaCelebraId, guiaSearchHitId, guiaUndo,
