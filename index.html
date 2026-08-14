@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.286';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.287';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -7903,9 +7903,47 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         <!-- Items expandidos -->
                         <div v-if="guiaDetallando?.id_guia === g.id_guia" class="border-t border-gray-700 px-4 py-3">
                             <div v-if="!guiaDetalle.length" class="text-gray-500 text-xs text-center py-2">Cargando...</div>
+                            <template v-if="guiaEditId !== g.id_guia">
                             <div v-for="it in guiaDetalle" :key="it.cod_barras" class="flex justify-between py-1 text-sm">
                                 <span class="text-gray-300">{{ getNombrePres(it.cod_barras) }}</span>
                                 <span class="font-black" :class="esGuiaIngreso(g) ? 'text-emerald-400' : 'text-red-400'">{{ esGuiaIngreso(g) ? '+' : '-' }}{{ fmtCantGuia(it.cantidad) }}</span>
+                            </div>
+                            </template>
+                            <!-- [788] 🔧 EDITOR DE LÍNEAS (admin): cantidad / eliminar / agregar — stock por delta server-side -->
+                            <div v-else class="space-y-1.5">
+                                <div v-for="row in guiaEditRows" :key="'ed'+row.linea"
+                                     class="flex items-center gap-2 py-1 text-sm"
+                                     :class="row._del ? 'opacity-40' : ''">
+                                    <span class="flex-1 min-w-0 truncate" :class="row._del ? 'text-red-400 line-through' : 'text-gray-300'">{{ getNombrePres(row.cod_barras) }}</span>
+                                    <input type="number" inputmode="decimal" min="0" step="any" v-model="row.cantidad" :disabled="row._del"
+                                           class="w-20 bg-gray-800 text-white font-black text-center px-2 py-1.5 rounded-lg border border-amber-500/50 outline-none text-sm">
+                                    <button @click="row._del = !row._del" class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center active:scale-90"
+                                            :class="row._del ? 'bg-gray-700 text-gray-300' : 'bg-red-900/50 text-red-300'">{{ row._del ? '↩' : '🗑' }}</button>
+                                </div>
+                                <div v-for="(nv, ni) in guiaEditNuevos" :key="'nv'+ni" class="flex items-center gap-2 py-1 text-sm">
+                                    <span class="flex-1 min-w-0 truncate text-emerald-300">➕ {{ nv.nombre }}</span>
+                                    <input type="number" inputmode="decimal" min="0" step="any" v-model="nv.cantidad"
+                                           class="w-20 bg-gray-800 text-white font-black text-center px-2 py-1.5 rounded-lg border border-emerald-500/50 outline-none text-sm">
+                                    <button @click="guiaEditNuevos.splice(ni,1)" class="shrink-0 w-8 h-8 rounded-lg bg-red-900/50 text-red-300 flex items-center justify-center active:scale-90">🗑</button>
+                                </div>
+                                <div class="relative">
+                                    <input v-model="guiaEditQ" @input="guiaEditBuscar" type="text" placeholder="🔍 Agregar producto (nombre o código)…"
+                                           class="w-full bg-gray-800 text-white px-3 py-2 rounded-xl border border-gray-600 outline-none text-sm">
+                                    <div v-if="guiaEditRes.length" class="absolute left-0 right-0 top-full mt-1 bg-gray-900 border border-gray-600 rounded-xl shadow-2xl z-30 max-h-44 overflow-y-auto">
+                                        <button v-for="rp in guiaEditRes" :key="rp.cod" @click="guiaEditAddProd(rp)"
+                                                class="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 border-b border-gray-800 last:border-0">
+                                            {{ rp.nombre }} <span class="text-gray-500 text-xs">· {{ rp.cod }}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 pt-1">
+                                    <button @click="guiaEditCancelar" class="flex-1 bg-gray-700 text-gray-300 font-bold text-xs py-2.5 rounded-xl active:scale-95">Cancelar</button>
+                                    <button @click="guiaEditGuardar(g)" :disabled="guiaEditGuardando"
+                                            class="flex-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-xs py-2.5 rounded-xl active:scale-95">
+                                        {{ guiaEditGuardando ? 'Guardando…' : '💾 Guardar cambios' }}
+                                    </button>
+                                </div>
+                                <p class="text-[10px] text-amber-400/70 text-center">El stock se ajusta automático por la diferencia (guía {{ esGuiaCerrada(g) ? 'cerrada: aplica ya' : 'abierta: aplica al cerrar' }})</p>
                             </div>
                             <div class="mt-3 flex gap-2">
                                 <button @click="imprimirGuia(g)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
@@ -7936,6 +7974,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                             <button v-if="!esGuiaVentasAuto(g)" @click="editarGuiaCab(g)"
                                     class="w-full mt-2 bg-gray-700/60 hover:bg-gray-600 text-gray-300 font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-2 active:scale-95">
                                 ✏ {{ editGuiaCabId === g.id_guia ? 'Cancelar edición' : 'Editar observación' + (g.tipo === 'SALIDA_MOVIMIENTO' ? ' / destino' : '') }}
+                            </button>
+                            <!-- [788] 🔧 Editar PRODUCTOS (clave admin 8 díg → cantidades / eliminar / agregar) -->
+                            <button v-if="!esGuiaVentasAuto(g) && g.tipo !== 'ENTRADA_TRASLADO' && guiaEditId !== g.id_guia"
+                                    @click="guiaEditAbrir(g)"
+                                    class="w-full mt-2 bg-amber-900/40 hover:bg-amber-800/50 border border-amber-600/40 text-amber-300 font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-2 active:scale-95">
+                                🔧 Editar productos (admin)
                             </button>
                             <div v-if="editGuiaCabId === g.id_guia" class="mt-2 bg-gray-900/60 border border-gray-700 rounded-xl p-3 space-y-2">
                                 <div v-if="g.tipo === 'SALIDA_MOVIMIENTO'">
@@ -24064,6 +24108,122 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
         };
 
+        // ── [788] 🔧 EDITOR DE LÍNEAS de guía (clave admin) ──────────────────────
+        // Cantidades / eliminar / agregar sobre una guía registrada. El stock lo mueve
+        // el server por DELTA contra cantidad_aplicada (me.editar_guia_lineas, refs
+        // kardex propias + opId idempotente). Bloqueadas: SALIDA_VENTAS y espejo.
+        const guiaEditId        = ref(null);
+        const guiaEditClave     = ref('');
+        const guiaEditUser      = ref('');
+        const guiaEditRows      = ref([]);   // [{linea, cod_barras, cantidad, _orig, _del}]
+        const guiaEditNuevos    = ref([]);   // [{codBarras, nombre, cantidad}]
+        const guiaEditQ         = ref('');
+        const guiaEditRes       = ref([]);
+        const guiaEditGuardando = ref(false);
+
+        const guiaEditAbrir = (g) => {
+            if (!g || !g.id_guia) return;
+            pedirPin(async (resultado) => {
+                if (!resultado || !resultado.autorizado) return;
+                guiaEditClave.value = resultado.clave || '';
+                guiaEditUser.value  = String(resultado.validadoPor || config.value.vendedor || '');
+                // Detalle FRESCO del server (con `linea` — clave estable para editar).
+                try {
+                    const tk = await _mintTokenSB();
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_guia_detalle`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: { idGuia: String(g.id_guia) } })
+                    }, 10000);
+                    const d = await r.json().catch(() => null);
+                    if (!d || d.ok !== true || !Array.isArray(d.items)) throw new Error((d && d.error) || 'no se pudo leer la guía');
+                    guiaEditRows.value = d.items.map(it => ({
+                        linea: it.linea, cod_barras: it.cod_barras,
+                        cantidad: String(parseFloat(it.cantidad) || 0),
+                        _orig: parseFloat(it.cantidad) || 0, _del: false
+                    }));
+                    guiaEditNuevos.value = []; guiaEditQ.value = ''; guiaEditRes.value = [];
+                    guiaEditId.value = g.id_guia;
+                } catch (e) {
+                    agregarToast('⚠ No se pudo abrir el editor', e.message || String(e), 'error');
+                }
+            }, { accion: 'EDITAR_GUIA_LINEAS', refDocumento: String(g.id_guia) });
+        };
+
+        const guiaEditBuscar = () => {
+            const q = String(guiaEditQ.value || '').trim().toLowerCase();
+            if (q.length < 2) { guiaEditRes.value = []; return; }
+            const pres = (db.value && db.value.PRESENTACIONES) || [];
+            const enGuia = new Set(guiaEditRows.value.map(r => String(r.cod_barras)));
+            guiaEditNuevos.value.forEach(n => enGuia.add(String(n.codBarras)));
+            const out = [];
+            for (let i = 0; i < pres.length && out.length < 8; i++) {
+                const cod = String(pres[i].Cod_Barras || '');
+                if (!cod || enGuia.has(cod)) continue;
+                const nom = String(getNombrePres(cod) || '');
+                if (nom.toLowerCase().indexOf(q) >= 0 || cod.toLowerCase().indexOf(q) >= 0) {
+                    out.push({ cod, nombre: nom || cod });
+                }
+            }
+            guiaEditRes.value = out;
+        };
+
+        const guiaEditAddProd = (rp) => {
+            guiaEditNuevos.value.push({ codBarras: rp.cod, nombre: rp.nombre, cantidad: '1' });
+            guiaEditQ.value = ''; guiaEditRes.value = [];
+        };
+
+        const guiaEditCancelar = () => {
+            guiaEditId.value = null; guiaEditClave.value = '';
+            guiaEditRows.value = []; guiaEditNuevos.value = []; guiaEditQ.value = ''; guiaEditRes.value = [];
+        };
+
+        const guiaEditGuardar = async (g) => {
+            if (guiaEditGuardando.value || !g || guiaEditId.value !== g.id_guia) return;
+            const editar = [], eliminar = [];
+            for (const row of guiaEditRows.value) {
+                if (row._del) { eliminar.push(row.linea); continue; }
+                const nueva = parseFloat(String(row.cantidad).replace(',', '.'));
+                if (isNaN(nueva) || nueva < 0) { agregarToast('Cantidad inválida', getNombrePres(row.cod_barras), 'warning'); return; }
+                if (nueva !== row._orig) editar.push({ linea: row.linea, cantidad: nueva });
+            }
+            const agregar = [];
+            for (const nv of guiaEditNuevos.value) {
+                const c = parseFloat(String(nv.cantidad).replace(',', '.'));
+                if (isNaN(c) || c <= 0) { agregarToast('Cantidad inválida', nv.nombre, 'warning'); return; }
+                agregar.push({ codBarras: nv.codBarras, cantidad: c });
+            }
+            if (!editar.length && !eliminar.length && !agregar.length) { guiaEditCancelar(); return; }
+            guiaEditGuardando.value = true;
+            try {
+                const tk = await _mintTokenSB();
+                const opId = 'EDL-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/editar_guia_lineas`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {
+                        idGuia: String(g.id_guia), opId,
+                        usuario: guiaEditUser.value, claveAdmin: guiaEditClave.value,
+                        editar, eliminar, agregar
+                    } })
+                }, 20000);
+                const d = await r.json().catch(() => null);
+                if (!d || d.ok !== true) throw new Error((d && d.error) || 'el servidor no guardó');
+                // Optimista: repintar el detalle visible con el resultado local.
+                const vivos = guiaEditRows.value.filter(row => !row._del)
+                    .map(row => ({ cod_barras: row.cod_barras, cantidad: parseFloat(String(row.cantidad).replace(',', '.')) || 0 }));
+                guiaEditNuevos.value.forEach(nv => vivos.push({ cod_barras: nv.codBarras, cantidad: parseFloat(String(nv.cantidad).replace(',', '.')) || 0 }));
+                guiaDetalle.value = vivos;
+                try { playVentaOK?.(); } catch(_){}
+                agregarToast('✓ Guía corregida', `${d.editadas || 0} editada(s) · ${d.eliminadas || 0} quitada(s) · ${d.agregadas || 0} agregada(s)` + (esGuiaCerrada(g) ? ' · stock ajustado' : ''), 'success', 4000);
+                guiaEditCancelar();
+            } catch (e) {
+                agregarToast('⚠ No se guardó', e.message || String(e), 'error', 6000);
+            } finally {
+                guiaEditGuardando.value = false;
+            }
+        };
+
         const reabrirGuia = (guia) => {
             if (!guia || !guia.id_guia) return;
             if (!esGuiaCerrada(guia)) { agregarToast('Guía ya abierta', 'No requiere reabrir'); return; }
@@ -24631,6 +24791,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // [v2.8.30] UX moderna + candado de guías
           guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, esGuiaReabrible, reabrirGuia, reabriendoGuiaId,
           editGuiaCabId, editGuiaObs, editGuiaDest, editarGuiaCab, guardarGuiaCab,   // [787] editar cabecera
+          guiaEditId, guiaEditRows, guiaEditNuevos, guiaEditQ, guiaEditRes, guiaEditGuardando,   // [788] editor líneas
+          guiaEditAbrir, guiaEditBuscar, guiaEditAddProd, guiaEditCancelar, guiaEditGuardar,     // [788]
 
           cerrandoGuiaId,
           // [v2.8.39] Historial estilo WH: día/filtros/búsqueda · hold-to-confirm · undo · helpers
