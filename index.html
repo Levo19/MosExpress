@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.289';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.290';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -7910,22 +7910,24 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                                 <span class="font-black" :class="esGuiaIngreso(g) ? 'text-emerald-400' : 'text-red-400'">{{ esGuiaIngreso(g) ? '+' : '-' }}{{ fmtCantGuia(it.cantidad) }}</span>
                             </div>
                             </template>
-                            <!-- [788] 🔧 EDITOR DE LÍNEAS (admin): cantidad / eliminar / agregar — stock por delta server-side -->
+                            <!-- [790] 🔧 EDITOR DE LÍNEAS optimista: +/− guarda solo (sin botón Guardar);
+                                 − en cero elimina; número clickeable para tipear; autocierre 3 min. -->
                             <div v-else class="space-y-1.5">
                                 <div v-for="row in guiaEditRows" :key="'ed'+row.linea"
                                      class="flex items-center gap-2 py-1 text-sm"
                                      :class="row._del ? 'opacity-40' : ''">
                                     <span class="flex-1 min-w-0 truncate" :class="row._del ? 'text-red-400 line-through' : 'text-gray-300'">{{ getNombrePres(row.cod_barras) }}</span>
-                                    <input type="number" inputmode="decimal" min="0" step="any" v-model="row.cantidad" :disabled="row._del"
-                                           class="w-20 bg-gray-800 text-white font-black text-center px-2 py-1.5 rounded-lg border border-amber-500/50 outline-none text-sm">
-                                    <button @click="row._del = !row._del" class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center active:scale-90"
-                                            :class="row._del ? 'bg-gray-700 text-gray-300' : 'bg-red-900/50 text-red-300'">{{ row._del ? '↩' : '🗑' }}</button>
-                                </div>
-                                <div v-for="(nv, ni) in guiaEditNuevos" :key="'nv'+ni" class="flex items-center gap-2 py-1 text-sm">
-                                    <span class="flex-1 min-w-0 truncate text-emerald-300">➕ {{ nv.nombre }}</span>
-                                    <input type="number" inputmode="decimal" min="0" step="any" v-model="nv.cantidad"
-                                           class="w-20 bg-gray-800 text-white font-black text-center px-2 py-1.5 rounded-lg border border-emerald-500/50 outline-none text-sm">
-                                    <button @click="guiaEditNuevos.splice(ni,1)" class="shrink-0 w-8 h-8 rounded-lg bg-red-900/50 text-red-300 flex items-center justify-center active:scale-90">🗑</button>
+                                    <template v-if="!row._del">
+                                        <button @click="guiaEditStep(row, -1)" class="shrink-0 w-9 h-9 rounded-lg bg-gray-700 text-white text-lg font-black flex items-center justify-center active:scale-90">−</button>
+                                        <input v-if="row._editing" type="number" inputmode="decimal" min="0" step="any" v-model="row.cantidad"
+                                               @blur="guiaEditTypeDone(row)" @keydown.enter="$event.target.blur()"
+                                               class="w-16 bg-gray-900 text-white font-black text-center px-1 py-1.5 rounded-lg border border-sky-400/70 outline-none text-sm">
+                                        <button v-else @click="row._editing = true" title="Toca para escribir"
+                                                class="w-16 py-1.5 bg-gray-800 text-white font-black text-center rounded-lg border border-amber-500/40 text-sm"
+                                                style="text-decoration:underline dotted rgba(148,163,184,.5);text-underline-offset:3px">{{ row.cantidad }}</button>
+                                        <button @click="guiaEditStep(row, 1)" class="shrink-0 w-9 h-9 rounded-lg bg-gray-700 text-white text-lg font-black flex items-center justify-center active:scale-90">+</button>
+                                    </template>
+                                    <button v-else @click="guiaEditRestaurar(row)" class="shrink-0 px-3 h-9 rounded-lg bg-gray-700 text-gray-200 text-xs font-bold flex items-center gap-1 active:scale-90">↩ Deshacer</button>
                                 </div>
                                 <div class="relative">
                                     <input v-model="guiaEditQ" @input="guiaEditBuscar" type="text" placeholder="🔍 Agregar producto (nombre o código)…"
@@ -7937,26 +7939,20 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                                         </button>
                                     </div>
                                 </div>
-                                <div class="flex gap-2 pt-1">
-                                    <button @click="guiaEditCancelar" class="flex-1 bg-gray-700 text-gray-300 font-bold text-xs py-2.5 rounded-xl active:scale-95">Cancelar</button>
-                                    <button @click="guiaEditGuardar(g)" :disabled="guiaEditGuardando"
-                                            class="flex-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black text-xs py-2.5 rounded-xl active:scale-95">
-                                        {{ guiaEditGuardando ? 'Guardando…' : '💾 Guardar cambios' }}
-                                    </button>
+                                <div class="flex items-center gap-2 pt-1">
+                                    <p class="flex-1 text-[10px]" :class="guiaEditGuardando ? 'text-amber-400' : 'text-emerald-400/80'">
+                                        {{ guiaEditGuardando ? '⏳ guardando…' : '✓ cambios guardados al instante · stock por diferencia' }}
+                                    </p>
+                                    <button @click="guiaEditCerrar(true)" class="shrink-0 bg-gray-700 hover:bg-gray-600 text-white font-black text-xs px-5 py-2.5 rounded-xl active:scale-95">✓ Listo</button>
                                 </div>
-                                <p class="text-[10px] text-amber-400/70 text-center">El stock se ajusta automático por la diferencia (guía {{ esGuiaCerrada(g) ? 'cerrada: aplica ya' : 'abierta: aplica al cerrar' }})</p>
                             </div>
                             <div class="mt-3 flex gap-2">
                                 <button @click="imprimirGuia(g)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                                     Imprimir 80mm
                                 </button>
-                                <!-- [v2.8.30] Reabrir guía cerrada (requiere clave admin) → me.reabrir_guia_zona (+30 min) -->
-                                <button v-if="esGuiaReabrible(g) && !esGuiaVentasAuto(g)" @click="reabrirGuia(g)" :disabled="reabriendoGuiaId === g.id_guia"
-                                        class="flex-1 bg-amber-600/80 hover:bg-amber-500 disabled:bg-amber-900/40 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 018 0m-9 4h10a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2v-5a2 2 0 012-2z"></path></svg>
-                                    {{ reabriendoGuiaId === g.id_guia ? 'Reabriendo...' : '🔓 Reabrir' }}
-                                </button>
+                                <!-- [790] Botón Reabrir RETIRADO (decisión dueño): redundante con ✏ Editar
+                                     observación + 🔧 Editar productos. La RPC reabrir_guia_zona sigue viva. -->
                                 <!-- [v2.8.39] Cerrar guía ABIERTA — HOLD-TO-CONFIRM (mantén ~850ms) → aplica stock 1 vez -->
                                 <button v-if="esGuiaAbierta(g) && !esGuiaVentasAuto(g)"
                                         data-guia-hold
@@ -24109,18 +24105,26 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
         };
 
-        // ── [788] 🔧 EDITOR DE LÍNEAS de guía (clave admin) ──────────────────────
-        // Cantidades / eliminar / agregar sobre una guía registrada. El stock lo mueve
-        // el server por DELTA contra cantidad_aplicada (me.editar_guia_lineas, refs
-        // kardex propias + opId idempotente). Bloqueadas: SALIDA_VENTAS y espejo.
+        // ── [790] 🔧 EDITOR DE LÍNEAS optimista (clave admin) ────────────────────
+        // Sin botón Guardar: cada +/− / tipeo / quitar / agregar dispara un flush con
+        // debounce 1.2s a me.editar_guia_lineas (stock por DELTA vs cantidad_aplicada,
+        // opId nuevo por flush = idempotente; re-enviar el mismo valor = delta 0 = no-op).
+        // − en cero elimina (↩ Deshacer: antes del flush revive, después re-agrega).
+        // Autocierre del editor a los 3 min sin actividad (todo ya está guardado).
         const guiaEditId        = ref(null);
         const guiaEditClave     = ref('');
         const guiaEditUser      = ref('');
-        const guiaEditRows      = ref([]);   // [{linea, cod_barras, cantidad, _orig, _del}]
-        const guiaEditNuevos    = ref([]);   // [{codBarras, nombre, cantidad}]
+        const guiaEditRows      = ref([]);   // [{linea, cod_barras, cantidad, _orig, _del, _delAck, _editing}]
         const guiaEditQ         = ref('');
         const guiaEditRes       = ref([]);
         const guiaEditGuardando = ref(false);
+        const guiaEditG         = ref(null);   // la guía en edición (para el flush)
+        let _geFlushT = null, _geIdleT = null, _geEnVuelo = false, _geRepite = false;
+
+        const _geIdleReset = () => {
+            if (_geIdleT) clearTimeout(_geIdleT);
+            _geIdleT = setTimeout(() => { guiaEditCerrar(false); }, 3 * 60 * 1000);   // autocierre 3 min
+        };
 
         const guiaEditAbrir = (g) => {
             if (!g || !g.id_guia) return;
@@ -24128,7 +24132,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 if (!resultado || !resultado.autorizado) return;
                 guiaEditClave.value = resultado.clave || '';
                 guiaEditUser.value  = String(resultado.validadoPor || config.value.vendedor || '');
-                // Detalle FRESCO del server (con `linea` — clave estable para editar).
                 try {
                     const tk = await _mintTokenSB();
                     const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/zona_guia_detalle`, {
@@ -24141,22 +24144,122 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     guiaEditRows.value = d.items.map(it => ({
                         linea: it.linea, cod_barras: it.cod_barras,
                         cantidad: String(parseFloat(it.cantidad) || 0),
-                        _orig: parseFloat(it.cantidad) || 0, _del: false
+                        _orig: parseFloat(it.cantidad) || 0, _del: false, _delAck: false, _editing: false
                     }));
-                    guiaEditNuevos.value = []; guiaEditQ.value = ''; guiaEditRes.value = [];
+                    guiaEditQ.value = ''; guiaEditRes.value = [];
+                    guiaEditG.value = g;
                     guiaEditId.value = g.id_guia;
+                    _geIdleReset();
                 } catch (e) {
                     agregarToast('⚠ No se pudo abrir el editor', e.message || String(e), 'error');
                 }
             }, { accion: 'EDITAR_GUIA_LINEAS', refDocumento: String(g.id_guia) });
         };
 
+        // Flush: manda SOLO diffs vs lo último confirmado. Serializado (si llega otro
+        // cambio mientras vuela, se repite al aterrizar). Error → reintento solo.
+        const _geFlush = async () => {
+            const g = guiaEditG.value;
+            if (!g || _geEnVuelo) { if (_geEnVuelo) _geRepite = true; return; }
+            const editar = [], eliminar = [];
+            for (const row of guiaEditRows.value) {
+                if (row._del) { if (!row._delAck) eliminar.push(row.linea); continue; }
+                const v = parseFloat(String(row.cantidad).replace(',', '.'));
+                if (isNaN(v) || v < 0) continue;                    // valor a medio tipear: se ignora
+                if (v !== row._orig) editar.push({ linea: row.linea, cantidad: v });
+            }
+            if (!editar.length && !eliminar.length) return;
+            _geEnVuelo = true; guiaEditGuardando.value = true;
+            try {
+                const tk = await _mintTokenSB();
+                const opId = 'EDL-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/editar_guia_lineas`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idGuia: String(g.id_guia), opId,
+                        usuario: guiaEditUser.value, claveAdmin: guiaEditClave.value,
+                        editar, eliminar, agregar: [] } })
+                }, 20000);
+                const d = await r.json().catch(() => null);
+                if (!d || d.ok !== true) throw new Error((d && d.error) || 'el servidor no guardó');
+                editar.forEach(e => { const row = guiaEditRows.value.find(x => x.linea === e.linea); if (row) row._orig = e.cantidad; });
+                eliminar.forEach(ln => { const row = guiaEditRows.value.find(x => x.linea === ln); if (row) row._delAck = true; });
+                _geSyncDetalle();
+            } catch (e) {
+                agregarToast('⚠ Cambio pendiente de guardar', (e.message || String(e)) + ' · se reintenta solo', 'warning', 4000);
+                _geRepite = true;                                    // reintento en el próximo ciclo
+            } finally {
+                _geEnVuelo = false; guiaEditGuardando.value = false;
+                if (_geRepite) { _geRepite = false; _geProgramarFlush(2500); }
+            }
+        };
+        const _geProgramarFlush = (ms) => {
+            if (_geFlushT) clearTimeout(_geFlushT);
+            _geFlushT = setTimeout(() => { _geFlushT = null; _geFlush(); }, ms || 1200);
+        };
+        const _geSyncDetalle = () => {
+            // espejo del detalle visible (lo que se ve al salir del editor)
+            guiaDetalle.value = guiaEditRows.value.filter(r => !r._del)
+                .map(r => ({ linea: r.linea, cod_barras: r.cod_barras, cantidad: parseFloat(String(r.cantidad).replace(',', '.')) || 0 }));
+        };
+
+        const guiaEditStep = (row, dir) => {
+            _geIdleReset();
+            let v = parseFloat(String(row.cantidad).replace(',', '.')) || 0;
+            v = Math.max(0, v + dir);
+            if (v === 0 && dir < 0) { row._del = true; row._delAck = false; _geProgramarFlush(); return; }
+            row.cantidad = String(v);
+            _geProgramarFlush();
+        };
+        const guiaEditTypeDone = (row) => {
+            _geIdleReset();
+            row._editing = false;
+            const v = parseFloat(String(row.cantidad).replace(',', '.'));
+            if (isNaN(v) || v < 0) { row.cantidad = String(row._orig); return; }
+            if (v === 0) { row._del = true; row._delAck = false; }
+            else row.cantidad = String(v);
+            _geProgramarFlush(300);
+        };
+        const guiaEditRestaurar = async (row) => {
+            _geIdleReset();
+            if (!row._delAck) { row._del = false; _geProgramarFlush(); return; }
+            // ya borrada en el server → deshacer = re-agregar (vuelve con línea nueva)
+            row._del = false; row._delAck = false;
+            await _geAgregarDirecto(row.cod_barras, row._orig, row);
+        };
+        const _geAgregarDirecto = async (codBarras, cantidad, rowExistente) => {
+            const g = guiaEditG.value; if (!g) return;
+            guiaEditGuardando.value = true;
+            try {
+                const tk = await _mintTokenSB();
+                const opId = 'EDL-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/editar_guia_lineas`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idGuia: String(g.id_guia), opId,
+                        usuario: guiaEditUser.value, claveAdmin: guiaEditClave.value,
+                        editar: [], eliminar: [], agregar: [{ codBarras, cantidad }] } })
+                }, 20000);
+                const d = await r.json().catch(() => null);
+                if (!d || d.ok !== true) throw new Error((d && d.error) || 'el servidor no guardó');
+                const la = (Array.isArray(d.lineasAgregadas) && d.lineasAgregadas[0]) || null;
+                if (la) {
+                    if (rowExistente) { rowExistente.linea = la.linea; rowExistente.cantidad = String(cantidad); rowExistente._orig = cantidad; }
+                    else guiaEditRows.value.push({ linea: la.linea, cod_barras: codBarras, cantidad: String(cantidad), _orig: cantidad, _del: false, _delAck: false, _editing: false });
+                }
+                _geSyncDetalle();
+            } catch (e) {
+                if (rowExistente) { rowExistente._del = true; rowExistente._delAck = true; }
+                agregarToast('⚠ No se pudo agregar', e.message || String(e), 'error');
+            } finally { guiaEditGuardando.value = false; }
+        };
+
         const guiaEditBuscar = () => {
+            _geIdleReset();
             const q = String(guiaEditQ.value || '').trim().toLowerCase();
             if (q.length < 2) { guiaEditRes.value = []; return; }
             const pres = (db.value && db.value.PRESENTACIONES) || [];
-            const enGuia = new Set(guiaEditRows.value.map(r => String(r.cod_barras)));
-            guiaEditNuevos.value.forEach(n => enGuia.add(String(n.codBarras)));
+            const enGuia = new Set(guiaEditRows.value.filter(r => !r._del).map(r => String(r.cod_barras)));
             const out = [];
             for (let i = 0; i < pres.length && out.length < 8; i++) {
                 const cod = String(pres[i].Cod_Barras || '');
@@ -24170,59 +24273,18 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         };
 
         const guiaEditAddProd = (rp) => {
-            guiaEditNuevos.value.push({ codBarras: rp.cod, nombre: rp.nombre, cantidad: '1' });
             guiaEditQ.value = ''; guiaEditRes.value = [];
+            _geIdleReset();
+            _geAgregarDirecto(rp.cod, 1, null);   // entra con 1; se ajusta con +/− (optimista)
         };
 
-        const guiaEditCancelar = () => {
+        const guiaEditCerrar = (manual) => {
+            if (_geFlushT) { clearTimeout(_geFlushT); _geFlushT = null; }
+            _geFlush();                                             // flush final inmediato
+            if (_geIdleT) { clearTimeout(_geIdleT); _geIdleT = null; }
             guiaEditId.value = null; guiaEditClave.value = '';
-            guiaEditRows.value = []; guiaEditNuevos.value = []; guiaEditQ.value = ''; guiaEditRes.value = [];
-        };
-
-        const guiaEditGuardar = async (g) => {
-            if (guiaEditGuardando.value || !g || guiaEditId.value !== g.id_guia) return;
-            const editar = [], eliminar = [];
-            for (const row of guiaEditRows.value) {
-                if (row._del) { eliminar.push(row.linea); continue; }
-                const nueva = parseFloat(String(row.cantidad).replace(',', '.'));
-                if (isNaN(nueva) || nueva < 0) { agregarToast('Cantidad inválida', getNombrePres(row.cod_barras), 'warning'); return; }
-                if (nueva !== row._orig) editar.push({ linea: row.linea, cantidad: nueva });
-            }
-            const agregar = [];
-            for (const nv of guiaEditNuevos.value) {
-                const c = parseFloat(String(nv.cantidad).replace(',', '.'));
-                if (isNaN(c) || c <= 0) { agregarToast('Cantidad inválida', nv.nombre, 'warning'); return; }
-                agregar.push({ codBarras: nv.codBarras, cantidad: c });
-            }
-            if (!editar.length && !eliminar.length && !agregar.length) { guiaEditCancelar(); return; }
-            guiaEditGuardando.value = true;
-            try {
-                const tk = await _mintTokenSB();
-                const opId = 'EDL-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/editar_guia_lineas`, {
-                    method: 'POST',
-                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ p: {
-                        idGuia: String(g.id_guia), opId,
-                        usuario: guiaEditUser.value, claveAdmin: guiaEditClave.value,
-                        editar, eliminar, agregar
-                    } })
-                }, 20000);
-                const d = await r.json().catch(() => null);
-                if (!d || d.ok !== true) throw new Error((d && d.error) || 'el servidor no guardó');
-                // Optimista: repintar el detalle visible con el resultado local.
-                const vivos = guiaEditRows.value.filter(row => !row._del)
-                    .map(row => ({ cod_barras: row.cod_barras, cantidad: parseFloat(String(row.cantidad).replace(',', '.')) || 0 }));
-                guiaEditNuevos.value.forEach(nv => vivos.push({ cod_barras: nv.codBarras, cantidad: parseFloat(String(nv.cantidad).replace(',', '.')) || 0 }));
-                guiaDetalle.value = vivos;
-                try { playVentaOK?.(); } catch(_){}
-                agregarToast('✓ Guía corregida', `${d.editadas || 0} editada(s) · ${d.eliminadas || 0} quitada(s) · ${d.agregadas || 0} agregada(s)` + (esGuiaCerrada(g) ? ' · stock ajustado' : ''), 'success', 4000);
-                guiaEditCancelar();
-            } catch (e) {
-                agregarToast('⚠ No se guardó', e.message || String(e), 'error', 6000);
-            } finally {
-                guiaEditGuardando.value = false;
-            }
+            guiaEditRows.value = []; guiaEditQ.value = ''; guiaEditRes.value = []; guiaEditG.value = null;
+            if (!manual) agregarToast('🔧 Editor cerrado', 'Se cerró solo por inactividad (los cambios ya estaban guardados)', 'info', 4000);
         };
 
         const reabrirGuia = (guia) => {
@@ -24812,8 +24874,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // [v2.8.30] UX moderna + candado de guías
           guiaFreshCb, guiaTotalUnidades, esGuiaAbierta, esGuiaCerrada, esGuiaReabrible, reabrirGuia, reabriendoGuiaId,
           editGuiaCabId, editGuiaObs, editGuiaDest, editarGuiaCab, guardarGuiaCab,   // [787] editar cabecera
-          guiaEditId, guiaEditRows, guiaEditNuevos, guiaEditQ, guiaEditRes, guiaEditGuardando,   // [788] editor líneas
-          guiaEditAbrir, guiaEditBuscar, guiaEditAddProd, guiaEditCancelar, guiaEditGuardar,     // [788]
+          guiaEditId, guiaEditRows, guiaEditQ, guiaEditRes, guiaEditGuardando,                       // [790] editor líneas optimista
+          guiaEditAbrir, guiaEditBuscar, guiaEditAddProd, guiaEditStep, guiaEditTypeDone,           // [790]
+          guiaEditRestaurar, guiaEditCerrar,                                                        // [790]
 
           cerrandoGuiaId,
           // [v2.8.39] Historial estilo WH: día/filtros/búsqueda · hold-to-confirm · undo · helpers
