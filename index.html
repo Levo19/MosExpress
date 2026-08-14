@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.288';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.289';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -24443,7 +24443,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             txt += "REGISTRA: " + guia.vendedor + "\n";
             if (guia.observacion) txt += "OBS     : " + guia.observacion + "\n";
             txt += "------------------------------------------------\n";
-            txt += "PRODUCTO                    CANT\n";
+            txt += " CANT. PRODUCTO\n";
             txt += "------------------------------------------------\n";
             items.forEach(function(it) {
                 const cb = String(it.cod_barras || '');
@@ -24462,8 +24462,28 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     const base = pres ? db.value.PRODUCTO_BASE?.find(b => b.SKU_Base === pres.SKU_Base) : null;
                     nom = base ? (base.Nombre + ' ' + (pres.Empaque || '')) : cb;
                 }
-                nom = String(nom).substring(0, 26);
-                txt += nom.padEnd(28) + fmtCantGuia(it.cantidad).padStart(4) + "\n";
+                // [789 · ancho completo 80mm] "20x NAKAMITO KILO" a 48 columnas: cantidad
+                // primero (alineada a la derecha en 6 col), nombre COMPLETO sin truncar y
+                // con salto por PALABRA (las líneas siguientes se indentan bajo el nombre).
+                const prefNum = fmtCantGuia(it.cantidad) + 'x';
+                const pref    = prefNum.padStart(6) + ' ';
+                const avail   = 48 - pref.length;
+                const indent  = ' '.repeat(pref.length);
+                const words   = String(nom).trim().split(/\s+/);
+                let lineas = [], cur = '';
+                words.forEach(function(w) {
+                    while (w.length > avail) { // palabra más larga que el ancho: corte duro
+                        if (cur) { lineas.push(cur); cur = ''; }
+                        lineas.push(w.slice(0, avail)); w = w.slice(avail);
+                    }
+                    if (!cur) cur = w;
+                    else if ((cur + ' ' + w).length <= avail) cur += ' ' + w;
+                    else { lineas.push(cur); cur = w; }
+                });
+                if (cur) lineas.push(cur);
+                if (!lineas.length) lineas = [cb];
+                txt += pref + lineas[0] + "\n";
+                for (let li = 1; li < lineas.length; li++) txt += indent + lineas[li] + "\n";
             });
             txt += "================================================\n";
             txt += "\x1b\x61\x01*** " + (esSalida ? 'SALIDA' : 'ENTRADA') + " DE MERCADERÍA ***\n";

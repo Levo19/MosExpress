@@ -1,1 +1,1 @@
-{"version":"2.8.288","build":"2.8.288 el teclado de clave admin se abria DETRAS de la pantalla de guias (invisible): al tocar Editar productos o Reabrir parecia que no pasaba nada. Corregido: el teclado ahora aparece encima."}
+{"version":"2.8.289","build":"2.8.289 el ticket 80mm de guias ahora usa TODO el ancho del papel: cada producto sale como 20x NAKAMITO KILO con la cantidad primero, el nombre completo sin recortar y, si es largo, continua en un segundo renglon alineado (antes se cortaba a 26 letras y se desperdiciaba un tercio del papel)."}
