@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.294';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.295';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -310,7 +310,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.294"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.295"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
   <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=3.8.230"></script>
   <style>
@@ -9463,7 +9463,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           }).length;
         }
         function _etiqMarcarVistos() {
-          try { localStorage.setItem(ETIQ_VISTO_KEY, String(Date.now())); } catch (_) {}
+          // [AUDITORÍA 15-ago] El servidor trunca `ts` a MINUTOS. Si guardáramos el instante
+          // exacto, un cambio de las 14:30:50 (ts=14:30) quedaría "ya visto" por haber abierto
+          // el modal a las 14:30:20 → ese cambio no volvería a contar nunca. Truncar al minuto
+          // hace la comparación homogénea.
+          try { localStorage.setItem(ETIQ_VISTO_KEY, String(Date.now() - (Date.now() % 60000))); } catch (_) {}
           etiqNoVistos.value = 0;
         }
         async function cargarAlertasPrecio() {
@@ -9530,13 +9534,30 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // el módulo revierte su cola y el espejo de abajo vuelve al estado real.
           etiqColaCodigos.value = etiqColaCodigos.value.concat([cod]);
           etiqColaCount.value = etiqColaCount.value + 1;
+          // [AUDITORÍA 15-ago] La etiqueta debe llevar el precio VIGENTE, no el de la fila
+          // del historial: el modal lista 15 días, así que una card puede estar superada por
+          // un cambio posterior, y además la cola sobrevive 7 días en el servidor. Imprimir
+          // `a.precioNuevo` a ciegas = góndola con un precio y POS cobrando otro.
+          // Se resuelve del catálogo local (misma fuente que cobra el POS) y `a.precioNuevo`
+          // queda solo como respaldo si el producto no está en el catálogo cargado.
+          let _precioVig = Number(a.precioNuevo) || 0;
+          try {
+            const _pres = ((db.value && db.value.PRESENTACIONES) || [])
+              .find(x => String(x.Cod_Barras || '').trim() === cod);
+            if (_pres && Number(_pres.Precio_Venta) > 0) _precioVig = Number(_pres.Precio_Venta);
+            else {
+              const _pc = (productosCatalogo.value || [])
+                .find(x => String(x.codBarras || '').trim() === cod);
+              if (_pc && Number(_pc.precio) > 0) _precioVig = Number(_pc.precio);
+            }
+          } catch (_) {}
           try {
             const ok = await MembreteSystem.colaAgregar('MEMBRETE_ME', {
               codigoBarra: cod,
               idProducto:  String(a.idProducto || a.skuBase || cod),
               skuBase:     String(a.skuBase || a.idProducto || cod),
               descripcion: String(a.descripcion || ''),
-              precio:      Number(a.precioNuevo) || 0
+              precio:      _money(_precioVig)
             });
             if (ok) { agregarToast('En cola', 'Listo para imprimir en góndola', 'OK'); try { playBeepOK(); } catch (_) {} }
           } catch (e) { console.warn('[ColaMembretes] agregar:', e); }
@@ -17963,8 +17984,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                             const reg = await navigator.serviceWorker.ready;
                             reg.showNotification(t, {
                                 body: b,
-                                icon:  'https://levo19.github.io/MOS/icon-192.png',
-                                badge: 'https://levo19.github.io/MOS/icon-192.png',
+                                icon:  'https://levo19.github.io/MosExpress/icons/icon-192.png',
+                                badge: 'https://levo19.github.io/MosExpress/icons/icon-192.png',
                                 vibrate: [200, 100, 200],
                                 tag: 'me-push-fg'
                             });
