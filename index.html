@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.291';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.292';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -10652,6 +10652,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           }, 30 * 1000);
           // Primer intento a los 3s (cubre usuarios ya logueados)
           setTimeout(() => _pushInit(), 3000);
+          // [800] Refresco PERIÓDICO del token cada 30 min: FCM rota/caduca el token y solo el
+          // propio equipo puede renovarlo. Sin esto, una tablet que queda abierta horas terminaba
+          // con token muerto → el monitoreo fallaba "FCM 3x". Ahora se mantiene fresco solo.
+          setInterval(() => { try { if (config.value.completado && config.value.vendedor) _pushInit(); } catch(_){} }, 30 * 60 * 1000);
 
           // [Mensajería] Polling de la bandeja (badge no-leídos) — solo si logueado.
           // Si arranca antes del wizard, _msgCargarInbox hace early-return; el setInterval

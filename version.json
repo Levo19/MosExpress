@@ -1,1 +1,1 @@
-{"version":"2.8.291","build":"2.8.291 los equipos MosExpress (cajeros/tablets) ahora responden al boton Rotar camara del monitoreo: cambian de camara frontal/trasera al instante cuando el master lo pide (antes solo los equipos con la app MOS)."}
+{"version":"2.8.292","build":"2.8.292 el token de aviso del equipo (cajero/tablet) ahora se renueva solo cada 30 minutos mientras la app esta abierta, para que nunca caduque y siempre se pueda monitorear."}
