@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.292';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.293';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -3634,7 +3634,15 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           </div>
           <button @click="etiqsModalAbierto = false" class="text-2xl text-gray-400 hover:text-gray-700">×</button>
         </div>
+        <!-- [791] pestañas: pendientes (pegar) ↔ historial de cambios (15 días) -->
+        <div class="px-4 pt-2 pb-0 flex gap-2 bg-white border-b">
+          <button @click="etiqTab='pendientes'"
+                  :class="['text-xs font-bold px-3 py-2 rounded-t-lg border-b-2 transition-colors', etiqTab==='pendientes' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-gray-400']">📌 Pendientes ({{ etiqsPendientes.length }})</button>
+          <button @click="etiqTab='historial'; cargarAlertasPrecio()"
+                  :class="['text-xs font-bold px-3 py-2 rounded-t-lg border-b-2 transition-colors', etiqTab==='historial' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-gray-400']">🕐 Últimos 15 días</button>
+        </div>
         <div class="overflow-y-auto px-4 py-3 space-y-2 flex-1">
+          <template v-if="etiqTab==='pendientes'">
           <div v-if="!etiqsPendientes.length" class="text-center py-8 text-gray-400 text-sm">
             <div class="text-3xl mb-2 opacity-50">🎉</div>
             Todo al día — sin etiquetas pendientes
@@ -3663,8 +3671,27 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                       class="text-xs px-3 py-1.5 rounded-lg bg-gray-200 text-gray-700 font-semibold active:scale-95">🖨 Imprimir</button>
             </div>
           </div>
+          </template>
+          <!-- [791] historial: TODOS los cambios de precio de los últimos 15 días -->
+          <template v-else>
+            <div v-if="alertasPrecioCargando" class="text-center py-8 text-gray-400 text-sm">Cargando cambios…</div>
+            <div v-else-if="!alertasPrecio.length" class="text-center py-8 text-gray-400 text-sm">
+              <div class="text-3xl mb-2 opacity-50">🕐</div>
+              Sin cambios de precio en los últimos 15 días
+            </div>
+            <div v-for="(a, i) in alertasPrecio" :key="'ap' + i"
+                 class="rounded-xl border border-gray-200 bg-white p-3">
+              <div class="text-sm font-bold text-gray-800 truncate">{{ a.descripcion }}</div>
+              <div class="text-[11px] text-gray-500 font-mono">{{ a.codigoBarra || a.skuBase || a.idProducto }}</div>
+              <div class="flex items-baseline gap-2 mt-1">
+                <span v-if="a.precioAnterior > 0" class="text-xs line-through text-gray-400">S/ {{ Number(a.precioAnterior).toFixed(2) }}</span>
+                <span class="text-lg font-black text-emerald-700">S/ {{ Number(a.precioNuevo).toFixed(2) }}</span>
+                <span class="text-[10px] text-gray-400 ml-auto whitespace-nowrap">{{ a.ts.slice(8,10) }}/{{ a.ts.slice(5,7) }} {{ a.ts.slice(11,16) }}<span v-if="a.usuario"> · {{ a.usuario }}</span></span>
+              </div>
+            </div>
+          </template>
         </div>
-        <div v-if="etiqsPendientes.length > 0" class="p-3 border-t bg-gray-50 flex gap-2">
+        <div v-if="etiqTab==='pendientes' && etiqsPendientes.length > 0" class="p-3 border-t bg-gray-50 flex gap-2">
           <button @click="etiqsModalAbierto = false" class="flex-1 py-2 rounded-lg bg-gray-200 text-gray-700 font-semibold">Después</button>
           <button @click="etiqMarcarTodasPegadas" :disabled="etiqsProcesando"
                   class="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold active:scale-95 disabled:opacity-50">📌 Marcar todas pegadas</button>
@@ -9431,6 +9458,22 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         }
 
         // [quirúrgico 2026-07-19] abrirEtiqsModal eliminado: el template abre con etiqsModalAbierto = true directo (0 refs).
+
+        // [791] Historial de cambios de precio (últimos 15 días) — pestaña "🕐" del modal.
+        // Fuente: mos.alertas_precio (todos los caminos: catálogo, Paso 2, registro PN).
+        const etiqTab = ref('pendientes');
+        const alertasPrecio = ref([]);
+        const alertasPrecioCargando = ref(false);
+        async function cargarAlertasPrecio() {
+          if (alertasPrecioCargando.value) return;
+          alertasPrecioCargando.value = true;
+          try {
+            if (!window.DeviceAuth || typeof DeviceAuth.rpc !== 'function') return;
+            const d = await DeviceAuth.rpc('alertas_precio', { dias: 15 });
+            if (d && d.ok && Array.isArray(d.items)) alertasPrecio.value = d.items;
+          } catch (e) { console.warn('[AlertasPrecio] cargar:', e); }
+          finally { alertasPrecioCargando.value = false; }
+        }
 
         // [NIVEL 4 corte-GAS] Marcado de etiquetas 100% Supabase (mos.etiqueta_marcar, SQL 373). Sin GAS.
         // [PRECIOS EXPRESS] carril rápido money-safe: al detectar versión nueva CON venta en
@@ -24903,6 +24946,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // del template tras quitar el bloque viejo "MEMBRETES DE PRECIO".
           // ── Etiquetas (membretes de cambio de precio) ──
           etiqsPendientes, etiqsModalAbierto, etiqsProcesando,
+          etiqTab, alertasPrecio, alertasPrecioCargando, cargarAlertasPrecio,   // [791] historial 15 días
           cargarEtiqsPendientes, etiqMarcarPegada,
           etiqMarcarTodasPegadas, etiqReimprimir, etiqAutoPrintAlAperturaCaja,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, defaultClienteBoleta: _defaultClienteBoleta, toggleVentaCreditoDirecto,
