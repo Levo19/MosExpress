@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.293';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.294';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -310,7 +310,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
-  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.228"></script>
+  <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.294"></script>
   <!-- [v2.7+] Sistema centralizado de seguridad (CDN MOS) -->
   <script src="https://levo19.github.io/MOS/assets/seguridad/seguridad-modal.js?v=3.8.230"></script>
   <style>
@@ -3630,71 +3630,51 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         <div class="px-5 py-3 border-b flex items-center justify-between bg-gradient-to-r from-amber-50 to-white">
           <div>
             <h3 class="font-bold text-gray-800 text-lg">🏷 Etiquetas de precio</h3>
-            <p class="text-xs text-gray-500">{{ etiqsPendientes.length }} pendiente(s) · pega en estantes</p>
+            <p class="text-xs text-gray-500">Cambios de los últimos 15 días</p>
           </div>
           <button @click="etiqsModalAbierto = false" class="text-2xl text-gray-400 hover:text-gray-700">×</button>
         </div>
-        <!-- [791] pestañas: pendientes (pegar) ↔ historial de cambios (15 días) -->
-        <div class="px-4 pt-2 pb-0 flex gap-2 bg-white border-b">
-          <button @click="etiqTab='pendientes'"
-                  :class="['text-xs font-bold px-3 py-2 rounded-t-lg border-b-2 transition-colors', etiqTab==='pendientes' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-gray-400']">📌 Pendientes ({{ etiqsPendientes.length }})</button>
-          <button @click="etiqTab='historial'; cargarAlertasPrecio()"
-                  :class="['text-xs font-bold px-3 py-2 rounded-t-lg border-b-2 transition-colors', etiqTab==='historial' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-gray-400']">🕐 Últimos 15 días</button>
+        <!-- [792] El concepto pendiente/pegada se retiró: el modal es AHORA la lista de
+             cambios de precio (15 días) y cada card manda ese producto a la cola de
+             membretes de góndola (cola por usuario+zona, compartida amo↔esclavo).
+             Esta barra muestra cuántos hay en cola y abre la cola para imprimir. -->
+        <div class="px-4 py-2 border-b bg-gray-50 flex items-center gap-2">
+          <div class="flex-1 min-w-0 text-xs text-gray-600">
+            <span class="font-black" :class="etiqColaCount > 0 ? 'text-emerald-700' : 'text-gray-400'">{{ etiqColaCount }}</span>
+            en cola de góndola
+          </div>
+          <button @click="etiqAbrirCola()"
+                  :class="['text-xs font-bold px-3 py-2 rounded-lg active:scale-95 transition-transform',
+                           etiqColaCount > 0 ? 'bg-emerald-600 text-white shadow' : 'bg-gray-200 text-gray-600']">
+            🖨 Ver cola{{ etiqColaCount > 0 ? ' e imprimir' : '' }}
+          </button>
         </div>
         <div class="overflow-y-auto px-4 py-3 space-y-2 flex-1">
-          <template v-if="etiqTab==='pendientes'">
-          <div v-if="!etiqsPendientes.length" class="text-center py-8 text-gray-400 text-sm">
-            <div class="text-3xl mb-2 opacity-50">🎉</div>
-            Todo al día — sin etiquetas pendientes
-          </div>
-          <div v-for="e in etiqsPendientes" :key="e.idEtiq"
-               class="rounded-xl border p-3 flex items-start gap-3"
-               :class="e.estado === 'IMPRESA' ? 'border-blue-300 bg-blue-50' : 'border-amber-300 bg-amber-50'">
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-bold text-gray-800 truncate">{{ e.descripcion }}</div>
-              <div class="text-[11px] text-gray-500 font-mono">{{ e.codigoBarra || e.skuBase }}</div>
-              <div class="flex items-baseline gap-2 mt-1">
-                <span v-if="e.precioAnterior > 0" class="text-xs line-through text-gray-400">S/ {{ e.precioAnterior.toFixed(2) }}</span>
-                <span class="text-lg font-black text-emerald-700">S/ {{ e.precioNuevo.toFixed(2) }}</span>
-              </div>
-              <div class="text-[10px] mt-1" :class="e._minutosDesdeCambio > 240 ? 'text-rose-600 font-bold' : 'text-gray-500'">
-                <span v-if="e._minutosDesdeCambio < 60">hace {{ e._minutosDesdeCambio }} min</span>
-                <span v-else-if="e._minutosDesdeCambio < 1440">hace {{ Math.floor(e._minutosDesdeCambio / 60) }}h</span>
-                <span v-else>hace {{ Math.floor(e._minutosDesdeCambio / 1440) }}d</span>
-                <span class="ml-2">· estado: <strong>{{ e.estado }}</strong></span>
-              </div>
-            </div>
-            <div class="flex flex-col gap-1 shrink-0">
-              <button @click="etiqMarcarPegada(e.idEtiq)" :disabled="etiqsProcesando"
-                      class="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold active:scale-95 transition-transform disabled:opacity-50">📌 Pegada</button>
-              <button @click="etiqReimprimir(e.idEtiq)" :disabled="etiqsProcesando"
-                      class="text-xs px-3 py-1.5 rounded-lg bg-gray-200 text-gray-700 font-semibold active:scale-95">🖨 Imprimir</button>
-            </div>
-          </div>
-          </template>
           <!-- [791] historial: TODOS los cambios de precio de los últimos 15 días -->
-          <template v-else>
-            <div v-if="alertasPrecioCargando" class="text-center py-8 text-gray-400 text-sm">Cargando cambios…</div>
-            <div v-else-if="!alertasPrecio.length" class="text-center py-8 text-gray-400 text-sm">
-              <div class="text-3xl mb-2 opacity-50">🕐</div>
-              Sin cambios de precio en los últimos 15 días
-            </div>
-            <div v-for="(a, i) in alertasPrecio" :key="'ap' + i"
-                 class="rounded-xl border border-gray-200 bg-white p-3">
+          <div v-if="alertasPrecioCargando" class="text-center py-8 text-gray-400 text-sm">Cargando cambios…</div>
+          <div v-else-if="!alertasPrecio.length" class="text-center py-8 text-gray-400 text-sm">
+            <div class="text-3xl mb-2 opacity-50">🕐</div>
+            Sin cambios de precio en los últimos 15 días
+          </div>
+          <div v-for="(a, i) in alertasPrecio" :key="'ap' + i"
+               class="rounded-xl border border-gray-200 bg-white p-3 flex items-start gap-3">
+            <div class="flex-1 min-w-0">
               <div class="text-sm font-bold text-gray-800 truncate">{{ a.descripcion }}</div>
               <div class="text-[11px] text-gray-500 font-mono">{{ a.codigoBarra || a.skuBase || a.idProducto }}</div>
               <div class="flex items-baseline gap-2 mt-1">
                 <span v-if="a.precioAnterior > 0" class="text-xs line-through text-gray-400">S/ {{ Number(a.precioAnterior).toFixed(2) }}</span>
                 <span class="text-lg font-black text-emerald-700">S/ {{ Number(a.precioNuevo).toFixed(2) }}</span>
-                <span class="text-[10px] text-gray-400 ml-auto whitespace-nowrap">{{ a.ts.slice(8,10) }}/{{ a.ts.slice(5,7) }} {{ a.ts.slice(11,16) }}<span v-if="a.usuario"> · {{ a.usuario }}</span></span>
               </div>
+              <div class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">{{ a.ts.slice(8,10) }}/{{ a.ts.slice(5,7) }} {{ a.ts.slice(11,16) }}<span v-if="a.usuario"> · {{ a.usuario }}</span></div>
             </div>
-          </template>
-        </div>
-        <div v-if="etiqTab==='pendientes' && etiqsPendientes.length > 0" class="p-3 border-t bg-gray-50 flex gap-2">
-          <button @click="etiqsModalAbierto = false" class="flex-1 py-2 rounded-lg bg-gray-200 text-gray-700 font-semibold">Después</button>
-          <button @click="etiqMarcarTodasPegadas" :disabled="etiqsProcesando"
-                  class="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-bold active:scale-95 disabled:opacity-50">📌 Marcar todas pegadas</button>
+            <button @click="etiqAgregarACola(a)" :disabled="etiqEnCola(a) || etiqColaOcupado"
+                    :class="['shrink-0 text-xs px-3 py-2 rounded-lg font-bold active:scale-95 transition-transform disabled:active:scale-100',
+                             etiqEnCola(a)
+                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-300'
+                               : 'bg-emerald-600 text-white shadow disabled:opacity-50']">
+              {{ etiqEnCola(a) ? '✓ En cola' : '➕ Imprimir en góndola' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -5170,16 +5150,16 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     <!-- [v2.7.80] Botón "Alertas precio" — palpita ROJO ALARMANTE cuando
                          hay etiqsPendientes. Es el SUSTITUTO del FAB flotante: ahora
                          las alertas viven SOLO acá + el dot del ícono TOOLS del nav. -->
-                    <button @click="etiqsModalAbierto = true"
+                    <button @click="abrirEtiqsModal()"
                             :class="[
                               'relative font-black py-3 rounded-xl border-2 text-sm active:scale-95 transition-all',
-                              etiqsPendientes.length > 0
+                              etiqNoVistos > 0
                                 ? 'bg-gradient-to-br from-red-500 to-red-700 text-white border-red-800 shadow-lg animate-alertas-palpitar'
                                 : 'bg-red-50 text-red-700 border-red-200 font-bold'
                             ]">
-                       <span v-if="etiqsPendientes.length > 0" class="absolute -top-2 -right-2 bg-amber-400 text-red-900 text-[10px] font-black rounded-full min-w-[22px] h-[22px] px-1 flex items-center justify-center ring-2 ring-white shadow-md animate-bounce">{{ etiqsPendientes.length }}</span>
+                       <span v-if="etiqNoVistos > 0" class="absolute -top-2 -right-2 bg-amber-400 text-red-900 text-[10px] font-black rounded-full min-w-[22px] h-[22px] px-1 flex items-center justify-center ring-2 ring-white shadow-md animate-bounce">{{ etiqNoVistos }}</span>
                        🚨 Alertas precio
-                       <span v-if="etiqsPendientes.length > 0" class="block text-[10px] font-extrabold tracking-widest mt-0.5 opacity-95">PENDIENTES</span>
+                       <span v-if="etiqNoVistos > 0" class="block text-[10px] font-extrabold tracking-widest mt-0.5 opacity-95">NUEVOS</span>
                     </button>
                     <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes && MembreteSystem.abrirHistorialLotes('MEMBRETE_ME')"
                             class="bg-amber-50 text-amber-700 font-bold py-3 rounded-xl border-2 border-amber-200 text-sm active:scale-95 transition-transform">
@@ -5533,7 +5513,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             <span :class="cajaAbierta ? 'bg-emerald-200' : 'bg-red-500 animate-pulse'" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full"></span>
         </div>
         <div class="flex-1 relative" style="background:#ea580c">
-            <span v-if="etiqsPendientes.length > 0" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white dk-solido animate-pulse"></span>
+            <span v-if="etiqNoVistos > 0" class="absolute top-0.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white dk-solido animate-pulse"></span>
         </div>
         <div class="absolute left-1/2 -translate-x-1/2 top-[3px] w-10 h-1 rounded-full bg-white/70"></div>
     </div>
@@ -5586,12 +5566,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <!-- [v2.7.80] Ícono palpitante cuando hay etiqsPendientes (alerta vive en TOOLS aunque estés en POS/CAJA) -->
                 <svg class="w-6 h-6 mb-1"
                      :class="[ currentModule === 'TOOLS' ? 'nav-idle-tools' : '',
-                              etiqsPendientes.length > 0 && currentModule !== 'TOOLS' ? 'text-red-600 animate-tools-alerta' : '']"
+                              etiqNoVistos > 0 && currentModule !== 'TOOLS' ? 'text-red-600 animate-tools-alerta' : '']"
                      fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l5.654-4.654m5.657-5.657l-1.418 1.42a2.5 2.5 0 01-3.536 0L8.707 7.293a2.5 2.5 0 010-3.536l1.42-1.418M15.17 11.42a4.5 4.5 0 00-6.364-6.364L11.42 7.67a2.5 2.5 0 013.535 0l.215.215z"></path></svg>
-                <span v-if="(auditPendiente && config.completado) || etiqsPendientes.length > 0"
+                <span v-if="(auditPendiente && config.completado) || etiqNoVistos > 0"
                       class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
-                <span v-if="etiqsPendientes.length > 0 && currentModule !== 'TOOLS'"
-                      class="absolute -top-2 -right-3 bg-red-600 text-white text-[9px] font-black rounded-full min-w-[16px] h-[16px] px-1 flex items-center justify-center ring-2 ring-white shadow">{{ etiqsPendientes.length > 99 ? '99+' : etiqsPendientes.length }}</span>
+                <span v-if="etiqNoVistos > 0 && currentModule !== 'TOOLS'"
+                      class="absolute -top-2 -right-3 bg-red-600 text-white text-[9px] font-black rounded-full min-w-[16px] h-[16px] px-1 flex items-center justify-center ring-2 ring-white shadow">{{ etiqNoVistos > 99 ? '99+' : etiqNoVistos }}</span>
             </div>
             TOOLS
         </button>
@@ -9459,20 +9439,120 @@ button:not(:disabled):not([aria-disabled="true"]):active,
 
         // [quirúrgico 2026-07-19] abrirEtiqsModal eliminado: el template abre con etiqsModalAbierto = true directo (0 refs).
 
-        // [791] Historial de cambios de precio (últimos 15 días) — pestaña "🕐" del modal.
+        // [791] Historial de cambios de precio (últimos 15 días) — ES el contenido del modal.
         // Fuente: mos.alertas_precio (todos los caminos: catálogo, Paso 2, registro PN).
-        const etiqTab = ref('pendientes');
+        // [792] Ya no hay pestañas: el dueño retiró el concepto "pendiente/pegada" — lo útil
+        // es ver los cambios y mandar el producto a la cola de membretes de góndola.
         const alertasPrecio = ref([]);
         const alertasPrecioCargando = ref(false);
+        // [792] Badge del botón "Alertas precio": cambios de precio que el operador
+        // AÚN NO revisó (se apaga al abrir el modal). Reemplaza al viejo contador de
+        // "pendientes de pegar": ese concepto se retiró y su badge habría quedado
+        // encendido para siempre, porque ya no existe el botón que lo bajaba.
+        const etiqNoVistos = ref(0);
+        const ETIQ_VISTO_KEY = 'me_alertasPrecio_lastSeen';
+        function _etiqLastSeen() {
+          try { return parseInt(localStorage.getItem(ETIQ_VISTO_KEY) || '0', 10) || 0; } catch (_) { return 0; }
+        }
+        function _etiqRecalcNoVistos() {
+          const last = _etiqLastSeen();
+          if (!last) { etiqNoVistos.value = 0; return; }   // primera vez: no gritar
+          etiqNoVistos.value = (alertasPrecio.value || []).filter(a => {
+            const t = new Date(String(a.ts || '').slice(0, 16)).getTime();
+            return !isNaN(t) && t > last;
+          }).length;
+        }
+        function _etiqMarcarVistos() {
+          try { localStorage.setItem(ETIQ_VISTO_KEY, String(Date.now())); } catch (_) {}
+          etiqNoVistos.value = 0;
+        }
         async function cargarAlertasPrecio() {
           if (alertasPrecioCargando.value) return;
           alertasPrecioCargando.value = true;
           try {
             if (!window.DeviceAuth || typeof DeviceAuth.rpc !== 'function') return;
             const d = await DeviceAuth.rpc('alertas_precio', { dias: 15 });
-            if (d && d.ok && Array.isArray(d.items)) alertasPrecio.value = d.items;
+            if (d && d.ok && Array.isArray(d.items)) {
+              alertasPrecio.value = d.items;
+              // Primera carga sin marca previa → sembrar "visto" para no gritar de golpe
+              // por 15 días de historial que el operador nunca pidió revisar.
+              if (!_etiqLastSeen()) { try { localStorage.setItem(ETIQ_VISTO_KEY, String(Date.now())); } catch (_) {} }
+              _etiqRecalcNoVistos();
+            }
           } catch (e) { console.warn('[AlertasPrecio] cargar:', e); }
           finally { alertasPrecioCargando.value = false; }
+        }
+
+        // [792] ── Cola de membretes ME (góndola) ────────────────────────────────
+        // La cola REAL vive en el servidor (mos.membrete_cola_*, keyeada por usuario+zona)
+        // y la maneja membrete-modal.js. Acá solo espejamos los códigos encolados para
+        // pintar el contador y el estado "✓ En cola" de cada card, sin duplicar lógica.
+        const etiqColaCodigos = ref([]);      // códigos (barra y sku) presentes en la cola
+        const etiqColaOcupado = ref(false);   // evita doble-tap mientras viaja la RPC
+        // Un ítem puede aportar 2 códigos al espejo (barra + sku), así que el contador
+        // se lleva aparte: es la cantidad de PRODUCTOS en cola, no de códigos.
+        const etiqColaCount = ref(0);
+        function etiqCodigoDe(a) {
+          return String((a && (a.codigoBarra || a.skuBase || a.idProducto)) || '').trim();
+        }
+        function etiqEnCola(a) {
+          const cod = etiqCodigoDe(a);
+          return !!cod && etiqColaCodigos.value.indexOf(cod) >= 0;
+        }
+        // Refleja en Vue lo que el módulo tenga en su cola (memoria/caché/servidor).
+        function etiqColaEspejar(items) {
+          const codigos = [];
+          (items || []).forEach(it => {
+            const cb = String((it && it.codigoBarra) || '').trim();
+            const sk = String((it && it.skuBase) || '').trim();
+            if (cb) codigos.push(cb);
+            if (sk && sk !== cb) codigos.push(sk);
+          });
+          etiqColaCodigos.value = codigos;
+          etiqColaCount.value = (items || []).length;
+        }
+        async function etiqSyncCola() {
+          try {
+            if (!window.MembreteSystem || typeof MembreteSystem.colaSync !== 'function') return;
+            etiqColaEspejar(MembreteSystem.colaItems('MEMBRETE_ME'));      // instantáneo (caché)
+            etiqColaEspejar(await MembreteSystem.colaSync('MEMBRETE_ME')); // y manda el servidor
+          } catch (e) { console.warn('[ColaMembretes] sync:', e); }
+        }
+        async function etiqAgregarACola(a) {
+          const cod = etiqCodigoDe(a);
+          if (!cod) { agregarToast('Sin código', 'Ese cambio de precio no tiene código de barras'); return; }
+          if (!window.MembreteSystem || typeof MembreteSystem.colaAgregar !== 'function') {
+            agregarToast('No disponible', 'El módulo de membretes no cargó'); return;
+          }
+          if (etiqEnCola(a) || etiqColaOcupado.value) return;
+          etiqColaOcupado.value = true;
+          // Optimista: el botón pasa a "✓ En cola" al instante. Si el servidor rechaza,
+          // el módulo revierte su cola y el espejo de abajo vuelve al estado real.
+          etiqColaCodigos.value = etiqColaCodigos.value.concat([cod]);
+          etiqColaCount.value = etiqColaCount.value + 1;
+          try {
+            const ok = await MembreteSystem.colaAgregar('MEMBRETE_ME', {
+              codigoBarra: cod,
+              idProducto:  String(a.idProducto || a.skuBase || cod),
+              skuBase:     String(a.skuBase || a.idProducto || cod),
+              descripcion: String(a.descripcion || ''),
+              precio:      Number(a.precioNuevo) || 0
+            });
+            if (ok) { agregarToast('En cola', 'Listo para imprimir en góndola', 'OK'); try { playBeepOK(); } catch (_) {} }
+          } catch (e) { console.warn('[ColaMembretes] agregar:', e); }
+          try { etiqColaEspejar(MembreteSystem.colaItems('MEMBRETE_ME')); } catch (_) {}
+          etiqColaOcupado.value = false;
+        }
+        function etiqAbrirCola() {
+          if (!window.MembreteSystem || typeof MembreteSystem.abrirCola !== 'function') return;
+          MembreteSystem.abrirCola('MEMBRETE_ME');
+        }
+        // Abrir el modal = cargar la lista de 15 días + refrescar la cola del servidor.
+        function abrirEtiqsModal() {
+          etiqsModalAbierto.value = true;
+          cargarAlertasPrecio();
+          etiqSyncCola();
+          _etiqMarcarVistos();   // [792] abrir = revisado: el badge se apaga
         }
 
         // [NIVEL 4 corte-GAS] Marcado de etiquetas 100% Supabase (mos.etiqueta_marcar, SQL 373). Sin GAS.
@@ -10404,6 +10484,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 origen:         'ME',
                 unwrapData:     true,
                 endpointPrefix: 'wh_',
+                // [792] COLA DE MEMBRETES por usuario + zona (server-first, RPC mos.membrete_cola_*).
+                // Antes vivía SOLO en localStorage por dispositivo → el siguiente cajero del mismo
+                // equipo veía productos que él no agregó, y el amo/esclavo nunca compartían cola.
+                zona:           function() { return (config.value && config.value.zona) || ''; },
+                rpc:            function(fn, p) { return DeviceAuth.rpc(fn, p); },
                 // [Membretes 100% Supabase] el modal imprime góndola vía Edge print-adhesivo
                 // (mode:'crear-membrete'). Token ME (app=mosExpress). Fallback GAS si flag OFF/falla.
                 edgeCall:       async function(body) {
@@ -10510,6 +10595,18 @@ button:not(:disabled):not([aria-disabled="true"]):active,
               // (request del usuario: "botón flotante de membretes eso no me sirve").
               // El botón estático "🚨 Alertas precio" en Tools queda disponible
               // para consulta manual.
+              // [792] Espejo de la cola de góndola: cada vez que el módulo la cambia
+              // (agregar/quitar/imprimir/realtime del otro dispositivo) refrescamos el
+              // contador y el estado "✓ En cola" de las cards del modal de etiquetas.
+              try {
+                if (typeof MembreteSystem.colaSuscribir === 'function') {
+                  MembreteSystem.colaSuscribir(function(tipo, items) {
+                    if (tipo !== 'MEMBRETE_ME') return;
+                    etiqColaEspejar(items);
+                  });
+                }
+                etiqSyncCola();
+              } catch(e) { console.warn('[ColaMembretes] suscribir:', e); }
             } else {
               console.log('[Membretes] Sistema de membretes no inicializado en ME — falta config mosexpress_mos_url');
             }
@@ -10572,8 +10669,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           _intervalCajaRetry = setInterval(_intentarRegistrarCajaLocal, 60000);
 
           // 🏷 Etiquetas pendientes: carga inicial + refresh cada 2 min
-          setTimeout(() => cargarEtiqsPendientes().catch(() => {}), 1500);
-          setInterval(() => { if (!document.hidden) cargarEtiqsPendientes().catch(() => {}); }, 120000);
+          // [792] El badge ahora refleja CAMBIOS DE PRECIO no revisados (mos.alertas_precio),
+          // no las viejas "etiquetas pendientes de pegar" (concepto retirado del modal).
+          setTimeout(() => cargarAlertasPrecio().catch(() => {}), 1500);
+          setInterval(() => { if (!document.hidden) cargarAlertasPrecio().catch(() => {}); }, 120000);
 
           _intervalFocus = setInterval(() => {
             if (document.hidden) return;   // [perf] no robar/chequear foco (cada 1.5s) con la pestaña oculta
@@ -24946,7 +25045,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // del template tras quitar el bloque viejo "MEMBRETES DE PRECIO".
           // ── Etiquetas (membretes de cambio de precio) ──
           etiqsPendientes, etiqsModalAbierto, etiqsProcesando,
-          etiqTab, alertasPrecio, alertasPrecioCargando, cargarAlertasPrecio,   // [791] historial 15 días
+          alertasPrecio, alertasPrecioCargando, cargarAlertasPrecio,   // [791] historial 15 días
+          abrirEtiqsModal, etiqNoVistos,                               // [792] abre modal + carga lista + sync cola · badge de no revisados
+          // [792] cola de membretes de góndola (servidor, por usuario+zona)
+          etiqColaCount, etiqColaOcupado, etiqEnCola, etiqAgregarACola, etiqAbrirCola, etiqSyncCola,
           cargarEtiqsPendientes, etiqMarcarPegada,
           etiqMarcarTodasPegadas, etiqReimprimir, etiqAutoPrintAlAperturaCaja,
           db, dbCargada, zonasUnicas, estacionesFiltradas, reimprimirTicket, expandirTicket, limpiarCliente, cargarClienteVarios, defaultClienteBoleta: _defaultClienteBoleta, toggleVentaCreditoDirecto,
