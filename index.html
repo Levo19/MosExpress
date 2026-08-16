@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.295';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.296';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -19546,6 +19546,37 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             const m = parseFloat(nuevoExtra.value.monto);
             if (!m || m <= 0) { agregarToast('Error', 'Ingresa un monto válido'); return; }
             if (!nuevoExtra.value.concepto.trim()) { agregarToast('Error', 'Ingresa el concepto'); return; }
+
+            // [815 · money-safe] GUARDIA ANTI-CIERRE-NEGATIVO. Caso real (15-ago): la cajera
+            // registró a mano dos EGRESOS con concepto "Cierre de caja" (Yape + efectivo) para
+            // "declarar" lo que entregaba. Pero el cierre YA descuenta la entrega: se restó dos
+            // veces y la caja cerró en S/ -1925.60 cuando su ticket decía +1678.80. Además el
+            // Yape jamás fue efectivo de la caja, así que restarlo del efectivo no tiene sentido.
+            // Aquí se avisa ANTES de guardar, con el número exacto, y se exige confirmación.
+            try {
+                const _esEgreso = String(nuevoExtra.value.tipo || '') === 'EGRESO';
+                const _esVirtual = !!nuevoExtra.value.virtual;
+                const _txt = ((nuevoExtra.value.concepto || '') + ' ' + (nuevoExtra.value.obs || '')).toLowerCase();
+                const _mencionaCierre = _txt.indexOf('cierre') >= 0;
+                if (_esEgreso && !_esVirtual) {
+                    let _efe = 0;
+                    (cobradosEnSesion.value || []).forEach(c => { _efe += c.efectivo || 0; });
+                    const _ing = (extrasMovimientos.value || []).reduce((a, e) => a + (e.tipo === 'INGRESO' ? (parseFloat(e.monto) || 0) : 0), 0);
+                    const _egr = (extrasMovimientos.value || []).reduce((a, e) => a + (e.tipo === 'EGRESO' ? (parseFloat(e.monto) || 0) : 0), 0);
+                    const _saldoLuego = _money((parseFloat(montoAperturaMemoria.value) || 0) + _efe + _ing - _egr - m);
+                    if (_mencionaCierre || _saldoLuego < 0) {
+                        const _aviso = _mencionaCierre
+                            ? ('El cierre YA descuenta el dinero que entregas. Si además lo registras como egreso, se resta DOS veces.'
+                               + (_saldoLuego < 0 ? ' Tu caja quedaría en S/ ' + _money(_saldoLuego).toFixed(2) + '.' : '')
+                               + ' ¿Registrar igual?')
+                            : ('Este egreso dejaría tu caja de efectivo en S/ ' + _money(_saldoLuego).toFixed(2)
+                               + ' (en rojo). Revisa el monto o si en realidad fue pago con Yape/Plin (marca "virtual"). ¿Registrar igual?');
+                        const _ok = await _meModalConfirm(_aviso, { titulo: _mencionaCierre ? '⚠ No registres el cierre como egreso' : '⚠ La caja quedaría en negativo' });
+                        if (!_ok) { return; }
+                    }
+                }
+            } catch (_) { /* la guardia jamás debe impedir un registro legítimo */ }
+
             procesandoExtra.value = true;
             const extra = {
                 tipo: nuevoExtra.value.tipo + (nuevoExtra.value.virtual ? '_VIRTUAL' : ''),
