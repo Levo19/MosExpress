@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.296';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.297';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -19780,7 +19780,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 obs: h.obs || '',
                 items: (ventaBase.items || []).map(it => ({ sku: it.sku, nombre: it.nombre, cantidad: it.cantidad,
                     precio: it.precio, subtotal: it.subtotal, cod_barras: it.codBarras || it.cod_barras || '',
-                    valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv, unidad_medida: it.unidad_de_medida || it.unidad_medida }))
+                    valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv, unidad_medida: it.unidad_de_medida || it.unidad_medida,
+                    segmento_id: it.segmento_id || '', segmento_nombre: it.segmento_nombre || '',
+                    segmento_pct: (it.segmento_pct === 0 || it.segmento_pct ? it.segmento_pct : '') }))
             };
             // [Lote1-C · fix A5] timeout 6s → si Supabase cuelga, cae al fallback GAS
             // (la idempotencia por ref_local evita duplicados si la escritura SÍ entró).
@@ -21246,11 +21248,16 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           let pNormal;
           item.segmentoAplicado = null;
           item.segmentoAjustePct = 0;
+          item.segmentoId = '';
           if (_esGranelItem && Array.isArray(item.segmentosPrecio) && item.segmentosPrecio.length) {
             const calc = _meCalcPrecioGranel(item.precioUnitario, item.cantidad * 1000, item.segmentosPrecio);
             pNormal = calc.precio;
             if (calc.segmento) {
-              item.segmentoAplicado = calc.segmento.nombre || 'segmento';
+              // [821] tambien el id y una etiqueta legible: es lo que se graba en la venta para
+              // que la historia no dependa de como esten los tramos manana.
+              item.segmentoId = calc.segmento.id || '';
+              item.segmentoAplicado = calc.segmento.nombre
+                || ((calc.segmento.min != null ? calc.segmento.min : 0) + '–' + (calc.segmento.max != null ? calc.segmento.max : '∞') + ' g');
               item.segmentoAjustePct = calc.ajustePct;
             }
           } else {
@@ -22116,7 +22123,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                    subtotal:         c.subtotal,
                    tipo_igv:         igv,
                    unidad_de_medida: c.unidadMedida || 'NIU',
-                   cod_sunat:        c.codSunat || ''
+                   cod_sunat:        c.codSunat || '',
+                   // [821] el tramo que se aplico A ESTA venta, congelado. Si manana se cambia
+                   // el tramo, el margen de hoy no se mueve: quedo grabado lo que se cobro.
+                   segmento_id:      c.segmentoId || '',
+                   segmento_nombre:  c.segmentoAplicado || '',
+                   segmento_pct:     (c.segmentoAjustePct != null ? c.segmentoAjustePct : '')
                };
            });
 
