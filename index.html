@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.300';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.301';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -16553,8 +16553,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
              // cobradosEnSesion no incluía las ventas EFECTIVO directas (mostraba 0). Fallback local sin red.
              let tEfectivo = 0, tVirtual = 0, tExtrasIngreso = 0, tExtrasEgreso = 0,
                  tExtrasIngresoVirtual = 0, tExtrasEgresoVirtual = 0, montoFinal = 0, tVirtualFinal = 0;
-             let _dtT = null;
-             try { const _dt = await _datosTurnoDirecto(_idCaja); _dtT = (_dt && _dt.totales) ? _dt.totales : null; }
+             let _dtT = null, _dtYape = null;
+             try { const _dt = await _datosTurnoDirecto(_idCaja); _dtT = (_dt && _dt.totales) ? _dt.totales : null;
+                   _dtYape = (_dt && _dt.yapes) ? _dt.yapes : null; }   // [856] verificación por Yape
              catch(e) { console.warn('[cierre] datos_turno falló, uso local:', e && e.message); }
              if (_dtT) {
                  tEfectivo             = parseFloat(_dtT.efectivo)             || 0;
@@ -16599,7 +16600,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
              const ultimoCobro = cobradosEnSesion.value.length ? cobradosEnSesion.value[cobradosEnSesion.value.length - 1].correlativo : '-';
              const horaApertura = sessionStartTime.value ? new Date(sessionStartTime.value).toLocaleString() : '-';
 
-             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtualFinal.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nLos POR_COBRAR de tu caja se anulan al cerrar.`;
+             const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtualFinal.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nLos POR_COBRAR de tu caja se anulan al cerrar.` + _yapeResumenCierre(_dtYape);
              if(!await _meModalConfirm(`¿Cerrar Turno?\n\n${resumen}`, { titulo: 'Cerrar turno', okText: 'Cerrar turno' })) return;
 
 
@@ -18677,6 +18678,21 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     }, i * 2600);
                 });
             } catch (_) { /* sin red: se reintenta al próximo ciclo */ }
+        };
+
+        // [856] Bloque de verificación para el ticket de cierre.
+        // OJO CON LAS PALABRAS: "sin verificar" NO es "no pagado". El Yape puede no haber
+        // llegado todavía, o el cliente pudo pagar con otra billetera. Decir "impago" en un
+        // papel que firma el cajero sería acusarlo en falso.
+        const _yapeResumenCierre = (y) => {
+            if (!y || ((y.verificados || 0) + (y.sinVerificar || 0)) === 0) return '';
+            let t = '\n\n--- VERIFICACION YAPE ---';
+            t += '\nVerificados: ' + (y.verificados || 0) + ' tickets - S/ ' + (+y.montoVerificado || 0).toFixed(2);
+            t += '\nSin verificar: ' + (y.sinVerificar || 0) + ' tickets - S/ ' + (+y.montoSinVerificar || 0).toFixed(2);
+            if (y.ambiguos > 0) t += '\n! ' + y.ambiguos + ' Yape(s) con dos tickets posibles - resolver en MOS';
+            if (y.sinUsar > 0)  t += '\n! ' + y.sinUsar + ' Yape(s) sin ticket que les corresponda';
+            t += '\n(sin verificar no significa impago)';
+            return t;
         };
 
         const yapeArrancar = () => {
