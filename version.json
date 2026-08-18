@@ -1,1 +1,1 @@
-{"version": "2.8.301", "build": "2.8.301 El cierre de turno separa el VIRTUAL verificado por Yape del que todavia no lo esta, y avisa si quedaron Yapes con dos tickets posibles o sin ticket que les corresponda."}
+{"version": "2.8.302", "build": "2.8.302 Modo Cajero rehecho: la estacion de cobro. Se escanea el QR de boletas y facturas (antes solo notas de venta), el rio muestra los Yapes que van entrando y marca cual calza con cual ticket, MIXTO se reparte con teclado tactil y el vuelto ya no estorba."}

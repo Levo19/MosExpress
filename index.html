@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.301';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.302';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1656,6 +1656,250 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     body.dark-mode .wiz-user-card:hover { border-color: var(--dk-primary); box-shadow: 0 0 0 1px var(--dk-primary); }
     body.dark-mode .wiz-cajero-chip { background: var(--dk-warn-bg); border-color: rgba(251,191,36,.5); }
     body.dark-mode .wiz-add-cajero.is-locked { background: var(--dk-raised); color: var(--dk-text-3); }
+  
+    /* ══════════════════════════════════════════════════════════════════════
+       MODO CAJERO v2 — la estación de cobro.
+       Diseño: los paneles NO son cajas. Sin marco de 1px: el borde se desvanece
+       con una máscara, la luz sale de adentro y dos esquinas tipo HUD dan
+       estructura sin encerrar. Cada panel respira en 3D con su propio ritmo
+       (13/17/11/19s, desfasados a propósito para que nada se sienta mecánico).
+       Los colores significan: turquesa = el sistema; ámbar = efectivo;
+       violeta = Yape; verde = cobrado. Nada es decorativo.
+       Todo el movimiento va por transform/opacity (GPU). El botón "sobrio"
+       apaga los efectos: el escaneo es lo único que no puede fallar.
+       ══════════════════════════════════════════════════════════════════════ */
+    #mcRoot{--voz:#2de3c8;--plata:#ffd166;--yape:#b07bff;--ok:#3ddc84;
+      --tinta:#eaf6f8;--tinta2:#9fb9c4;--tinta3:#5d7a87;--aura:#2de3c8;--px:0;--py:0;
+      position:fixed;inset:0;z-index:200;background:#03101a;color:var(--tinta);overflow:hidden;
+      font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+    #mcRoot .mc-num{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+    #mcLluvia,#mcHaz{position:absolute;inset:0;pointer-events:none}
+    #mcLluvia{z-index:0;opacity:.4}
+    #mcHaz{z-index:6}
+    #mcRoot .mc-reja{position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.32;transition:opacity .5s;
+      background-image:linear-gradient(rgba(22,58,73,.8) 1px,transparent 1px),linear-gradient(90deg,rgba(22,58,73,.8) 1px,transparent 1px);
+      background-size:56px 56px;
+      -webkit-mask-image:radial-gradient(ellipse 85% 70% at 50% 45%,#000 20%,transparent 100%);
+      mask-image:radial-gradient(ellipse 85% 70% at 50% 45%,#000 20%,transparent 100%)}
+    #mcRoot .mc-reja.on{opacity:.85}
+    #mcRoot .mc-aura{position:absolute;inset:0;pointer-events:none;z-index:7;transition:box-shadow .6s;
+      box-shadow:inset 0 0 90px -40px var(--aura),inset 0 0 4px -1px var(--aura)}
+    #mcRoot .mc-aura.on{box-shadow:inset 0 0 150px -30px var(--aura),inset 0 0 8px 0 var(--aura)}
+    #mcRoot .mc-flash{position:absolute;inset:0;background:var(--voz);opacity:0;pointer-events:none;z-index:9}
+    #mcRoot .mc-flash.on{animation:mcFl .34s}
+    @keyframes mcFl{0%{opacity:.42}100%{opacity:0}}
+
+    #mcRoot .mc-app{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:12px;gap:11px;
+      perspective:1400px;perspective-origin:50% 45%}
+    #mcRoot .mc-w{transform-style:preserve-3d;transition:transform .6s cubic-bezier(.22,1,.36,1)}
+    #mcRoot .mc-wtop{transform:translate3d(calc(var(--px)*-7px),calc(var(--py)*-5px),0)}
+    #mcRoot .mc-wriel{transform:translate3d(calc(var(--px)*-17px),calc(var(--py)*-10px),-40px);min-height:0;display:flex}
+    #mcRoot .mc-wesc{transform:translate3d(calc(var(--px)*9px),calc(var(--py)*6px),0);min-height:0;display:flex}
+    #mcRoot .mc-wrio{transform:translate3d(calc(var(--px)*7px),calc(var(--py)*7px),-20px)}
+    #mcRoot .mc-wriel>.mc-riel,#mcRoot .mc-wesc>.mc-esc{flex:1;min-width:0}
+
+    #mcRoot .mc-top,#mcRoot .mc-riel,#mcRoot .mc-esc,#mcRoot .mc-rio{
+      border-radius:26px;position:relative;transform-style:preserve-3d;
+      background:radial-gradient(ellipse 120% 100% at 50% 0%,rgba(45,227,200,.07),transparent 65%),
+                 linear-gradient(180deg,rgba(13,39,52,.78),rgba(6,22,32,.55));
+      box-shadow:inset 0 1px 0 rgba(140,220,235,.09),inset 0 0 70px -34px rgba(45,227,200,.55),0 40px 80px -50px #000;
+      backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px)}
+    #mcRoot .mc-riel,#mcRoot .mc-esc{
+      -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%);
+      mask-image:linear-gradient(180deg,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%)}
+    #mcRoot .mc-riel::before,#mcRoot .mc-riel::after,#mcRoot .mc-esc::before,#mcRoot .mc-esc::after,
+    #mcRoot .mc-rio::before,#mcRoot .mc-rio::after{
+      content:"";position:absolute;width:30px;height:30px;pointer-events:none;z-index:3;
+      border:2px solid var(--voz);opacity:.3;transition:opacity .5s}
+    #mcRoot .mc-riel::before,#mcRoot .mc-esc::before,#mcRoot .mc-rio::before{
+      top:12px;left:12px;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
+    #mcRoot .mc-riel::after,#mcRoot .mc-esc::after,#mcRoot .mc-rio::after{
+      bottom:12px;right:12px;border-left:0;border-top:0;border-radius:0 0 14px 0}
+    #mcRoot .mc-esc::before,#mcRoot .mc-esc::after{opacity:.46}
+
+    #mcRoot .mc-riel{animation:mcRespA 13s ease-in-out infinite alternate;display:flex;flex-direction:column;overflow:hidden}
+    #mcRoot .mc-esc{animation:mcRespB 17s ease-in-out infinite alternate;display:flex;align-items:center;justify-content:center;padding:18px;overflow:hidden}
+    #mcRoot .mc-rio{animation:mcRespC 11s ease-in-out infinite alternate}
+    #mcRoot .mc-top{animation:mcRespD 19s ease-in-out infinite alternate}
+    @keyframes mcRespA{0%{transform:rotateY(7deg) rotateX(.6deg) translateZ(0)}100%{transform:rotateY(4.6deg) rotateX(-.7deg) translateZ(26px)}}
+    @keyframes mcRespB{0%{transform:rotateY(-1.4deg) rotateX(.5deg) translateZ(0)}100%{transform:rotateY(1.2deg) rotateX(-.6deg) translateZ(20px)}}
+    @keyframes mcRespC{0%{transform:rotateX(1.6deg) translateZ(0)}100%{transform:rotateX(-1deg) translateZ(16px)}}
+    @keyframes mcRespD{0%{transform:rotateX(-1.2deg)}100%{transform:rotateX(.9deg)}}
+
+    #mcRoot .mc-top{display:flex;align-items:center;gap:13px;padding:9px 16px;flex:none}
+    #mcRoot .mc-viva{width:9px;height:9px;border-radius:50%;background:var(--ok);animation:mcLat 2.4s infinite}
+    @keyframes mcLat{0%{box-shadow:0 0 0 0 rgba(61,220,132,.55)}70%{box-shadow:0 0 0 11px rgba(61,220,132,0)}100%{box-shadow:0 0 0 0 rgba(61,220,132,0)}}
+    #mcRoot .mc-caja{font-size:13px;font-weight:800;letter-spacing:.07em}
+    #mcRoot .mc-caja i{font-style:normal;color:var(--tinta3);font-weight:600}
+    #mcRoot .mc-reloj{margin-left:auto;font-size:15px;color:var(--tinta2);letter-spacing:.08em}
+    #mcRoot .mc-pill{display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+      font-size:12px;font-weight:800;box-shadow:inset 0 0 0 1px rgba(45,227,200,.16)}
+    #mcRoot .mc-pill.y{color:var(--yape)}#mcRoot .mc-pill.t{color:var(--plata)}
+    #mcRoot .mc-ic{border:0;background:transparent;color:var(--tinta2);border-radius:11px;
+      width:38px;height:34px;cursor:pointer;font-size:15px;transition:.15s;
+      box-shadow:inset 0 0 0 1px rgba(45,227,200,.16)}
+    #mcRoot .mc-ic:hover,#mcRoot .mc-ic.on{background:rgba(45,227,200,.15);color:var(--voz)}
+    #mcRoot .mc-ic.x:hover{background:rgba(248,113,113,.16);color:#fca5a5}
+
+    #mcRoot .mc-cuerpo{flex:1;display:grid;grid-template-columns:290px 1fr;gap:12px;min-height:0;transform-style:preserve-3d}
+    #mcRoot .mc-rh{padding:11px 15px;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+      color:var(--tinta3);display:flex;justify-content:space-between;flex:none}
+    #mcRoot .mc-rb{flex:1;overflow-y:auto;padding:16px 12px 22px;display:flex;flex-direction:column;gap:9px;transform-style:preserve-3d}
+    #mcRoot .mc-tk{border-radius:16px;padding:11px 13px;cursor:pointer;position:relative;transform-style:preserve-3d;
+      background:linear-gradient(100deg,rgba(20,52,68,.9),rgba(10,30,42,.5));
+      box-shadow:inset 2px 0 0 rgba(45,227,200,.32),0 16px 34px -26px #000;
+      animation:mcMece 9s ease-in-out infinite alternate;
+      transition:box-shadow .25s}
+    #mcRoot .mc-tk:nth-child(2){animation-duration:11s;animation-delay:-2s}
+    #mcRoot .mc-tk:nth-child(3){animation-duration:13s;animation-delay:-5s}
+    #mcRoot .mc-tk:nth-child(4){animation-duration:10s;animation-delay:-7s}
+    #mcRoot .mc-tk:nth-child(5){animation-duration:14s;animation-delay:-3s}
+    @keyframes mcMece{0%{transform:translateZ(0) rotateY(0)}100%{transform:translateZ(15px) rotateY(-2.2deg) translateY(-3px)}}
+    #mcRoot .mc-tk:hover{animation-play-state:paused;box-shadow:inset 2px 0 0 var(--voz),0 22px 46px -22px var(--voz)}
+    #mcRoot .mc-tk.calza{box-shadow:inset 2px 0 0 var(--yape),0 0 44px -14px var(--yape)}
+    #mcRoot .mc-tk.calza::after{content:"\1F49C";position:absolute;top:8px;right:10px;font-size:13px}
+    #mcRoot .mc-tk.nuevo{animation:mcAter .7s cubic-bezier(.22,1,.36,1);box-shadow:inset 2px 0 0 var(--voz),0 0 42px -12px var(--voz)}
+    @keyframes mcAter{0%{transform:translate3d(-160px,-30px,420px) rotateY(-45deg);opacity:0;filter:blur(6px)}
+                      60%{transform:translate3d(8px,0,40px) rotateY(4deg);filter:blur(0)}100%{transform:none;opacity:1}}
+    #mcRoot .mc-tk.vuela{animation:mcVuela .5s cubic-bezier(.5,0,.75,0) forwards;pointer-events:none}
+    @keyframes mcVuela{to{transform:translate3d(240px,-40px,520px) rotateY(-30deg);opacity:0;filter:blur(8px)}}
+    #mcRoot .mc-tkc{font-size:10.5px;color:var(--tinta2);letter-spacing:.06em}
+    #mcRoot .mc-tkm{font-size:23px;font-weight:800;margin-top:3px}
+    #mcRoot .mc-tkt{font-size:9.5px;color:var(--tinta3);margin-top:2px}
+    #mcRoot .mc-vacio{color:var(--tinta3);font-size:12px;text-align:center;padding:24px 10px;line-height:1.8}
+
+    #mcRoot .mc-espera{text-align:center;display:flex;flex-direction:column;align-items:center;gap:15px;transform-style:preserve-3d}
+    #mcRoot .mc-hud{width:170px;height:170px;position:relative;display:grid;place-items:center}
+    #mcRoot .mc-ani{position:absolute;border-radius:50%;border:1px solid rgba(45,227,200,.45)}
+    #mcRoot .mc-ani.a{inset:0;border-style:dashed;animation:mcGira 26s linear infinite}
+    #mcRoot .mc-ani.b{inset:22px;border-top-color:var(--voz);border-width:2px;animation:mcGira 9s linear infinite reverse}
+    #mcRoot .mc-ani.c{inset:44px;border-left-color:var(--voz);animation:mcGira 14s linear infinite}
+    @keyframes mcGira{to{transform:rotate(360deg)}}
+    #mcRoot .mc-onda{position:absolute;inset:30px;border-radius:50%;border:1px solid var(--voz);animation:mcOnda 3s infinite}
+    #mcRoot .mc-onda.d2{animation-delay:1.5s}
+    @keyframes mcOnda{0%{transform:scale(.3);opacity:.85}100%{transform:scale(1.7);opacity:0}}
+    #mcRoot .mc-hud b{font-size:42px;filter:drop-shadow(0 0 18px rgba(45,227,200,.6))}
+    #mcRoot .mc-espera h1{font-size:21px;font-weight:800}
+    #mcRoot .mc-espera p{font-size:12.5px;color:var(--tinta3);line-height:1.75;max-width:350px}
+
+    #mcRoot .mc-cobro{width:100%;max-width:780px;display:flex;flex-direction:column;align-items:center;gap:16px;
+      animation:mcEmerge .5s cubic-bezier(.22,1,.36,1);transform-style:preserve-3d}
+    @keyframes mcEmerge{0%{transform:translate3d(-120px,0,-260px) rotateY(18deg);opacity:0;filter:blur(7px)}
+                        100%{transform:none;opacity:1;filter:blur(0)}}
+    #mcRoot .mc-corr{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--tinta2);letter-spacing:.06em}
+    #mcRoot .mc-tag{font-size:9.5px;font-weight:900;letter-spacing:.11em;padding:3px 9px;border-radius:999px;
+      background:rgba(255,209,102,.14);color:var(--plata)}
+    #mcRoot .mc-monto{font-size:clamp(54px,11.5vw,124px);font-weight:800;line-height:.9;letter-spacing:-.045em;
+      display:flex;align-items:baseline;justify-content:center}
+    #mcRoot .mc-monto small{font-size:.3em;color:var(--tinta3);font-weight:700;margin-right:.14em;letter-spacing:0}
+    #mcRoot .mc-dig{display:inline-block;animation:mcMat .5s cubic-bezier(.22,1,.36,1) backwards;
+      text-shadow:0 0 55px rgba(45,227,200,.35)}
+    @keyframes mcMat{0%{transform:translateZ(-320px) translateY(18px);opacity:0;filter:blur(14px)}
+                     100%{transform:none;opacity:1;filter:blur(0)}}
+    #mcRoot .mc-coyape{display:flex;align-items:center;gap:9px;padding:9px 17px;border-radius:999px;
+      background:rgba(176,123,255,.14);color:var(--yape);font-size:13px;font-weight:700;
+      box-shadow:inset 0 0 0 1px rgba(176,123,255,.5);animation:mcPop .55s cubic-bezier(.22,1,.36,1)}
+    @keyframes mcPop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.09)}100%{transform:none;opacity:1}}
+    #mcRoot .mc-bts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;transform-style:preserve-3d}
+    #mcRoot .mc-bt{padding:22px 12px;border-radius:18px;border:0;color:var(--tinta);font-size:14.5px;font-weight:900;
+      letter-spacing:.07em;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:7px;
+      background:linear-gradient(160deg,rgba(20,52,68,.92),rgba(10,30,42,.5));
+      box-shadow:inset 0 1px 0 rgba(140,220,235,.1),0 18px 36px -28px #000;
+      transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s,color .18s,background .18s}
+    #mcRoot .mc-bt span{font-size:26px;line-height:1}
+    #mcRoot .mc-bt:hover{transform:translateZ(34px) translateY(-3px)}
+    #mcRoot .mc-bt:active{transform:translateZ(8px)}
+    #mcRoot .mc-bt.efe:hover{color:var(--plata);box-shadow:inset 0 0 0 1px var(--plata),0 18px 40px -18px var(--plata)}
+    #mcRoot .mc-bt.vir:hover{color:var(--yape);box-shadow:inset 0 0 0 1px var(--yape),0 18px 40px -18px var(--yape)}
+    #mcRoot .mc-bt.mix:hover{color:var(--voz);box-shadow:inset 0 0 0 1px var(--voz),0 18px 40px -18px var(--voz)}
+    #mcRoot .mc-bt.destaca{box-shadow:inset 0 0 0 1px var(--yape),0 0 46px -14px var(--yape)}
+    #mcRoot .mc-bt:disabled{opacity:.4;cursor:not-allowed}
+
+    #mcRoot .mc-mix{display:grid;grid-template-columns:1fr 255px;gap:18px;width:100%;max-width:780px;
+      animation:mcEmerge .45s cubic-bezier(.22,1,.36,1);transform-style:preserve-3d}
+    #mcRoot .mc-teclas{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+    #mcRoot .mc-te{padding:17px 0;border-radius:18px;border:0;color:var(--tinta);font-size:25px;font-weight:800;cursor:pointer;
+      background:linear-gradient(160deg,rgba(20,52,68,.92),rgba(10,30,42,.5));
+      box-shadow:inset 0 1px 0 rgba(140,220,235,.1),0 18px 36px -28px #000;
+      transition:transform .13s,box-shadow .15s}
+    #mcRoot .mc-te:hover{transform:translateZ(26px);box-shadow:inset 0 0 0 1px var(--voz)}
+    #mcRoot .mc-te.acc{font-size:15px;color:var(--tinta2)}
+    #mcRoot .mc-te.ok{grid-column:span 3;color:var(--ok);font-size:17px;letter-spacing:.1em;
+      box-shadow:inset 0 0 0 1px var(--ok),0 16px 34px -24px var(--ok)}
+    #mcRoot .mc-te.ok:disabled{opacity:.35;cursor:not-allowed}
+    #mcRoot .mc-barras{display:flex;flex-direction:column;gap:11px}
+    #mcRoot .mc-bart{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--tinta3)}
+    #mcRoot .mc-liq{height:52px;border-radius:13px;background:rgba(3,16,26,.7);position:relative;overflow:hidden;
+      box-shadow:inset 0 0 0 1px rgba(45,227,200,.14)}
+    #mcRoot .mc-liq i{position:absolute;inset:0 auto 0 0;transition:width .35s cubic-bezier(.22,1,.36,1)}
+    #mcRoot .mc-liq.efe i{background:linear-gradient(90deg,rgba(255,209,102,.5),rgba(255,209,102,.22))}
+    #mcRoot .mc-liq.vir i{background:linear-gradient(90deg,rgba(176,123,255,.5),rgba(176,123,255,.22))}
+    #mcRoot .mc-liq b{position:absolute;inset:0;display:flex;align-items:center;padding:0 14px;font-size:21px;font-weight:800}
+    #mcRoot .mc-liq.efe b{color:var(--plata)}#mcRoot .mc-liq.vir b{color:var(--yape)}
+    #mcRoot .mc-mixnota{font-size:11.5px;color:var(--tinta3);text-align:center;line-height:1.6}
+
+    #mcRoot .mc-hecho{text-align:center;animation:mcEmerge .4s;transform-style:preserve-3d}
+    #mcRoot .mc-hecho .mc-monto{color:var(--ok)}
+    #mcRoot .mc-hecho .mc-dig{text-shadow:0 0 70px rgba(61,220,132,.45)}
+    #mcRoot .mc-sello{margin-top:13px;display:inline-block;padding:9px 27px;border:3px solid var(--ok);border-radius:12px;
+      color:var(--ok);font-size:20px;font-weight:900;letter-spacing:.22em;transform:rotate(-7deg);
+      animation:mcCae .55s cubic-bezier(.34,1.56,.64,1)}
+    @keyframes mcCae{0%{transform:rotate(-7deg) scale(3) translateZ(300px);opacity:0;filter:blur(10px)}
+                     100%{transform:rotate(-7deg) scale(1);opacity:1;filter:blur(0)}}
+    #mcRoot .mc-hecho p{margin-top:11px;font-size:12.5px;color:var(--tinta2)}
+    #mcRoot .mc-shock{position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:50%;border:2px solid var(--ok);
+      transform:translate(-50%,-50%);pointer-events:none;z-index:8;animation:mcShock .8s cubic-bezier(.22,1,.36,1) forwards}
+    @keyframes mcShock{to{width:200vmax;height:200vmax;opacity:0;border-width:1px}}
+
+    #mcRoot .mc-esperando{flex:none;display:flex;align-items:center;gap:9px;padding:8px 15px;border-radius:16px;
+      background:rgba(255,209,102,.07);color:var(--plata);font-size:11.5px;backdrop-filter:blur(9px);
+      box-shadow:inset 0 0 0 1px rgba(255,209,102,.3);margin-bottom:2px;overflow-x:auto;white-space:nowrap}
+    #mcRoot .mc-esperando b{color:#ffe9b0}
+
+    #mcRoot .mc-rio{padding:9px 12px;display:flex;align-items:center;gap:11px;overflow:hidden;min-height:74px;flex:none}
+    #mcRoot .mc-rioh{font-size:9.5px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--yape);
+      writing-mode:vertical-rl;transform:rotate(180deg);flex:none;opacity:.75}
+    #mcRoot .mc-riob{flex:1;display:flex;gap:9px;overflow-x:auto;padding:2px}
+    #mcRoot .mc-yp{flex:none;border-radius:15px;padding:8px 13px;min-width:138px;
+      background:linear-gradient(140deg,rgba(176,123,255,.16),rgba(176,123,255,.04));
+      box-shadow:inset 0 0 0 1px rgba(176,123,255,.18),0 14px 30px -24px #000;
+      animation:mcLlega .6s cubic-bezier(.22,1,.36,1),mcMece 12s ease-in-out infinite alternate;
+      transition:box-shadow .25s}
+    #mcRoot .mc-yp:nth-child(even){animation-duration:.6s,15s}
+    @keyframes mcLlega{0%{transform:translate3d(140px,0,180px) rotateY(-25deg);opacity:0;filter:blur(5px)}100%{opacity:1}}
+    #mcRoot .mc-ypm{font-size:17px;font-weight:800;color:var(--yape)}
+    #mcRoot .mc-ypn{font-size:10.5px;color:var(--tinta2);margin-top:1px;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;max-width:120px}
+    #mcRoot .mc-yph{font-size:9px;color:var(--tinta3);margin-top:1px}
+    #mcRoot .mc-yp.calza{box-shadow:inset 0 0 0 1px var(--yape),0 0 34px -10px var(--yape)}
+    #mcRoot .mc-yp.usado{opacity:.35;filter:saturate(.3)}
+
+    /* modo latente: no bloquea, se vuelve cine */
+    #mcRoot.latente .mc-wriel{transform:translateZ(70px) scale(1.03)}
+    #mcRoot.latente .mc-rio,#mcRoot.latente .mc-top{opacity:.5}
+    #mcRoot.latente #mcLluvia{opacity:.8}
+    #mcRoot.latente .mc-tk{animation:mcMece 6s ease-in-out infinite alternate}
+    #mcRoot .mc-latmsg{position:absolute;inset:auto 0 44% 0;text-align:center;z-index:5;pointer-events:none;
+      font-size:13px;letter-spacing:.42em;text-transform:uppercase;color:var(--voz);animation:mcResp 3.4s infinite}
+    @keyframes mcResp{0%,100%{opacity:.25}50%{opacity:.65}}
+
+    /* el seguro: si la tablet sufre, esto queda plano y rapidísimo */
+    #mcRoot.sobrio #mcLluvia{display:none}
+    #mcRoot.sobrio *{animation:none!important;transition:none!important}
+    #mcRoot.sobrio .mc-top,#mcRoot.sobrio .mc-riel,#mcRoot.sobrio .mc-esc,#mcRoot.sobrio .mc-rio,
+    #mcRoot.sobrio .mc-tk,#mcRoot.sobrio .mc-yp{transform:none!important;backdrop-filter:none;
+      -webkit-mask-image:none;mask-image:none;background:#0a1e29}
+
+    @media (max-width:900px){
+      #mcRoot .mc-cuerpo{grid-template-columns:1fr;grid-template-rows:150px 1fr}
+      #mcRoot .mc-riel{transform:none;animation:none}
+      #mcRoot .mc-rb{flex-direction:row;overflow-x:auto}
+      #mcRoot .mc-tk{min-width:155px}
+      #mcRoot .mc-mix{grid-template-columns:1fr}
+      #mcRoot .mc-reloj{display:none}
+    }
+    @media (prefers-reduced-motion:reduce){#mcRoot *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
   </style>
   <style>
     /* ── Update overlay ─────────────────────────────── */
@@ -6330,190 +6574,148 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     <!-- ============================================================ -->
     <!-- MODO CAJERO — Pantalla horizontal (cine mode)              -->
     <!-- ============================================================ -->
-    <div v-if="modoCajero" class="fixed inset-0 z-[200] bg-gray-950 overflow-hidden select-none">
+    <!-- ══════════════════════════════════════════════════════════════════
+         MODO CAJERO v2 — la estación de cobro.
+         Tres momentos: el radar (esperando), el ticket en mano, y el cobrado.
+         El cajero NUNCA escribe: escanea con el lector USB/bluetooth o toca el
+         ticket en el riel. La cámara es de emergencia y arranca apagada, así el
+         escenario queda entero para el cobro.
+         El camino del dinero es el MISMO de siempre (abrirCobroPendiente +
+         procesarCobroPendiente): acá solo cambia la puesta en escena.
+         ══════════════════════════════════════════════════════════════════ -->
+    <div v-if="modoCajero" id="mcRoot" :class="{ sobrio: mcSobrio, latente: mcLatente }">
+      <canvas id="mcLluvia"></canvas>
+      <div class="mc-reja" ref="mcReja"></div>
+      <canvas id="mcHaz"></canvas>
+      <div class="mc-aura" ref="mcAura"></div>
+      <div class="mc-flash" ref="mcFlash"></div>
 
-        <!-- Input invisible: captura bluetooth scanner (siempre activo) -->
-        <input ref="cajeroInput" v-model="cajeroBusqueda" @keyup.enter="buscarTicketCajero"
-               type="text" inputmode="none" autocomplete="off"
-               style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none">
+      <!-- el lector USB/bluetooth escribe como un teclado: no necesita campo visible -->
+      <input ref="cajeroInput" v-model="cajeroBusqueda" @keyup.enter="buscarTicketCajero"
+             type="text" inputmode="none" autocomplete="off"
+             style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none">
 
-        <!-- Layout principal horizontal: cámara (izq) + contenido (der) -->
-        <div class="absolute inset-0 flex flex-row overflow-hidden">
+      <div class="mc-app">
+        <div class="mc-w mc-wtop"><div class="mc-top">
+          <span class="mc-viva"></span>
+          <span class="mc-caja">{{ (config.estacion || 'CAJA').toUpperCase() }} <i>· {{ config.vendedor }}</i></span>
+          <button class="mc-ic" :class="{on: cajeroCamara}" @click="mcToggleCamara"
+                  title="Cámara de emergencia — el lector es lo normal">📷</button>
+          <button class="mc-ic" @click="mcSobrio = !mcSobrio"
+                  :title="mcSobrio ? 'Volver a los efectos' : 'Modo sobrio: apaga efectos si la tablet sufre'">🎚</button>
+          <span class="mc-reloj mc-num">{{ mcReloj }}</span>
+          <span class="mc-pill t">{{ mcPendientes.length }} por cobrar</span>
+          <span class="mc-pill y">💜 {{ mcYapesLibres }}</span>
+          <button class="mc-ic x" @click="cerrarModoCajero" title="Salir del modo cajero">✕</button>
+        </div></div>
 
-            <!-- ═══ CÁMARA — siempre en DOM, siempre activa ═══ -->
-            <div class="relative bg-black flex flex-col overflow-hidden shrink-0 transition-all duration-200"
-                 :style="cajeroTicketActual ? 'width:200px' : 'flex:1'">
+        <div class="mc-cuerpo">
+          <div class="mc-w mc-wriel"><div class="mc-riel">
+            <div class="mc-rh"><span>🧾 Por cobrar</span><span class="mc-num">{{ mcMoney(mcTotalPend) }}</span></div>
+            <div class="mc-rb">
+              <div v-if="!mcPendientes.length" class="mc-vacio">
+                Sin tickets pendientes.<br>Cuando un vendedor emita uno,<br>aterriza acá solo.
+              </div>
+              <div v-for="v in mcPendientes" :key="v.id"
+                   class="mc-tk" :class="{ calza: mcCalza(v), nuevo: v.isNew }"
+                   :data-tk="v.id" @click="mcTomar(v)">
+                <div class="mc-tkc">{{ v.correlativo }} · {{ mcTipoCorto(v.tipo) }}</div>
+                <div class="mc-tkm mc-num">{{ mcMoney(v.total) }}</div>
+                <div class="mc-tkt">{{ mcHora(v) }} · {{ v.raw_data?.auth?.vendedor || '—' }}</div>
+              </div>
+            </div>
+          </div></div>
 
-                <div id="cajero-qr-reader" class="flex-1 w-full" style="min-height:0"></div>
-
-                <!-- Marco de encuadre -->
-                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div class="relative transition-all duration-200"
-                         :class="cajeroTicketActual ? 'w-28 h-28' : 'w-52 h-52'">
-                        <div class="absolute top-0 left-0 w-7 h-7 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg"></div>
-                        <div class="absolute top-0 right-0 w-7 h-7 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg"></div>
-                        <div class="absolute bottom-0 left-0 w-7 h-7 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg"></div>
-                        <div class="absolute bottom-0 right-0 w-7 h-7 border-b-4 border-r-4 border-emerald-400 rounded-br-lg"></div>
-                    </div>
-                </div>
-
-                <!-- Sin ticket: hint de escaneo -->
-                <div v-if="!cajeroTicketActual"
-                     class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent py-5 text-center pointer-events-none">
-                    <p class="text-emerald-400 font-black text-sm tracking-widest uppercase">Modo Cajero</p>
-                    <p class="text-gray-400 text-xs mt-0.5">Escanea el QR o usa lector</p>
-                </div>
-
-                <!-- Con ticket: badge "siguiente" -->
-                <div v-if="cajeroTicketActual"
-                     class="bg-gray-900 border-t border-gray-800 py-2 px-2 text-center shrink-0">
-                    <p class="text-emerald-400 text-[9px] font-black uppercase tracking-widest leading-none">Siguiente →</p>
-                </div>
+          <div class="mc-w mc-wesc"><div class="mc-esc">
+            <!-- 1 · esperando -->
+            <div v-if="mcEstado === 'espera'" class="mc-espera">
+              <div class="mc-hud">
+                <i class="mc-ani a"></i><i class="mc-ani b"></i><i class="mc-ani c"></i>
+                <i class="mc-onda"></i><i class="mc-onda d2"></i>
+                <b>{{ cajeroCamara ? '📷' : '⚡' }}</b>
+              </div>
+              <h1>{{ cajeroCamara ? 'Cámara encendida' : 'Escaneá un ticket' }}</h1>
+              <p v-if="!cajeroCamara">El lector está listo. Si el código no lee, tocá el ticket en la lista —
+                 o encendé la cámara con 📷.</p>
+              <p v-else>Apuntá al QR. La cámara es de emergencia: con el lector el cobro es más rápido.</p>
+              <div id="cajero-qr-reader" v-show="cajeroCamara" style="width:230px;max-width:60vw"></div>
             </div>
 
-            <!-- ═══ SIN TICKET: panel de instrucciones ═══ -->
-            <div v-if="!cajeroTicketActual"
-                 class="w-52 bg-gray-900 border-l border-gray-800 flex flex-col p-4 gap-4 shrink-0">
-                <div class="flex items-center justify-between shrink-0">
-                    <div class="flex items-center gap-1.5">
-                        <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                        <span class="text-emerald-400 text-[10px] font-black uppercase tracking-widest">Cajero</span>
-                    </div>
-                    <button @click="cerrarModoCajero"
-                            class="w-7 h-7 bg-gray-800 rounded-full text-gray-400 hover:text-white font-black text-xs flex items-center justify-center active:scale-90">✕</button>
-                </div>
-                <div class="flex-1 flex flex-col items-center justify-center gap-3 text-center">
-                    <div class="w-14 h-14 bg-emerald-900/40 border border-emerald-700/50 rounded-2xl flex items-center justify-center">
-                        <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
-                        </svg>
-                    </div>
-                    <p class="text-white font-bold text-sm leading-snug">Apunta al QR<br>del ticket</p>
-                    <p class="text-gray-500 text-xs leading-snug">También funciona<br>con lector bluetooth</p>
-                </div>
-                <div class="bg-gray-800 rounded-xl p-3 text-center shrink-0">
-                    <p class="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Cajero activo</p>
-                    <p class="text-white font-black text-sm truncate">{{ config.vendedor }}</p>
-                </div>
+            <!-- 2 · ticket en mano -->
+            <div v-else-if="mcEstado === 'cobro' && cajeroTicketActual" class="mc-cobro">
+              <div class="mc-corr">
+                <span class="mc-tag">{{ mcTipoCorto(cajeroTicketActual.tipo) }}</span>
+                {{ cajeroTicketActual.correlativo }} · {{ cajeroTicketActual.raw_data?.auth?.vendedor || '—' }}
+              </div>
+              <div class="mc-monto mc-num"><small>S/</small><span v-for="(d,i) in mcDigitos(cajeroTicketActual.total)"
+                   :key="i" class="mc-dig" :style="{ animationDelay: (i*45)+'ms' }">{{ d }}</span></div>
+              <div v-if="mcYapeDelTicket" class="mc-coyape">
+                💜 {{ mcPrimerNombre(mcYapeDelTicket.pagador) }} yapeó {{ mcMoney(mcYapeDelTicket.monto) }}
+                <template v-if="mcYapeDelTicket.min != null">· hace {{ mcYapeDelTicket.min }} min</template>
+              </div>
+              <div class="mc-bts">
+                <button class="mc-bt efe" @click="mcCobrar('EFECTIVO')" :disabled="mcProcesando"><span>💵</span>EFECTIVO</button>
+                <button class="mc-bt vir" :class="{destaca: mcYapeDelTicket}" @click="mcCobrar('VIRTUAL')" :disabled="mcProcesando"><span>📱</span>VIRTUAL</button>
+                <button class="mc-bt mix" @click="mcAbrirMixto" :disabled="mcProcesando"><span>🔀</span>MIXTO</button>
+              </div>
             </div>
 
-            <!-- ═══ CON TICKET: pantalla de cobro ═══ -->
-            <div v-if="cajeroTicketActual"
-                 class="flex-1 flex flex-col bg-gray-950 overflow-hidden min-w-0">
-
-                <!-- Header: ticket info + cancelar + cerrar -->
-                <div class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-800 shrink-0 bg-gray-900">
-                    <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shrink-0"></div>
-                    <span class="text-[10px] font-black px-2 py-0.5 rounded-full uppercase shrink-0"
-                          :class="cajeroTicketActual.tipo === 'FACTURA' ? 'bg-purple-900 text-purple-300' : cajeroTicketActual.tipo === 'BOLETA' ? 'bg-blue-900 text-blue-300' : 'bg-gray-700 text-gray-300'">
-                        {{ cajeroTicketActual.tipo === 'FACTURA' ? 'FAC' : cajeroTicketActual.tipo === 'BOLETA' ? 'BOL' : 'N.V.' }}
-                    </span>
-                    <span class="text-white font-black text-sm shrink-0">{{ cajeroTicketActual.correlativo }}</span>
-                    <span class="text-gray-500 text-xs truncate flex-1">· {{ cajeroTicketActual.raw_data?.auth?.vendedor }} · {{ cajeroTicketActual.cliente_nombre || 'Sin cliente' }}</span>
-                    <button @click="resetearCajero"
-                            class="shrink-0 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg font-bold text-xs active:scale-95 transition-all">
-                        ← Otro
-                    </button>
-                    <button @click="cerrarModoCajero"
-                            class="shrink-0 w-7 h-7 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-full font-black text-xs flex items-center justify-center active:scale-90">✕</button>
-                </div>
-
-                <!-- TOTAL — número grande y visible -->
-                <div class="flex items-center justify-between px-5 py-3 bg-emerald-950 border-b border-emerald-900/60 shrink-0">
-                    <p class="text-emerald-500 text-xs font-black uppercase tracking-widest">TOTAL A COBRAR</p>
-                    <p class="text-emerald-300 font-black leading-none" style="font-size:clamp(2rem,6vw,3.5rem)">
-                        S/ {{ cajeroTicketActual.total.toFixed(2) }}
-                    </p>
-                </div>
-
-                <!-- Método de pago (tabs grandes) -->
-                <div class="px-4 pt-3 shrink-0">
-                    <div class="flex gap-2 bg-gray-800 p-1 rounded-xl">
-                        <button @click="pagoCobroPendiente.metodo='EFECTIVO'; pagoCobroPendiente.montoVirtual=0; pagoCobroPendiente.montoRecibido=cajeroTicketActual.total"
-                                class="flex-1 py-3 rounded-lg font-black text-sm transition-all"
-                                :class="pagoCobroPendiente.metodo==='EFECTIVO' ? 'bg-emerald-500 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'">
-                            EFECTIVO
-                        </button>
-                        <button @click="pagoCobroPendiente.metodo='VIRTUAL'; pagoCobroPendiente.montoRecibido=cajeroTicketActual.total; pagoCobroPendiente.montoVirtual=0"
-                                class="flex-1 py-3 rounded-lg font-black text-sm transition-all"
-                                :class="pagoCobroPendiente.metodo==='VIRTUAL' ? 'bg-sky-500 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'">
-                            VIRTUAL
-                        </button>
-                        <button @click="pagoCobroPendiente.metodo='MIXTO'; pagoCobroPendiente.montoRecibido=0; pagoCobroPendiente.montoVirtual=0"
-                                class="flex-1 py-3 rounded-lg font-black text-sm transition-all"
-                                :class="pagoCobroPendiente.metodo==='MIXTO' ? 'bg-purple-500 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'">
-                            MIXTO
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Área de contenido del método -->
-                <div class="flex-1 px-4 pt-3 flex flex-col gap-2.5 overflow-hidden min-h-0">
-
-                    <!-- EFECTIVO -->
-                    <template v-if="pagoCobroPendiente.metodo==='EFECTIVO'">
-                        <!-- Billetes rápidos + EXACTO -->
-                        <div class="grid grid-cols-5 gap-2 shrink-0">
-                            <button @click="pagoCobroPendiente.montoRecibido = cajeroTicketActual.total"
-                                    class="bg-emerald-800 hover:bg-emerald-700 text-emerald-200 font-black text-xs py-4 rounded-xl active:scale-95 transition-all">
-                                EXACTO
-                            </button>
-                            <button v-for="b in [10,20,50,100]" :key="b"
-                                    @click="pagoCobroPendiente.montoRecibido = b"
-                                    class="bg-gray-700 hover:bg-gray-600 text-white font-black text-2xl py-4 rounded-xl active:scale-95 transition-all">
-                                {{ b }}
-                            </button>
-                        </div>
-                        <!-- Monto recibido -->
-                        <input v-model.number="pagoCobroPendiente.montoRecibido" type="number" step="0.10"
-                               class="w-full bg-gray-800 text-white font-black text-5xl px-4 py-3 rounded-2xl border-2 border-gray-700 focus:border-emerald-500 text-center outline-none shrink-0">
-                        <!-- Vuelto -->
-                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-3 shrink-0">
-                            <span class="text-gray-400 font-black text-sm uppercase tracking-wider">Vuelto</span>
-                            <span class="font-black text-4xl" :class="vueltoCobro >= 0 ? 'text-emerald-400' : 'text-red-400'">
-                                S/ {{ vueltoCobro.toFixed(2) }}
-                            </span>
-                        </div>
-                    </template>
-
-                    <!-- VIRTUAL -->
-                    <template v-if="pagoCobroPendiente.metodo==='VIRTUAL'">
-                        <div class="flex-1 flex flex-col items-center justify-center gap-4 text-center">
-                            <div class="w-20 h-20 bg-sky-900/40 border border-sky-700/50 rounded-3xl flex items-center justify-center">
-                                <svg class="w-10 h-10 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                                </svg>
-                            </div>
-                            <p class="text-sky-300 font-black text-2xl">Yape / Plin / Transferencia</p>
-                            <p class="text-gray-400">Confirma que recibiste <span class="text-white font-black text-xl">S/ {{ cajeroTicketActual.total.toFixed(2) }}</span></p>
-                        </div>
-                    </template>
-
-                    <!-- MIXTO -->
-                    <template v-if="pagoCobroPendiente.metodo==='MIXTO'">
-                        <p class="text-xs font-black text-gray-500 uppercase tracking-wider shrink-0">Yape / Plin (S/)</p>
-                        <input v-model.number="pagoCobroPendiente.montoVirtual" type="number" step="0.10"
-                               class="w-full bg-gray-800 text-sky-300 font-black text-4xl px-4 py-3 rounded-2xl border-2 border-gray-700 focus:border-sky-500 text-center outline-none shrink-0">
-                        <div class="flex justify-between items-center bg-gray-900 rounded-2xl px-5 py-3 shrink-0">
-                            <span class="text-gray-400 font-bold text-sm uppercase">Efectivo complemento</span>
-                            <span class="text-white font-black text-3xl">S/ {{ Math.max(0, cajeroTicketActual.total - (pagoCobroPendiente.montoVirtual||0)).toFixed(2) }}</span>
-                        </div>
-                    </template>
-                </div>
-
-                <!-- COBRAR — botón grande siempre al fondo -->
-                <div class="px-4 pb-4 pt-2 shrink-0">
-                    <button @click="procesarCobroPendiente"
-                            :disabled="procesandoCobro || (pagoCobroPendiente.metodo==='EFECTIVO' && vueltoCobro < 0) || (pagoCobroPendiente.metodo==='MIXTO' && (!pagoCobroPendiente.montoVirtual || pagoCobroPendiente.montoVirtual >= cajeroTicketActual.total))"
-                            class="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-gray-700 disabled:text-gray-500 text-white font-black text-2xl py-5 rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
-                        <svg v-if="procesandoCobro" class="animate-spin w-6 h-6" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        {{ procesandoCobro ? 'PROCESANDO...' : 'COBRAR · S/ ' + cajeroTicketActual.total.toFixed(2) }}
-                    </button>
-                </div>
+            <!-- 3 · mixto -->
+            <div v-else-if="mcEstado === 'mixto' && cajeroTicketActual" class="mc-mix">
+              <div class="mc-teclas">
+                <button v-for="d in ['1','2','3','4','5','6','7','8','9']" :key="d" class="mc-te" @click="mcTecla(d)">{{ d }}</button>
+                <button class="mc-te acc" @click="mcTecla('.')">,</button>
+                <button class="mc-te" @click="mcTecla('0')">0</button>
+                <button class="mc-te acc" @click="mcTecla('←')">←</button>
+                <button class="mc-te ok" :disabled="!mcMixValido" @click="mcCobrar('MIXTO')">COBRAR MIXTO</button>
+              </div>
+              <div class="mc-barras">
+                <div><div class="mc-bart">💵 Efectivo</div>
+                  <div class="mc-liq efe"><i :style="{width: mcMixPct + '%'}"></i>
+                    <b class="mc-num">{{ mcMoney(mcMixEfeNum) }}</b></div></div>
+                <div><div class="mc-bart">📱 Virtual</div>
+                  <div class="mc-liq vir"><i :style="{width: (100 - mcMixPct) + '%'}"></i>
+                    <b class="mc-num">{{ mcMoney(mcMixVir) }}</b></div></div>
+                <div class="mc-mixnota">Escribí cuánto entró en <b>efectivo</b>.<br>El resto es virtual, solo.<br><br>
+                  Total · <b class="mc-num">{{ mcMoney(cajeroTicketActual.total) }}</b></div>
+                <button class="mc-te acc" @click="mcEstado = 'cobro'">← volver</button>
+              </div>
             </div>
 
-        </div><!-- fin layout principal -->
+            <!-- 4 · cobrado -->
+            <div v-else-if="mcEstado === 'hecho'" class="mc-hecho">
+              <div class="mc-monto mc-num"><small>S/</small><span v-for="(d,i) in mcDigitos(mcHechoMonto)"
+                   :key="i" class="mc-dig" :style="{ animationDelay: (i*45)+'ms' }">{{ d }}</span></div>
+              <div class="mc-sello">COBRADO</div>
+              <p>{{ mcHechoTxt }}</p>
+            </div>
+          </div></div>
+        </div>
+
+        <div v-if="mcEsperando.length" class="mc-esperando">
+          ⏳ Esperando su Yape:
+          <template v-for="(e,i) in mcEsperando" :key="e.idVenta">
+            <b>{{ e.correlativo }} {{ mcMoney(e.monto) }}</b><span v-if="i < mcEsperando.length-1"> · </span>
+          </template>
+        </div>
+
+        <div class="mc-w mc-wrio"><div class="mc-rio">
+          <div class="mc-rioh">Yapes</div>
+          <div class="mc-riob">
+            <div v-if="!mcYapes.length" class="mc-vacio" style="padding:8px 14px">
+              Los Yapes que entren aparecen acá y se cantan en voz alta.
+            </div>
+            <div v-for="y in mcYapes" :key="y.id" class="mc-yp"
+                 :class="{ calza: mcYapeCalza(y), usado: y.estado === 'MATCHEADO' }" :data-yp="y.id">
+              <div class="mc-ypm mc-num">{{ y.ilegible ? '—' : mcMoney(y.monto) }}</div>
+              <div class="mc-ypn">{{ y.pagador || 'sin nombre' }}</div>
+              <div class="mc-yph mc-num">{{ y.hora }}</div>
+            </div>
+          </div>
+        </div></div>
+
+        <div v-if="mcLatente" class="mc-latmsg">caja lista</div>
+      </div>
     </div>
 
     <!-- MODAL COBRO (cajero cobra ticket emitido por vendedor) -->
@@ -14048,79 +14250,262 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         };
 
         // --- MODO CAJERO ---
+        // ══════════════════════════════════════════════════════════════════════
+        // MODO CAJERO v2 — la estación de cobro.
+        //
+        // Tres momentos: el radar (esperando), el ticket en mano y el cobrado.
+        // El cajero NUNCA escribe: escanea con el lector (USB o bluetooth, los dos
+        // escriben como un teclado) o toca el ticket en el riel. La cámara arranca
+        // APAGADA y es de emergencia — con el lector el cobro es más rápido y el
+        // escenario queda entero.
+        //
+        // El camino del DINERO es el mismo de siempre: se llena ventaCobrar +
+        // pagoCobroPendiente y se llama a procesarCobroPendiente. Acá solo cambia
+        // la puesta en escena; ni un céntimo pasa por código nuevo.
+        // ══════════════════════════════════════════════════════════════════════
         const modoCajero      = ref(false);
         const cajeroBusqueda  = ref('');
         const cajeroTicketActual = ref(null);
         const cajeroCamara    = ref(false);
         const cajeroScannerInst = ref(null);
-        const cajeroInput     = ref(null); // template ref
+        const cajeroInput     = ref(null);
+        const mcEstado    = ref('espera');     // espera · cobro · mixto · hecho
+        const mcYapes     = ref([]);
+        const mcEsperando = ref([]);
+        const mcMixEfe    = ref('');
+        const mcSobrio    = ref(localStorage.getItem('mc_sobrio') === '1');
+        const mcLatente   = ref(false);
+        const mcProcesando = ref(false);
+        const mcReloj     = ref('');
+        const mcHechoMonto = ref(0);
+        const mcHechoTxt  = ref('');
+        const mcReja=ref(null), mcAura=ref(null), mcFlash=ref(null);
+        let _mcUltimo = Date.now(), _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null;
 
+        watch(mcSobrio, v => { try { localStorage.setItem('mc_sobrio', v ? '1' : '0'); } catch(_){} });
+
+        /* ── helpers de pantalla ── */
+        const mcMoney = v => 'S/ ' + (parseFloat(v) || 0).toFixed(2);
+        const mcDigitos = v => String((parseFloat(v) || 0).toFixed(2)).split('');
+        const mcPrimerNombre = n => String(n || '').trim().split(/\s+/)[0] || '';
+        const mcTipoCorto = t => t === 'FACTURA' ? 'FAC' : t === 'BOLETA' ? 'BOL' : 'N.V.';
+        const mcHora = v => { try { return new Date(v.timestamp).toTimeString().slice(0,5); } catch(_) { return v.hora || ''; } };
+
+        // lo que falta cobrar de ESTA caja: ni anulado, ni ya cobrado, ni a crédito
+        const mcPendientes = computed(() => (ventasZona.value || []).filter(v =>
+            !v.anulada && !v.cobrado && !v.credito &&
+            String(v.cobradoMetodo || v.raw_data?.header?.metodo || 'POR_COBRAR').toUpperCase() === 'POR_COBRAR'
+        ));
+        const mcTotalPend = computed(() => mcPendientes.value.reduce((a,v) => a + (parseFloat(v.total)||0), 0));
+        const mcYapesLibres = computed(() => mcYapes.value.filter(y => y.estado === 'NUEVO' && !y.ilegible).length);
+
+        // Yape libre que calza con un monto. A UN DECIMAL: Yape solo mueve un decimal,
+        // así que un ticket de 5.54 lo paga un Yape de 5.5 — comparar exacto no serviría.
+        const mcYapeLibrePara = monto => mcYapes.value.find(y =>
+            y.estado === 'NUEVO' && !y.ilegible &&
+            Math.round((parseFloat(y.monto)||0)*10) === Math.round((parseFloat(monto)||0)*10));
+        const mcCalza = v => !!mcYapeLibrePara(v.total);
+        const mcYapeCalza = y => y.estado === 'NUEVO' && !y.ilegible &&
+            mcPendientes.value.some(v => Math.round((parseFloat(v.total)||0)*10) === Math.round((parseFloat(y.monto)||0)*10));
+        const mcYapeDelTicket = computed(() => cajeroTicketActual.value ? mcYapeLibrePara(cajeroTicketActual.value.total) : null);
+
+        /* ── mixto ── */
+        const mcMixEfeNum = computed(() => Math.min(parseFloat(mcMixEfe.value || 0) || 0,
+                                                    cajeroTicketActual.value?.total || 0));
+        const mcMixVir = computed(() => Math.max(0, +(((cajeroTicketActual.value?.total || 0) - mcMixEfeNum.value).toFixed(2))));
+        const mcMixPct = computed(() => { const t = cajeroTicketActual.value?.total || 0;
+            return t ? Math.round(mcMixEfeNum.value / t * 100) : 0; });
+        const mcMixValido = computed(() => mcMixEfeNum.value > 0 && mcMixEfeNum.value < (cajeroTicketActual.value?.total || 0));
+        const mcAbrirMixto = () => { mcMixEfe.value = ''; mcEstado.value = 'mixto'; };
+        const mcTecla = k => {
+            mcSon('tecla');
+            if (k === '←') mcMixEfe.value = mcMixEfe.value.slice(0, -1);
+            else if (k === '.') { if (!mcMixEfe.value.includes('.')) mcMixEfe.value = (mcMixEfe.value || '0') + '.'; }
+            else mcMixEfe.value = (mcMixEfe.value + k).replace(/^0(\d)/, '$1');
+        };
+
+        /* ── sonidos: sintetizados, con dirección estéreo ── */
+        let _mcAc;
+        function mcTono(f1, f2, dur, vol, tipo, pan) {
+            if (!voiceEnabled.value) return;
+            try {
+                _mcAc = _mcAc || new (window.AudioContext || window.webkitAudioContext)();
+                const o = _mcAc.createOscillator(), g = _mcAc.createGain(), t = _mcAc.currentTime;
+                let dst = g;
+                if (_mcAc.createStereoPanner && pan) { const pn = _mcAc.createStereoPanner(); pn.pan.value = pan; g.connect(pn); dst = pn; }
+                o.type = tipo || 'sine'; o.frequency.setValueAtTime(f1, t);
+                if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+                g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+                o.connect(g); dst.connect(_mcAc.destination); o.start(t); o.stop(t + dur + .02);
+            } catch(_) {}
+        }
+        function mcSon(q) {
+            if (q === 'tick')  return mcTono(880,1240,.07,.05,'triangle',-.6);
+            if (q === 'blip')  { mcTono(520,1080,.13,.09,'square',0); return setTimeout(()=>mcTono(1400,0,.07,.04,'sine',0),60); }
+            if (q === 'coin')  { mcTono(1180,0,.09,.07,'triangle',.65); return setTimeout(()=>mcTono(1620,0,.15,.06,'triangle',.65),70); }
+            if (q === 'caja')  { mcTono(900,0,.07,.10,'square',0); setTimeout(()=>mcTono(1450,0,.1,.09,'square',0),75);
+                                 return setTimeout(()=>mcTono(2200,900,.34,.07,'triangle',0),150); }
+            if (q === 'match') return [660,880,1320,1760].forEach((f,i)=>setTimeout(()=>mcTono(f,0,.14,.055,'sine',(i-1.5)*.3), i*85));
+            if (q === 'tecla') return mcTono(1500,0,.035,.035,'sine',0);
+            if (q === 'error') return mcTono(220,140,.28,.07,'square',0);
+        }
+        function mcPulso(color) {
+            try {
+                if (color && document.getElementById('mcRoot')) document.getElementById('mcRoot').style.setProperty('--aura', color);
+                if (mcReja.value) { mcReja.value.classList.add('on'); setTimeout(()=>mcReja.value && mcReja.value.classList.remove('on'), 600); }
+                if (mcAura.value) { mcAura.value.classList.add('on'); setTimeout(()=>mcAura.value && mcAura.value.classList.remove('on'), 600); }
+            } catch(_) {}
+        }
+
+        /* ── el escenario ── */
         const resetearCajero = () => {
             cajeroTicketActual.value = null;
             cajeroBusqueda.value = '';
+            mcMixEfe.value = '';
+            if (mcEstado.value !== 'hecho') mcEstado.value = 'espera';
             nextTick(() => {
-                if (cajeroInput.value) cajeroInput.value.focus();
-                if (cajeroScannerInst.value && cajeroCamara.value) {
-                    try { cajeroScannerInst.value.resume(); } catch(e) {}
-                }
+                if (cajeroInput.value) { try { cajeroInput.value.focus(); } catch(_){} }
+                if (cajeroScannerInst.value && cajeroCamara.value) { try { cajeroScannerInst.value.resume(); } catch(_){} }
             });
         };
 
+        const mcTomar = (venta) => {
+            if (!venta) return;
+            _mcUltimo = Date.now(); mcLatente.value = false;
+            mcSon('blip'); mcPulso('#ffd166');
+            try { if (mcFlash.value) { mcFlash.value.classList.add('on'); setTimeout(()=>mcFlash.value && mcFlash.value.classList.remove('on'), 340); } } catch(_){}
+            try { const el = document.querySelector('[data-tk="' + venta.id + '"]');
+                  if (el) { el.classList.add('vuela'); setTimeout(()=>el.classList.remove('vuela'), 520); } } catch(_){}
+            cajeroTicketActual.value = venta;
+            mcEstado.value = 'cobro';
+            leerMontoEnVoz(venta.total);
+            if (cajeroScannerInst.value) { try { cajeroScannerInst.value.pause(true); } catch(_){} }
+        };
+
+        /**
+         * El escaneo. Entiende TRES cosas:
+         *   · el correlativo suelto (nota de venta)                → NVM2-000531
+         *   · la cadena SUNAT del QR de un CPE                     → RUC|01|FM01|000053|…
+         *   · el ref_local de un ticket impreso sin conexión
+         * Sin lo del medio, boletas y facturas no se podían escanear: su QR trae la
+         * cadena fiscal, no el correlativo.
+         */
+        const mcClaveDeEscaneo = (q) => {
+            const t = String(q || '').trim();
+            if (!t) return '';
+            if (t.includes('|')) {
+                const p = t.split('|').map(x => x.trim());
+                if (p.length >= 4 && p[2] && p[3]) return (p[2] + '-' + p[3]).toUpperCase();
+            }
+            return t.toUpperCase();
+        };
         const buscarTicketCajero = () => {
             const q = cajeroBusqueda.value.trim();
             if (!q) return;
-            const qLow = q.toLowerCase();
-            const ticket = ventasZona.value.find(v =>
-                v.correlativo.trim().toLowerCase() === qLow ||
-                v.correlativo.trim().toLowerCase().includes(qLow) ||
-                (v.ref_local && v.ref_local === q)  // fallback para ventas impresas offline
-            );
-            if (!ticket) {
-                agregarToast('No encontrado', q);
-                cajeroBusqueda.value = '';
-                nextTick(() => { if (cajeroInput.value) cajeroInput.value.focus(); });
-                return;
+            const clave = mcClaveDeEscaneo(q);
+            const norm = c => String(c || '').trim().toUpperCase();
+            // coincidencia EXACTA primero. Nunca `includes`: tipear "55" no puede abrir
+            // el cobro del primer ticket que contenga 55 — eso es plata mal asignada.
+            let t = (ventasZona.value || []).find(v => norm(v.correlativo) === clave || (v.ref_local && v.ref_local === q));
+            if (!t) {
+                const parc = (ventasZona.value || []).filter(v => norm(v.correlativo).endsWith(clave));
+                if (parc.length === 1) t = parc[0];
             }
-            if (ticket.cobrado) {
-                agregarToast('Ya cobrado', ticket.correlativo);
-                leerMontoEnVoz(0); // silencio
-                // voz especial
-                try { const u = new SpeechSynthesisUtterance('Ticket ya cobrado'); u.lang='es-PE'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch(e) {}
-                cajeroBusqueda.value = '';
-                nextTick(() => { if (cajeroInput.value) cajeroInput.value.focus(); });
-                return;
-            }
-            if (ticket.anulada) {
-                agregarToast('Anulado', ticket.correlativo);
-                try { const u = new SpeechSynthesisUtterance('Ticket anulado'); u.lang='es-PE'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch(e) {}
-                cajeroBusqueda.value = '';
-                nextTick(() => { if (cajeroInput.value) cajeroInput.value.focus(); });
-                return;
-            }
-            cajeroTicketActual.value = ticket;
-            abrirCobroPendiente(ticket);
-            leerMontoEnVoz(ticket.total);
-            if (cajeroScannerInst.value) { try { cajeroScannerInst.value.pause(true); } catch(e) {} }
+            cajeroBusqueda.value = '';
+            nextTick(() => { if (cajeroInput.value) { try { cajeroInput.value.focus(); } catch(_){} } });
+            if (!t) { mcSon('error'); agregarToast('No encontrado', q.slice(0, 40));
+                      try { const u = new SpeechSynthesisUtterance('no lo encuentro'); u.lang='es-PE';
+                            if (voiceEnabled.value) speechSynthesis.speak(u); } catch(_){}
+                      return; }
+            if (t.anulada) { mcSon('error'); agregarToast('Anulado', t.correlativo);
+                try { const u=new SpeechSynthesisUtterance('ticket anulado'); u.lang='es-PE';
+                      if (voiceEnabled.value){speechSynthesis.cancel();speechSynthesis.speak(u);} } catch(_){}
+                return; }
+            if (t.cobrado) { mcSon('error'); agregarToast('Ya cobrado', t.correlativo);
+                try { const u=new SpeechSynthesisUtterance('ticket ya cobrado'); u.lang='es-PE';
+                      if (voiceEnabled.value){speechSynthesis.cancel();speechSynthesis.speak(u);} } catch(_){}
+                return; }
+            mcTomar(t);
         };
 
+        /**
+         * COBRAR. Llena exactamente lo mismo que llenaba el modal viejo y llama a
+         * procesarCobroPendiente: el dinero pasa por el camino probado de siempre.
+         * `modalCobro` se deja en false a propósito — el modal viejo sigue vivo para
+         * el flujo del vendedor, pero acá el escenario ya es la pantalla de cobro.
+         */
+        const mcCobrar = (metodo) => {
+            const t = cajeroTicketActual.value;
+            if (!t || mcProcesando.value) return;
+            if (metodo === 'MIXTO' && !mcMixValido.value) return;
+            mcProcesando.value = true;
+            const yp = mcYapeDelTicket.value;
+            const virtual = metodo === 'MIXTO' ? mcMixVir.value : 0;
+
+            ventaCobrar.value = t;
+            pagoCobroPendiente.value = { metodo, montoRecibido: t.total, montoVirtual: virtual };
+            modalCobro.value = false;
+
+            mcHechoMonto.value = t.total;
+            mcHechoTxt.value = (metodo === 'MIXTO'
+                ? 'MIXTO · ' + mcMoney(mcMixEfeNum.value) + ' efectivo + ' + mcMoney(virtual) + ' virtual'
+                : metodo) + (metodo !== 'EFECTIVO' && yp ? ' · ✅ verificado con el Yape de ' + mcPrimerNombre(yp.pagador) : '');
+
+            mcSon('caja'); mcPulso('#3ddc84');
+            try { navigator.vibrate && navigator.vibrate([18,40,18]); } catch(_){}
+            try { const sh=document.createElement('div'); sh.className='mc-shock';
+                  document.getElementById('mcRoot').appendChild(sh); setTimeout(()=>sh.remove(), 850); } catch(_){}
+
+            try { procesarCobroPendiente(); } catch (e) { console.error('[cajero] cobro', e); }
+
+            mcEstado.value = 'hecho';
+            setTimeout(() => { mcProcesando.value = false; mcEstado.value = 'espera'; mcCargarRio(); }, 1350);
+        };
+
+        /* ── el río de Yapes: lista + voz ── */
+        async function mcCargarRio() {
+            if (!modoCajero.value) return;
+            try {
+                const tk = await _mintTokenSB(); if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/yapes_rio`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk,
+                               'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { zona: config.value.zonaId || '', idCaja: idCajaActual.value || '', min: 90 } })
+                }, 12000);
+                const d = await r.json().catch(() => null);
+                if (d && d.ok && d.data) {
+                    const antes = mcYapes.value.length ? mcYapes.value[0].id : 0;
+                    mcYapes.value = d.data.yapes || [];
+                    mcEsperando.value = d.data.esperando || [];
+                    if (mcYapes.value.length && mcYapes.value[0].id !== antes && antes) {
+                        mcSon('coin'); mcPulso('#b07bff');
+                        if (mcYapes.value.some(y => mcYapeCalza(y))) setTimeout(() => mcSon('match'), 400);
+                    }
+                }
+            } catch(_) {}
+        }
+
+        /* ── cámara: emergencia, apagada por defecto ── */
         const iniciarCamaraCajero = () => {
-            if (cajeroCamara.value || typeof Html5Qrcode === 'undefined') return;
-            cajeroCamara.value = true;
+            if (cajeroScannerInst.value || typeof Html5Qrcode === 'undefined') return;
             nextTick(() => {
-                const scanner = new Html5Qrcode('cajero-qr-reader');
-                cajeroScannerInst.value = scanner;
-                scanner.start(
-                    { facingMode: 'environment' },
-                    { fps: 12, qrbox: { width: 220, height: 220 } },
-                    (decoded) => { cajeroBusqueda.value = decoded; buscarTicketCajero(); },
-                    () => {}
-                ).catch((e) => { cajeroCamara.value = false; cajeroScannerInst.value = null; agregarToast('Error Cámara', 'Revisar permisos de cámara'); });
+                try {
+                    const scanner = new Html5Qrcode('cajero-qr-reader');
+                    cajeroScannerInst.value = scanner;
+                    scanner.start({ facingMode: 'environment' }, { fps: 12, qrbox: { width: 190, height: 190 } },
+                        (dec) => { cajeroBusqueda.value = dec; buscarTicketCajero(); }, () => {})
+                    .catch(() => { cajeroCamara.value = false; cajeroScannerInst.value = null;
+                                   agregarToast('Cámara', 'Revisá los permisos'); });
+                } catch(_) { cajeroCamara.value = false; }
             });
         };
-
         const detenerCamaraCajero = () => {
-            if (cajeroScannerInst.value) { cajeroScannerInst.value.stop().catch(() => {}); cajeroScannerInst.value = null; }
+            if (cajeroScannerInst.value) { try { cajeroScannerInst.value.stop().catch(()=>{}); } catch(_){} cajeroScannerInst.value = null; }
             cajeroCamara.value = false;
+        };
+        const mcToggleCamara = () => {
+            cajeroCamara.value ? detenerCamaraCajero() : (cajeroCamara.value = true, iniciarCamaraCajero());
         };
 
         const detenerPollingWizard = () => {
@@ -15739,11 +16124,29 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             modoCajero.value = true;
             cajeroBusqueda.value = '';
             cajeroTicketActual.value = null;
-            // Forzar modo horizontal (cinema mode)
+            mcEstado.value = 'espera';
+            mcLatente.value = false;
+            _mcUltimo = Date.now();
+            // horizontal: la estación es apaisada
             try { if (screen.orientation?.lock) screen.orientation.lock('landscape').catch(() => {}); } catch(e) {}
+            // que la tablet no se apague: el cajero mira esta pantalla todo el turno
+            try { if (navigator.wakeLock?.request) navigator.wakeLock.request('screen').then(w => { _mcWake = w; }).catch(()=>{}); } catch(e) {}
+            // La cámara NO se enciende: es de emergencia. El lector es lo normal y así
+            // el escenario queda entero para el cobro.
             nextTick(() => {
-                if (cajeroInput.value) cajeroInput.value.focus();
-                iniciarCamaraCajero();
+                if (cajeroInput.value) { try { cajeroInput.value.focus(); } catch(_){} }
+                mcArrancarEfectos();
+                mcCargarRio();
+                if (_mcTimerRio) clearInterval(_mcTimerRio);
+                _mcTimerRio = setInterval(mcCargarRio, 9000);
+                if (_mcTimerRel) clearInterval(_mcTimerRel);
+                mcReloj.value = new Date().toTimeString().slice(0,5);
+                _mcTimerRel = setInterval(() => {
+                    mcReloj.value = new Date().toTimeString().slice(0,5);
+                    // modo latente: no bloquea ni apaga — solo se vuelve más cinematográfico,
+                    // así desde lejos se ve cuántos tickets faltan cobrar.
+                    if (!mcLatente.value && mcEstado.value === 'espera' && Date.now() - _mcUltimo > 180000) mcLatente.value = true;
+                }, 1000);
             });
         };
 
@@ -15753,9 +16156,99 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             cajeroTicketActual.value = null;
             cajeroBusqueda.value = '';
             modalCobro.value = false;
-            // Liberar bloqueo de orientación
+            mcEstado.value = 'espera';
+            mcLatente.value = false;
+            if (_mcTimerRio) { clearInterval(_mcTimerRio); _mcTimerRio = null; }
+            if (_mcTimerRel) { clearInterval(_mcTimerRel); _mcTimerRel = null; }
+            if (_mcRaf) { cancelAnimationFrame(_mcRaf); _mcRaf = null; }
+            try { _mcWake && _mcWake.release(); _mcWake = null; } catch(e) {}
             try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch(e) {}
         };
+
+        /* ══════════════════════════════════════════════════════════════════════
+           LOS EFECTOS DE FONDO — lluvia de datos y el haz.
+           La lluvia NO son letras al azar: caen los correlativos, los montos y los
+           nombres que están en juego en esta caja ahora. El haz viaja del Yape a su
+           ticket cuando calzan: es el momento en que se ve el pago encontrar su venta.
+           Todo se apaga con el botón sobrio — el escaneo es lo único que no puede fallar.
+           ══════════════════════════════════════════════════════════════════════ */
+        let _mcWake = null, _mcCols = [], _mcW = 0, _mcH = 0, _mcRayos = [];
+        function mcArrancarEfectos() {
+            const cv = document.getElementById('mcLluvia'), hz = document.getElementById('mcHaz');
+            if (!cv || !hz) return;
+            const medir = () => {
+                _mcW = cv.width = hz.width = cv.clientWidth || innerWidth;
+                _mcH = cv.height = hz.height = cv.clientHeight || innerHeight;
+                const ancho = 22, nc = Math.max(1, Math.ceil(_mcW / ancho));
+                _mcCols = Array.from({ length: nc }, (_, i) => ({ x: i*ancho, y: Math.random()*-_mcH, v: .5+Math.random()*1.6, txt:'', boost:0 }));
+            };
+            medir();
+            const cx = cv.getContext('2d'), hx = hz.getContext('2d');
+            const fuente = () => {
+                const pool = [];
+                mcPendientes.value.slice(0,6).forEach(v => { pool.push(String(v.correlativo||'')); pool.push((+v.total||0).toFixed(2)); });
+                mcYapes.value.slice(0,6).forEach(y => { pool.push(mcPrimerNombre(y.pagador).toUpperCase()); pool.push((+y.monto||0).toFixed(2)); });
+                if (!pool.length) pool.push('MOS','CAJA','S/','0.00','YAPE');
+                return pool[Math.floor(Math.random()*pool.length)] || 'MOS';
+            };
+            const paso = () => {
+                if (!modoCajero.value) return;
+                if (!mcSobrio.value) {
+                    cx.fillStyle = 'rgba(3,16,26,.14)'; cx.fillRect(0,0,_mcW,_mcH);
+                    cx.font = '13px ui-monospace, monospace';
+                    _mcCols.forEach(c => {
+                        if (!c.txt || Math.random() < .02) c.txt = fuente();
+                        const ch = c.txt[Math.floor(Math.random()*c.txt.length)] || '0';
+                        cx.fillStyle = c.boost > 0 ? 'rgba(45,227,200,.95)' : 'rgba(45,227,200,.3)';
+                        cx.fillText(ch, c.x, c.y);
+                        c.y += c.v * (mcLatente.value ? 2.2 : 1.5) * (1 + c.boost);
+                        if (c.boost > 0) c.boost -= .02;
+                        if (c.y > _mcH) { c.y = Math.random()*-220; c.v = .5+Math.random()*1.6; }
+                    });
+                }
+                hx.clearRect(0,0,_mcW,_mcH);
+                _mcRayos = _mcRayos.filter(r => r.t < 1);
+                _mcRayos.forEach(r => {
+                    r.t += .022;
+                    const mx = (r.x1+r.x2)/2, my = Math.min(r.y1,r.y2) - 140;
+                    hx.beginPath(); hx.moveTo(r.x1,r.y1); hx.quadraticCurveTo(mx,my,r.x2,r.y2);
+                    hx.strokeStyle = 'rgba(176,123,255,' + (1-r.t)*.85 + ')'; hx.lineWidth = 2.5;
+                    hx.shadowColor = '#b07bff'; hx.shadowBlur = 22; hx.stroke(); hx.shadowBlur = 0;
+                    const u = 1-r.t, px = u*u*r.x1 + 2*u*r.t*mx + r.t*r.t*r.x2, py = u*u*r.y1 + 2*u*r.t*my + r.t*r.t*r.y2;
+                    hx.beginPath(); hx.arc(px,py,5,0,7); hx.fillStyle = '#e9d5ff';
+                    hx.shadowColor = '#b07bff'; hx.shadowBlur = 26; hx.fill(); hx.shadowBlur = 0;
+                });
+                _mcRaf = requestAnimationFrame(paso);
+            };
+            if (_mcRaf) cancelAnimationFrame(_mcRaf);
+            paso();
+            addEventListener('resize', medir);
+        }
+        function mcChispa() { for (let i=0;i<6;i++) { const c=_mcCols[Math.floor(Math.random()*_mcCols.length)]; if (c) c.boost=1; } }
+        function mcHazEntre(a, b) {
+            try {
+                const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+                _mcRayos.push({ x1:ra.left+ra.width/2, y1:ra.top+ra.height/2, x2:rb.left+rb.width/2, y2:rb.top+rb.height/2, t:0 });
+            } catch(_) {}
+        }
+        // cuando entra un Yape que calza, se dibuja el haz hacia su ticket
+        watch(mcYapes, () => {
+            if (!modoCajero.value || mcSobrio.value) return;
+            nextTick(() => {
+                const y = document.querySelector('#mcRoot .mc-yp.calza'), t = document.querySelector('#mcRoot .mc-tk.calza');
+                if (y && t) { mcHazEntre(y, t); mcChispa(); }
+            });
+        });
+        // parallax: los paneles flotan a distinta profundidad siguiendo la mano
+        addEventListener('pointermove', e => {
+            if (!modoCajero.value || mcSobrio.value) return;
+            const r = document.getElementById('mcRoot'); if (!r) return;
+            r.style.setProperty('--px', ((e.clientX/innerWidth)-.5).toFixed(3));
+            r.style.setProperty('--py', ((e.clientY/innerHeight)-.5).toFixed(3));
+        });
+        ['pointerdown','keydown'].forEach(ev => addEventListener(ev, () => {
+            if (modoCajero.value) { _mcUltimo = Date.now(); mcLatente.value = false; }
+        }));
 
         // --- POLLING DE ZONA EN SEGUNDO PLANO ---
         const pollingTimer = ref(null);
@@ -25224,6 +25717,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           voiceEnabled,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
+          mcEstado, mcYapes, mcEsperando, mcMixEfe, mcSobrio, mcLatente, mcProcesando, mcReloj,
+          mcHechoMonto, mcHechoTxt, mcReja, mcAura, mcFlash,
+          mcPendientes, mcTotalPend, mcYapesLibres, mcYapeDelTicket,
+          mcMixEfeNum, mcMixVir, mcMixPct, mcMixValido,
+          mcMoney, mcDigitos, mcPrimerNombre, mcTipoCorto, mcHora, mcCalza, mcYapeCalza,
+          mcTomar, mcCobrar, mcAbrirMixto, mcTecla, mcToggleCamara,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
