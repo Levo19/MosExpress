@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.299';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.300';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -4775,7 +4775,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                                     <!-- FormaPago -->
                                     <span class="px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wide"
                                           :class="venta.anulada ? 'bg-red-100 text-red-600' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'CREDITO' ? (venta.asignadoA ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700') : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'POR_COBRAR' ? 'bg-amber-100 text-amber-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'EFECTIVO' ? 'bg-emerald-100 text-emerald-700' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo) === 'VIRTUAL' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'">
-                                      {{ venta.anulada ? 'ANULADO' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo || 'POR_COBRAR').replace('POR_COBRAR', 'POR COBRAR').replace('CREDITO', 'CRÉDITO') }}<template v-if="venta.asignadoA && !venta.anulada"> · 👤 {{ venta.asignadoA }}</template>
+                                      {{ venta.anulada ? 'ANULADO' : (venta.cobradoMetodo || venta.raw_data?.header?.metodo || 'POR_COBRAR').replace('POR_COBRAR', 'POR COBRAR').replace('CREDITO', 'CRÉDITO') }}<template v-if="venta.asignadoA && !venta.anulada"> · 👤 {{ venta.asignadoA }}</template><template v-if="venta.yape && !venta.anulada"> · ✅ YAPE{{ venta.yape.pagador ? ' ' + venta.yape.pagador.split(' ')[0] : '' }}</template>
                                     </span>
                                     <!-- Estado Envío (SUNAT) -->
                                     <span class="px-2 py-0.5 rounded-md font-black text-[10px] uppercase tracking-wide"
@@ -15761,7 +15761,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const pollingTimer = ref(null);
         const flashNuevosTickets = ref(false);
 
+        // [856] el aviso de Yapes vive del mismo pulso que la lista de ventas
         const actualizarVentasZonaSilencioso = async () => {
+            try { yapeArrancar(); } catch (_) {}
             if (!config.value.estacion || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             // [FIX vista POR CAJA 2026-07-03] Poller de la vista: fuente = me.datos_turno(id_caja) (solo TU caja
             // = zona + horario desde apertura + id_caja), NO ventas_hoy_zona (filtra por PREFIJO de correlativo →
@@ -15778,7 +15780,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     total: t.total, fecha: _hoyISO + 'T' + String(t.hora || '00:00') + ':00',
                     cliente_doc: t.clienteDoc || '', cliente_nombre: t.clienteNom || 'Generico',
                     forma_pago: t.metodo || '', status: t.estado || 'COMPLETADO',
-                    vendedor: t.vendedor, obs: t.obs || '', asignadoA: t.asignadoA || '', ref_local: ''
+                    vendedor: t.vendedor, obs: t.obs || '', asignadoA: t.asignadoA || '', yape: t.yape || null, ref_local: ''
                 })) };
                 if (data.status !== 'success') return;
 
@@ -15803,6 +15805,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         credito: v.forma_pago === 'CREDITO',
                         obs: String(v.obs || ''),
                         asignadoA: String(v.asignadoA || ''),   // [848] turno al que se le cargó el crédito
+                        yape: v.yape || null,                  // [856] Yape que verifica este ticket
                         id_venta_gas: v.id_venta,
                         ref_local: v.ref_local || ''
                     };
@@ -18623,6 +18626,66 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
         };
 
+        // ══════════════════════════════════════════════════════════════
+        // [856] YAPES QUE ENTRAN — el aviso hablado.
+        //
+        // Un celular con YapeCaptor captura la notificación de Yape y la manda al servidor.
+        // Acá se pregunta cada 8 segundos si llegó alguno nuevo y se canta en voz alta:
+        // "5 soles de Cintia". El cajero sigue su flujo normal —marca el ticket como VIRTUAL—
+        // y el servidor se encarga de casar el Yape con el ticket por monto y hora.
+        //
+        // El servidor marca el Yape como anunciado en la MISMA consulta que lo entrega, así que
+        // aunque haya dos cajas abiertas en la zona, cada Yape se canta UNA sola vez.
+        // ══════════════════════════════════════════════════════════════
+        const yapeUltimos = ref([]);          // los últimos cantados, para la burbuja visual
+        let _yapeTimer = null;
+
+        const _yapeHablar = (frase) => {
+            try {
+                if (!('speechSynthesis' in window)) return;
+                const u = new SpeechSynthesisUtterance(frase);
+                u.lang = 'es-PE'; u.rate = 0.95; u.pitch = 1.05; u.volume = 1;
+                // voz en español si el equipo tiene alguna; si no, la del sistema
+                const vs = window.speechSynthesis.getVoices() || [];
+                const es = vs.find(v => /^es/i.test(v.lang || ''));
+                if (es) u.voice = es;
+                window.speechSynthesis.speak(u);
+            } catch (_) {}
+        };
+
+        const _yapeRevisar = async () => {
+            if (offlineMode.value || !config.value.zonaId) return;
+            try {
+                const _tk = await _mintTokenSB();
+                if (!_tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/yape_pendientes_anuncio`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk,
+                               'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { zona: config.value.zonaId } })
+                }, 12000);
+                const d = await r.json().catch(() => null);
+                const arr = (d && d.ok && d.data && Array.isArray(d.data.yapes)) ? d.data.yapes : [];
+                if (!arr.length) return;
+                arr.forEach((y, i) => {
+                    // se espacian para que no se pisen las voces cuando entran dos juntos
+                    setTimeout(() => {
+                        try { sonidos.coin && sonidos.coin(); } catch (_) {}
+                        _yapeHablar(y.frase);
+                        agregarToast('💜 Yape recibido', y.frase, 'success');
+                        yapeUltimos.value = [{ ...y, t: Date.now() }, ...yapeUltimos.value].slice(0, 6);
+                    }, i * 2600);
+                });
+            } catch (_) { /* sin red: se reintenta al próximo ciclo */ }
+        };
+
+        const yapeArrancar = () => {
+            if (_yapeTimer) return;
+            _yapeRevisar();
+            _yapeTimer = setInterval(_yapeRevisar, 8000);
+        };
+        const yapeDetener = () => { if (_yapeTimer) { clearInterval(_yapeTimer); _yapeTimer = null; } };
+
         const confirmarCredito = async () => {
             const _esTrab = credTipo.value === 'trabajador';
             if (_esTrab && !credTurnoSel.value) { agregarToast('Requerido', 'Elegí a quién de los que trabajan hoy'); return; }
@@ -20178,6 +20241,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         credito: metodo === 'CREDITO',
                         obs: String(t.obs || ''),
                         asignadoA: String(t.asignadoA || ''),   // [848]
+                        yape: t.yape || null,                   // [856]
                         id_venta_gas: t.idVenta,
                         id_caja: _idCaja,
                         ref_local: ''
@@ -25289,6 +25353,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           navInd, navEntrada, navTap,
           getNombrePres,
           modalCredito, ticketParaCredito, obsCredito, abrirModalCredito, confirmarCredito,
+          yapeUltimos, yapeArrancar, yapeDetener,
           credTipo, credTurnos, credTurnoSel, credTurnosCargando, credAbrirTrabajadores,
           modalPin, pinInput, pinError, confirmarPin, pinValidando, pinPress, pinDel,
           modalMoneda, ticketParaMoneda, pagoMoneda, procesandoMoneda, abrirModalMoneda, confirmarMoneda, revertirCobroDesdeModal,
