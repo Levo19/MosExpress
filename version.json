@@ -1,1 +1,1 @@
-{"version": "2.8.306", "build": "2.8.306 Modo Cajero sin cajas: una sola superficie, sin paneles ni marcos, con reticula detras del monto. Y con la estacion abierta nada la interrumpe: ninguna version nueva recarga la app hasta salir por el X."}
+{"version": "2.8.307", "build": "2.8.307 Arreglo de pantalla blanca al arrancar: el candado de la estacion de cobro se leia antes de existir y mataba el arranque de la app."}

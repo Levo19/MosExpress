@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.306';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.307';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -10345,10 +10345,14 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const procesando = ref(false);
         // [banner ME] Expone "venta en curso" a window para que el forced-update NO recargue MID-VENTA
         // (lo difiere hasta terminar la venta). El _preCheckVersion ya bloquea INICIAR una venta en versión vieja.
-        // "modoCajero": mientras la estación de cobro esté abierta, la app NO se recarga sola
-        // por versión nueva. Se sale por el ✕ y recién ahí se aplica. Un reload con un cliente
-        // enfrente y el ticket escaneado a medias no es una actualización, es una venta perdida.
-        watch([procesando, modalPago, procesandoGuia, modoCajero], (v) => { try { window.__ME_BUSY__ = v.some(Boolean); } catch(_){} }, { immediate: true });
+        // La estación de cobro también se suma a esta condición, pero NO acá: "modoCajero" se
+        // declara mucho más abajo y leerlo antes de su declaración es un ReferenceError de zona
+        // muerta que aborta el setup() entero — o sea pantalla blanca al arrancar. Se suma con
+        // su propio watch, ya declarada.
+        const _meBusyBase = ref(false);
+        const _meBusyEstacion = ref(false);
+        watch([procesando, modalPago, procesandoGuia], (v) => { _meBusyBase.value = v.some(Boolean); }, { immediate: true });
+        watch([_meBusyBase, _meBusyEstacion], (v) => { try { window.__ME_BUSY__ = v.some(Boolean); } catch(_){} }, { immediate: true });
         const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, tipoDocClienteCE: false, registroManualDNI: false });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
@@ -14364,6 +14368,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // la puesta en escena; ni un céntimo pasa por código nuevo.
         // ══════════════════════════════════════════════════════════════════════
         const modoCajero      = ref(false);
+        // Con la estación abierta la app NO se recarga sola por versión nueva: se sale por el ✕
+        // y recién ahí se aplica. Un reload con un cliente enfrente y el ticket escaneado a
+        // medias no es una actualización, es una venta perdida.
+        watch(modoCajero, v => { _meBusyEstacion.value = !!v; }, { immediate: true });
         const cajeroBusqueda  = ref('');
         const cajeroTicketActual = ref(null);
         const cajeroCamara    = ref(false);
