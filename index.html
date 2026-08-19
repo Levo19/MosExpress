@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.305';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.306';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1659,10 +1659,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
   
     /* ══════════════════════════════════════════════════════════════════════
        MODO CAJERO v2 — la estación de cobro.
-       Diseño: los paneles NO son cajas. Sin marco de 1px: el borde se desvanece
-       con una máscara, la luz sale de adentro y dos esquinas tipo HUD dan
-       estructura sin encerrar. Cada panel respira en 3D con su propio ritmo
-       (13/17/11/19s, desfasados a propósito para que nada se sienta mecánico).
+       Diseño: NO hay paneles. Ni fondo, ni marco, ni sombra de caja en ninguna
+       parte: una sola superficie continua donde la estructura la hacen la luz, las
+       líneas de un pelo y la tipografía. Los datos aparecen donde se interactúa —
+       tocar un ticket enciende su guía y estira un hilo hacia el centro. Los grupos
+       respiran en 3D con ritmos desfasados (15/19/13s) para que nada se sienta mecánico.
        Los colores significan: turquesa = el sistema; ámbar = efectivo;
        violeta = Yape; verde = cobrado. Nada es decorativo.
        Todo el movimiento va por transform/opacity (GPU), y si la tablet no llega
@@ -1689,60 +1690,48 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-flash.on{animation:mcFl .34s}
     @keyframes mcFl{0%{opacity:.42}100%{opacity:0}}
 
-    #mcRoot .mc-app{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:12px;gap:11px;
-      perspective:1400px;perspective-origin:50% 45%}
-    #mcRoot .mc-w{transform-style:preserve-3d;transition:transform .6s cubic-bezier(.22,1,.36,1)}
-    #mcRoot .mc-wtop{transform:none}
-    #mcRoot .mc-wriel{transform:translate3d(calc(var(--px)*-17px),calc(var(--py)*-10px),-40px);min-height:0;display:flex}
-    #mcRoot .mc-wesc{transform:translate3d(calc(var(--px)*9px),calc(var(--py)*6px),0);min-height:0;display:flex}
-    #mcRoot .mc-wrio{transform:translate3d(calc(var(--px)*7px),calc(var(--py)*7px),-20px)}
+    #mcRoot .mc-app{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;
+      padding:14px 20px 10px;gap:6px;perspective:1500px;perspective-origin:50% 45%}
+    #mcRoot .mc-w{transform-style:preserve-3d;transition:transform .6s cubic-bezier(.22,1,.36,1);min-height:0;display:flex}
+    #mcRoot .mc-wtop{transform:none;display:block}
+    #mcRoot .mc-wriel{transform:translate3d(calc(var(--px)*-15px),calc(var(--py)*-9px),-40px)}
+    #mcRoot .mc-wesc{transform:translate3d(calc(var(--px)*8px),calc(var(--py)*5px),0)}
+    #mcRoot .mc-wrio{transform:translate3d(calc(var(--px)*6px),calc(var(--py)*6px),-20px);display:block;flex:none}
     #mcRoot .mc-wriel>.mc-riel,#mcRoot .mc-wesc>.mc-esc{flex:1;min-width:0}
 
-    #mcRoot .mc-top,#mcRoot .mc-riel,#mcRoot .mc-esc,#mcRoot .mc-rio{
-      border-radius:26px;position:relative;transform-style:preserve-3d;
-      background:radial-gradient(ellipse 120% 100% at 50% 0%,rgba(45,227,200,.07),transparent 65%),
-                 linear-gradient(180deg,rgba(13,39,52,.78),rgba(6,22,32,.55));
-      box-shadow:inset 0 1px 0 rgba(140,220,235,.09),inset 0 0 70px -34px rgba(45,227,200,.55),0 40px 80px -50px #000;
-      backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px)}
-    #mcRoot .mc-riel,#mcRoot .mc-esc{
-      -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%);
-      mask-image:linear-gradient(180deg,transparent 0,#000 26px,#000 calc(100% - 26px),transparent 100%)}
-    #mcRoot .mc-riel::before,#mcRoot .mc-riel::after,#mcRoot .mc-esc::before,#mcRoot .mc-esc::after,
-    #mcRoot .mc-rio::before,#mcRoot .mc-rio::after{
-      content:"";position:absolute;width:30px;height:30px;pointer-events:none;z-index:3;
-      border:2px solid var(--voz);opacity:.3;transition:opacity .5s}
-    #mcRoot .mc-riel::before,#mcRoot .mc-esc::before,#mcRoot .mc-rio::before{
-      top:12px;left:12px;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
-    #mcRoot .mc-riel::after,#mcRoot .mc-esc::after,#mcRoot .mc-rio::after{
-      bottom:12px;right:12px;border-left:0;border-top:0;border-radius:0 0 14px 0}
-    #mcRoot .mc-esc::before,#mcRoot .mc-esc::after{opacity:.46}
+    /* Ni un panel tiene fondo, marco ni sombra de caja: la estructura la hacen la luz,
+       las líneas de un pelo y la tipografía. Los grupos siguen respirando en 3D, pero
+       lo que respira es el CONTENIDO — no hay borde que delate un rectángulo. */
+    #mcRoot .mc-riel{animation:mcRespA 15s ease-in-out infinite alternate;
+      display:flex;flex-direction:column;position:relative;transform-style:preserve-3d}
+    #mcRoot .mc-esc{animation:mcRespB 19s ease-in-out infinite alternate;
+      display:flex;align-items:center;justify-content:center;padding:10px;position:relative;transform-style:preserve-3d}
+    #mcRoot .mc-rio{animation:mcRespC 13s ease-in-out infinite alternate;position:relative;padding-bottom:6px}
+    @keyframes mcRespA{0%{transform:rotateY(6deg) rotateX(.5deg) translateZ(0)}100%{transform:rotateY(4deg) rotateX(-.6deg) translateZ(22px)}}
+    @keyframes mcRespB{0%{transform:rotateY(-1.2deg) rotateX(.4deg) translateZ(0)}100%{transform:rotateY(1deg) rotateX(-.5deg) translateZ(18px)}}
+    @keyframes mcRespC{0%{transform:rotateX(1.4deg) translateZ(0)}100%{transform:rotateX(-.9deg) translateZ(14px)}}
 
-    #mcRoot .mc-riel{animation:mcRespA 13s ease-in-out infinite alternate;display:flex;flex-direction:column;overflow:hidden}
-    #mcRoot .mc-esc{animation:mcRespB 17s ease-in-out infinite alternate;display:flex;align-items:center;justify-content:center;padding:18px;overflow:hidden}
-    #mcRoot .mc-rio{animation:mcRespC 11s ease-in-out infinite alternate}
-    /* La barra de controles NO respira ni sigue al dedo: es la única franja donde se
-       toca de verdad (📷 y ✕), y el navegador resuelve el toque contra la geometría del
-       momento. Un blanco que se mueve en 3D es un blanco que se falla. */
-    @keyframes mcRespA{0%{transform:rotateY(7deg) rotateX(.6deg) translateZ(0)}100%{transform:rotateY(4.6deg) rotateX(-.7deg) translateZ(26px)}}
-    @keyframes mcRespB{0%{transform:rotateY(-1.4deg) rotateX(.5deg) translateZ(0)}100%{transform:rotateY(1.2deg) rotateX(-.6deg) translateZ(20px)}}
-    @keyframes mcRespC{0%{transform:rotateX(1.6deg) translateZ(0)}100%{transform:rotateX(-1deg) translateZ(16px)}}
-
-    #mcRoot .mc-top{display:flex;align-items:center;gap:13px;padding:9px 16px;flex:none}
-    #mcRoot .mc-viva{width:9px;height:9px;border-radius:50%;background:var(--ok);animation:mcLat 2.4s infinite}
+    /* ── la barra: quieta y sin fondo. Solo un pelo de luz que la separa ── */
+    #mcRoot .mc-top{display:flex;align-items:center;gap:14px;padding:2px 4px 11px;flex:none;position:relative}
+    #mcRoot .mc-top::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
+      background:linear-gradient(90deg,transparent,rgba(45,227,200,.32) 12%,rgba(45,227,200,.32) 88%,transparent)}
+    #mcRoot .mc-viva{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:mcLat 2.4s infinite}
     @keyframes mcLat{0%{box-shadow:0 0 0 0 rgba(61,220,132,.55)}70%{box-shadow:0 0 0 11px rgba(61,220,132,0)}100%{box-shadow:0 0 0 0 rgba(61,220,132,0)}}
-    #mcRoot .mc-caja{font-size:13px;font-weight:800;letter-spacing:.07em}
-    #mcRoot .mc-caja i{font-style:normal;color:var(--tinta3);font-weight:600}
-    #mcRoot .mc-reloj{margin-left:auto;font-size:15px;color:var(--tinta2);letter-spacing:.08em}
-    #mcRoot .mc-pill{display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
-      font-size:12px;font-weight:800;box-shadow:inset 0 0 0 1px rgba(45,227,200,.16)}
+    #mcRoot .mc-caja{font-size:12.5px;font-weight:800;letter-spacing:.13em}
+    #mcRoot .mc-caja i{font-style:normal;color:var(--tinta3);font-weight:600;letter-spacing:.04em}
+    #mcRoot .mc-reloj{margin-left:auto;font-size:15px;color:var(--tinta2);letter-spacing:.1em}
+    /* los contadores no son pastillas: son un dato con su nodo */
+    #mcRoot .mc-pill{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;letter-spacing:.05em}
+    #mcRoot .mc-pill::before{content:"";width:5px;height:5px;transform:rotate(45deg);background:currentColor;opacity:.8}
     #mcRoot .mc-pill.y{color:var(--yape)}#mcRoot .mc-pill.t{color:var(--plata)}
-    #mcRoot .mc-ic{border:0;background:transparent;color:var(--tinta2);border-radius:11px;
+    /* los dos botones sí se tocan, así que sí tienen un anillo: es lo que dice "acá se toca" */
+    #mcRoot .mc-ic{border:0;background:transparent;color:var(--tinta2);border-radius:50%;
       width:48px;height:44px;cursor:pointer;font-size:17px;
-      box-shadow:inset 0 0 0 1px rgba(45,227,200,.16);
+      box-shadow:inset 0 0 0 1px rgba(45,227,200,.2);
       touch-action:manipulation;-webkit-tap-highlight-color:transparent;
       transition:background .09s linear,color .09s linear,transform .09s linear}
     /* :hover SOLO donde hay mouse. En táctil, el primer toque sobre un elemento con :hover
-       lo gasta el navegador aplicando el estado y recién el segundo dispara el click: eso
+       lo gasta el navegador aplicando ese estado y recién el segundo dispara el click: eso
        es el botón que "no reacciona". Con :active el dedo ve la respuesta al instante. */
     @media (hover:hover) and (pointer:fine){
       #mcRoot .mc-ic:hover{background:rgba(45,227,200,.15);color:var(--voz)}
@@ -1752,148 +1741,234 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-ic:active{background:rgba(45,227,200,.3);color:var(--voz);transform:scale(.9)}
     #mcRoot .mc-ic.x:active{background:rgba(248,113,113,.32);color:#fecaca}
 
-    #mcRoot .mc-cuerpo{flex:1;display:grid;grid-template-columns:290px 1fr;gap:12px;min-height:0;transform-style:preserve-3d}
-    #mcRoot .mc-rh{padding:11px 15px;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
-      color:var(--tinta3);display:flex;justify-content:space-between;flex:none}
-    #mcRoot .mc-rb{flex:1;overflow-y:auto;padding:16px 12px 22px;display:flex;flex-direction:column;gap:9px;transform-style:preserve-3d}
-    #mcRoot .mc-tk{border-radius:16px;padding:11px 13px;cursor:pointer;position:relative;transform-style:preserve-3d;
-      background:linear-gradient(100deg,rgba(20,52,68,.9),rgba(10,30,42,.5));
-      box-shadow:inset 2px 0 0 rgba(45,227,200,.32),0 16px 34px -26px #000;
-      animation:mcMece 9s ease-in-out infinite alternate;
-      transition:box-shadow .25s}
-    #mcRoot .mc-tk:nth-child(2){animation-duration:11s;animation-delay:-2s}
-    #mcRoot .mc-tk:nth-child(3){animation-duration:13s;animation-delay:-5s}
-    #mcRoot .mc-tk:nth-child(4){animation-duration:10s;animation-delay:-7s}
-    #mcRoot .mc-tk:nth-child(5){animation-duration:14s;animation-delay:-3s}
-    @keyframes mcMece{0%{transform:translateZ(0) rotateY(0)}100%{transform:translateZ(15px) rotateY(-2.2deg) translateY(-3px)}}
-    #mcRoot .mc-tk:hover{animation-play-state:paused;box-shadow:inset 2px 0 0 var(--voz),0 22px 46px -22px var(--voz)}
-    #mcRoot .mc-tk.calza{box-shadow:inset 2px 0 0 var(--yape),0 0 44px -14px var(--yape)}
-    #mcRoot .mc-tk.calza::after{content:"\1F49C";position:absolute;top:8px;right:10px;font-size:13px}
-    #mcRoot .mc-tk.nuevo{animation:mcAter .7s cubic-bezier(.22,1,.36,1);box-shadow:inset 2px 0 0 var(--voz),0 0 42px -12px var(--voz)}
-    @keyframes mcAter{0%{transform:translate3d(-160px,-30px,420px) rotateY(-45deg);opacity:0;filter:blur(6px)}
-                      60%{transform:translate3d(8px,0,40px) rotateY(4deg);filter:blur(0)}100%{transform:none;opacity:1}}
+    #mcRoot .mc-cuerpo{flex:1;display:grid;grid-template-columns:264px 1fr;gap:26px;min-height:0;transform-style:preserve-3d}
+
+    /* ── rótulos: no encabezan una caja, flotan con su pelo de luz ── */
+    #mcRoot .mc-rh{padding:6px 2px 9px;font-size:9.5px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;
+      color:var(--tinta3);display:flex;justify-content:space-between;align-items:center;gap:10px;flex:none;position:relative}
+    #mcRoot .mc-rh::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
+      background:linear-gradient(90deg,rgba(45,227,200,.3),transparent 78%)}
+    #mcRoot .mc-rb{flex:1;overflow-y:auto;padding:14px 2px 22px;display:flex;flex-direction:column;gap:3px;
+      transform-style:preserve-3d;scrollbar-width:none}
+    #mcRoot .mc-rb::-webkit-scrollbar{display:none}
+
+    /* ── el ticket no es una tarjeta: es un dato con una guía de luz al costado.
+          Al tocarlo la guía se enciende y un pelo horizontal sale hacia el escenario:
+          el dato alcanzando al centro, no una caja que se ilumina. ── */
+    #mcRoot .mc-tk{padding:9px 4px 9px 16px;cursor:pointer;position:relative;transform-style:preserve-3d;
+      animation:mcMece 11s ease-in-out infinite alternate;transition:transform .22s cubic-bezier(.22,1,.36,1)}
+    #mcRoot .mc-tk::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:2px;
+      background:linear-gradient(180deg,transparent,rgba(45,227,200,.55) 22%,rgba(45,227,200,.55) 78%,transparent);
+      transition:background .22s,box-shadow .22s,width .22s}
+    #mcRoot .mc-tk::after{content:"";position:absolute;left:16px;right:8px;top:50%;height:1px;
+      background:linear-gradient(90deg,var(--voz),transparent);opacity:0;transform:scaleX(.2);transform-origin:left;
+      transition:opacity .3s,transform .45s cubic-bezier(.22,1,.36,1)}
+    #mcRoot .mc-tk:nth-child(2){animation-duration:13s;animation-delay:-3s}
+    #mcRoot .mc-tk:nth-child(3){animation-duration:15s;animation-delay:-6s}
+    #mcRoot .mc-tk:nth-child(4){animation-duration:12s;animation-delay:-9s}
+    #mcRoot .mc-tk:nth-child(5){animation-duration:16s;animation-delay:-4s}
+    @keyframes mcMece{0%{transform:translateZ(0)}100%{transform:translateZ(14px) translateX(3px)}}
+    #mcRoot .mc-tk:hover,#mcRoot .mc-tk:active{animation-play-state:paused;transform:translateZ(26px) translateX(6px)}
+    #mcRoot .mc-tk:hover::before,#mcRoot .mc-tk:active::before{width:3px;
+      background:linear-gradient(180deg,transparent,var(--voz) 18%,var(--voz) 82%,transparent);
+      box-shadow:0 0 16px var(--voz)}
+    #mcRoot .mc-tk:hover::after,#mcRoot .mc-tk:active::after{opacity:.75;transform:scaleX(1)}
+    #mcRoot .mc-tk.calza::before{background:linear-gradient(180deg,transparent,var(--yape) 18%,var(--yape) 82%,transparent);
+      box-shadow:0 0 20px var(--yape)}
+    #mcRoot .mc-tk.calza .mc-tkm{color:#e6d4ff;text-shadow:0 0 26px rgba(176,123,255,.6)}
+    #mcRoot .mc-tk.calza .mc-tkc::after{content:" 💜";font-size:11px}
+    #mcRoot .mc-tk.nuevo{animation:mcAter .75s cubic-bezier(.22,1,.36,1)}
+    @keyframes mcAter{0%{transform:translate3d(-140px,-26px,380px);opacity:0;filter:blur(7px)}
+                      60%{transform:translate3d(6px,0,34px);filter:blur(0)}100%{transform:none;opacity:1}}
     #mcRoot .mc-tk.vuela{animation:mcVuela .5s cubic-bezier(.5,0,.75,0) forwards;pointer-events:none}
-    @keyframes mcVuela{to{transform:translate3d(240px,-40px,520px) rotateY(-30deg);opacity:0;filter:blur(8px)}}
-    #mcRoot .mc-tkc{font-size:10.5px;color:var(--tinta2);letter-spacing:.06em}
-    #mcRoot .mc-tkm{font-size:23px;font-weight:800;margin-top:3px}
-    #mcRoot .mc-tkt{font-size:9.5px;color:var(--tinta3);margin-top:2px}
-    #mcRoot .mc-vacio{color:var(--tinta3);font-size:12px;text-align:center;padding:24px 10px;line-height:1.8}
+    @keyframes mcVuela{to{transform:translate3d(280px,-34px,560px);opacity:0;filter:blur(9px)}}
+    #mcRoot .mc-tkc{font-size:10px;color:var(--tinta2);letter-spacing:.11em}
+    #mcRoot .mc-tkm{font-size:24px;font-weight:800;margin-top:1px;letter-spacing:-.02em;line-height:1.05}
+    #mcRoot .mc-tkt{font-size:9.5px;color:var(--tinta3);margin-top:1px;letter-spacing:.05em}
+    #mcRoot .mc-vacio{color:var(--tinta3);font-size:12px;padding:24px 4px;line-height:1.9;letter-spacing:.03em}
 
-    #mcRoot .mc-espera{text-align:center;display:flex;flex-direction:column;align-items:center;gap:15px;transform-style:preserve-3d}
-    #mcRoot .mc-hud{width:170px;height:170px;position:relative;display:grid;place-items:center}
-    #mcRoot .mc-ani{position:absolute;border-radius:50%;border:1px solid rgba(45,227,200,.45)}
+    /* ── el escenario: una retícula, no un contenedor. Los anillos y las marcas
+          radiales nacen detrás del dato cuando hay dato, y se van cuando no. ── */
+    #mcRoot .mc-esc::before{content:"";position:absolute;left:50%;top:50%;width:min(72vh,760px);aspect-ratio:1;
+      transform:translate(-50%,-50%);pointer-events:none;border-radius:50%;
+      background:radial-gradient(circle,rgba(45,227,200,.09),transparent 62%);
+      opacity:.9;transition:opacity .6s}
+    #mcRoot .mc-monto{position:relative;isolation:isolate}
+    #mcRoot .mc-monto::before{content:"";position:absolute;left:50%;top:50%;width:1.9em;aspect-ratio:1;
+      transform:translate(-50%,-50%);pointer-events:none;border-radius:50%;z-index:-1;
+      background:repeating-conic-gradient(from 0deg,rgba(45,227,200,.8) 0deg 1.5deg,transparent 1.5deg 9deg);
+      -webkit-mask-image:radial-gradient(circle,transparent 45.5%,#000 46.5%,#000 50%,transparent 51%);
+      mask-image:radial-gradient(circle,transparent 45.5%,#000 46.5%,#000 50%,transparent 51%);
+      opacity:.5;animation:mcGira 70s linear infinite}
+    #mcRoot .mc-monto::after{content:"";position:absolute;left:50%;top:50%;width:2.22em;aspect-ratio:1;
+      transform:translate(-50%,-50%);pointer-events:none;border-radius:50%;z-index:-1;
+      box-shadow:inset 0 0 0 1px rgba(45,227,200,.16)}
+    #mcRoot .mc-hecho .mc-monto::after{box-shadow:inset 0 0 0 1px rgba(61,220,132,.2)}
+    #mcRoot .mc-hecho .mc-monto::before{background:repeating-conic-gradient(from 0deg,rgba(61,220,132,.6) 0deg .3deg,transparent .3deg 5deg)}
+
+    #mcRoot .mc-espera{text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px;
+      transform-style:preserve-3d;position:relative;z-index:1}
+    #mcRoot .mc-hud{width:186px;height:186px;position:relative;display:grid;place-items:center}
+    #mcRoot .mc-ani{position:absolute;border-radius:50%;border:1px solid rgba(45,227,200,.4)}
     #mcRoot .mc-ani.a{inset:0;border-style:dashed;animation:mcGira 26s linear infinite}
-    #mcRoot .mc-ani.b{inset:22px;border-top-color:var(--voz);border-width:2px;animation:mcGira 9s linear infinite reverse}
-    #mcRoot .mc-ani.c{inset:44px;border-left-color:var(--voz);animation:mcGira 14s linear infinite}
+    #mcRoot .mc-ani.b{inset:24px;border-color:transparent;border-top-color:var(--voz);border-width:2px;animation:mcGira 9s linear infinite reverse}
+    #mcRoot .mc-ani.c{inset:48px;border-color:transparent;border-left-color:var(--voz);animation:mcGira 14s linear infinite}
     @keyframes mcGira{to{transform:rotate(360deg)}}
-    #mcRoot .mc-onda{position:absolute;inset:30px;border-radius:50%;border:1px solid var(--voz);animation:mcOnda 3s infinite}
+    #mcRoot .mc-onda{position:absolute;inset:34px;border-radius:50%;border:1px solid var(--voz);animation:mcOnda 3s infinite}
     #mcRoot .mc-onda.d2{animation-delay:1.5s}
-    @keyframes mcOnda{0%{transform:scale(.3);opacity:.85}100%{transform:scale(1.7);opacity:0}}
-    #mcRoot .mc-hud b{font-size:42px;filter:drop-shadow(0 0 18px rgba(45,227,200,.6))}
-    #mcRoot .mc-espera h1{font-size:21px;font-weight:800}
-    #mcRoot .mc-espera p{font-size:12.5px;color:var(--tinta3);line-height:1.75;max-width:350px}
+    @keyframes mcOnda{0%{transform:scale(.3);opacity:.85}100%{transform:scale(1.8);opacity:0}}
+    #mcRoot .mc-hud b{font-size:44px;filter:drop-shadow(0 0 20px rgba(45,227,200,.6))}
+    #mcRoot .mc-espera h1{font-size:20px;font-weight:800;letter-spacing:.02em}
+    #mcRoot .mc-espera p{font-size:12.5px;color:var(--tinta3);line-height:1.8;max-width:360px}
 
-    #mcRoot .mc-cobro{width:100%;max-width:780px;display:flex;flex-direction:column;align-items:center;gap:16px;
-      animation:mcEmerge .5s cubic-bezier(.22,1,.36,1);transform-style:preserve-3d}
-    @keyframes mcEmerge{0%{transform:translate3d(-120px,0,-260px) rotateY(18deg);opacity:0;filter:blur(7px)}
+    #mcRoot .mc-cobro{width:100%;max-width:820px;display:flex;flex-direction:column;align-items:center;gap:14px;
+      animation:mcEmerge .5s cubic-bezier(.22,1,.36,1);transform-style:preserve-3d;position:relative;z-index:1}
+    @keyframes mcEmerge{0%{transform:translate3d(-110px,0,-240px);opacity:0;filter:blur(8px)}
                         100%{transform:none;opacity:1;filter:blur(0)}}
-    #mcRoot .mc-corr{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--tinta2);letter-spacing:.06em}
-    #mcRoot .mc-tag{font-size:9.5px;font-weight:900;letter-spacing:.11em;padding:3px 9px;border-radius:999px;
-      background:rgba(255,209,102,.14);color:var(--plata)}
-    #mcRoot .mc-monto{font-size:clamp(54px,11.5vw,124px);font-weight:800;line-height:.9;letter-spacing:-.045em;
+    /* la identificación del ticket: dos anotaciones flotando, unidas por un pelo */
+    #mcRoot .mc-corr{display:flex;align-items:center;gap:11px;font-size:11.5px;color:var(--tinta2);letter-spacing:.13em;
+      text-transform:uppercase;position:relative;padding-bottom:9px}
+    #mcRoot .mc-corr::after{content:"";position:absolute;left:14%;right:14%;bottom:0;height:1px;
+      background:linear-gradient(90deg,transparent,rgba(45,227,200,.4),transparent)}
+    #mcRoot .mc-tag{font-size:9.5px;font-weight:900;letter-spacing:.18em;color:var(--plata)}
+    #mcRoot .mc-monto{font-size:clamp(58px,12.5vw,138px);font-weight:800;line-height:.88;letter-spacing:-.05em;
       display:flex;align-items:baseline;justify-content:center}
-    #mcRoot .mc-monto small{font-size:.3em;color:var(--tinta3);font-weight:700;margin-right:.14em;letter-spacing:0}
+    #mcRoot .mc-monto small{font-size:.26em;color:var(--tinta3);font-weight:700;margin-right:.16em;letter-spacing:.06em}
     #mcRoot .mc-dig{display:inline-block;animation:mcMat .5s cubic-bezier(.22,1,.36,1) backwards;
-      text-shadow:0 0 55px rgba(45,227,200,.35)}
-    @keyframes mcMat{0%{transform:translateZ(-320px) translateY(18px);opacity:0;filter:blur(14px)}
+      text-shadow:0 0 70px rgba(45,227,200,.4)}
+    @keyframes mcMat{0%{transform:translateZ(-340px) translateY(20px);opacity:0;filter:blur(15px)}
                      100%{transform:none;opacity:1;filter:blur(0)}}
-    #mcRoot .mc-coyape{display:flex;align-items:center;gap:9px;padding:9px 17px;border-radius:999px;
-      background:rgba(176,123,255,.14);color:var(--yape);font-size:13px;font-weight:700;
-      box-shadow:inset 0 0 0 1px rgba(176,123,255,.5);animation:mcPop .55s cubic-bezier(.22,1,.36,1)}
-    @keyframes mcPop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.09)}100%{transform:none;opacity:1}}
-    #mcRoot .mc-bts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;transform-style:preserve-3d}
-    #mcRoot .mc-bt{padding:22px 12px;border-radius:18px;border:0;color:var(--tinta);font-size:14.5px;font-weight:900;
-      letter-spacing:.07em;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:7px;
-      background:linear-gradient(160deg,rgba(20,52,68,.92),rgba(10,30,42,.5));
-      box-shadow:inset 0 1px 0 rgba(140,220,235,.1),0 18px 36px -28px #000;
-      transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s,color .18s,background .18s}
-    #mcRoot .mc-bt span{font-size:26px;line-height:1}
-    #mcRoot .mc-bt:hover{transform:translateZ(34px) translateY(-3px)}
-    #mcRoot .mc-bt:active{transform:translateZ(8px)}
-    #mcRoot .mc-bt.efe:hover{color:var(--plata);box-shadow:inset 0 0 0 1px var(--plata),0 18px 40px -18px var(--plata)}
-    #mcRoot .mc-bt.vir:hover{color:var(--yape);box-shadow:inset 0 0 0 1px var(--yape),0 18px 40px -18px var(--yape)}
-    #mcRoot .mc-bt.mix:hover{color:var(--voz);box-shadow:inset 0 0 0 1px var(--voz),0 18px 40px -18px var(--voz)}
-    #mcRoot .mc-bt.destaca{box-shadow:inset 0 0 0 1px var(--yape),0 0 46px -14px var(--yape)}
-    #mcRoot .mc-bt:disabled{opacity:.4;cursor:not-allowed}
+    #mcRoot .mc-coyape{display:flex;align-items:center;gap:9px;color:var(--yape);font-size:13px;font-weight:700;
+      letter-spacing:.04em;animation:mcPop .55s cubic-bezier(.22,1,.36,1)}
+    #mcRoot .mc-coyape::before{content:"";width:6px;height:6px;transform:rotate(45deg);background:var(--yape);
+      box-shadow:0 0 14px var(--yape)}
+    @keyframes mcPop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.08)}100%{transform:none;opacity:1}}
 
-    #mcRoot .mc-mix{display:grid;grid-template-columns:1fr 255px;gap:18px;width:100%;max-width:780px;
-      animation:mcEmerge .45s cubic-bezier(.22,1,.36,1);transform-style:preserve-3d}
-    #mcRoot .mc-teclas{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
-    #mcRoot .mc-te{padding:17px 0;border-radius:18px;border:0;color:var(--tinta);font-size:25px;font-weight:800;cursor:pointer;
-      background:linear-gradient(160deg,rgba(20,52,68,.92),rgba(10,30,42,.5));
-      box-shadow:inset 0 1px 0 rgba(140,220,235,.1),0 18px 36px -28px #000;
-      transition:transform .13s,box-shadow .15s}
-    #mcRoot .mc-te:hover{transform:translateZ(26px);box-shadow:inset 0 0 0 1px var(--voz)}
-    #mcRoot .mc-te.acc{font-size:15px;color:var(--tinta2)}
-    #mcRoot .mc-te.ok{grid-column:span 3;color:var(--ok);font-size:17px;letter-spacing:.1em;
-      box-shadow:inset 0 0 0 1px var(--ok),0 16px 34px -24px var(--ok)}
-    #mcRoot .mc-te.ok:disabled{opacity:.35;cursor:not-allowed}
-    #mcRoot .mc-barras{display:flex;flex-direction:column;gap:11px}
-    #mcRoot .mc-bart{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--tinta3)}
-    #mcRoot .mc-liq{height:52px;border-radius:13px;background:rgba(3,16,26,.7);position:relative;overflow:hidden;
-      box-shadow:inset 0 0 0 1px rgba(45,227,200,.14)}
-    #mcRoot .mc-liq i{position:absolute;inset:0 auto 0 0;transition:width .35s cubic-bezier(.22,1,.36,1)}
-    #mcRoot .mc-liq.efe i{background:linear-gradient(90deg,rgba(255,209,102,.5),rgba(255,209,102,.22))}
-    #mcRoot .mc-liq.vir i{background:linear-gradient(90deg,rgba(176,123,255,.5),rgba(176,123,255,.22))}
-    #mcRoot .mc-liq b{position:absolute;inset:0;display:flex;align-items:center;padding:0 14px;font-size:21px;font-weight:800}
+    /* ── los tres caminos del cobro: anillos de luz, no botones-caja ── */
+    #mcRoot .mc-bts{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;width:100%;
+      max-width:660px;margin-top:6px;transform-style:preserve-3d}
+    #mcRoot .mc-bt{position:relative;padding:20px 8px 16px;border:0;background:transparent;color:var(--tinta2);
+      font-size:12px;font-weight:900;letter-spacing:.18em;cursor:pointer;
+      display:flex;flex-direction:column;align-items:center;gap:11px;
+      touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+      transition:transform .16s cubic-bezier(.22,1,.36,1),color .16s}
+    #mcRoot .mc-bt span{font-size:30px;line-height:1;position:relative;z-index:1;
+      width:74px;height:74px;display:grid;place-items:center;border-radius:50%;
+      box-shadow:inset 0 0 0 1px rgba(45,227,200,.28);transition:box-shadow .16s,background .16s}
+    #mcRoot .mc-bt::after{content:"";position:absolute;top:20px;left:50%;width:74px;height:74px;
+      transform:translateX(-50%) scale(.6);border-radius:50%;opacity:0;pointer-events:none;
+      background:radial-gradient(circle,currentColor,transparent 66%);
+      transition:opacity .35s,transform .35s cubic-bezier(.22,1,.36,1)}
+    #mcRoot .mc-bt.efe{--c:var(--plata)}#mcRoot .mc-bt.vir{--c:var(--yape)}#mcRoot .mc-bt.mix{--c:var(--voz)}
+    @media (hover:hover) and (pointer:fine){
+      #mcRoot .mc-bt:hover{color:var(--c);transform:translateZ(30px) translateY(-3px)}
+      #mcRoot .mc-bt:hover span{box-shadow:inset 0 0 0 2px var(--c),0 0 40px -8px var(--c)}
+    }
+    #mcRoot .mc-bt:active{color:var(--c);transform:translateZ(8px) scale(.95)}
+    #mcRoot .mc-bt:active span{box-shadow:inset 0 0 0 2px var(--c),0 0 46px -6px var(--c)}
+    #mcRoot .mc-bt:active::after{opacity:.22;transform:translateX(-50%) scale(1.5)}
+    #mcRoot .mc-bt.destaca{color:var(--yape)}
+    #mcRoot .mc-bt.destaca span{box-shadow:inset 0 0 0 2px var(--yape),0 0 44px -10px var(--yape);
+      animation:mcLlama 2.2s ease-in-out infinite}
+    @keyframes mcLlama{0%,100%{box-shadow:inset 0 0 0 2px var(--yape),0 0 44px -10px var(--yape)}
+                       50%{box-shadow:inset 0 0 0 2px var(--yape),0 0 60px 0 var(--yape)}}
+    #mcRoot .mc-bt:disabled{opacity:.35;cursor:not-allowed}
+
+    /* ── mixto: nodos redondos, y el reparto como dos ríos de luz sobre una línea ── */
+    #mcRoot .mc-mix{display:grid;grid-template-columns:1fr 268px;gap:34px;width:100%;max-width:820px;
+      animation:mcEmerge .45s cubic-bezier(.22,1,.36,1);transform-style:preserve-3d;position:relative;z-index:1}
+    #mcRoot .mc-teclas{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;justify-items:center}
+    #mcRoot .mc-te{width:78px;height:78px;border-radius:50%;border:0;background:transparent;color:var(--tinta);
+      font-size:26px;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+      box-shadow:inset 0 0 0 1px rgba(45,227,200,.24);
+      transition:transform .11s,box-shadow .13s,color .13s,background .13s}
+    @media (hover:hover) and (pointer:fine){
+      #mcRoot .mc-te:hover{box-shadow:inset 0 0 0 1px var(--voz);color:var(--voz)}
+    }
+    #mcRoot .mc-te:active{transform:scale(.9);background:rgba(45,227,200,.2);color:var(--voz);
+      box-shadow:inset 0 0 0 2px var(--voz),0 0 34px -8px var(--voz)}
+    #mcRoot .mc-te.acc{font-size:16px;color:var(--tinta2);font-weight:800}
+    #mcRoot .mc-te.ok{grid-column:span 3;width:100%;height:62px;border-radius:999px;color:var(--ok);
+      font-size:15px;font-weight:900;letter-spacing:.2em;box-shadow:inset 0 0 0 1px rgba(61,220,132,.55)}
+    #mcRoot .mc-te.ok:active{background:rgba(61,220,132,.2);box-shadow:inset 0 0 0 2px var(--ok),0 0 40px -8px var(--ok)}
+    #mcRoot .mc-te.ok:disabled{opacity:.3;cursor:not-allowed}
+    #mcRoot .mc-barras{display:flex;flex-direction:column;gap:16px;justify-content:center}
+    #mcRoot .mc-bart{font-size:9.5px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--tinta3);
+      margin-bottom:5px}
+    #mcRoot .mc-liq{height:46px;position:relative;display:flex;align-items:flex-end}
+    #mcRoot .mc-liq::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:rgba(45,227,200,.18)}
+    #mcRoot .mc-liq i{position:absolute;left:0;bottom:0;height:3px;border-radius:2px;
+      transition:width .35s cubic-bezier(.22,1,.36,1)}
+    #mcRoot .mc-liq.efe i{background:var(--plata);box-shadow:0 0 18px var(--plata)}
+    #mcRoot .mc-liq.vir i{background:var(--yape);box-shadow:0 0 18px var(--yape)}
+    #mcRoot .mc-liq b{position:absolute;left:0;bottom:9px;font-size:26px;font-weight:800;letter-spacing:-.02em}
     #mcRoot .mc-liq.efe b{color:var(--plata)}#mcRoot .mc-liq.vir b{color:var(--yape)}
-    #mcRoot .mc-mixnota{font-size:11.5px;color:var(--tinta3);text-align:center;line-height:1.6}
+    #mcRoot .mc-mixnota{font-size:11.5px;color:var(--tinta3);line-height:1.75;letter-spacing:.03em}
+    #mcRoot .mc-barras .mc-te.acc{width:auto;height:42px;border-radius:999px;padding:0 20px;font-size:12px;
+      letter-spacing:.14em;align-self:flex-start;box-shadow:inset 0 0 0 1px rgba(45,227,200,.2)}
 
-    #mcRoot .mc-hecho{text-align:center;animation:mcEmerge .4s;transform-style:preserve-3d}
+    #mcRoot .mc-hecho{text-align:center;animation:mcEmerge .4s;transform-style:preserve-3d;position:relative;z-index:1}
     #mcRoot .mc-hecho .mc-monto{color:var(--ok)}
-    #mcRoot .mc-hecho .mc-dig{text-shadow:0 0 70px rgba(61,220,132,.45)}
-    #mcRoot .mc-sello{margin-top:13px;display:inline-block;padding:9px 27px;border:3px solid var(--ok);border-radius:12px;
-      color:var(--ok);font-size:20px;font-weight:900;letter-spacing:.22em;transform:rotate(-7deg);
+    #mcRoot .mc-hecho .mc-dig{text-shadow:0 0 80px rgba(61,220,132,.5)}
+    #mcRoot .mc-sello{margin-top:14px;display:inline-block;padding:7px 4px;color:var(--ok);
+      font-size:19px;font-weight:900;letter-spacing:.42em;position:relative;
       animation:mcCae .55s cubic-bezier(.34,1.56,.64,1)}
-    @keyframes mcCae{0%{transform:rotate(-7deg) scale(3) translateZ(300px);opacity:0;filter:blur(10px)}
-                     100%{transform:rotate(-7deg) scale(1);opacity:1;filter:blur(0)}}
-    #mcRoot .mc-hecho p{margin-top:11px;font-size:12.5px;color:var(--tinta2)}
+    #mcRoot .mc-sello::before,#mcRoot .mc-sello::after{content:"";position:absolute;left:-6px;right:-6px;height:1px;
+      background:linear-gradient(90deg,transparent,var(--ok),transparent)}
+    #mcRoot .mc-sello::before{top:0}#mcRoot .mc-sello::after{bottom:0}
+    @keyframes mcCae{0%{transform:scale(2.6) translateZ(280px);opacity:0;filter:blur(11px)}
+                     100%{transform:scale(1);opacity:1;filter:blur(0)}}
+    #mcRoot .mc-hecho p{margin-top:12px;font-size:12.5px;color:var(--tinta2);letter-spacing:.04em}
     #mcRoot .mc-shock{position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:50%;border:2px solid var(--ok);
       transform:translate(-50%,-50%);pointer-events:none;z-index:8;animation:mcShock .8s cubic-bezier(.22,1,.36,1) forwards}
     @keyframes mcShock{to{width:200vmax;height:200vmax;opacity:0;border-width:1px}}
 
-    #mcRoot .mc-esperando{flex:none;display:flex;align-items:center;gap:9px;padding:8px 15px;border-radius:16px;
-      background:rgba(255,209,102,.07);color:var(--plata);font-size:11.5px;backdrop-filter:blur(9px);
-      box-shadow:inset 0 0 0 1px rgba(255,209,102,.3);margin-bottom:2px;overflow-x:auto;white-space:nowrap}
-    #mcRoot .mc-esperando b{color:#ffe9b0}
+    /* ── la franja de lo que falta cuadrar: un renglón sobre un pelo ámbar ── */
+    #mcRoot .mc-esperando{flex:none;display:flex;align-items:center;gap:9px;padding:7px 4px;
+      color:var(--plata);font-size:11px;letter-spacing:.05em;position:relative;
+      overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+    #mcRoot .mc-esperando::-webkit-scrollbar{display:none}
+    #mcRoot .mc-esperando::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
+      background:linear-gradient(90deg,rgba(255,209,102,.4),transparent 70%)}
+    #mcRoot .mc-esperando b{color:#ffe9b0;font-weight:800}
 
-    #mcRoot .mc-rio{padding:9px 12px;display:flex;align-items:center;gap:11px;overflow:hidden;min-height:74px;flex:none}
-    #mcRoot .mc-rioh{font-size:9.5px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--yape);
-      writing-mode:vertical-rl;transform:rotate(180deg);flex:none;opacity:.75}
-    #mcRoot .mc-riob{flex:1;display:flex;gap:9px;overflow-x:auto;padding:2px}
-    #mcRoot .mc-yp{flex:none;border-radius:15px;padding:8px 13px;min-width:138px;
-      background:linear-gradient(140deg,rgba(176,123,255,.16),rgba(176,123,255,.04));
-      box-shadow:inset 0 0 0 1px rgba(176,123,255,.18),0 14px 30px -24px #000;
-      animation:mcLlega .6s cubic-bezier(.22,1,.36,1),mcMece 12s ease-in-out infinite alternate;
-      transition:box-shadow .25s}
-    #mcRoot .mc-yp:nth-child(even){animation-duration:.6s,15s}
-    @keyframes mcLlega{0%{transform:translate3d(140px,0,180px) rotateY(-25deg);opacity:0;filter:blur(5px)}100%{opacity:1}}
-    #mcRoot .mc-ypm{font-size:17px;font-weight:800;color:var(--yape)}
-    #mcRoot .mc-ypn{font-size:10.5px;color:var(--tinta2);margin-top:1px;white-space:nowrap;overflow:hidden;
-      text-overflow:ellipsis;max-width:120px}
-    #mcRoot .mc-yph{font-size:9px;color:var(--tinta3);margin-top:1px}
-    #mcRoot .mc-yp.calza{box-shadow:inset 0 0 0 1px var(--yape),0 0 34px -10px var(--yape)}
-    #mcRoot .mc-yp.usado{opacity:.35;filter:saturate(.3)}
-
+    /* ── el río: los Yapes son datos que pasan, no fichas ── */
+    #mcRoot .mc-rio{padding:9px 2px 6px;display:flex;align-items:center;gap:14px;overflow:hidden;min-height:78px;flex:none}
+    #mcRoot .mc-rioh{font-size:9px;font-weight:800;letter-spacing:.3em;text-transform:uppercase;color:var(--yape);
+      writing-mode:vertical-rl;transform:rotate(180deg);flex:none;opacity:.6}
+    #mcRoot .mc-riob{flex:1;display:flex;gap:30px;overflow-x:auto;padding:2px 0;scrollbar-width:none}
+    #mcRoot .mc-riob::-webkit-scrollbar{display:none}
+    #mcRoot .mc-yp{flex:none;min-width:126px;padding-left:13px;position:relative;
+      animation:mcLlega .6s cubic-bezier(.22,1,.36,1),mcMece 14s ease-in-out infinite alternate;
+      transition:transform .25s}
+    #mcRoot .mc-yp::before{content:"";position:absolute;left:0;top:5px;width:5px;height:5px;transform:rotate(45deg);
+      background:rgba(176,123,255,.6);transition:background .25s,box-shadow .25s}
+    #mcRoot .mc-yp::after{content:"";position:absolute;left:2px;top:14px;bottom:2px;width:1px;
+      background:linear-gradient(180deg,rgba(176,123,255,.45),transparent)}
+    #mcRoot .mc-yp:nth-child(even){animation-duration:.6s,17s}
+    @keyframes mcLlega{0%{transform:translate3d(150px,0,190px);opacity:0;filter:blur(6px)}100%{opacity:1}}
+    #mcRoot .mc-ypm{font-size:19px;font-weight:800;color:var(--yape);letter-spacing:-.02em}
+    #mcRoot .mc-ypn{font-size:10px;color:var(--tinta2);margin-top:1px;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;max-width:118px;letter-spacing:.04em}
+    #mcRoot .mc-yph{font-size:9px;color:var(--tinta3);margin-top:1px;letter-spacing:.08em}
+    #mcRoot .mc-yp.calza::before{background:var(--yape);box-shadow:0 0 16px var(--yape)}
+    #mcRoot .mc-yp.calza .mc-ypm{text-shadow:0 0 26px rgba(176,123,255,.75)}
+    #mcRoot .mc-yp.usado{opacity:.3;filter:saturate(.25)}
 
     @media (max-width:900px){
-      #mcRoot .mc-cuerpo{grid-template-columns:1fr;grid-template-rows:150px 1fr}
+      #mcRoot .mc-app{padding:12px 14px 8px}
+      #mcRoot .mc-cuerpo{grid-template-columns:1fr;grid-template-rows:auto 1fr;gap:12px}
       #mcRoot .mc-riel{transform:none;animation:none}
-      #mcRoot .mc-rb{flex-direction:row;overflow-x:auto}
-      #mcRoot .mc-tk{min-width:155px}
-      #mcRoot .mc-mix{grid-template-columns:1fr}
+      #mcRoot .mc-rb{flex-direction:row;overflow-x:auto;gap:26px;padding-bottom:10px}
+      #mcRoot .mc-tk{min-width:148px}
+      #mcRoot .mc-mix{grid-template-columns:1fr;gap:18px}
+      #mcRoot .mc-te{width:64px;height:64px;font-size:22px}
+      #mcRoot .mc-bts{gap:14px}
+      #mcRoot .mc-bt span{width:60px;height:60px;font-size:25px}
+      #mcRoot .mc-bt::after{width:60px;height:60px}
       #mcRoot .mc-reloj{display:none}
     }
+
     @media (prefers-reduced-motion:reduce){#mcRoot *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
   </style>
@@ -2440,6 +2515,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
               b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:99990;background:#0f172a;color:#fff;padding:9px 18px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.35);';
               document.body.appendChild(b);
             }
+            // Con la estación de cobro abierta ni el aviso aparece: nada se mete en la pantalla
+            // hasta que el cajero salga por el ✕.
+            if (document.getElementById('mcRoot')) { b.remove(); return; }
             b.textContent = '⬆ Actualización v' + j.version + ' lista · se aplica al terminar la venta';
             return;
           }
@@ -6620,7 +6698,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             </div>
           </div></div>
 
-          <div class="mc-w mc-wesc"><div class="mc-esc">
+          <div class="mc-w mc-wesc"><div class="mc-esc" :class="{viva: mcEstado !== 'espera'}">
             <!-- 1 · esperando -->
             <div v-if="mcEstado === 'espera'" class="mc-espera">
               <div class="mc-hud">
@@ -10267,7 +10345,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const procesando = ref(false);
         // [banner ME] Expone "venta en curso" a window para que el forced-update NO recargue MID-VENTA
         // (lo difiere hasta terminar la venta). El _preCheckVersion ya bloquea INICIAR una venta en versión vieja.
-        watch([procesando, modalPago, procesandoGuia], (v) => { try { window.__ME_BUSY__ = v.some(Boolean); } catch(_){} }, { immediate: true });
+        // "modoCajero": mientras la estación de cobro esté abierta, la app NO se recarga sola
+        // por versión nueva. Se sale por el ✕ y recién ahí se aplica. Un reload con un cliente
+        // enfrente y el ticket escaneado a medias no es una actualización, es una venta perdida.
+        watch([procesando, modalPago, procesandoGuia, modoCajero], (v) => { try { window.__ME_BUSY__ = v.some(Boolean); } catch(_){} }, { immediate: true });
         const pago = ref({ tipoDoc: 'NOTA_DE_VENTA', metodo: 'EFECTIVO', docCliente: '', nombreCliente: '', direccionCliente: '', montoRecibido: 0, montoVirtual: 0, ventaCreditoDirecto: false, adminAuth: null, tipoDocClienteCE: false, registroManualDNI: false });
         const buscandoCliente = ref(false);
         const clienteModoManual = ref(false);
