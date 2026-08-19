@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.303';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.304';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1873,15 +1873,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-yph{font-size:9px;color:var(--tinta3);margin-top:1px}
     #mcRoot .mc-yp.calza{box-shadow:inset 0 0 0 1px var(--yape),0 0 34px -10px var(--yape)}
     #mcRoot .mc-yp.usado{opacity:.35;filter:saturate(.3)}
-
-    /* modo latente: no bloquea, se vuelve cine */
-    #mcRoot.latente .mc-wriel{transform:translateZ(70px) scale(1.03)}
-    #mcRoot.latente .mc-rio,#mcRoot.latente .mc-top{opacity:.5}
-    #mcRoot.latente #mcLluvia{opacity:.8}
-    #mcRoot.latente .mc-tk{animation:mcMece 6s ease-in-out infinite alternate}
-    #mcRoot .mc-latmsg{position:absolute;inset:auto 0 44% 0;text-align:center;z-index:5;pointer-events:none;
-      font-size:13px;letter-spacing:.42em;text-transform:uppercase;color:var(--voz);animation:mcResp 3.4s infinite}
-    @keyframes mcResp{0%,100%{opacity:.25}50%{opacity:.65}}
 
     /* el seguro: si la tablet sufre, esto queda plano y rapidísimo */
     #mcRoot.sobrio #mcLluvia{display:none}
@@ -6583,7 +6574,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
          El camino del dinero es el MISMO de siempre (abrirCobroPendiente +
          procesarCobroPendiente): acá solo cambia la puesta en escena.
          ══════════════════════════════════════════════════════════════════ -->
-    <div v-if="modoCajero" id="mcRoot" :class="{ sobrio: mcSobrio, latente: mcLatente }">
+    <div v-if="modoCajero" id="mcRoot" :class="{ sobrio: mcSobrio }">
       <canvas id="mcLluvia"></canvas>
       <div class="mc-reja" ref="mcReja"></div>
       <canvas id="mcHaz"></canvas>
@@ -6714,7 +6705,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           </div>
         </div></div>
 
-        <div v-if="mcLatente" class="mc-latmsg">caja lista</div>
       </div>
     </div>
 
@@ -10098,6 +10088,21 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             if (!cod) return;
             const ctx = _scanContextActivo();
             _tocarActividadGuia(); // cualquier scan reinicia el reloj de 5 min de la guía
+            // ── LA PUERTA DEL CAJERO ─────────────────────────────────────────────
+            // Escanear un TICKET lleva a la estación de cobro, no al POS. Antes todo scan
+            // caía en el buscador de venta: el cajero escaneaba el ticket del cliente y la
+            // tablet se iba al carrito, que no es donde se cobra.
+            // El filtro es que el código RESUELVA a un ticket de esta caja — un código de
+            // producto no resuelve y sigue de largo al POS, así que vender no se toca.
+            if (ctx.ctx === 'venta' && config.value.esCajero) {
+                const tk = mcResolverTicket(cod);
+                if (tk) {
+                    if (!modoCajero.value) abrirModoCajero();
+                    cajeroBusqueda.value = cod;
+                    nextTick(() => { try { buscarTicketCajero(); } catch(_){} });
+                    return;
+                }
+            }
             if (ctx.ctx === 'venta') {
                 currentModule.value = 'POS';
                 bBuscador.value = cod;
@@ -13549,7 +13554,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // No interrumpir tareas críticas — pero RE-ARMAR el timer: antes un guard
             // (p.ej. modal de pago abierto justo al vencer) mataba la salva hasta la
             // próxima actividad del usuario.
-            if (modalPago.value || camaraAbierta.value || welcomeOverlay.value.visible || !config.value.completado) {
+            // `modoCajero`: la estación de cobro NO se tapa nunca. Taparla es exactamente el
+            // modo reposo que quedó descartado — y deja al cajero mirando un reloj con un
+            // cliente enfrente.
+            if (modalPago.value || camaraAbierta.value || welcomeOverlay.value.visible || !config.value.completado || modoCajero.value) {
                 if (_idleTimer) clearTimeout(_idleTimer);
                 _idleTimer = setTimeout(mostrarSalvapantalla, 60 * 1000);
                 return;
@@ -13705,16 +13713,19 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             if (!idleScreen.value.visible) return;
             // Ignorar si hay modales bloqueantes (poco probable bajo salva)
             if (!config.value.completado) return;
-            // Dígito → acumular en buffer
-            if (/^[0-9]$/.test(e.key)) {
-                _idleScanBuffer += e.key;
+            // [modo cajero] antes solo dígitos: un correlativo (NVM2-000531) o la cadena de
+            // SUNAT de una boleta no despertaban la pantalla, y son justo lo que escanea el
+            // cajero. Mismo charset que el captor de ráfaga.
+            const _ich = (e.code === 'Minus' || e.code === 'NumpadSubtract') ? '-' : e.key;
+            if (/^[0-9A-Za-z\-|./]$/.test(_ich)) {
+                _idleScanBuffer += _ich;
                 if (_idleScanTimer) clearTimeout(_idleScanTimer);
                 // Si pasa más de 400ms entre teclas, considerar que NO es scanner sino teclado humano
                 _idleScanTimer = setTimeout(() => { _idleScanBuffer = ''; }, 400);
                 return;
             }
             // Enter con buffer mínimo de 4 dígitos → procesar como scan
-            if (e.key === 'Enter' && _idleScanBuffer.length >= 4) {
+            if (e.key === 'Enter' && _idleScanBuffer.length >= 4) {   // ráfaga completa
                 const codigo = _idleScanBuffer;
                 _idleScanBuffer = '';
                 if (_idleScanTimer) { clearTimeout(_idleScanTimer); _idleScanTimer = null; }
@@ -13769,7 +13780,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // Además ACEPTAR "-" en el charset (antes solo [0-9A-Za-z] → un código con "-" reseteaba
             // el buffer y jamás se capturaba, ej. WH-9S7XBPX).
             const ch = (e.code === 'Minus' || e.code === 'NumpadSubtract') ? '-' : e.key;
-            if (/^[0-9A-Za-z\-]$/.test(ch)) {
+            // [modo cajero] el QR de una boleta o factura trae la cadena de SUNAT
+            // (RUC|01|FM01|000053|1.83|12.00|18/08/2026|…). Sin el |, el . y el /, el buffer
+            // se reseteaba a mitad de la cadena y el Enter llegaba vacío: los CPE no se
+            // podían escanear desde fuera de la estación. La ráfaga (≤35ms/tecla) sigue
+            // siendo el filtro contra el tecleo humano.
+            if (/^[0-9A-Za-z\-|./]$/.test(ch)) {
                 if (!_hwGuiaBuffer) _hwGuiaT0 = now;
                 _hwGuiaBuffer += ch;
                 if (_hwGuiaTimer) clearTimeout(_hwGuiaTimer);
@@ -14274,13 +14290,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcEsperando = ref([]);
         const mcMixEfe    = ref('');
         const mcSobrio    = ref(localStorage.getItem('mc_sobrio') === '1');
-        const mcLatente   = ref(false);
         const mcProcesando = ref(false);
         const mcReloj     = ref('');
         const mcHechoMonto = ref(0);
         const mcHechoTxt  = ref('');
         const mcReja=ref(null), mcAura=ref(null), mcFlash=ref(null);
-        let _mcUltimo = Date.now(), _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null;
+        let _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null;
 
         watch(mcSobrio, v => { try { localStorage.setItem('mc_sobrio', v ? '1' : '0'); } catch(_){} });
 
@@ -14357,6 +14372,16 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             } catch(_) {}
         }
 
+        function mcPantallaCompleta() {
+            try {
+                const el = document.documentElement;
+                const f = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+                if (f && !document.fullscreenElement) f.call(el).catch(() => {});
+            } catch(_) {}
+        }
+        // Si el cajero sale de pantalla completa con ESC, la estación NO se cierra: ESC es del
+        // navegador, no una orden de dejar de cobrar. Se sale solo por el ✕.
+
         /* ── el escenario ── */
         const resetearCajero = () => {
             cajeroTicketActual.value = null;
@@ -14371,7 +14396,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
 
         const mcTomar = (venta) => {
             if (!venta) return;
-            _mcUltimo = Date.now(); mcLatente.value = false;
             mcSon('blip'); mcPulso('#ffd166');
             try { if (mcFlash.value) { mcFlash.value.classList.add('on'); setTimeout(()=>mcFlash.value && mcFlash.value.classList.remove('on'), 340); } } catch(_){}
             try { const el = document.querySelector('[data-tk="' + venta.id + '"]');
@@ -14399,18 +14423,26 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
             return t.toUpperCase();
         };
-        const buscarTicketCajero = () => {
-            const q = cajeroBusqueda.value.trim();
-            if (!q) return;
-            const clave = mcClaveDeEscaneo(q);
+        // Resuelve un escaneo a un ticket, sin tocar nada. Se usa desde la estación y también
+        // desde afuera, para saber si un código es un ticket antes de decidir a dónde llevarlo.
+        const mcResolverTicket = (q) => {
+            const txt = String(q || '').trim();
+            if (!txt) return null;
+            const clave = mcClaveDeEscaneo(txt);
             const norm = c => String(c || '').trim().toUpperCase();
             // coincidencia EXACTA primero. Nunca `includes`: tipear "55" no puede abrir
             // el cobro del primer ticket que contenga 55 — eso es plata mal asignada.
-            let t = (ventasZona.value || []).find(v => norm(v.correlativo) === clave || (v.ref_local && v.ref_local === q));
+            let t = (ventasZona.value || []).find(v => norm(v.correlativo) === clave || (v.ref_local && v.ref_local === txt));
             if (!t) {
                 const parc = (ventasZona.value || []).filter(v => norm(v.correlativo).endsWith(clave));
                 if (parc.length === 1) t = parc[0];
             }
+            return t || null;
+        };
+        const buscarTicketCajero = () => {
+            const q = cajeroBusqueda.value.trim();
+            if (!q) return;
+            const t = mcResolverTicket(q);
             cajeroBusqueda.value = '';
             nextTick(() => { if (cajeroInput.value) { try { cajeroInput.value.focus(); } catch(_){} } });
             if (!t) { mcSon('error'); agregarToast('No encontrado', q.slice(0, 40));
@@ -16125,8 +16157,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             cajeroBusqueda.value = '';
             cajeroTicketActual.value = null;
             mcEstado.value = 'espera';
-            mcLatente.value = false;
-            _mcUltimo = Date.now();
+            // Inmersivo de verdad: pantalla completa, como el Espía 2.0. Sin la barra del
+            // navegador la estación gana alto y, sobre todo, deja de haber a dónde tocar por error.
+            mcPantallaCompleta();
             // horizontal: la estación es apaisada
             try { if (screen.orientation?.lock) screen.orientation.lock('landscape').catch(() => {}); } catch(e) {}
             // que la tablet no se apague: el cajero mira esta pantalla todo el turno
@@ -16143,9 +16176,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 mcReloj.value = new Date().toTimeString().slice(0,5);
                 _mcTimerRel = setInterval(() => {
                     mcReloj.value = new Date().toTimeString().slice(0,5);
-                    // modo latente: no bloquea ni apaga — solo se vuelve más cinematográfico,
-                    // así desde lejos se ve cuántos tickets faltan cobrar.
-                    if (!mcLatente.value && mcEstado.value === 'espera' && Date.now() - _mcUltimo > 180000) mcLatente.value = true;
                 }, 1000);
             });
         };
@@ -16157,11 +16187,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             cajeroBusqueda.value = '';
             modalCobro.value = false;
             mcEstado.value = 'espera';
-            mcLatente.value = false;
             if (_mcTimerRio) { clearInterval(_mcTimerRio); _mcTimerRio = null; }
             if (_mcTimerRel) { clearInterval(_mcTimerRel); _mcTimerRel = null; }
             if (_mcRaf) { cancelAnimationFrame(_mcRaf); _mcRaf = null; }
             try { _mcWake && _mcWake.release(); _mcWake = null; } catch(e) {}
+            try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch(e) {}
             try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch(e) {}
         };
 
@@ -16201,7 +16231,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         const ch = c.txt[Math.floor(Math.random()*c.txt.length)] || '0';
                         cx.fillStyle = c.boost > 0 ? 'rgba(45,227,200,.95)' : 'rgba(45,227,200,.3)';
                         cx.fillText(ch, c.x, c.y);
-                        c.y += c.v * (mcLatente.value ? 2.2 : 1.5) * (1 + c.boost);
+                        c.y += c.v * 1.5 * (1 + c.boost);
                         if (c.boost > 0) c.boost -= .02;
                         if (c.y > _mcH) { c.y = Math.random()*-220; c.v = .5+Math.random()*1.6; }
                     });
@@ -16246,9 +16276,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             r.style.setProperty('--px', ((e.clientX/innerWidth)-.5).toFixed(3));
             r.style.setProperty('--py', ((e.clientY/innerHeight)-.5).toFixed(3));
         });
-        ['pointerdown','keydown'].forEach(ev => addEventListener(ev, () => {
-            if (modoCajero.value) { _mcUltimo = Date.now(); mcLatente.value = false; }
-        }));
+        // Pantalla completa: en la tablet el navegador pide un gesto, y el gesto de entrar
+        // puede haber sido un escaneo que el navegador no cuenta. Así que al primer toque
+        // dentro de la estación se reintenta — una sola vez, sin molestar.
+        addEventListener('pointerdown', () => {
+            if (modoCajero.value && !document.fullscreenElement) mcPantallaCompleta();
+        });
 
         // --- POLLING DE ZONA EN SEGUNDO PLANO ---
         const pollingTimer = ref(null);
@@ -25717,7 +25750,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           voiceEnabled,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
-          mcEstado, mcYapes, mcEsperando, mcMixEfe, mcSobrio, mcLatente, mcProcesando, mcReloj,
+          mcEstado, mcYapes, mcEsperando, mcMixEfe, mcSobrio, mcProcesando, mcReloj,
           mcHechoMonto, mcHechoTxt, mcReja, mcAura, mcFlash,
           mcPendientes, mcTotalPend, mcYapesLibres, mcYapeDelTicket,
           mcMixEfeNum, mcMixVir, mcMixPct, mcMixValido,

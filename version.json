@@ -1,1 +1,1 @@
-{"version": "2.8.303", "build": "2.8.303 Modo Cajero: la barra de arriba pedia el nombre de la estacion como si fuera un texto, pero la estacion es un objeto. La pantalla salia en blanco y sin salida."}
+{"version": "2.8.304", "build": "2.8.304 Modo Cajero: escanear un ticket entra a la estacion de cobro y ya no al carrito, la estacion va a pantalla completa, y se fue el modo reposo (ni el propio ni el salvapantallas de ME la tapan)."}
