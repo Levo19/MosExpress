@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.317';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.318';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1933,6 +1933,14 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       background:linear-gradient(90deg,rgba(255,209,102,.4),transparent 70%)}
     #mcRoot .mc-esperando b{color:#ffe9b0;font-weight:800}
 
+    /* el OJO de diagnóstico */
+    #mcRoot .mc-ojo{position:absolute;left:20px;right:20px;top:64px;z-index:30;padding:12px 14px;border-radius:14px;
+      background:rgba(3,16,26,.96);box-shadow:inset 0 0 0 1px rgba(45,227,200,.35);font-family:ui-monospace,monospace;font-size:11px;color:var(--tinta2);max-height:70vh;overflow:auto}
+    #mcRoot .mc-ojo b{display:block;color:var(--voz);margin-bottom:8px;letter-spacing:.1em;font-size:10px}
+    #mcRoot .mc-ojo-f{display:flex;gap:12px;flex-wrap:wrap;padding:3px 0;border-top:1px dashed rgba(45,227,200,.15)}
+    #mcRoot .mc-ojo-f span:first-child{color:var(--tinta3)}
+    #mcRoot .mc-ojo-vacio{color:var(--plata);padding:8px 0}
+    #mcRoot .mc-ojo-sum{margin:10px 0;color:var(--plata)}
     /* ══ WOW · la mano manda ══════════════════════════════════════════════════ */
     /* el guante: tres anillos que persiguen al dedo con retardo */
     #mcRoot .mc-glove{position:absolute;inset:0;pointer-events:none;z-index:12;opacity:0;transition:opacity .25s}
@@ -6738,6 +6746,20 @@ button:not(:disabled):not([aria-disabled="true"]):active,
          procesarCobroPendiente): acá solo cambia la puesta en escena.
          ══════════════════════════════════════════════════════════════════ -->
     <div v-if="modoCajero" id="mcRoot" tabindex="-1" ref="mcRootEl" style="outline:none">
+      <!-- RESPALDO para lectores que escriben como IME (sin keydown legible): un input real, mudo
+           (readonly + inputmode=none → Android no levanta teclado), que recibe el texto y lo
+           entrega en Enter o tras 400 ms de silencio. -->
+      <input id="mcSumidero" ref="mcSumidero" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" readonly
+             @input="mcSumideroInput" @keyup.enter="mcSumideroEnter" @focus="mcSumideroFoco"
+             style="position:absolute;opacity:0.01;width:2px;height:2px;left:0;top:0;border:0;padding:0;pointer-events:none;caret-color:transparent">
+      <!-- el OJO: qué llega del lector (tocar el reloj lo abre) -->
+      <div v-if="mcOjoVer" class="mc-ojo" @pointerdown.stop>
+        <b>OJO · últimas teclas que llegaron a la estación</b>
+        <div v-if="!mcOjo.length" class="mc-ojo-vacio">nada todavía — escaneá ahora</div>
+        <div v-for="(o,i) in mcOjo" :key="i" class="mc-ojo-f"><span>{{ o.t }}</span><span>{{ o.via }}</span><span>key={{ o.key }}</span><span>code={{ o.code }}</span><span>kc={{ o.kc }}</span><span>foco={{ o.ae }}</span></div>
+        <div class="mc-ojo-sum">sumidero: «{{ mcSumideroTxt }}»</div>
+        <button class="mc-te acc" style="height:36px;width:auto;padding:0 14px;border-radius:999px" @pointerdown.stop="mcOjoVer=false">cerrar</button>
+      </div>
       <canvas id="mcLluvia"></canvas>
       <div class="mc-reja" ref="mcReja"></div>
       <canvas id="mcHaz"></canvas>
@@ -6756,7 +6778,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           <span class="mc-caja">{{ (config.estacion?.Estacion_Nombre || 'CAJA').toUpperCase() }} <i>· {{ mcPrimerNombre(config.vendedor) }}</i></span>
           <button class="mc-ic" :class="{on: cajeroCamara}" @pointerdown.prevent="mcToggleCamara"
                   title="Cámara de emergencia — el lector es lo normal">📷</button>
-          <span class="mc-reloj mc-num">{{ mcReloj }}</span>
+          <span class="mc-reloj mc-num" @pointerdown.prevent="mcOjoVer = !mcOjoVer" title="Tocar: ver qué llega del lector">{{ mcReloj }}</span>
           <span class="mc-pill t">{{ mcPendientes.length }} por cobrar</span>
           <span class="mc-pill y">💜 {{ mcYapesLibres }}</span>
           <button class="mc-ic x" @pointerdown.prevent="cerrarModoCajero" title="Salir del modo cajero">✕</button>
@@ -14485,7 +14507,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcHechoMonto = ref(0);
         const mcHechoTxt  = ref('');
         const mcReja=ref(null), mcAura=ref(null), mcFlash=ref(null);
-        let _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null, _mcRtTimer = null;
+        let _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null, _mcRtTimer = null, _mcTimerVoz = null;
 
         /* ── helpers de pantalla ── */
         const mcMoney = v => 'S/ ' + (parseFloat(v) || 0).toFixed(2);
@@ -14742,6 +14764,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             try {
                 const ae = document.activeElement;
                 if (ae && ae.closest && ae.closest('#mcRoot .mc-te')) return;   // tecla del mixto: no interrumpir
+                // el sumidero primero: es un input (recibe keydown Y texto de IME); readonly +
+                // inputmode=none → Android no levanta teclado. Si no existe, el escenario.
+                const sm = mcSumidero.value || document.getElementById('mcSumidero');
+                if (sm) { if (ae !== sm) sm.focus({ preventScroll: true }); return; }
                 const r = mcRootEl.value || document.getElementById('mcRoot');
                 if (r && ae !== r) { r.focus({ preventScroll: true }); }
             } catch(_) {}
@@ -14764,14 +14790,51 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
             return k;
         }
+        // ── el SUMIDERO: input mudo que recibe texto de lectores que escriben como IME ──
+        const mcSumidero = ref(null);
+        const mcSumideroTxt = ref('');
+        let _mcSumTimer = null;
+        function mcSumideroFoco() { /* readonly se quita al tomar foco: sin teclado (inputmode=none), pero el IME sí entrega texto */
+            try { const el = mcSumidero.value; if (el) { el.readOnly = false; } } catch(_) {} }
+        function mcSumideroEntrega() {
+            const el = mcSumidero.value; if (!el) return;
+            const v = String(el.value || '').trim();
+            el.value = ''; mcSumideroTxt.value = v;
+            if (v.length >= 4) { mcSon('tecla'); cajeroBusqueda.value = v; buscarTicketCajero(); }
+        }
+        function mcSumideroInput() {
+            const el = mcSumidero.value; if (!el) return;
+            mcSumideroTxt.value = String(el.value || '');
+            _mcOjoAnota({ key: String(el.value || '').slice(-1), code: 'input', keyCode: 0 }, 'input');
+            if (_mcSumTimer) clearTimeout(_mcSumTimer);
+            _mcSumTimer = setTimeout(mcSumideroEntrega, 400);   // si el lector no manda Enter, 400 ms de silencio entregan
+        }
+        function mcSumideroEnter() { if (_mcSumTimer) { clearTimeout(_mcSumTimer); _mcSumTimer = null; } mcSumideroEntrega(); }
+
+        // ── el OJO de diagnóstico: se anota cada tecla que llega (o no) a la estación ──
+        const mcOjo = ref([]);
+        const mcOjoVer = ref(false);
+        function _mcOjoAnota(e, via) {
+            try {
+                mcOjo.value.unshift({ t: new Date().toTimeString().slice(3, 8), via, key: String(e.key), code: String(e.code || ''), kc: e.keyCode | 0,
+                                      ae: (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) || '' });
+                if (mcOjo.value.length > 40) mcOjo.value.length = 40;
+            } catch (_) {}
+        }
+        window.addEventListener('keypress', e => { if (modoCajero.value) _mcOjoAnota(e, 'keypress'); }, true);
+        document.addEventListener('beforeinput', e => { if (modoCajero.value) _mcOjoAnota({ key: String(e.data || ''), code: e.inputType, keyCode: 0 }, 'beforeinput'); }, true);
+
         function _mcTeclado(e) {
             if (!modoCajero.value) return;
+            _mcOjoAnota(e, 'keydown');
             const ch = _mcTeclaDe(e);
             const now = Date.now();
+            const enSumidero = document.activeElement && document.activeElement.id === 'mcSumidero';
             if (typeof ch === 'string' && ch.length === 1 && /^[0-9A-Za-z\-|./ ]$/.test(ch)) {
                 if (!_mcBuf) _mcBufT0 = now;
                 _mcBuf += ch;
                 if (_mcBufTimer) clearTimeout(_mcBufTimer);
+                if (enSumidero) { _mcBufTimer = setTimeout(() => { _mcBuf = ''; }, 400); return; }   // el input lo recibe; el Enter/silencio decide
                 // MISMO criterio que el captor del salvapantallas, que sí lee en la tablet: el único
                 // corte es el silencio de 400 ms entre teclas. La regla de "≤35 ms por tecla" que
                 // había acá tiraba a la basura el escaneo real — en Android el lector entrega las
@@ -14782,6 +14845,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 return;
             }
             if ((e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter' || e.keyCode === 13) && _mcBuf.length >= 4) {
+                if (enSumidero) { _mcBuf = ''; return; }   // lo entrega el sumidero (keyup.enter), no duplicar
                 const cod = _mcBuf;
                 _mcBuf = ''; if (_mcBufTimer) { clearTimeout(_mcBufTimer); _mcBufTimer = null; }
                 e.preventDefault(); e.stopPropagation();
@@ -16574,6 +16638,14 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 mcCargarRio();
                 if (_mcTimerRio) clearInterval(_mcTimerRio);
                 _mcTimerRio = setInterval(mcCargarRio, 9000);
+                // la VOZ de los Yapes: la estación la arranca ella misma y la revisa a su ritmo.
+                // Dependía del poll de ventas de zona (que se pausa con la pantalla oculta y no
+                // corre si la caja no tiene estación asignada): el Yape llegaba, se veía en el
+                // anillo, y nadie lo cantaba.
+                try { yapeArrancar(); } catch (_) {}
+                if (_mcTimerVoz) clearInterval(_mcTimerVoz);
+                _mcTimerVoz = setInterval(() => { try { _yapeRevisar(); } catch (_) {} }, 6000);
+                try { _yapeRevisar(); } catch (_) {}
                 if (_mcTimerRel) clearInterval(_mcTimerRel);
                 mcReloj.value = new Date().toTimeString().slice(0,5);
                 _mcTimerRel = setInterval(() => {
@@ -16591,6 +16663,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             modalCobro.value = false;
             mcEstado.value = 'espera';
             if (_mcTimerRio) { clearInterval(_mcTimerRio); _mcTimerRio = null; }
+            if (_mcTimerVoz) { clearInterval(_mcTimerVoz); _mcTimerVoz = null; }
             if (_mcTimerRel) { clearInterval(_mcTimerRel); _mcTimerRel = null; }
             if (_mcRaf) { cancelAnimationFrame(_mcRaf); _mcRaf = null; }
             try { _mcWake && _mcWake.release(); _mcWake = null; } catch(e) {}
@@ -19760,6 +19833,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const _yapeHablar = (frase) => {
             try {
                 if (!('speechSynthesis' in window)) return;
+                if (voiceEnabled && voiceEnabled.value === false) return;
+                // Android: si quedó una utterance colgada (pasa tras un cambio de pestaña), la cola
+                // no avanza y nunca suena. Un cancel antes de hablar la destraba.
+                try { if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel(); } catch (_) {}
                 const u = new SpeechSynthesisUtterance(frase);
                 u.lang = 'es-PE'; u.rate = 0.95; u.pitch = 1.05; u.volume = 1;
                 // voz en español si el equipo tiene alguna; si no, la del sistema
@@ -26350,6 +26427,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           mcTomar, mcCobrar, mcAbrirMixto, mcTecla, mcToggleCamara,
           mcSiguientes, mcLineas, mcCant, mcCorto, mcDragIni, mcFlingIni, mcScan, mcGlove, mcDrag,
           mcOrbTk, mcOrbYp, mcTocarYape, mcEscEl, mcRootEl,
+          mcSumidero, mcSumideroTxt, mcSumideroInput, mcSumideroEnter, mcSumideroFoco, mcOjo, mcOjoVer,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
