@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.307';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.308';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -2220,7 +2220,20 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     };
     window.MeSfx = MeSfx;
 
+    /* ══════════════════════════════════════════════════════════════════════
+       LA ESTACIÓN DE COBRO NO SE INTERRUMPE.
+       `__ME_BUSY__` ya difería la RECARGA, pero no el cartel: el aviso de versión
+       nueva y el overlay "Actualizando MOSexpress · Instalando…" se pintaban igual
+       encima de la estación. Difererir la recarga y taparle la pantalla al cajero
+       con un cliente enfrente es lo mismo que interrumpirlo.
+       Un solo guardián para los tres caminos (cartel, overlay y recarga), y vive en
+       `window` para poder comprobarlo desde afuera sin adivinar.
+       ══════════════════════════════════════════════════════════════════════ */
+    window._meEstacionAbierta = function() {
+      try { return !!document.getElementById('mcRoot'); } catch(_) { return false; }
+    };
     function _showOverlay() {
+      if (window._meEstacionAbierta()) return;   // se aplica al salir por el ✕
       const el = document.getElementById('meUpdateOverlay');
       if (el) el.classList.add('visible');
     }
@@ -2288,7 +2301,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         if (secs <= 0) {
           // [100x M5] NO recargar a mitad de una venta/cobro (__ME_BUSY__): esperar a que termine.
           // El contador se queda en pausa y aplica apenas la venta cierra (próximo tick con !busy).
-          if (window.__ME_BUSY__) { secs = 0; if (cdNum) cdNum.textContent = '⏸'; return; }
+          if (window.__ME_BUSY__ || window._meEstacionAbierta()) { secs = 0; if (cdNum) cdNum.textContent = '⏸'; return; }
           clearInterval(_meAutoCdInterval); _meAutoCdInterval = null;
           _meAutoCdActive = false;
           window._applyMeUpdate();
@@ -2309,6 +2322,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           if (tit) tit.textContent = 'Nueva versión v' + v.version;
         }).catch(() => {});
       const b = document.getElementById('meUpdateBanner');
+      // Con la estación abierta ni el cartel ni el sonido: el chequeo periódico vuelve
+      // a pasar cada 3 min y lo muestra apenas el cajero salga por el ✕.
+      if (window._meEstacionAbierta()) return;
       if (b) setTimeout(() => b.classList.add('visible'), 200);
       try { MeSfx.updateArrived(); } catch(_){}
       try { if (navigator.vibrate) navigator.vibrate([20, 40, 20]); } catch(_){}
@@ -2507,7 +2523,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // [banner ME] NO recargar MID-VENTA. Si hay venta en curso (procesando/cobrando), mostrar un banner
           // SUAVE (no bloqueante) y DIFERIR: no setear _forceUpdateTriggered → reintenta en el próximo check
           // (3min / visibilitychange), cuando la venta ya terminó. (_preCheckVersion ya bloquea INICIAR una venta nueva.)
-          if (window.__ME_BUSY__) {
+          if (window.__ME_BUSY__ || window._meEstacionAbierta()) {
             let b = document.getElementById('meUpdBanner');
             if (!b) {
               b = document.createElement('div');
@@ -2526,6 +2542,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // 1.3MB), dejamos de recargar en bucle y mostramos instrucciones manuales (app usable, sin loop).
           let _att = 0; try { _att = parseInt(sessionStorage.getItem('me_upd_att') || '0', 10) || 0; } catch(_){}
           if (_att >= 3) {
+            if (window._meEstacionAbierta()) return;
             const el2 = document.getElementById('meUpdateOverlay');
             if (el2) {
               el2.classList.add('visible');
@@ -2535,6 +2552,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             return;
           }
           try { sessionStorage.setItem('me_upd_att', String(_att + 1)); } catch(_){}
+          if (window._meEstacionAbierta()) return;   // la estación manda: se aplica al salir
           _forceUpdateTriggered = true;
           // Mostrar overlay no-dismissable
           const el = document.getElementById('meUpdateOverlay');
@@ -2568,7 +2586,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         try {
           if (localStorage.getItem('me_no_autoreload') === '1') return;
           if (!document.hidden) return;
-          if (window.__ME_BUSY__) return;
+          if (window.__ME_BUSY__ || window._meEstacionAbierta()) return;
           if (Date.now() - _bootTs < 12 * 3600 * 1000) return;
           location.reload();
         } catch (_) {}
