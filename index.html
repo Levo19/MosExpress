@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.309';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.310';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -22952,12 +22952,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                : metodoVenta;
 
            // Items con campos NubeFact — tipo_igv y unidad_de_medida vienen del producto (PRODUCTO_BASE)
-           // Códigos catálogo 07 SUNAT: 1=Gravado(18%) 8=IVAP-arroz(4%) 9=Exonerado 11=Inafecto (y más)
+           // Códigos NubeFact: 1=Gravado(18%) 8=Exonerado 9/10/11=Inafecto 17=IVAP-arroz(4%)
            const itemsParaImprimir = carrito.value.map(c => {
                const igv      = c.tipoIgv || 1;
                const valUnit  = igv === 1  ? Math.round(c.precioUnitario / 1.18 * 100) / 100   // Gravado 18%
-                              : igv === 8  ? Math.round(c.precioUnitario / 1.04 * 100) / 100   // IVAP 4% (arroz pilado)
-                              : c.precioUnitario; // Exonerado (9) / Inafecto (11+): precio = valor unitario
+                              : igv === 17 ? Math.round(c.precioUnitario / 1.04 * 100) / 100   // IVAP 4% (arroz pilado)
+                              : c.precioUnitario; // Exonerado (8) / Inafecto (9+): sin impuesto, precio = valor unitario
                return {
                    sku:              c.skuBase || c.sku,
                    skuBase:          c.skuBase || c.sku,
@@ -22979,11 +22979,13 @@ button:not(:disabled):not([aria-disabled="true"]):active,
            });
 
            // Desglose por tipo — catálogo 07 SUNAT (NubeFact requiere separar cada grupo)
+           // Catálogo NubeFact: 1 gravado · 8 exonerado · 9/10/11 inafecto · 17 IVAP.
+           // El desglose impreso agrupaba con los códigos viejos (8=IVAP, 9=exonerado): un
+           // exonerado salía en la línea de INAFECTO del ticket del cliente.
            const subGravado   = itemsParaImprimir.filter(i => i.tipo_igv === 1).reduce((s, i) => s + i.subtotal, 0);
-           const subIVAP      = itemsParaImprimir.filter(i => i.tipo_igv === 8).reduce((s, i) => s + i.subtotal, 0);
-           // Exonerados: códigos 9,10 | Inafectos: códigos 11-17
-           const subExonerado = itemsParaImprimir.filter(i => i.tipo_igv === 9 || i.tipo_igv === 10).reduce((s, i) => s + i.subtotal, 0);
-           const subInafecto  = itemsParaImprimir.filter(i => i.tipo_igv >= 11).reduce((s, i) => s + i.subtotal, 0);
+           const subIVAP      = itemsParaImprimir.filter(i => i.tipo_igv === 17).reduce((s, i) => s + i.subtotal, 0);
+           const subExonerado = itemsParaImprimir.filter(i => i.tipo_igv === 8).reduce((s, i) => s + i.subtotal, 0);
+           const subInafecto  = itemsParaImprimir.filter(i => i.tipo_igv >= 9 && i.tipo_igv <= 16).reduce((s, i) => s + i.subtotal, 0);
            const totalGravada   = Math.round(subGravado / 1.18 * 100) / 100;
            const totalIGV       = Math.round((subGravado - totalGravada) * 100) / 100;
            const totalIVAP      = Math.round(subIVAP / 1.04 * 100) / 100;      // base IVAP (arroz pilado)

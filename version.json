@@ -1,1 +1,1 @@
-{"version": "2.8.309", "build": "2.8.309 El service worker recargaba la app sin preguntarle a nadie: ese era el camino que quedaba. Y si la app recarga por lo que sea, la estacion de cobro vuelve sola."}
+{"version": "2.8.310", "build": "2.8.310 Codigo de IGV corregido: en NubeFact el exonerado es 8, no 9 (el 9 es inafecto). El desglose impreso del ticket agrupaba mal y un exonerado salia en la linea de INAFECTO."}
