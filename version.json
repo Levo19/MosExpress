@@ -1,1 +1,1 @@
-{"version": "2.8.322", "build": "2.8.322 Modo Cajero: cierre del ciclo hablado — al cobrar dice 'Cobrado en efectivo / virtual / mixto, muchas gracias por su compra'."}
+{"version": "2.8.323", "build": "2.8.323 Modo Cajero: EFECTIVO / VIRTUAL / MIXTO reaccionan al PRIMER toque (pointerdown, con dedupe de 500 ms) — el click a veces no llegaba en la tablet; la voz del cierre ahora dice 'Pago efectivo, muchas gracias por su compra'."}

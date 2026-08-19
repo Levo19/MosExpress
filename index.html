@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.322';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.323';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -6847,9 +6847,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 <template v-if="mcYapeDelTicket.min != null">· hace {{ mcYapeDelTicket.min }} min</template>
               </div>
               <div class="mc-bts">
-                <button class="mc-bt efe" @click="mcCobrar('EFECTIVO')" :disabled="mcProcesando"><span>💵</span>EFECTIVO</button>
-                <button class="mc-bt vir" :class="{destaca: mcYapeDelTicket}" @click="mcCobrar('VIRTUAL')" :disabled="mcProcesando"><span>📱</span>VIRTUAL</button>
-                <button class="mc-bt mix" @click="mcAbrirMixto" :disabled="mcProcesando"><span>🔀</span>MIXTO</button>
+                <!-- reaccionan al PRIMER toque (pointerdown), no al click: en la tablet el click a veces no
+                     llegaba (un milímetro de movimiento del dedo y el navegador lo descarta) -->
+                <button class="mc-bt efe" @pointerdown.prevent="mcTocarCobro($event, 'EFECTIVO')" :disabled="mcProcesando"><span>💵</span>EFECTIVO</button>
+                <button class="mc-bt vir" :class="{destaca: mcYapeDelTicket}" @pointerdown.prevent="mcTocarCobro($event, 'VIRTUAL')" :disabled="mcProcesando"><span>📱</span>VIRTUAL</button>
+                <button class="mc-bt mix" @pointerdown.prevent="mcTocarCobro($event, 'MIXTO')" :disabled="mcProcesando"><span>🔀</span>MIXTO</button>
               </div>
             </div>
 
@@ -14734,14 +14736,24 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcDecirCobrado = (metodo) => {
             try {
                 if (!voiceEnabled.value || !window.speechSynthesis) return;
-                const como = metodo === 'EFECTIVO' ? 'en efectivo' : metodo === 'VIRTUAL' ? 'virtual' : metodo === 'MIXTO' ? 'mixto' : String(metodo || '').toLowerCase();
-                const u = new SpeechSynthesisUtterance('Cobrado ' + como + ', muchas gracias por su compra');
+                const como = metodo === 'EFECTIVO' ? 'efectivo' : metodo === 'VIRTUAL' ? 'virtual' : metodo === 'MIXTO' ? 'mixto' : String(metodo || '').toLowerCase();
+                const u = new SpeechSynthesisUtterance('Pago ' + como + ', muchas gracias por su compra');
                 u.lang = 'es-PE'; u.rate = 0.98; u.pitch = 1.05;
                 try { const voz = _seleccionarVoz(); if (voz) u.voice = voz; } catch (_) {}
                 const decir = () => { try { speechSynthesis.speak(u); _ttsUltimo = Date.now(); } catch (_) {} };
                 if (speechSynthesis.speaking || speechSynthesis.pending) { speechSynthesis.cancel(); setTimeout(decir, 60); }
                 else setTimeout(decir, 120);   // tras el sonido de caja
             } catch (_) {}
+        };
+        // Los botones de cobro reaccionan al primer toque. Un solo disparo por toque (el navegador
+        // puede mandar pointerdown + click): se ignora cualquier repetición en 500 ms.
+        let _mcTocoT = 0;
+        const mcTocarCobro = (e, metodo) => {
+            try { if (e && e.pointerType === 'mouse' && e.button !== 0) return; } catch (_) {}
+            const now = Date.now(); if (now - _mcTocoT < 500) return; _mcTocoT = now;
+            if (mcProcesando.value) return;
+            try { navigator.vibrate && navigator.vibrate(12); } catch (_) {}
+            if (metodo === 'MIXTO') mcAbrirMixto(); else mcCobrar(metodo);
         };
         const mcTomar = (venta) => {
             if (!venta) return;
@@ -26520,7 +26532,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           mcTomar, mcCobrar, mcAbrirMixto, mcTecla, mcToggleCamara,
           mcSiguientes, mcLineas, mcCant, mcCorto, mcDragIni, mcFlingIni, mcScan, mcGlove, mcDrag,
           mcOrbTk, mcOrbYp, mcTocarYape, mcEscEl, mcRootEl,
-          mcSumidero, mcSumideroTxt, mcSumideroInput, mcSumideroEnter, mcSumideroFoco, mcOjo, mcOjoVer, mcSumEditableVer, mcSumCambiarModo,
+          mcSumidero, mcSumideroTxt, mcSumideroInput, mcSumideroEnter, mcSumideroFoco, mcOjo, mcOjoVer, mcSumEditableVer, mcSumCambiarModo, mcTocarCobro,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
