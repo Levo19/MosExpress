@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.313';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.314';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -6747,10 +6747,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       <div class="mc-glove" ref="mcGlove"><i></i><i></i><i></i></div>
       <div class="mc-drag" ref="mcDrag"><b class="mc-num"></b><small></small></div>
 
-      <!-- el lector USB/bluetooth escribe como un teclado: no necesita campo visible -->
-      <input ref="cajeroInput" v-model="cajeroBusqueda" @keyup.enter="buscarTicketCajero"
-             type="text" inputmode="none" autocomplete="off"
-             style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none">
+      <!-- No hay campo de texto: el lector escribe como un teclado y la estación lo escucha en
+           la ventana (mcTeclado). Sin input con foco, ningún teclado en pantalla se levanta. -->
 
       <div class="mc-app">
         <div class="mc-w mc-wtop"><div class="mc-top">
@@ -11127,6 +11125,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // de venta (dinero/inventario). El captor global _onHwGuiaKeydown es la red de respaldo,
             // pero no debemos crearle el problema cada 1.5s.
             if (_enFlujoGuia()) return;
+            // la estación de cobro manda: mientras esté abierta nadie enfoca el buscador de venta
+            // (eso era lo que levantaba el teclado y se tragaba el escaneo del ticket)
+            if (modoCajero.value) return;
             if(config.value.completado && currentModule.value === 'POS' && !modalPago.value && !camaraAbierta.value && !popover.value.visible && scannerInput.value) {
                 // No robar foco si el usuario está editando un input de gramos del carrito
                 // (productos a granel) — sino el cajero no puede tipear el peso.
@@ -13944,6 +13945,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         let _hwGuiaTimer = null;
         const _CTX_INPUT_DOM = { guiaBusq: 'guiaBusq', rwBusq: 'rwBusq', rwIdGuia: 'rwIdGuia', auditBusq: 'auditBusq' };
         const _onHwGuiaKeydown = (e) => {
+            if (modoCajero.value) return;              // la estación de cobro tiene su propio captor
             if (idleScreen.value.visible) return;     // el salvapantallas tiene su propio captor
             if (!_enFlujoGuia()) { _hwGuiaBuffer = ''; return; }  // solo dentro de un flujo de guía
             const ctx = _scanContextActivo();
@@ -14668,7 +14670,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             mcMixEfe.value = '';
             if (mcEstado.value !== 'hecho') mcEstado.value = 'espera';
             nextTick(() => {
-                if (cajeroInput.value) { try { cajeroInput.value.focus(); } catch(_){} }
+                mcSoltarFoco();
                 if (cajeroScannerInst.value && cajeroCamara.value) { try { cajeroScannerInst.value.resume(); } catch(_){} }
             });
         };
@@ -14722,6 +14724,50 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
             return t.toUpperCase();
         };
+        /* ── EL TECLADO DE LA ESTACIÓN ─────────────────────────────────────────────
+           El lector escribe como un teclado. Con la estación abierta se escucha en la ventana
+           (fase de captura, antes que cualquier input) y se reconoce el escaneo por RÁFAGA: teclas
+           a ≤35 ms y un Enter. Tecleo humano (más lento) se ignora. No hay ningún campo con foco,
+           así que ningún teclado en pantalla se levanta — "directo lee, nada más". Si algún input
+           quedó con foco (el buscador del POS, por ejemplo), se le quita.
+           ──────────────────────────────────────────────────────────────────── */
+        let _mcBuf = '', _mcBufT0 = 0, _mcBufTimer = null;
+        function mcSoltarFoco() {
+            try { const ae = document.activeElement; if (ae && ae !== document.body && ae.blur && !(ae.closest && ae.closest('#mcRoot .mc-te'))) ae.blur(); } catch(_) {}
+        }
+        function _mcTeclado(e) {
+            if (!modoCajero.value) return;
+            // si el cajero está en el teclado del MIXTO tocando botones, no hay teclado físico de por medio
+            const ch = (e.code === 'Minus' || e.code === 'NumpadSubtract') ? '-' : e.key;
+            const now = Date.now();
+            if (/^[0-9A-Za-z\-|./ ]$/.test(ch)) {
+                if (!_mcBuf) _mcBufT0 = now;
+                _mcBuf += ch;
+                if (_mcBufTimer) clearTimeout(_mcBufTimer);
+                _mcBufTimer = setTimeout(() => { _mcBuf = ''; }, 400);   // >400 ms entre teclas = humano
+                e.preventDefault(); e.stopPropagation();                   // que NO llegue a ningún input
+                return;
+            }
+            if (e.key === 'Enter' && _mcBuf.length >= 4) {
+                const cod = _mcBuf, dur = now - _mcBufT0;
+                _mcBuf = ''; if (_mcBufTimer) { clearTimeout(_mcBufTimer); _mcBufTimer = null; }
+                e.preventDefault(); e.stopPropagation();
+                if (dur > cod.length * 35 + 150) return;                   // demasiado lento: no es el lector
+                cajeroBusqueda.value = cod;
+                buscarTicketCajero();
+                return;
+            }
+            if (e.key === 'Escape') { e.preventDefault(); return; }        // ESC no cierra la estación
+            if (e.key !== 'Enter') { _mcBuf = ''; if (_mcBufTimer) { clearTimeout(_mcBufTimer); _mcBufTimer = null; } }
+        }
+        window.addEventListener('keydown', _mcTeclado, true);   // capture: antes que el POS y que el captor de guías
+        // y si algo intenta enfocar un input mientras la estación está abierta, se le quita
+        document.addEventListener('focusin', (e) => {
+            if (!modoCajero.value) return;
+            const t = e.target;
+            if (t && t.matches && t.matches('input,textarea') && !(t.closest && t.closest('#mcRoot'))) { try { t.blur(); } catch(_) {} }
+        }, true);
+
         // Resuelve un escaneo a un ticket, sin tocar nada. Se usa desde la estación y también
         // desde afuera, para saber si un código es un ticket antes de decidir a dónde llevarlo.
         const mcResolverTicket = (q) => {
@@ -14743,7 +14789,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             if (!q) return;
             const t = mcResolverTicket(q);
             cajeroBusqueda.value = '';
-            nextTick(() => { if (cajeroInput.value) { try { cajeroInput.value.focus(); } catch(_){} } });
+            nextTick(mcSoltarFoco);
             if (!t) { mcSon('error'); agregarToast('No encontrado', q.slice(0, 40));
                       try { const u = new SpeechSynthesisUtterance('no lo encuentro'); u.lang='es-PE';
                             if (voiceEnabled.value) speechSynthesis.speak(u); } catch(_){}
@@ -16484,7 +16530,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // La cámara NO se enciende: es de emergencia. El lector es lo normal y así
             // el escenario queda entero para el cobro.
             nextTick(() => {
-                if (cajeroInput.value) { try { cajeroInput.value.focus(); } catch(_){} }
+                mcSoltarFoco();
                 mcArrancarEfectos();
                 mcCargarRio();
                 if (_mcTimerRio) clearInterval(_mcTimerRio);
@@ -21773,7 +21819,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const toggleTeclado = () => {
             mostrarTeclado.value = !mostrarTeclado.value;
             if (scannerInput.value) {
-                if (mostrarTeclado.value) scannerInput.value.focus();
+                if (mostrarTeclado.value && !modoCajero.value) scannerInput.value.focus();
                 else scannerInput.value.blur();
             }
         };
