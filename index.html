@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.308';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.309';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -2474,9 +2474,21 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       };
       window.addEventListener('beforeunload', () => window._cleanupMEAntesReload());
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        // Con la estación de cobro abierta NO se recarga: se anota y se aplica cuando el
+        // cajero salga por el ✕. Este era el camino que quedaba abierto — el service worker
+        // nuevo tomaba el control y recargaba sin consultarle a nadie.
+        if (window.__ME_BUSY__ || window._meEstacionAbierta()) { window.__meReloadPendiente = true; return; }
         window._cleanupMEAntesReload();
         window.location.reload();
       });
+      // apenas la estación cierra (o termina la venta), se aplica lo que quedó pendiente
+      setInterval(() => {
+        if (!window.__meReloadPendiente) return;
+        if (window.__ME_BUSY__ || window._meEstacionAbierta()) return;
+        window.__meReloadPendiente = false;
+        try { window._cleanupMEAntesReload(); } catch(_){}
+        window.location.reload();
+      }, 4000);
 
       _reg.update().catch(() => {});
       // [2.8.248] revalidar el SW cada 5 min como en WH: antes sólo se pedía UNA vez
@@ -16259,7 +16271,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // Ejecutarlo cuando se monte
         setTimeout(() => { try { wizBootData(); } catch(e) {} }, 100);
 
+        // Si la app se recarga por lo que sea — una actualización que sí tocaba, el navegador,
+        // la tablet — el cajero no tiene que acordarse de volver a entrar. Se anota que la
+        // estación estaba abierta y al arrancar se vuelve sola.
+        const MC_LS = 'me_estacion_abierta';
         const abrirModoCajero = () => {
+            try { localStorage.setItem(MC_LS, '1'); } catch(_){}
             modoCajero.value = true;
             cajeroBusqueda.value = '';
             cajeroTicketActual.value = null;
@@ -16288,6 +16305,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         };
 
         const cerrarModoCajero = () => {
+            try { localStorage.removeItem(MC_LS); } catch(_){}
             detenerCamaraCajero();
             modoCajero.value = false;
             cajeroTicketActual.value = null;
@@ -16301,6 +16319,15 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch(e) {}
             try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch(e) {}
         };
+
+        // Vuelve a la estación tras un reload, pero solo si el turno ya está montado y esta
+        // estación es de cajero: si no, sería meter a un vendedor donde no va.
+        watch(() => config.value && config.value.completado, (listo) => {
+            if (!listo || modoCajero.value) return;
+            let marca = ''; try { marca = localStorage.getItem(MC_LS) || ''; } catch(_){}
+            if (marca !== '1' || !config.value.esCajero) return;
+            setTimeout(() => { if (!modoCajero.value) abrirModoCajero(); }, 900);
+        }, { immediate: true });
 
         /* ══════════════════════════════════════════════════════════════════════
            LOS EFECTOS DE FONDO — lluvia de datos y el haz.
