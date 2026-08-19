@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.323';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.324';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1744,7 +1744,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       transition:transform .9s cubic-bezier(.22,1,.36,1),opacity .4s;will-change:transform}
     /* el ticket-satélite: un dato con su guía de luz, sin caja */
     #mcRoot .mc-tk{padding:8px 4px 8px 15px;cursor:pointer;transform-style:preserve-3d;width:124px;touch-action:none;-webkit-user-select:none;user-select:none;
-      background:rgba(3,16,26,.55);border-radius:12px;backdrop-filter:blur(2px)}
+      background:rgba(3,16,26,.74);border-radius:12px}
     #mcRoot .mc-tk::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:2px;
       background:linear-gradient(180deg,transparent,rgba(45,227,200,.55) 22%,rgba(45,227,200,.55) 78%,transparent);
       transition:background .22s,box-shadow .22s,width .22s}
@@ -1772,7 +1772,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       margin-top:calc(-1 * min(37vh,260px) - 40px)}
     /* el Yape-satélite: nodo, monto, nombre. Libre encendido, atado apagado con su hilo. */
     #mcRoot .mc-yp{width:110px;padding:5px 4px 5px 14px;transform-style:preserve-3d;
-      background:rgba(3,16,26,.55);border-radius:12px;backdrop-filter:blur(2px);cursor:pointer}
+      background:rgba(3,16,26,.74);border-radius:12px;cursor:pointer}
     #mcRoot .mc-yp::before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;transform:rotate(45deg);
       background:rgba(176,123,255,.65);transition:background .25s,box-shadow .25s}
     #mcRoot .mc-yp::after{content:"";position:absolute;left:2.5px;top:16px;bottom:4px;width:1px;
@@ -2000,8 +2000,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-orb.o4,#mcRoot .mc-orb.o5{top:calc(50% - 14px)}
     #mcRoot .mc-orb.o0,#mcRoot .mc-orb.o3{transform:translateZ(40px)}
     #mcRoot .mc-orb.o1,#mcRoot .mc-orb.o2{transform:translateZ(-30px)}
-    @keyframes mcOrbIn{0%{opacity:0;filter:blur(6px);margin-top:14px}100%{opacity:.9;filter:blur(0);margin-top:0}}
-    @keyframes mcOrbFlota{0%{margin-left:0}100%{margin-left:6px}}
+    @keyframes mcOrbIn{0%{opacity:0;filter:blur(6px);translate:0 14px}100%{opacity:.9;filter:blur(0);translate:0 0}}
+    @keyframes mcOrbFlota{0%{translate:0 0}100%{translate:6px 0}}
     #mcRoot .mc-orb:nth-child(even){animation-duration:.8s,9s}
     @media (max-width:900px){
       #mcRoot .mc-orbita{display:none}
@@ -14725,6 +14725,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         function _mcVozCaliente() {
             try {
                 if (!voiceEnabled.value || !('speechSynthesis' in window)) return;
+                // Chrome a veces deja el motor en PAUSA tras un cambio de foco/pestaña: resume() es inocuo si no.
+                try { if (speechSynthesis.paused) speechSynthesis.resume(); } catch (_) {}
+                // atasco: "speaking" desde hace más de 20 s (ninguna frase real dura eso) → se cancela
+                if ((speechSynthesis.speaking || speechSynthesis.pending) && Date.now() - _ttsUltimo > 20000) { try { speechSynthesis.cancel(); } catch (_) {} }
                 if (speechSynthesis.speaking || speechSynthesis.pending) return;
                 if (Date.now() - _ttsUltimo < 7000) return;
                 const u = new SpeechSynthesisUtterance(' '); u.lang = 'es-PE'; u.volume = 0; u.rate = 2;
@@ -16778,6 +16782,15 @@ button:not(:disabled):not([aria-disabled="true"]):active,
            Si la tablet no llega a los frames, la lluvia se apaga sola.
            ══════════════════════════════════════════════════════════════════════ */
         let _mcWake = null, _mcCols = [], _mcW = 0, _mcH = 0, _mcRayos = [], _mcLluviaOff = false, _mcSin = [], _mcSinT = 0;
+        // Brillo pre-renderizado: un gradiente radial dibujado UNA vez. Estampar esto con drawImage cuesta
+        // casi nada; `shadowBlur` por trazo y por frame era lo que ahogaba la GPU de la tablet.
+        let _mcGlowChico = null, _mcGlowGrande = null, _mcHazSucio = false;
+        function _mcGlow(r, col) {
+            const c = document.createElement('canvas'); c.width = c.height = r * 2;
+            const g = c.getContext('2d'); const gr = g.createRadialGradient(r, r, 0, r, r, r);
+            gr.addColorStop(0, col[0]); gr.addColorStop(.35, col[1]); gr.addColorStop(1, 'rgba(176,123,255,0)');
+            g.fillStyle = gr; g.fillRect(0, 0, r * 2, r * 2); return c;
+        }
         function mcArrancarEfectos() {
             const cv = document.getElementById('mcLluvia'), hz = document.getElementById('mcHaz');
             if (!cv || !hz) return;
@@ -16789,6 +16802,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             };
             medir();
             const cx = cv.getContext('2d'), hx = hz.getContext('2d');
+            if (!_mcGlowChico)  _mcGlowChico  = _mcGlow(10, ['rgba(233,213,255,.95)', 'rgba(176,123,255,.55)']);
+            if (!_mcGlowGrande) _mcGlowGrande = _mcGlow(18, ['rgba(233,213,255,1)',   'rgba(176,123,255,.6)']);
             const fuente = () => {
                 const pool = [];
                 mcPendientes.value.slice(0,6).forEach(v => { pool.push(String(v.correlativo||'')); pool.push((+v.total||0).toFixed(2)); });
@@ -16823,7 +16838,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         if (c.y > _mcH) { c.y = Math.random()*-220; c.v = .5+Math.random()*1.6; }
                     });
                 }
-                hx.clearRect(0,0,_mcW,_mcH);
+                // el canvas del haz solo se toca si hay algo que dibujar (o una vez, para limpiar lo último)
+                const hayHaz = (!_mcLluviaOff && _mcSin.length) || _mcRayos.length;
+                if (hayHaz || _mcHazSucio) { hx.clearRect(0,0,_mcW,_mcH); _mcHazSucio = !!hayHaz; }
                 // ── LA SINAPSIS: los vínculos que el sistema ya cuadró (Yape ↔ ticket) se dibujan
                 //    como hilos de luz curvos entre los dos anillos, con pulsos que viajan del Yape al
                 //    ticket. Las posiciones se releen cada ~250 ms (no cada frame). ──
@@ -16850,12 +16867,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         const my = (sn.y1 + sn.y2) / 2 + (cym - (sn.y1 + sn.y2) / 2) * .35;
                         hx.beginPath(); hx.moveTo(sn.x1, sn.y1); hx.quadraticCurveTo(mx, my, sn.x2, sn.y2);
                         hx.strokeStyle = 'rgba(176,123,255,.28)'; hx.lineWidth = 1.2; hx.stroke();
-                        // dos pulsos por hilo, desfasados
+                        // dos pulsos por hilo, desfasados — brillo estampado (sprite), sin shadowBlur
                         for (let k = 0; k < 2; k++) {
                             const t = (fase + sn.f + k * .5) % 1, u = 1 - t;
                             const px = u*u*sn.x1 + 2*u*t*mx + t*t*sn.x2, py = u*u*sn.y1 + 2*u*t*my + t*t*sn.y2;
-                            hx.beginPath(); hx.arc(px, py, 2.6, 0, 7); hx.fillStyle = 'rgba(233,213,255,.95)';
-                            hx.shadowColor = '#b07bff'; hx.shadowBlur = 14; hx.fill(); hx.shadowBlur = 0;
+                            hx.drawImage(_mcGlowChico, px - 10, py - 10);
                         }
                     });
                 }
@@ -16863,12 +16879,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 _mcRayos.forEach(r => {
                     r.t += .022;
                     const mx = (r.x1+r.x2)/2, my = Math.min(r.y1,r.y2) - 140;
+                    // el rayo: trazo doble (ancho tenue + fino vivo) en vez de shadowBlur; cabeza = sprite grande
                     hx.beginPath(); hx.moveTo(r.x1,r.y1); hx.quadraticCurveTo(mx,my,r.x2,r.y2);
-                    hx.strokeStyle = 'rgba(176,123,255,' + (1-r.t)*.85 + ')'; hx.lineWidth = 2.5;
-                    hx.shadowColor = '#b07bff'; hx.shadowBlur = 22; hx.stroke(); hx.shadowBlur = 0;
+                    hx.strokeStyle = 'rgba(176,123,255,' + (1-r.t)*.28 + ')'; hx.lineWidth = 7; hx.stroke();
+                    hx.strokeStyle = 'rgba(233,213,255,' + (1-r.t)*.9 + ')'; hx.lineWidth = 2; hx.stroke();
                     const u = 1-r.t, px = u*u*r.x1 + 2*u*r.t*mx + r.t*r.t*r.x2, py = u*u*r.y1 + 2*u*r.t*my + r.t*r.t*r.y2;
-                    hx.beginPath(); hx.arc(px,py,5,0,7); hx.fillStyle = '#e9d5ff';
-                    hx.shadowColor = '#b07bff'; hx.shadowBlur = 26; hx.fill(); hx.shadowBlur = 0;
+                    hx.drawImage(_mcGlowGrande, px - 18, py - 18);
                 });
                 _mcRaf = requestAnimationFrame(paso);
             };
