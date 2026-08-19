@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.304';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.305';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1665,8 +1665,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
        (13/17/11/19s, desfasados a propósito para que nada se sienta mecánico).
        Los colores significan: turquesa = el sistema; ámbar = efectivo;
        violeta = Yape; verde = cobrado. Nada es decorativo.
-       Todo el movimiento va por transform/opacity (GPU). El botón "sobrio"
-       apaga los efectos: el escaneo es lo único que no puede fallar.
+       Todo el movimiento va por transform/opacity (GPU), y si la tablet no llega
+       a los frames la lluvia se apaga sola: el escaneo es lo único que no puede fallar.
        ══════════════════════════════════════════════════════════════════════ */
     #mcRoot{--voz:#2de3c8;--plata:#ffd166;--yape:#b07bff;--ok:#3ddc84;
       --tinta:#eaf6f8;--tinta2:#9fb9c4;--tinta3:#5d7a87;--aura:#2de3c8;--px:0;--py:0;
@@ -1692,7 +1692,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-app{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:12px;gap:11px;
       perspective:1400px;perspective-origin:50% 45%}
     #mcRoot .mc-w{transform-style:preserve-3d;transition:transform .6s cubic-bezier(.22,1,.36,1)}
-    #mcRoot .mc-wtop{transform:translate3d(calc(var(--px)*-7px),calc(var(--py)*-5px),0)}
+    #mcRoot .mc-wtop{transform:none}
     #mcRoot .mc-wriel{transform:translate3d(calc(var(--px)*-17px),calc(var(--py)*-10px),-40px);min-height:0;display:flex}
     #mcRoot .mc-wesc{transform:translate3d(calc(var(--px)*9px),calc(var(--py)*6px),0);min-height:0;display:flex}
     #mcRoot .mc-wrio{transform:translate3d(calc(var(--px)*7px),calc(var(--py)*7px),-20px)}
@@ -1720,11 +1720,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-riel{animation:mcRespA 13s ease-in-out infinite alternate;display:flex;flex-direction:column;overflow:hidden}
     #mcRoot .mc-esc{animation:mcRespB 17s ease-in-out infinite alternate;display:flex;align-items:center;justify-content:center;padding:18px;overflow:hidden}
     #mcRoot .mc-rio{animation:mcRespC 11s ease-in-out infinite alternate}
-    #mcRoot .mc-top{animation:mcRespD 19s ease-in-out infinite alternate}
+    /* La barra de controles NO respira ni sigue al dedo: es la única franja donde se
+       toca de verdad (📷 y ✕), y el navegador resuelve el toque contra la geometría del
+       momento. Un blanco que se mueve en 3D es un blanco que se falla. */
     @keyframes mcRespA{0%{transform:rotateY(7deg) rotateX(.6deg) translateZ(0)}100%{transform:rotateY(4.6deg) rotateX(-.7deg) translateZ(26px)}}
     @keyframes mcRespB{0%{transform:rotateY(-1.4deg) rotateX(.5deg) translateZ(0)}100%{transform:rotateY(1.2deg) rotateX(-.6deg) translateZ(20px)}}
     @keyframes mcRespC{0%{transform:rotateX(1.6deg) translateZ(0)}100%{transform:rotateX(-1deg) translateZ(16px)}}
-    @keyframes mcRespD{0%{transform:rotateX(-1.2deg)}100%{transform:rotateX(.9deg)}}
 
     #mcRoot .mc-top{display:flex;align-items:center;gap:13px;padding:9px 16px;flex:none}
     #mcRoot .mc-viva{width:9px;height:9px;border-radius:50%;background:var(--ok);animation:mcLat 2.4s infinite}
@@ -1736,10 +1737,20 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       font-size:12px;font-weight:800;box-shadow:inset 0 0 0 1px rgba(45,227,200,.16)}
     #mcRoot .mc-pill.y{color:var(--yape)}#mcRoot .mc-pill.t{color:var(--plata)}
     #mcRoot .mc-ic{border:0;background:transparent;color:var(--tinta2);border-radius:11px;
-      width:38px;height:34px;cursor:pointer;font-size:15px;transition:.15s;
-      box-shadow:inset 0 0 0 1px rgba(45,227,200,.16)}
-    #mcRoot .mc-ic:hover,#mcRoot .mc-ic.on{background:rgba(45,227,200,.15);color:var(--voz)}
-    #mcRoot .mc-ic.x:hover{background:rgba(248,113,113,.16);color:#fca5a5}
+      width:48px;height:44px;cursor:pointer;font-size:17px;
+      box-shadow:inset 0 0 0 1px rgba(45,227,200,.16);
+      touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+      transition:background .09s linear,color .09s linear,transform .09s linear}
+    /* :hover SOLO donde hay mouse. En táctil, el primer toque sobre un elemento con :hover
+       lo gasta el navegador aplicando el estado y recién el segundo dispara el click: eso
+       es el botón que "no reacciona". Con :active el dedo ve la respuesta al instante. */
+    @media (hover:hover) and (pointer:fine){
+      #mcRoot .mc-ic:hover{background:rgba(45,227,200,.15);color:var(--voz)}
+      #mcRoot .mc-ic.x:hover{background:rgba(248,113,113,.16);color:#fca5a5}
+    }
+    #mcRoot .mc-ic.on{background:rgba(45,227,200,.15);color:var(--voz)}
+    #mcRoot .mc-ic:active{background:rgba(45,227,200,.3);color:var(--voz);transform:scale(.9)}
+    #mcRoot .mc-ic.x:active{background:rgba(248,113,113,.32);color:#fecaca}
 
     #mcRoot .mc-cuerpo{flex:1;display:grid;grid-template-columns:290px 1fr;gap:12px;min-height:0;transform-style:preserve-3d}
     #mcRoot .mc-rh{padding:11px 15px;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
@@ -1874,12 +1885,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-yp.calza{box-shadow:inset 0 0 0 1px var(--yape),0 0 34px -10px var(--yape)}
     #mcRoot .mc-yp.usado{opacity:.35;filter:saturate(.3)}
 
-    /* el seguro: si la tablet sufre, esto queda plano y rapidísimo */
-    #mcRoot.sobrio #mcLluvia{display:none}
-    #mcRoot.sobrio *{animation:none!important;transition:none!important}
-    #mcRoot.sobrio .mc-top,#mcRoot.sobrio .mc-riel,#mcRoot.sobrio .mc-esc,#mcRoot.sobrio .mc-rio,
-    #mcRoot.sobrio .mc-tk,#mcRoot.sobrio .mc-yp{transform:none!important;backdrop-filter:none;
-      -webkit-mask-image:none;mask-image:none;background:#0a1e29}
 
     @media (max-width:900px){
       #mcRoot .mc-cuerpo{grid-template-columns:1fr;grid-template-rows:150px 1fr}
@@ -6574,7 +6579,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
          El camino del dinero es el MISMO de siempre (abrirCobroPendiente +
          procesarCobroPendiente): acá solo cambia la puesta en escena.
          ══════════════════════════════════════════════════════════════════ -->
-    <div v-if="modoCajero" id="mcRoot" :class="{ sobrio: mcSobrio }">
+    <div v-if="modoCajero" id="mcRoot">
       <canvas id="mcLluvia"></canvas>
       <div class="mc-reja" ref="mcReja"></div>
       <canvas id="mcHaz"></canvas>
@@ -6590,14 +6595,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         <div class="mc-w mc-wtop"><div class="mc-top">
           <span class="mc-viva"></span>
           <span class="mc-caja">{{ (config.estacion?.Estacion_Nombre || 'CAJA').toUpperCase() }} <i>· {{ mcPrimerNombre(config.vendedor) }}</i></span>
-          <button class="mc-ic" :class="{on: cajeroCamara}" @click="mcToggleCamara"
+          <button class="mc-ic" :class="{on: cajeroCamara}" @pointerdown.prevent="mcToggleCamara"
                   title="Cámara de emergencia — el lector es lo normal">📷</button>
-          <button class="mc-ic" @click="mcSobrio = !mcSobrio"
-                  :title="mcSobrio ? 'Volver a los efectos' : 'Modo sobrio: apaga efectos si la tablet sufre'">🎚</button>
           <span class="mc-reloj mc-num">{{ mcReloj }}</span>
           <span class="mc-pill t">{{ mcPendientes.length }} por cobrar</span>
           <span class="mc-pill y">💜 {{ mcYapesLibres }}</span>
-          <button class="mc-ic x" @click="cerrarModoCajero" title="Salir del modo cajero">✕</button>
+          <button class="mc-ic x" @pointerdown.prevent="cerrarModoCajero" title="Salir del modo cajero">✕</button>
         </div></div>
 
         <div class="mc-cuerpo">
@@ -14289,15 +14292,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcYapes     = ref([]);
         const mcEsperando = ref([]);
         const mcMixEfe    = ref('');
-        const mcSobrio    = ref(localStorage.getItem('mc_sobrio') === '1');
         const mcProcesando = ref(false);
         const mcReloj     = ref('');
         const mcHechoMonto = ref(0);
         const mcHechoTxt  = ref('');
         const mcReja=ref(null), mcAura=ref(null), mcFlash=ref(null);
         let _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null;
-
-        watch(mcSobrio, v => { try { localStorage.setItem('mc_sobrio', v ? '1' : '0'); } catch(_){} });
 
         /* ── helpers de pantalla ── */
         const mcMoney = v => 'S/ ' + (parseFloat(v) || 0).toFixed(2);
@@ -16200,9 +16200,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
            La lluvia NO son letras al azar: caen los correlativos, los montos y los
            nombres que están en juego en esta caja ahora. El haz viaja del Yape a su
            ticket cuando calzan: es el momento en que se ve el pago encontrar su venta.
-           Todo se apaga con el botón sobrio — el escaneo es lo único que no puede fallar.
+           Si la tablet no llega a los frames, la lluvia se apaga sola.
            ══════════════════════════════════════════════════════════════════════ */
-        let _mcWake = null, _mcCols = [], _mcW = 0, _mcH = 0, _mcRayos = [];
+        let _mcWake = null, _mcCols = [], _mcW = 0, _mcH = 0, _mcRayos = [], _mcLluviaOff = false;
         function mcArrancarEfectos() {
             const cv = document.getElementById('mcLluvia'), hz = document.getElementById('mcHaz');
             if (!cv || !hz) return;
@@ -16221,9 +16221,21 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 if (!pool.length) pool.push('MOS','CAJA','S/','0.00','YAPE');
                 return pool[Math.floor(Math.random()*pool.length)] || 'MOS';
             };
-            const paso = () => {
+            // Freno automático: si la tablet no llega, la lluvia se apaga sola y no vuelve.
+            // Es lo que hacía el botón sobrio, pero sin que nadie tenga que darse cuenta.
+            let _fFrames = 0, _fT0 = 0, _fLento = 0;
+            const paso = (ts) => {
                 if (!modoCajero.value) return;
-                if (!mcSobrio.value) {
+                if (!_mcLluviaOff) {
+                    if (!_fT0) _fT0 = ts || 0;
+                    _fFrames++;
+                    if (ts && ts - _fT0 > 2000) {
+                        const fps = _fFrames * 1000 / (ts - _fT0);
+                        _fFrames = 0; _fT0 = ts;
+                        // dos ventanas seguidas por debajo de 32 fps: la lluvia estorba más de lo que aporta
+                        if (fps < 32) { if (++_fLento >= 2) { _mcLluviaOff = true; cx.clearRect(0,0,_mcW,_mcH); } }
+                        else _fLento = 0;
+                    }
                     cx.fillStyle = 'rgba(3,16,26,.14)'; cx.fillRect(0,0,_mcW,_mcH);
                     cx.font = '13px ui-monospace, monospace';
                     _mcCols.forEach(c => {
@@ -16263,18 +16275,26 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         }
         // cuando entra un Yape que calza, se dibuja el haz hacia su ticket
         watch(mcYapes, () => {
-            if (!modoCajero.value || mcSobrio.value) return;
+            if (!modoCajero.value || _mcLluviaOff) return;
             nextTick(() => {
                 const y = document.querySelector('#mcRoot .mc-yp.calza'), t = document.querySelector('#mcRoot .mc-tk.calza');
                 if (y && t) { mcHazEntre(y, t); mcChispa(); }
             });
         });
-        // parallax: los paneles flotan a distinta profundidad siguiendo la mano
+        // parallax: los paneles flotan a distinta profundidad siguiendo la mano.
+        // Se escribe UNA vez por frame: antes eran dos variables CSS en cada pointermove,
+        // o sea recalcular el estilo del arbol entero mientras el dedo viaja hacia un boton.
+        let _mcPxPend = null;
         addEventListener('pointermove', e => {
-            if (!modoCajero.value || mcSobrio.value) return;
-            const r = document.getElementById('mcRoot'); if (!r) return;
-            r.style.setProperty('--px', ((e.clientX/innerWidth)-.5).toFixed(3));
-            r.style.setProperty('--py', ((e.clientY/innerHeight)-.5).toFixed(3));
+            if (!modoCajero.value || _mcLluviaOff) return;
+            const x = ((e.clientX/innerWidth)-.5).toFixed(3), y = ((e.clientY/innerHeight)-.5).toFixed(3);
+            if (_mcPxPend) { _mcPxPend = [x,y]; return; }
+            _mcPxPend = [x,y];
+            requestAnimationFrame(() => {
+                const r = document.getElementById('mcRoot');
+                if (r && _mcPxPend) { r.style.setProperty('--px', _mcPxPend[0]); r.style.setProperty('--py', _mcPxPend[1]); }
+                _mcPxPend = null;
+            });
         });
         // Pantalla completa: en la tablet el navegador pide un gesto, y el gesto de entrar
         // puede haber sido un escaneo que el navegador no cuenta. Así que al primer toque
@@ -25750,7 +25770,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           voiceEnabled,
           modoCajero, cajeroBusqueda, cajeroTicketActual, cajeroCamara, cajeroInput,
           abrirModoCajero, cerrarModoCajero, buscarTicketCajero, iniciarCamaraCajero, detenerCamaraCajero,
-          mcEstado, mcYapes, mcEsperando, mcMixEfe, mcSobrio, mcProcesando, mcReloj,
+          mcEstado, mcYapes, mcEsperando, mcMixEfe, mcProcesando, mcReloj,
           mcHechoMonto, mcHechoTxt, mcReja, mcAura, mcFlash,
           mcPendientes, mcTotalPend, mcYapesLibres, mcYapeDelTicket,
           mcMixEfeNum, mcMixVir, mcMixPct, mcMixValido,
