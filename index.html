@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.319';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.320';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -14784,11 +14784,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 // el sumidero primero: es un input (recibe keydown Y texto de IME); readonly +
                 // inputmode=none → Android no levanta teclado. Si no existe, el escenario.
                 const sm = mcSumidero.value || document.getElementById('mcSumidero');
-                if (sm) { if (ae !== sm) sm.focus({ preventScroll: true }); return; }
                 const r = mcRootEl.value || document.getElementById('mcRoot');
+                // SOLO en espera: un input editable enfocado abre el IME de Android (ícono de
+                // teclado, redibujo en negro al re-enfocar, teclado que amaga con salir). Mientras
+                // se cobra, el foco va al escenario (div) y el sumidero se cierra.
+                if (sm && mcEstado.value === 'espera') { if (ae !== sm) sm.focus({ preventScroll: true }); return; }
+                if (sm) { try { sm.readOnly = true; if (ae === sm) sm.blur(); } catch (_) {} }
                 if (r && ae !== r) { r.focus({ preventScroll: true }); }
             } catch(_) {}
         }
+        // cada cambio de estado recoloca el foco: espera → sumidero · cobro/mixto/hecho → escenario
+        watch(mcEstado, () => { nextTick(mcSoltarFoco); });
         // Lee la tecla de forma robusta: en Android algunos lectores Bluetooth/USB mandan e.key =
         // 'Unidentified' y solo e.keyCode / e.code traen la letra. El del salvapantallas (que sí
         // funciona en la tablet) mira e.key; acá se cubren los tres caminos.
@@ -14812,7 +14818,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcSumideroTxt = ref('');
         let _mcSumTimer = null;
         function mcSumideroFoco() { /* readonly se quita al tomar foco: sin teclado (inputmode=none), pero el IME sí entrega texto */
-            try { const el = mcSumidero.value; if (el) { el.readOnly = false; } } catch(_) {} }
+            try { const el = mcSumidero.value; if (el) { el.readOnly = mcEstado.value !== 'espera'; } } catch(_) {} }
         let _mcSumDrenHasta = 0;   // tras entregar, lo que siga llegando del mismo escaneo se descarta
         function mcSumideroEntrega() {
             const el = mcSumidero.value; if (!el) return;
