@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.310';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.311';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -13835,7 +13835,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // SUNAT de una boleta no despertaban la pantalla, y son justo lo que escanea el
             // cajero. Mismo charset que el captor de ráfaga.
             const _ich = (e.code === 'Minus' || e.code === 'NumpadSubtract') ? '-' : e.key;
-            if (/^[0-9A-Za-z\-|./]$/.test(_ich)) {
+            // el QR de SUNAT trae espacios alrededor de cada "|": sin aceptarlos el buffer se
+            // reseteaba a mitad de la cadena. La ráfaga sigue siendo el filtro contra el tecleo.
+            if (/^[0-9A-Za-z\-|./ ]$/.test(_ich)) {
                 _idleScanBuffer += _ich;
                 if (_idleScanTimer) clearTimeout(_idleScanTimer);
                 // Si pasa más de 400ms entre teclas, considerar que NO es scanner sino teclado humano
@@ -13898,12 +13900,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // Además ACEPTAR "-" en el charset (antes solo [0-9A-Za-z] → un código con "-" reseteaba
             // el buffer y jamás se capturaba, ej. WH-9S7XBPX).
             const ch = (e.code === 'Minus' || e.code === 'NumpadSubtract') ? '-' : e.key;
-            // [modo cajero] el QR de una boleta o factura trae la cadena de SUNAT
-            // (RUC|01|FM01|000053|1.83|12.00|18/08/2026|…). Sin el |, el . y el /, el buffer
-            // se reseteaba a mitad de la cadena y el Enter llegaba vacío: los CPE no se
-            // podían escanear desde fuera de la estación. La ráfaga (≤35ms/tecla) sigue
-            // siendo el filtro contra el tecleo humano.
-            if (/^[0-9A-Za-z\-|./]$/.test(ch)) {
+            // [modo cajero] el QR de una boleta o factura trae la cadena de SUNAT, CON espacios:
+            // "20610714057 | 01 | FM01 | 000053 | 1.83 | 12.00 | 18/08/2026 | …". Sin aceptar
+            // | . / y el espacio, el buffer se reseteaba a mitad de la cadena y el Enter llegaba
+            // vacío: los CPE no se podían escanear desde fuera de la estación. La ráfaga
+            // (≤35ms/tecla) sigue siendo el filtro contra el tecleo humano.
+            if (/^[0-9A-Za-z\-|./ ]$/.test(ch)) {
                 if (!_hwGuiaBuffer) _hwGuiaT0 = now;
                 _hwGuiaBuffer += ch;
                 if (_hwGuiaTimer) clearTimeout(_hwGuiaTimer);
@@ -14513,6 +14515,19 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             });
         };
 
+        // "Son cinco soles con sesenta": la frase que pediste para la estación. El POS dice el
+        // número pelado; acá la tablet le habla al cliente.
+        const mcDecirMonto = (monto) => {
+            try {
+                if (!voiceEnabled.value || !window.speechSynthesis) return;
+                const soles = Math.floor(monto), cent = Math.round((monto - soles) * 100);
+                let txt = 'Son ' + numALetras(soles) + (soles === 1 ? ' sol' : ' soles');
+                if (cent > 0) txt += ' con ' + numALetras(cent);
+                const u = new SpeechSynthesisUtterance(txt); u.lang = 'es-PE'; u.rate = 0.95; u.pitch = 1.05;
+                if (speechSynthesis.speaking) speechSynthesis.cancel();
+                speechSynthesis.speak(u);
+            } catch (_) { try { leerMontoEnVoz(monto); } catch (__) {} }
+        };
         const mcTomar = (venta) => {
             if (!venta) return;
             mcSon('blip'); mcPulso('#ffd166');
@@ -14521,7 +14536,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                   if (el) { el.classList.add('vuela'); setTimeout(()=>el.classList.remove('vuela'), 520); } } catch(_){}
             cajeroTicketActual.value = venta;
             mcEstado.value = 'cobro';
-            leerMontoEnVoz(venta.total);
+            mcDecirMonto(venta.total);
             if (cajeroScannerInst.value) { try { cajeroScannerInst.value.pause(true); } catch(_){} }
         };
 
@@ -14536,9 +14551,14 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcClaveDeEscaneo = (q) => {
             const t = String(q || '').trim();
             if (!t) return '';
-            if (t.includes('|')) {
-                const p = t.split('|').map(x => x.trim());
-                if (p.length >= 4 && p[2] && p[3]) return (p[2] + '-' + p[3]).toUpperCase();
+            // La cadena SUNAT se reconoce por su FORMA: RUC (11 dígitos) · tipo (01 factura,
+            // 03 boleta, 07/08 notas) · serie · número. Se parte por cualquier separador, no
+            // solo "|": en un teclado ES-LatAm el lector puede mandar otro carácter para la
+            // barra (ya pasó con el "-"), y con espacios alrededor. Un correlativo suelto
+            // (NVM2-000531) no tiene esa forma y pasa tal cual.
+            const tk = t.split(/[^0-9A-Za-z]+/).filter(Boolean);
+            if (tk.length >= 4 && /^\d{11}$/.test(tk[0]) && /^0[1378]$/.test(tk[1]) && /^[A-Za-z0-9]{4}$/.test(tk[2]) && /^\d+$/.test(tk[3])) {
+                return (tk[2] + '-' + tk[3].padStart(6, '0')).toUpperCase();
             }
             return t.toUpperCase();
         };
@@ -14598,9 +14618,23 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             modalCobro.value = false;
 
             mcHechoMonto.value = t.total;
-            mcHechoTxt.value = (metodo === 'MIXTO'
+            const _base = (metodo === 'MIXTO'
                 ? 'MIXTO · ' + mcMoney(mcMixEfeNum.value) + ' efectivo + ' + mcMoney(virtual) + ' virtual'
-                : metodo) + (metodo !== 'EFECTIVO' && yp ? ' · ✅ verificado con el Yape de ' + mcPrimerNombre(yp.pagador) : '');
+                : metodo);
+            // Con el Yape a la vista, se ATA en el acto — antes la pantalla decía "verificado"
+            // y en realidad lo decidía el cron 2 min después, por monto: con dos tickets de
+            // S/ 5.60 quedaba AMBIGUO y ninguno verificado. El cajero sabe qué cliente está
+            // pagando qué ticket; ese contexto ahora se usa. El texto dice lo que pasó de verdad.
+            mcHechoTxt.value = _base + (metodo !== 'EFECTIVO' && yp ? ' · 💜 atando el Yape de ' + mcPrimerNombre(yp.pagador) + '…' : '');
+            if (metodo !== 'EFECTIVO' && yp) {
+                mcYapeAtar(yp, t).then(ok => {
+                    if (mcHechoMonto.value !== t.total) return;   // ya se pasó a otro cobro
+                    mcHechoTxt.value = _base + (ok
+                        ? ' · ✅ verificado con el Yape de ' + mcPrimerNombre(yp.pagador)
+                        : ' · ⏳ el Yape de ' + mcPrimerNombre(yp.pagador) + ' queda por cuadrar');
+                    if (ok) { mcSon('match'); }
+                });
+            }
 
             mcSon('caja'); mcPulso('#3ddc84');
             try { navigator.vibrate && navigator.vibrate([18,40,18]); } catch(_){}
@@ -14612,6 +14646,31 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             mcEstado.value = 'hecho';
             setTimeout(() => { mcProcesando.value = false; mcEstado.value = 'espera'; mcCargarRio(); }, 1350);
         };
+
+        // Ata un Yape libre al ticket recién cobrado. Reglas del servidor (871): el ticket tiene
+        // que estar pagado por medio virtual, el monto calzar a un decimal, misma zona, y ni el
+        // Yape ni el ticket pueden estar ya usados. Devuelve true/false; nunca revienta el cobro.
+        async function mcYapeAtar(yp, t) {
+            try {
+                const tk = await _mintTokenSB(); if (!tk) return false;
+                const idVenta = t.id_venta_gas || t.id;
+                // el cobro se marca localmente al instante pero viaja al servidor detrás; se le da
+                // un respiro para que el ticket ya figure como VIRTUAL cuando el servidor lo mire.
+                for (let intento = 0; intento < 3; intento++) {
+                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/yape_atar_cobro`, {
+                        method: 'POST',
+                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk,
+                                   'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ p: { id: yp.id, idVenta, usuario: config.value.vendedor || 'CAJERO' } })
+                    }, 8000);
+                    const d = await r.json().catch(() => null);
+                    if (d && d.ok) { mcCargarRio(); return true; }
+                    if (d && /no está pagado/i.test(String(d.error || ''))) { await new Promise(res => setTimeout(res, 900)); continue; }
+                    return false;
+                }
+            } catch (_) {}
+            return false;
+        }
 
         /* ── el río de Yapes: lista + voz ── */
         async function mcCargarRio() {
@@ -14627,8 +14686,16 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 const d = await r.json().catch(() => null);
                 if (d && d.ok && d.data) {
                     const antes = mcYapes.value.length ? mcYapes.value[0].id : 0;
+                    const esperabaAntes = new Set(mcEsperando.value.map(e => e.idVenta));
                     mcYapes.value = d.data.yapes || [];
                     mcEsperando.value = d.data.esperando || [];
+                    // un ticket que estaba "esperando su Yape" y ya no está: se cuadró solo.
+                    // Es la pantalla resolviendo algo delante del cajero — se ve y se oye.
+                    if (esperabaAntes.size) {
+                        const ahora = new Set(mcEsperando.value.map(e => e.idVenta));
+                        const resueltos = [...esperabaAntes].filter(id => !ahora.has(id));
+                        if (resueltos.length) { mcSon('match'); mcPulso('#3ddc84'); mcChispa(); }
+                    }
                     if (mcYapes.value.length && mcYapes.value[0].id !== antes && antes) {
                         mcSon('coin'); mcPulso('#b07bff');
                         if (mcYapes.value.some(y => mcYapeCalza(y))) setTimeout(() => mcSon('match'), 400);
@@ -16407,6 +16474,13 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 _mcRayos.push({ x1:ra.left+ra.width/2, y1:ra.top+ra.height/2, x2:rb.left+rb.width/2, y2:rb.top+rb.height/2, t:0 });
             } catch(_) {}
         }
+        // un ticket nuevo aterriza en el riel: suena el tick (la sombra del vendedor emitiendo).
+        // Solo cuando la estación está abierta y la lista CRECE — la carga inicial no suena.
+        let _mcPendPrev = -1;
+        watch(() => mcPendientes.value.length, (n) => {
+            if (modoCajero.value && _mcPendPrev >= 0 && n > _mcPendPrev) { mcSon('tick'); mcChispa(); }
+            _mcPendPrev = modoCajero.value ? n : -1;
+        });
         // cuando entra un Yape que calza, se dibuja el haz hacia su ticket
         watch(mcYapes, () => {
             if (!modoCajero.value || _mcLluviaOff) return;
