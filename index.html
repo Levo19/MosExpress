@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.311';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.312';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1954,6 +1954,79 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-yp.calza::before{background:var(--yape);box-shadow:0 0 16px var(--yape)}
     #mcRoot .mc-yp.calza .mc-ypm{text-shadow:0 0 26px rgba(176,123,255,.75)}
     #mcRoot .mc-yp.usado{opacity:.3;filter:saturate(.25)}
+
+    /* ══ WOW · la mano manda ══════════════════════════════════════════════════ */
+    /* el guante: tres anillos que persiguen al dedo con retardo */
+    #mcRoot .mc-glove{position:absolute;inset:0;pointer-events:none;z-index:12;opacity:0;transition:opacity .25s}
+    #mcRoot .mc-glove.on{opacity:1}
+    #mcRoot .mc-glove i{position:absolute;left:0;top:0;border-radius:50%;pointer-events:none;will-change:transform;
+      margin:-16px 0 0 -16px;width:32px;height:32px;box-shadow:inset 0 0 0 1.5px rgba(45,227,200,.9),0 0 18px rgba(45,227,200,.45)}
+    #mcRoot .mc-glove i:nth-child(2){margin:-24px 0 0 -24px;width:48px;height:48px;box-shadow:inset 0 0 0 1px rgba(45,227,200,.45)}
+    #mcRoot .mc-glove i:nth-child(3){margin:-34px 0 0 -34px;width:68px;height:68px;box-shadow:inset 0 0 0 1px rgba(45,227,200,.2)}
+    /* el ticket que se arrastra: una tarjeta de luz bajo el dedo */
+    #mcRoot .mc-drag{position:absolute;left:0;top:0;z-index:13;pointer-events:none;opacity:0;width:120px;padding:10px 12px;
+      border-radius:14px;background:rgba(6,22,32,.9);box-shadow:inset 0 0 0 1px var(--voz),0 0 40px -6px var(--voz);
+      transition:opacity .15s;will-change:transform;transform:translate3d(-999px,-999px,0)}
+    #mcRoot .mc-drag.on{opacity:1}
+    #mcRoot .mc-drag b{display:block;font-size:20px;color:#fff}
+    #mcRoot .mc-drag small{display:block;font-size:10px;letter-spacing:.1em;color:var(--tinta2)}
+    #mcRoot .mc-tk.arrastrando{opacity:.35}
+    /* el escenario se imanta cuando el ticket pasa por encima */
+    #mcRoot .mc-esc.imantado::before{opacity:1;background:radial-gradient(circle,rgba(45,227,200,.22),transparent 62%)}
+    #mcRoot .mc-esc.imantado .mc-hud b{transform:scale(1.15);filter:drop-shadow(0 0 30px var(--voz))}
+    #mcRoot .mc-hud b{transition:transform .2s,filter .2s}
+    /* el barrido: una línea de luz recorre el escenario cuando un ticket se materializa */
+    #mcRoot .mc-scan{position:absolute;left:8%;right:8%;top:0;height:2px;pointer-events:none;z-index:4;opacity:0;
+      background:linear-gradient(90deg,transparent,var(--voz),transparent);box-shadow:0 0 24px 4px rgba(45,227,200,.45)}
+    #mcRoot .mc-scan.on{animation:mcScan .7s cubic-bezier(.22,1,.36,1) forwards}
+    @keyframes mcScan{0%{opacity:0;transform:translateY(0)}12%{opacity:1}100%{opacity:0;transform:translateY(min(70vh,760px))}}
+    /* aberración cromática al materializar el número: los canales llegan por separado */
+    #mcRoot .mc-dig{animation:mcMat .5s cubic-bezier(.22,1,.36,1) backwards,mcCroma .55s ease-out backwards}
+    @keyframes mcCroma{0%{text-shadow:-6px 0 0 rgba(255,60,120,.85),6px 0 0 rgba(45,227,200,.85),0 0 55px rgba(45,227,200,.35)}
+                       60%{text-shadow:-1px 0 0 rgba(255,60,120,.5),1px 0 0 rgba(45,227,200,.5),0 0 55px rgba(45,227,200,.35)}
+                       100%{text-shadow:0 0 70px rgba(45,227,200,.4)}}
+    /* la órbita: los productos del ticket, como anotaciones que flotan alrededor del monto */
+    #mcRoot .mc-cobro{position:relative}
+    #mcRoot .mc-orbita{position:absolute;inset:-40px -30px auto -30px;height:0;pointer-events:none;z-index:0}
+    #mcRoot .mc-orb{position:absolute;font-size:10.5px;letter-spacing:.06em;color:var(--tinta2);white-space:nowrap;
+      opacity:0;transform-style:preserve-3d;animation:mcOrbIn .8s cubic-bezier(.22,1,.36,1) forwards,mcOrbFlota 7s ease-in-out infinite alternate;
+      padding-left:12px}
+    #mcRoot .mc-orb::before{content:"";position:absolute;left:0;top:50%;width:6px;height:1px;background:var(--voz);opacity:.6}
+    #mcRoot .mc-orb b{color:var(--tinta);font-weight:800;margin-right:4px}
+    #mcRoot .mc-orb em{font-style:normal;color:var(--voz);margin-left:6px;opacity:.85}
+    /* ocho posiciones alrededor del número, a distinta profundidad */
+    /* alrededor del NÚMERO, nunca sobre la fila de botones (que arranca ~250px abajo) */
+    #mcRoot .mc-orb.o0{left:0;top:112px;transform:translateZ(40px)}
+    #mcRoot .mc-orb.o1{right:0;top:98px;transform:translateZ(-30px)}
+    #mcRoot .mc-orb.o2{left:2%;top:196px;transform:translateZ(-20px)}
+    #mcRoot .mc-orb.o3{right:1%;top:186px;transform:translateZ(50px)}
+    #mcRoot .mc-orb.o4{left:8%;top:44px;transform:translateZ(-60px);opacity:.75}
+    #mcRoot .mc-orb.o5{right:7%;top:36px;transform:translateZ(20px)}
+    #mcRoot .mc-orb.o6{left:-3%;top:154px;transform:translateZ(-10px)}
+    #mcRoot .mc-orb.o7{right:-3%;top:144px;transform:translateZ(30px)}
+    @keyframes mcOrbIn{0%{opacity:0;filter:blur(6px);margin-top:14px}100%{opacity:.9;filter:blur(0);margin-top:0}}
+    @keyframes mcOrbFlota{0%{margin-left:0}100%{margin-left:6px}}
+    #mcRoot .mc-orb:nth-child(even){animation-duration:.8s,9s}
+    /* la cola: lo que viene, en pequeño y detrás */
+    #mcRoot .mc-cola{position:absolute;right:26px;bottom:22px;z-index:1;display:flex;flex-direction:column;gap:8px;
+      transform-style:preserve-3d;pointer-events:auto}
+    #mcRoot .mc-colatk{position:relative;padding:8px 12px 8px 16px;cursor:pointer;color:var(--tinta2);
+      display:flex;flex-direction:column;gap:1px;transform-style:preserve-3d;
+      transition:transform .25s cubic-bezier(.22,1,.36,1),opacity .25s;touch-action:manipulation}
+    #mcRoot .mc-colatk::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:2px;
+      background:linear-gradient(180deg,transparent,rgba(45,227,200,.45),transparent)}
+    #mcRoot .mc-colatk.p0{transform:translateZ(-120px) scale(.92);opacity:.8}
+    #mcRoot .mc-colatk.p1{transform:translateZ(-240px) scale(.84);opacity:.5;filter:blur(.4px)}
+    #mcRoot .mc-colatk:active{transform:translateZ(0) scale(1);opacity:1;filter:none}
+    #mcRoot .mc-colac{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase}
+    #mcRoot .mc-colam{font-size:17px;font-weight:800;color:var(--tinta)}
+    #mcRoot .mc-colas{font-size:8.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--tinta3)}
+    @media (max-width:900px){
+      #mcRoot .mc-orbita{display:none}
+      #mcRoot .mc-cola{right:10px;bottom:10px}
+      #mcRoot .mc-glove{display:none}
+    }
+    @media (prefers-reduced-motion:reduce){#mcRoot .mc-glove,#mcRoot .mc-scan{display:none}}
 
     @media (max-width:900px){
       #mcRoot .mc-app{padding:12px 14px 8px}
@@ -6693,6 +6766,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       <canvas id="mcHaz"></canvas>
       <div class="mc-aura" ref="mcAura"></div>
       <div class="mc-flash" ref="mcFlash"></div>
+      <!-- el guante: tres anillos que siguen el dedo con retardo, y la estela del arrastre -->
+      <div class="mc-glove" ref="mcGlove"><i></i><i></i><i></i></div>
+      <div class="mc-drag" ref="mcDrag"><b class="mc-num"></b><small></small></div>
 
       <!-- el lector USB/bluetooth escribe como un teclado: no necesita campo visible -->
       <input ref="cajeroInput" v-model="cajeroBusqueda" @keyup.enter="buscarTicketCajero"
@@ -6720,7 +6796,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
               </div>
               <div v-for="v in mcPendientes" :key="v.id"
                    class="mc-tk" :class="{ calza: mcCalza(v), nuevo: v.isNew }"
-                   :data-tk="v.id" @click="mcTomar(v)">
+                   :data-tk="v.id" @pointerdown="mcDragIni($event, v)">
                 <div class="mc-tkc">{{ v.correlativo }} · {{ mcTipoCorto(v.tipo) }}</div>
                 <div class="mc-tkm mc-num">{{ mcMoney(v.total) }}</div>
                 <div class="mc-tkt">{{ mcHora(v) }} · {{ v.raw_data?.auth?.vendedor || '—' }}</div>
@@ -6728,7 +6804,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             </div>
           </div></div>
 
-          <div class="mc-w mc-wesc"><div class="mc-esc" :class="{viva: mcEstado !== 'espera'}">
+          <div class="mc-w mc-wesc"><div class="mc-esc" :class="{viva: mcEstado !== 'espera'}" data-mc-esc>
+            <i class="mc-scan" ref="mcScan"></i>
+            <!-- la COLA: lo que viene, en pequeño y detrás. Un toque lo trae al frente. -->
+            <div v-if="mcSiguientes.length && (mcEstado === 'espera' || mcEstado === 'cobro')" class="mc-cola">
+              <div v-for="(q,i) in mcSiguientes" :key="q.id" class="mc-colatk" :class="'p'+i"
+                   @pointerdown.stop="mcTomar(q)">
+                <span class="mc-colac">{{ q.correlativo }}</span>
+                <span class="mc-colam mc-num">{{ mcMoney(q.total) }}</span>
+                <span class="mc-colas">{{ i === 0 ? 'siguiente' : 'después' }}</span>
+              </div>
+            </div>
             <!-- 1 · esperando -->
             <div v-if="mcEstado === 'espera'" class="mc-espera">
               <div class="mc-hud">
@@ -6744,7 +6830,15 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             </div>
 
             <!-- 2 · ticket en mano -->
-            <div v-else-if="mcEstado === 'cobro' && cajeroTicketActual" class="mc-cobro">
+            <div v-else-if="mcEstado === 'cobro' && cajeroTicketActual" class="mc-cobro" @pointerdown="mcFlingIni($event)">
+              <!-- los productos del ticket orbitan el monto como anotaciones -->
+              <div class="mc-orbita" v-if="mcLineas.length">
+                <div v-for="(it,i) in mcLineas" :key="i" class="mc-orb" :class="'o'+(i%8)"
+                     :style="{ animationDelay: (140 + i*70) + 'ms' }">
+                  <b class="mc-num">{{ mcCant(it) }}</b> {{ mcCorto(it.nombre) }}
+                  <em class="mc-num">{{ mcMoney(it.subtotal) }}</em>
+                </div>
+              </div>
               <div class="mc-corr">
                 <span class="mc-tag">{{ mcTipoCorto(cajeroTicketActual.tipo) }}</span>
                 {{ cajeroTicketActual.correlativo }} · {{ cajeroTicketActual.raw_data?.auth?.vendedor || '—' }}
@@ -12459,6 +12553,17 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     (payload) => {
                         try {
                             const rec = (payload && (payload.new || (payload.data && payload.data.record))) || {};
+                            // [872] dominio 'yapes': un Yape entró o cambió de estado. La estación de
+                            // cobro recarga el río en el segundo (antes esperaba al sondeo de 9 s) y
+                            // la voz lo canta ya. El sondeo sigue como red por si el canal se cae.
+                            if (String(rec.dominio || '') === 'yapes') {
+                                if (_mcRtTimer) clearTimeout(_mcRtTimer);
+                                _mcRtTimer = setTimeout(() => { _mcRtTimer = null;
+                                    try { if (modoCajero.value) mcCargarRio(); } catch(_) {}
+                                    try { _yapeRevisar(); } catch(_) {}
+                                }, 250);
+                                return;
+                            }
                             if (String(rec.dominio || '') !== 'stock_zonas') return;
                             if (_szPatchTimer) clearTimeout(_szPatchTimer);
                             _szPatchTimer = setTimeout(() => { _szPatchTimer = null; _patchStockZonasRapido(); }, 1200);
@@ -14418,7 +14523,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcHechoMonto = ref(0);
         const mcHechoTxt  = ref('');
         const mcReja=ref(null), mcAura=ref(null), mcFlash=ref(null);
-        let _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null;
+        let _mcTimerRio = null, _mcTimerRel = null, _mcRaf = null, _mcRtTimer = null;
 
         /* ── helpers de pantalla ── */
         const mcMoney = v => 'S/ ' + (parseFloat(v) || 0).toFixed(2);
@@ -14444,6 +14549,33 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcYapeCalza = y => y.estado === 'NUEVO' && !y.ilegible &&
             mcPendientes.value.some(v => Math.round((parseFloat(v.total)||0)*10) === Math.round((parseFloat(y.monto)||0)*10));
         const mcYapeDelTicket = computed(() => cajeroTicketActual.value ? mcYapeLibrePara(cajeroTicketActual.value.total) : null);
+        // la cola: los dos que vienen después del actual (o los dos primeros, si no hay actual)
+        const mcSiguientes = computed(() => {
+            const cur = cajeroTicketActual.value && cajeroTicketActual.value.id;
+            return mcPendientes.value.filter(v => v.id !== cur).slice(0, 2);
+        });
+        // las líneas del ticket en mano: nombre, cantidad, subtotal (RPC 873, best-effort)
+        const mcLineas = ref([]);
+        const mcCant = it => { const n = parseFloat(it.cantidad) || 0; const um = String(it.um || 'NIU').toUpperCase();
+            return (Number.isInteger(n) ? n : n.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')) + (um === 'KGM' ? ' kg' : um === 'NIU' ? '×' : ' ' + um.toLowerCase()); };
+        const mcCorto = n => { const t = String(n || '').replace(/\s+/g, ' ').trim(); return t.length > 26 ? t.slice(0, 25) + '…' : t; };
+        async function mcCargarLineas(venta) {
+            mcLineas.value = [];
+            try {
+                const tk = await _mintTokenSB(); if (!tk) return;
+                const idVenta = venta.id_venta_gas || venta.id;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/venta_lineas`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk,
+                               'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { idVenta } })
+                }, 6000);
+                const d = await r.json().catch(() => null);
+                // solo si el ticket en mano sigue siendo el mismo
+                if (d && d.ok && Array.isArray(d.data) && cajeroTicketActual.value && cajeroTicketActual.value.id === venta.id)
+                    mcLineas.value = d.data.slice(0, 8);
+            } catch (_) {}
+        }
 
         /* ── mixto ── */
         const mcMixEfeNum = computed(() => Math.min(parseFloat(mcMixEfe.value || 0) || 0,
@@ -14506,6 +14638,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         /* ── el escenario ── */
         const resetearCajero = () => {
             cajeroTicketActual.value = null;
+            mcLineas.value = [];
             cajeroBusqueda.value = '';
             mcMixEfe.value = '';
             if (mcEstado.value !== 'hecho') mcEstado.value = 'espera';
@@ -14536,6 +14669,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                   if (el) { el.classList.add('vuela'); setTimeout(()=>el.classList.remove('vuela'), 520); } } catch(_){}
             cajeroTicketActual.value = venta;
             mcEstado.value = 'cobro';
+            mcBarrido();
+            mcCargarLineas(venta);
             mcDecirMonto(venta.total);
             if (cajeroScannerInst.value) { try { cajeroScannerInst.value.pause(true); } catch(_){} }
         };
@@ -14621,20 +14756,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             const _base = (metodo === 'MIXTO'
                 ? 'MIXTO · ' + mcMoney(mcMixEfeNum.value) + ' efectivo + ' + mcMoney(virtual) + ' virtual'
                 : metodo);
-            // Con el Yape a la vista, se ATA en el acto — antes la pantalla decía "verificado"
-            // y en realidad lo decidía el cron 2 min después, por monto: con dos tickets de
-            // S/ 5.60 quedaba AMBIGUO y ninguno verificado. El cajero sabe qué cliente está
-            // pagando qué ticket; ese contexto ahora se usa. El texto dice lo que pasó de verdad.
-            mcHechoTxt.value = _base + (metodo !== 'EFECTIVO' && yp ? ' · 💜 atando el Yape de ' + mcPrimerNombre(yp.pagador) + '…' : '');
-            if (metodo !== 'EFECTIVO' && yp) {
-                mcYapeAtar(yp, t).then(ok => {
-                    if (mcHechoMonto.value !== t.total) return;   // ya se pasó a otro cobro
-                    mcHechoTxt.value = _base + (ok
-                        ? ' · ✅ verificado con el Yape de ' + mcPrimerNombre(yp.pagador)
-                        : ' · ⏳ el Yape de ' + mcPrimerNombre(yp.pagador) + ' queda por cuadrar');
-                    if (ok) { mcSon('match'); }
-                });
-            }
+            // El cajero NO ata el Yape (decisión del dueño): el sistema lo cuadra por monto y
+            // ventana, y verificar / desverificar / soltar es del admin en MOS. Acá solo se dice
+            // la verdad: hay un Yape a la vista que calza; el sistema lo cuadra solo.
+            mcHechoTxt.value = _base + (metodo !== 'EFECTIVO' && yp
+                ? ' · 💜 el Yape de ' + mcPrimerNombre(yp.pagador) + ' calza · el sistema lo cuadra solo' : '');
 
             mcSon('caja'); mcPulso('#3ddc84');
             try { navigator.vibrate && navigator.vibrate([18,40,18]); } catch(_){}
@@ -14646,31 +14772,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             mcEstado.value = 'hecho';
             setTimeout(() => { mcProcesando.value = false; mcEstado.value = 'espera'; mcCargarRio(); }, 1350);
         };
-
-        // Ata un Yape libre al ticket recién cobrado. Reglas del servidor (871): el ticket tiene
-        // que estar pagado por medio virtual, el monto calzar a un decimal, misma zona, y ni el
-        // Yape ni el ticket pueden estar ya usados. Devuelve true/false; nunca revienta el cobro.
-        async function mcYapeAtar(yp, t) {
-            try {
-                const tk = await _mintTokenSB(); if (!tk) return false;
-                const idVenta = t.id_venta_gas || t.id;
-                // el cobro se marca localmente al instante pero viaja al servidor detrás; se le da
-                // un respiro para que el ticket ya figure como VIRTUAL cuando el servidor lo mire.
-                for (let intento = 0; intento < 3; intento++) {
-                    const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/yape_atar_cobro`, {
-                        method: 'POST',
-                        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk,
-                                   'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ p: { id: yp.id, idVenta, usuario: config.value.vendedor || 'CAJERO' } })
-                    }, 8000);
-                    const d = await r.json().catch(() => null);
-                    if (d && d.ok) { mcCargarRio(); return true; }
-                    if (d && /no está pagado/i.test(String(d.error || ''))) { await new Promise(res => setTimeout(res, 900)); continue; }
-                    return false;
-                }
-            } catch (_) {}
-            return false;
-        }
 
         /* ── el río de Yapes: lista + voz ── */
         async function mcCargarRio() {
@@ -16468,6 +16569,111 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             addEventListener('resize', medir);
         }
         function mcChispa() { for (let i=0;i<6;i++) { const c=_mcCols[Math.floor(Math.random()*_mcCols.length)]; if (c) c.boost=1; } }
+
+        /* ══════════════════════════════════════════════════════════════════════
+           GESTOS — la mano manda, como en Minority Report.
+           · ARRASTRAR un ticket del riel al escenario lo toma (con estela). Un toque corto sigue
+             siendo un toque: se distingue por distancia (12 px), no por tiempo.
+           · LANZAR el ticket en mano hacia un costado (>120 px) lo suelta y vuelve al radar.
+           · El GUANTE: tres anillos siguen el dedo con retardo — se ve la mano en la pantalla.
+           Todo por transform/opacity. Se apaga con la lluvia si la tablet no llega.
+           ══════════════════════════════════════════════════════════════════════ */
+        const mcScan = ref(null), mcGlove = ref(null), mcDrag = ref(null);
+        let _mcDragV = null, _mcDragOn = false, _mcDx0 = 0, _mcDy0 = 0, _mcDragEl = null;
+        let _mcGx = 0, _mcGy = 0, _mcGt = [0,0,0,0,0,0], _mcGRaf = null, _mcGOn = false;
+        function mcBarrido() {
+            try { const el = mcScan.value; if (!el) return; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); } catch(_) {}
+        }
+        function _mcGloveLoop() {
+            _mcGRaf = null;
+            const g = mcGlove.value; if (!g || !_mcGOn) return;
+            // cada anillo persigue al anterior: retardo creciente = estela
+            _mcGt[0] += (_mcGx - _mcGt[0]) * .55; _mcGt[1] += (_mcGy - _mcGt[1]) * .55;
+            _mcGt[2] += (_mcGt[0] - _mcGt[2]) * .35; _mcGt[3] += (_mcGt[1] - _mcGt[3]) * .35;
+            _mcGt[4] += (_mcGt[2] - _mcGt[4]) * .25; _mcGt[5] += (_mcGt[3] - _mcGt[5]) * .25;
+            const r = g.children;
+            if (r[0]) r[0].style.transform = 'translate3d(' + _mcGt[0] + 'px,' + _mcGt[1] + 'px,0)';
+            if (r[1]) r[1].style.transform = 'translate3d(' + _mcGt[2] + 'px,' + _mcGt[3] + 'px,0)';
+            if (r[2]) r[2].style.transform = 'translate3d(' + _mcGt[4] + 'px,' + _mcGt[5] + 'px,0)';
+            _mcGRaf = requestAnimationFrame(_mcGloveLoop);
+        }
+        function _mcGloveOn(x, y) {
+            if (_mcLluviaOff) return;
+            const g = mcGlove.value; if (!g) return;
+            _mcGx = x; _mcGy = y;
+            if (!_mcGOn) { _mcGOn = true; _mcGt = [x,y,x,y,x,y]; g.classList.add('on'); }
+            if (!_mcGRaf) _mcGRaf = requestAnimationFrame(_mcGloveLoop);
+        }
+        function _mcGloveOff() {
+            _mcGOn = false; const g = mcGlove.value; if (g) g.classList.remove('on');
+        }
+        const mcDragIni = (e, venta) => {
+            if (!venta) return;
+            _mcDragV = venta; _mcDragOn = false; _mcDx0 = e.clientX; _mcDy0 = e.clientY; _mcDragEl = e.currentTarget;
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch(_) {}
+            _mcGloveOn(e.clientX, e.clientY);
+        };
+        function _mcDragMove(e) {
+            if (!_mcDragV) return;
+            _mcGloveOn(e.clientX, e.clientY);
+            const dx = e.clientX - _mcDx0, dy = e.clientY - _mcDy0;
+            if (!_mcDragOn && Math.hypot(dx, dy) > 12) {
+                _mcDragOn = true;
+                const d = mcDrag.value;
+                if (d) { d.querySelector('b').textContent = mcMoney(_mcDragV.total); d.querySelector('small').textContent = _mcDragV.correlativo || '';
+                         d.classList.add('on'); }
+                if (_mcDragEl) _mcDragEl.classList.add('arrastrando');
+                mcSon('tecla');
+            }
+            if (_mcDragOn) {
+                const d = mcDrag.value;
+                if (d) d.style.transform = 'translate3d(' + (e.clientX - 60) + 'px,' + (e.clientY - 34) + 'px,0) rotate(' + Math.max(-9, Math.min(9, dx / 30)) + 'deg)';
+                const esc = document.querySelector('#mcRoot [data-mc-esc]');
+                if (esc) { const r = esc.getBoundingClientRect(); const dentro = e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom;
+                           esc.classList.toggle('imantado', dentro); }
+            }
+        }
+        function _mcDragEnd(e) {
+            if (!_mcDragV) return;
+            const v = _mcDragV, on = _mcDragOn;
+            _mcDragV = null; _mcDragOn = false;
+            _mcGloveOff();
+            const d = mcDrag.value; if (d) d.classList.remove('on');
+            if (_mcDragEl) { _mcDragEl.classList.remove('arrastrando'); _mcDragEl = null; }
+            const esc = document.querySelector('#mcRoot [data-mc-esc]');
+            const dentro = esc && (() => { const r = esc.getBoundingClientRect(); return e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom; })();
+            if (esc) esc.classList.remove('imantado');
+            if (!on) { mcTomar(v); return; }          // toque corto = tomar
+            if (dentro) { mcTomar(v); return; }       // soltado en el escenario = tomar
+            mcSon('tick');                            // soltado afuera = vuelve a su sitio
+        }
+        // LANZAR el ticket en mano: arrastre horizontal largo sobre el monto → se suelta
+        let _mcFling = null;
+        const mcFlingIni = (e) => {
+            if (e.target && e.target.closest && e.target.closest('button')) return;   // los botones cobran, no lanzan
+            _mcFling = { x0: e.clientX, y0: e.clientY, el: e.currentTarget };
+            _mcGloveOn(e.clientX, e.clientY);
+        };
+        function _mcFlingMove(e) {
+            if (!_mcFling) return;
+            _mcGloveOn(e.clientX, e.clientY);
+            const dx = e.clientX - _mcFling.x0;
+            if (Math.abs(dx) > 8 && _mcFling.el) _mcFling.el.style.transform = 'translate3d(' + (dx * .6) + 'px,0,0) rotateY(' + (dx / 14) + 'deg)';
+        }
+        function _mcFlingEnd(e) {
+            if (!_mcFling) return;
+            const f = _mcFling; _mcFling = null; _mcGloveOff();
+            const dx = e.clientX - f.x0;
+            if (Math.abs(dx) > 120 && cajeroTicketActual.value && !mcProcesando.value) {
+                // se va volando por donde lo lanzaron, y el radar vuelve
+                if (f.el) { f.el.style.transition = 'transform .35s cubic-bezier(.5,0,.75,0), opacity .3s'; f.el.style.transform = 'translate3d(' + (dx > 0 ? 900 : -900) + 'px,-40px,300px) rotateY(' + (dx > 0 ? 40 : -40) + 'deg)'; f.el.style.opacity = '0'; }
+                mcSon('blip');
+                setTimeout(() => { resetearCajero(); mcEstado.value = 'espera'; }, 260);
+            } else if (f.el) { f.el.style.transition = 'transform .35s cubic-bezier(.22,1,.36,1)'; f.el.style.transform = ''; setTimeout(() => { if (f.el) f.el.style.transition = ''; }, 400); }
+        }
+        addEventListener('pointermove', e => { if (!modoCajero.value) return; _mcDragMove(e); _mcFlingMove(e); if (!_mcDragV && !_mcFling && _mcGOn) _mcGloveOn(e.clientX, e.clientY); });
+        addEventListener('pointerup',   e => { if (!modoCajero.value) return; _mcDragEnd(e); _mcFlingEnd(e); });
+        addEventListener('pointercancel', e => { if (!modoCajero.value) return; _mcDragEnd(e); _mcFlingEnd(e); });
         function mcHazEntre(a, b) {
             try {
                 const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
@@ -25986,6 +26192,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           mcMixEfeNum, mcMixVir, mcMixPct, mcMixValido,
           mcMoney, mcDigitos, mcPrimerNombre, mcTipoCorto, mcHora, mcCalza, mcYapeCalza,
           mcTomar, mcCobrar, mcAbrirMixto, mcTecla, mcToggleCamara,
+          mcSiguientes, mcLineas, mcCant, mcCorto, mcDragIni, mcFlingIni, mcScan, mcGlove, mcDrag,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
