@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.320';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.321';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -6757,8 +6757,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         <b>OJO · últimas teclas que llegaron a la estación</b>
         <div v-if="!mcOjo.length" class="mc-ojo-vacio">nada todavía — escaneá ahora</div>
         <div v-for="(o,i) in mcOjo" :key="i" class="mc-ojo-f"><span>{{ o.t }}</span><span>{{ o.via }}</span><span>key={{ o.key }}</span><span>code={{ o.code }}</span><span>kc={{ o.kc }}</span><span>foco={{ o.ae }}</span></div>
-        <div class="mc-ojo-sum">sumidero: «{{ mcSumideroTxt }}»</div>
-        <button class="mc-te acc" style="height:36px;width:auto;padding:0 14px;border-radius:999px" @pointerdown.stop="mcOjoVer=false">cerrar</button>
+        <div class="mc-ojo-sum">sumidero: «{{ mcSumideroTxt }}» · modo: {{ mcSumEditableVer ? 'IME (editable, con chip de teclado)' : 'teclas (readonly, sin chip)' }}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="mc-te acc" style="height:36px;width:auto;padding:0 14px;border-radius:999px" @pointerdown.stop="mcOjoVer=false">cerrar</button>
+          <button class="mc-te" style="height:36px;width:auto;padding:0 14px;border-radius:999px" @pointerdown.stop="mcSumCambiarModo()">{{ mcSumEditableVer ? 'el lector manda teclas → modo teclas' : 'el lector no lee → modo IME' }}</button>
+        </div>
       </div>
       <canvas id="mcLluvia"></canvas>
       <div class="mc-reja" ref="mcReja"></div>
@@ -14703,7 +14706,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             try {
                 if (!voiceEnabled.value || !window.speechSynthesis) return;
                 const soles = Math.floor(monto), cent = Math.round((monto - soles) * 100);
-                let txt = 'Son ' + numALetras(soles) + (soles === 1 ? ' sol' : ' soles');
+                let txt = 'Son ' + (soles === 1 ? 'un sol' : numALetras(soles) + ' soles');
                 if (cent > 0) txt += ' con ' + numALetras(cent);
                 const u = new SpeechSynthesisUtterance(txt); u.lang = 'es-PE'; u.rate = 0.95; u.pitch = 1.05;
                 try { const voz = _seleccionarVoz(); if (voz) u.voice = voz; } catch (_) {}
@@ -14817,8 +14820,27 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcSumidero = ref(null);
         const mcSumideroTxt = ref('');
         let _mcSumTimer = null;
-        function mcSumideroFoco() { /* readonly se quita al tomar foco: sin teclado (inputmode=none), pero el IME sí entrega texto */
-            try { const el = mcSumidero.value; if (el) { el.readOnly = mcEstado.value !== 'espera'; } } catch(_) {} }
+        // ¿El sumidero es editable? READONLY por defecto: un campo editable enfocado + teclado físico
+        // (el lector) hace que Android muestre el chip flotante de teclado/idioma. Solo se vuelve
+        // editable si el lector escribe por el IME (se detecta en el captor) — y se recuerda.
+        let _mcSumEditable = false;
+        try { _mcSumEditable = localStorage.getItem('mc_sumidero_editable') === '1'; } catch (_) {}
+        function _mcSumHacerEditable(por) {
+            if (_mcSumEditable) return;
+            _mcSumEditable = true; mcSumEditableVer.value = true;
+            try { localStorage.setItem('mc_sumidero_editable', '1'); } catch (_) {}
+            try { const el = mcSumidero.value; if (el && mcEstado.value === 'espera') el.readOnly = false; } catch (_) {}
+            _mcOjoAnota({ key: por, code: 'sumidero→editable', keyCode: 0 }, 'modo');
+        }
+        const mcSumEditableVer = ref(_mcSumEditable);
+        function mcSumCambiarModo() {   // desde el OJO: el cajero/dueño fuerza el modo si el automático no acertó
+            _mcSumEditable = !_mcSumEditable; mcSumEditableVer.value = _mcSumEditable;
+            try { localStorage.setItem('mc_sumidero_editable', _mcSumEditable ? '1' : '0'); } catch (_) {}
+            try { const el = mcSumidero.value; if (el) { el.readOnly = !(mcEstado.value === 'espera' && _mcSumEditable); if (mcEstado.value === 'espera') { el.blur(); el.focus({ preventScroll: true }); } } } catch (_) {}
+            _mcOjoAnota({ key: 'manual', code: _mcSumEditable ? 'sumidero→editable' : 'sumidero→readonly', keyCode: 0 }, 'modo');
+        }
+        function mcSumideroFoco() { /* en espera y si el lector escribe por IME: editable (sin teclado: inputmode=none) */
+            try { const el = mcSumidero.value; if (el) { el.readOnly = !(mcEstado.value === 'espera' && _mcSumEditable); } } catch(_) {} }
         let _mcSumDrenHasta = 0;   // tras entregar, lo que siga llegando del mismo escaneo se descarta
         function mcSumideroEntrega() {
             const el = mcSumidero.value; if (!el) return;
@@ -14862,7 +14884,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             _mcOjoAnota(e, 'keydown');
             const ch = _mcTeclaDe(e);
             const now = Date.now();
-            const enSumidero = document.activeElement && document.activeElement.id === 'mcSumidero';
+            const _ae = document.activeElement;
+            // el lector escribe por el IME (Android): keyCode 229 / Unidentified sin code. El captor no
+            // ve letras; el sumidero tiene que ser editable para recibir el texto.
+            if (_ae && _ae.id === 'mcSumidero' && (e.keyCode === 229 || ((e.key === 'Unidentified' || !e.key) && !e.code))) { _mcSumHacerEditable('kc' + (e.keyCode | 0)); return; }
+            // cede al sumidero solo si es editable (si está readonly, las teclas las lee este captor)
+            const enSumidero = !!(_ae && _ae.id === 'mcSumidero' && !_ae.readOnly);
             if (typeof ch === 'string' && ch.length === 1 && /^[0-9A-Za-z\-|./ ]$/.test(ch)) {
                 if (!_mcBuf) _mcBufT0 = now;
                 _mcBuf += ch;
@@ -14986,7 +15013,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk,
                                'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ p: { zona: config.value.zonaId || '', idCaja: idCajaActual.value || '', min: 720 } })
+                    body: JSON.stringify({ p: { zona: config.value.zona || '', idCaja: idCajaActual.value || '', min: 720 } })
                 }, 12000);
                 const d = await r.json().catch(() => null);
                 if (d && d.ok && d.data) {
@@ -19883,8 +19910,22 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             } catch (_) {}
         };
 
+        // "treinta céntimos · yape de Javier" / "cinco soles con sesenta · yape de Javier":
+        // monto primero (en letras), después de quién. Si no se pudo leer el monto, la frase del servidor.
+        const _yapeFrase = (y) => {
+            try {
+                const m = parseFloat(y && y.monto);
+                if (!isFinite(m) || m <= 0) return (y && y.frase) || 'Llegó un Yape que no pude leer';
+                const soles = Math.floor(m), cent = Math.round((m - soles) * 100);
+                let t;
+                if (soles === 0) t = numALetras(cent) + (cent === 1 ? ' céntimo' : ' céntimos');
+                else { t = (soles === 1 ? 'un sol' : numALetras(soles) + ' soles'); if (cent > 0) t += ' con ' + numALetras(cent); }
+                const quien = String((y && y.pagador) || '').replace(/\*+$/, '').trim();
+                return t + (quien ? ', yape de ' + quien : ', yape');
+            } catch (_) { return (y && y.frase) || 'Llegó un Yape'; }
+        };
         const _yapeRevisar = async () => {
-            if (offlineMode.value || !config.value.zonaId) return;
+            if (offlineMode.value || !config.value.zona) return;
             try {
                 const _tk = await _mintTokenSB();
                 if (!_tk) return;
@@ -19892,7 +19933,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk,
                                'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ p: { zona: config.value.zonaId } })
+                    body: JSON.stringify({ p: { zona: config.value.zona } })
                 }, 12000);
                 const d = await r.json().catch(() => null);
                 const arr = (d && d.ok && d.data && Array.isArray(d.data.yapes)) ? d.data.yapes : [];
@@ -19901,8 +19942,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     // se espacian para que no se pisen las voces cuando entran dos juntos
                     setTimeout(() => {
                         try { sonidos.coin && sonidos.coin(); } catch (_) {}
-                        _yapeHablar(y.frase);
-                        agregarToast('💜 Yape recibido', y.frase, 'success');
+                        const frase = _yapeFrase(y);
+                        _yapeHablar(frase);
+                        agregarToast('💜 Yape recibido', frase, 'success');
                         yapeUltimos.value = [{ ...y, t: Date.now() }, ...yapeUltimos.value].slice(0, 6);
                     }, i * 2600);
                 });
@@ -26463,7 +26505,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           mcTomar, mcCobrar, mcAbrirMixto, mcTecla, mcToggleCamara,
           mcSiguientes, mcLineas, mcCant, mcCorto, mcDragIni, mcFlingIni, mcScan, mcGlove, mcDrag,
           mcOrbTk, mcOrbYp, mcTocarYape, mcEscEl, mcRootEl,
-          mcSumidero, mcSumideroTxt, mcSumideroInput, mcSumideroEnter, mcSumideroFoco, mcOjo, mcOjoVer,
+          mcSumidero, mcSumideroTxt, mcSumideroInput, mcSumideroEnter, mcSumideroFoco, mcOjo, mcOjoVer, mcSumEditableVer, mcSumCambiarModo,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
