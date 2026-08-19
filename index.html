@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.312';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.313';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -1694,22 +1694,15 @@ button:not(:disabled):not([aria-disabled="true"]):active,
       padding:14px 20px 10px;gap:6px;perspective:1500px;perspective-origin:50% 45%}
     #mcRoot .mc-w{transform-style:preserve-3d;transition:transform .6s cubic-bezier(.22,1,.36,1);min-height:0;display:flex}
     #mcRoot .mc-wtop{transform:none;display:block}
-    #mcRoot .mc-wriel{transform:translate3d(calc(var(--px)*-15px),calc(var(--py)*-9px),-40px)}
-    #mcRoot .mc-wesc{transform:translate3d(calc(var(--px)*8px),calc(var(--py)*5px),0)}
-    #mcRoot .mc-wrio{transform:translate3d(calc(var(--px)*6px),calc(var(--py)*6px),-20px);display:block;flex:none}
-    #mcRoot .mc-wriel>.mc-riel,#mcRoot .mc-wesc>.mc-esc{flex:1;min-width:0}
+    #mcRoot .mc-wesc{transform:translate3d(calc(var(--px)*6px),calc(var(--py)*4px),0)}
+    #mcRoot .mc-wesc>.mc-esc{flex:1;min-width:0}
 
     /* Ni un panel tiene fondo, marco ni sombra de caja: la estructura la hacen la luz,
        las líneas de un pelo y la tipografía. Los grupos siguen respirando en 3D, pero
        lo que respira es el CONTENIDO — no hay borde que delate un rectángulo. */
-    #mcRoot .mc-riel{animation:mcRespA 15s ease-in-out infinite alternate;
-      display:flex;flex-direction:column;position:relative;transform-style:preserve-3d}
     #mcRoot .mc-esc{animation:mcRespB 19s ease-in-out infinite alternate;
-      display:flex;align-items:center;justify-content:center;padding:10px;position:relative;transform-style:preserve-3d}
-    #mcRoot .mc-rio{animation:mcRespC 13s ease-in-out infinite alternate;position:relative;padding-bottom:6px}
-    @keyframes mcRespA{0%{transform:rotateY(6deg) rotateX(.5deg) translateZ(0)}100%{transform:rotateY(4deg) rotateX(-.6deg) translateZ(22px)}}
+      display:flex;align-items:center;justify-content:center;padding:10px;position:relative;transform-style:preserve-3d;overflow:visible}
     @keyframes mcRespB{0%{transform:rotateY(-1.2deg) rotateX(.4deg) translateZ(0)}100%{transform:rotateY(1deg) rotateX(-.5deg) translateZ(18px)}}
-    @keyframes mcRespC{0%{transform:rotateX(1.4deg) translateZ(0)}100%{transform:rotateX(-.9deg) translateZ(14px)}}
 
     /* ── la barra: quieta y sin fondo. Solo un pelo de luz que la separa ── */
     #mcRoot .mc-top{display:flex;align-items:center;gap:14px;padding:2px 4px 11px;flex:none;position:relative}
@@ -1741,50 +1734,57 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-ic:active{background:rgba(45,227,200,.3);color:var(--voz);transform:scale(.9)}
     #mcRoot .mc-ic.x:active{background:rgba(248,113,113,.32);color:#fecaca}
 
-    #mcRoot .mc-cuerpo{flex:1;display:grid;grid-template-columns:264px 1fr;gap:26px;min-height:0;transform-style:preserve-3d}
+    #mcRoot .mc-cuerpo{flex:1;display:grid;grid-template-columns:1fr;min-height:0;transform-style:preserve-3d}
 
-    /* ── rótulos: no encabezan una caja, flotan con su pelo de luz ── */
-    #mcRoot .mc-rh{padding:6px 2px 9px;font-size:9.5px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;
-      color:var(--tinta3);display:flex;justify-content:space-between;align-items:center;gap:10px;flex:none;position:relative}
-    #mcRoot .mc-rh::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
-      background:linear-gradient(90deg,rgba(45,227,200,.3),transparent 78%)}
-    #mcRoot .mc-rb{flex:1;overflow-y:auto;padding:14px 2px 22px;display:flex;flex-direction:column;gap:3px;
-      transform-style:preserve-3d;scrollbar-width:none}
-    #mcRoot .mc-rb::-webkit-scrollbar{display:none}
-
-    /* ── el ticket no es una tarjeta: es un dato con una guía de luz al costado.
-          Al tocarlo la guía se enciende y un pelo horizontal sale hacia el escenario:
-          el dato alcanzando al centro, no una caja que se ilumina. ── */
-    #mcRoot .mc-tk{padding:9px 4px 9px 16px;cursor:pointer;position:relative;transform-style:preserve-3d;
-      animation:mcMece 11s ease-in-out infinite alternate;transition:transform .22s cubic-bezier(.22,1,.36,1)}
+    /* ══ LAS ÓRBITAS ═════════════════════════════════════════════════════════
+       Dos anillos alrededor del escenario. Cada satélite se posiciona por transform desde
+       el JS (ángulo = 360/n). Tickets adentro (horario), Yapes afuera (antihorario). ══ */
+    #mcRoot .mc-anillo{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none;transform-style:preserve-3d;z-index:2}
+    #mcRoot .mc-anillo>*{position:absolute;left:0;top:0;pointer-events:auto;
+      transition:transform .9s cubic-bezier(.22,1,.36,1),opacity .4s;will-change:transform}
+    /* el ticket-satélite: un dato con su guía de luz, sin caja */
+    #mcRoot .mc-tk{padding:8px 4px 8px 15px;cursor:pointer;transform-style:preserve-3d;width:124px;touch-action:none;-webkit-user-select:none;user-select:none;
+      background:rgba(3,16,26,.55);border-radius:12px;backdrop-filter:blur(2px)}
     #mcRoot .mc-tk::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:2px;
       background:linear-gradient(180deg,transparent,rgba(45,227,200,.55) 22%,rgba(45,227,200,.55) 78%,transparent);
       transition:background .22s,box-shadow .22s,width .22s}
-    #mcRoot .mc-tk::after{content:"";position:absolute;left:16px;right:8px;top:50%;height:1px;
-      background:linear-gradient(90deg,var(--voz),transparent);opacity:0;transform:scaleX(.2);transform-origin:left;
-      transition:opacity .3s,transform .45s cubic-bezier(.22,1,.36,1)}
-    #mcRoot .mc-tk:nth-child(2){animation-duration:13s;animation-delay:-3s}
-    #mcRoot .mc-tk:nth-child(3){animation-duration:15s;animation-delay:-6s}
-    #mcRoot .mc-tk:nth-child(4){animation-duration:12s;animation-delay:-9s}
-    #mcRoot .mc-tk:nth-child(5){animation-duration:16s;animation-delay:-4s}
-    @keyframes mcMece{0%{transform:translateZ(0)}100%{transform:translateZ(14px) translateX(3px)}}
-    #mcRoot .mc-tk:hover,#mcRoot .mc-tk:active{animation-play-state:paused;transform:translateZ(26px) translateX(6px)}
-    #mcRoot .mc-tk:hover::before,#mcRoot .mc-tk:active::before{width:3px;
-      background:linear-gradient(180deg,transparent,var(--voz) 18%,var(--voz) 82%,transparent);
-      box-shadow:0 0 16px var(--voz)}
-    #mcRoot .mc-tk:hover::after,#mcRoot .mc-tk:active::after{opacity:.75;transform:scaleX(1)}
-    #mcRoot .mc-tk.calza::before{background:linear-gradient(180deg,transparent,var(--yape) 18%,var(--yape) 82%,transparent);
-      box-shadow:0 0 20px var(--yape)}
+    #mcRoot .mc-tk.pend:hover::before,#mcRoot .mc-tk.pend:active::before{width:3px;
+      background:linear-gradient(180deg,transparent,var(--voz) 18%,var(--voz) 82%,transparent);box-shadow:0 0 16px var(--voz)}
+    #mcRoot .mc-tk.calza::before{background:linear-gradient(180deg,transparent,var(--yape) 18%,var(--yape) 82%,transparent);box-shadow:0 0 20px var(--yape)}
     #mcRoot .mc-tk.calza .mc-tkm{color:#e6d4ff;text-shadow:0 0 26px rgba(176,123,255,.6)}
     #mcRoot .mc-tk.calza .mc-tkc::after{content:" 💜";font-size:11px}
+    /* historia: cobrados, pequeños y apagados */
+    #mcRoot .mc-tk.hist{width:96px;padding:5px 3px 5px 11px;opacity:.38;cursor:default;filter:saturate(.4)}
+    #mcRoot .mc-tk.hist::before{background:linear-gradient(180deg,transparent,rgba(61,220,132,.5) 22%,rgba(61,220,132,.5) 78%,transparent)}
+    #mcRoot .mc-tk.hist .mc-tkm{font-size:15px;color:var(--ok)}
+    #mcRoot .mc-tk.hist .mc-tkt{display:none}
+    #mcRoot .mc-tk.enmano{opacity:.25}
+    #mcRoot .mc-sig{display:inline-block;margin-left:6px;font-style:normal;font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;
+      color:var(--voz);padding:1px 5px;border-radius:999px;box-shadow:inset 0 0 0 1px rgba(45,227,200,.45);vertical-align:1px}
     #mcRoot .mc-tk.nuevo{animation:mcAter .75s cubic-bezier(.22,1,.36,1)}
-    @keyframes mcAter{0%{transform:translate3d(-140px,-26px,380px);opacity:0;filter:blur(7px)}
-                      60%{transform:translate3d(6px,0,34px);filter:blur(0)}100%{transform:none;opacity:1}}
-    #mcRoot .mc-tk.vuela{animation:mcVuela .5s cubic-bezier(.5,0,.75,0) forwards;pointer-events:none}
-    @keyframes mcVuela{to{transform:translate3d(280px,-34px,560px);opacity:0;filter:blur(9px)}}
-    #mcRoot .mc-tkc{font-size:10px;color:var(--tinta2);letter-spacing:.11em}
-    #mcRoot .mc-tkm{font-size:24px;font-weight:800;margin-top:1px;letter-spacing:-.02em;line-height:1.05}
-    #mcRoot .mc-tkt{font-size:9.5px;color:var(--tinta3);margin-top:1px;letter-spacing:.05em}
+    @keyframes mcAter{0%{opacity:0;filter:blur(7px)}100%{opacity:1;filter:blur(0)}}
+    #mcRoot .mc-tk.arrastrando{opacity:.3}
+    #mcRoot .mc-tkc{font-size:9.5px;color:var(--tinta2);letter-spacing:.1em;white-space:nowrap}
+    #mcRoot .mc-tkm{font-size:22px;font-weight:800;margin-top:1px;letter-spacing:-.02em;line-height:1.05;white-space:nowrap}
+    #mcRoot .mc-tkt{font-size:9px;color:var(--tinta3);margin-top:1px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:105px}
+    #mcRoot .mc-vacio-orb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:260px;text-align:center;
+      pointer-events:none;color:var(--tinta3);font-size:11px;letter-spacing:.06em;line-height:1.7;
+      margin-top:calc(-1 * min(37vh,260px) - 40px)}
+    /* el Yape-satélite: nodo, monto, nombre. Libre encendido, atado apagado con su hilo. */
+    #mcRoot .mc-yp{width:110px;padding:5px 4px 5px 14px;transform-style:preserve-3d;
+      background:rgba(3,16,26,.55);border-radius:12px;backdrop-filter:blur(2px);cursor:pointer}
+    #mcRoot .mc-yp::before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;transform:rotate(45deg);
+      background:rgba(176,123,255,.65);transition:background .25s,box-shadow .25s}
+    #mcRoot .mc-yp::after{content:"";position:absolute;left:2.5px;top:16px;bottom:4px;width:1px;
+      background:linear-gradient(180deg,rgba(176,123,255,.45),transparent)}
+    #mcRoot .mc-yp.calza::before{background:var(--yape);box-shadow:0 0 16px var(--yape)}
+    #mcRoot .mc-yp.calza .mc-ypm{text-shadow:0 0 26px rgba(176,123,255,.75)}
+    #mcRoot .mc-yp.usado{opacity:.42;filter:saturate(.35)}
+    #mcRoot .mc-yp.amb::before{background:var(--plata);box-shadow:0 0 12px var(--plata)}
+    #mcRoot .mc-yp:active{transform:scale(1.06)!important}
+    #mcRoot .mc-ypm{font-size:17px;font-weight:800;color:var(--yape);letter-spacing:-.02em;white-space:nowrap}
+    #mcRoot .mc-ypn{font-size:9.5px;color:var(--tinta2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;letter-spacing:.04em}
+    #mcRoot .mc-yph{font-size:8.5px;color:var(--tinta3);letter-spacing:.08em;white-space:nowrap}
     #mcRoot .mc-vacio{color:var(--tinta3);font-size:12px;padding:24px 4px;line-height:1.9;letter-spacing:.03em}
 
     /* ── el escenario: una retícula, no un contenedor. Los anillos y las marcas
@@ -1924,36 +1924,14 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     @keyframes mcShock{to{width:200vmax;height:200vmax;opacity:0;border-width:1px}}
 
     /* ── la franja de lo que falta cuadrar: un renglón sobre un pelo ámbar ── */
-    #mcRoot .mc-esperando{flex:none;display:flex;align-items:center;gap:9px;padding:7px 4px;
+    #mcRoot .mc-esperando{position:absolute;left:20px;right:20px;bottom:6px;z-index:3;display:flex;align-items:center;gap:9px;padding:7px 4px;
+      background:linear-gradient(180deg,transparent,rgba(3,16,26,.85) 40%);
       color:var(--plata);font-size:11px;letter-spacing:.05em;position:relative;
       overflow-x:auto;white-space:nowrap;scrollbar-width:none}
     #mcRoot .mc-esperando::-webkit-scrollbar{display:none}
     #mcRoot .mc-esperando::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
       background:linear-gradient(90deg,rgba(255,209,102,.4),transparent 70%)}
     #mcRoot .mc-esperando b{color:#ffe9b0;font-weight:800}
-
-    /* ── el río: los Yapes son datos que pasan, no fichas ── */
-    #mcRoot .mc-rio{padding:9px 2px 6px;display:flex;align-items:center;gap:14px;overflow:hidden;min-height:78px;flex:none}
-    #mcRoot .mc-rioh{font-size:9px;font-weight:800;letter-spacing:.3em;text-transform:uppercase;color:var(--yape);
-      writing-mode:vertical-rl;transform:rotate(180deg);flex:none;opacity:.6}
-    #mcRoot .mc-riob{flex:1;display:flex;gap:30px;overflow-x:auto;padding:2px 0;scrollbar-width:none}
-    #mcRoot .mc-riob::-webkit-scrollbar{display:none}
-    #mcRoot .mc-yp{flex:none;min-width:126px;padding-left:13px;position:relative;
-      animation:mcLlega .6s cubic-bezier(.22,1,.36,1),mcMece 14s ease-in-out infinite alternate;
-      transition:transform .25s}
-    #mcRoot .mc-yp::before{content:"";position:absolute;left:0;top:5px;width:5px;height:5px;transform:rotate(45deg);
-      background:rgba(176,123,255,.6);transition:background .25s,box-shadow .25s}
-    #mcRoot .mc-yp::after{content:"";position:absolute;left:2px;top:14px;bottom:2px;width:1px;
-      background:linear-gradient(180deg,rgba(176,123,255,.45),transparent)}
-    #mcRoot .mc-yp:nth-child(even){animation-duration:.6s,17s}
-    @keyframes mcLlega{0%{transform:translate3d(150px,0,190px);opacity:0;filter:blur(6px)}100%{opacity:1}}
-    #mcRoot .mc-ypm{font-size:19px;font-weight:800;color:var(--yape);letter-spacing:-.02em}
-    #mcRoot .mc-ypn{font-size:10px;color:var(--tinta2);margin-top:1px;white-space:nowrap;overflow:hidden;
-      text-overflow:ellipsis;max-width:118px;letter-spacing:.04em}
-    #mcRoot .mc-yph{font-size:9px;color:var(--tinta3);margin-top:1px;letter-spacing:.08em}
-    #mcRoot .mc-yp.calza::before{background:var(--yape);box-shadow:0 0 16px var(--yape)}
-    #mcRoot .mc-yp.calza .mc-ypm{text-shadow:0 0 26px rgba(176,123,255,.75)}
-    #mcRoot .mc-yp.usado{opacity:.3;filter:saturate(.25)}
 
     /* ══ WOW · la mano manda ══════════════════════════════════════════════════ */
     /* el guante: tres anillos que persiguen al dedo con retardo */
@@ -1972,8 +1950,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-drag small{display:block;font-size:10px;letter-spacing:.1em;color:var(--tinta2)}
     #mcRoot .mc-tk.arrastrando{opacity:.35}
     /* el escenario se imanta cuando el ticket pasa por encima */
-    #mcRoot .mc-esc.imantado::before{opacity:1;background:radial-gradient(circle,rgba(45,227,200,.22),transparent 62%)}
-    #mcRoot .mc-esc.imantado .mc-hud b{transform:scale(1.15);filter:drop-shadow(0 0 30px var(--voz))}
+    #mcRoot .mc-esc.imantado::before{opacity:1;background:radial-gradient(circle,rgba(45,227,200,.28),transparent 60%);transform:translate(-50%,-50%) scale(1.12)}
+    #mcRoot .mc-esc.imantado .mc-hud b{transform:scale(1.25);filter:drop-shadow(0 0 34px var(--voz))}
+    #mcRoot .mc-esc.imantado .mc-hud .mc-ani{border-color:var(--voz);animation-duration:2s}
+    #mcRoot .mc-esc.imantado .mc-monto{transform:scale(1.04);transition:transform .2s}
+    #mcRoot .mc-esc::before{transition:opacity .3s,transform .3s,background .3s}
     #mcRoot .mc-hud b{transition:transform .2s,filter .2s}
     /* el barrido: una línea de luz recorre el escenario cuando un ticket se materializa */
     #mcRoot .mc-scan{position:absolute;left:8%;right:8%;top:0;height:2px;pointer-events:none;z-index:4;opacity:0;
@@ -1986,7 +1967,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                        60%{text-shadow:-1px 0 0 rgba(255,60,120,.5),1px 0 0 rgba(45,227,200,.5),0 0 55px rgba(45,227,200,.35)}
                        100%{text-shadow:0 0 70px rgba(45,227,200,.4)}}
     /* la órbita: los productos del ticket, como anotaciones que flotan alrededor del monto */
-    #mcRoot .mc-cobro{position:relative}
+    #mcRoot .mc-cobro{position:relative;touch-action:pan-y}
+    #mcRoot .mc-cobro .mc-monto,#mcRoot .mc-cobro .mc-corr{touch-action:none;-webkit-user-select:none;user-select:none}
     #mcRoot .mc-orbita{position:absolute;inset:-40px -30px auto -30px;height:0;pointer-events:none;z-index:0}
     #mcRoot .mc-orb{position:absolute;font-size:10.5px;letter-spacing:.06em;color:var(--tinta2);white-space:nowrap;
       opacity:0;transform-style:preserve-3d;animation:mcOrbIn .8s cubic-bezier(.22,1,.36,1) forwards,mcOrbFlota 7s ease-in-out infinite alternate;
@@ -1995,45 +1977,40 @@ button:not(:disabled):not([aria-disabled="true"]):active,
     #mcRoot .mc-orb b{color:var(--tinta);font-weight:800;margin-right:4px}
     #mcRoot .mc-orb em{font-style:normal;color:var(--voz);margin-left:6px;opacity:.85}
     /* ocho posiciones alrededor del número, a distinta profundidad */
-    /* alrededor del NÚMERO, nunca sobre la fila de botones (que arranca ~250px abajo) */
-    #mcRoot .mc-orb.o0{left:0;top:112px;transform:translateZ(40px)}
-    #mcRoot .mc-orb.o1{right:0;top:98px;transform:translateZ(-30px)}
-    #mcRoot .mc-orb.o2{left:2%;top:196px;transform:translateZ(-20px)}
-    #mcRoot .mc-orb.o3{right:1%;top:186px;transform:translateZ(50px)}
-    #mcRoot .mc-orb.o4{left:8%;top:44px;transform:translateZ(-60px);opacity:.75}
-    #mcRoot .mc-orb.o5{right:7%;top:36px;transform:translateZ(20px)}
-    #mcRoot .mc-orb.o6{left:-3%;top:154px;transform:translateZ(-10px)}
-    #mcRoot .mc-orb.o7{right:-3%;top:144px;transform:translateZ(30px)}
+    /* pegadas al NÚMERO — dentro del anillo de tickets, que ahora rodea todo — y nunca sobre
+       la fila de botones. Seis puestos: tres a la izquierda, tres a la derecha, dos líneas. */
+    #mcRoot .mc-orbita{inset:0 auto auto 0;width:100%;height:100%}
+    #mcRoot .mc-orb{max-width:180px;white-space:normal;line-height:1.35}
+    #mcRoot .mc-orb b{display:block}
+    #mcRoot .mc-orb em{display:block;margin-left:0}
+    #mcRoot .mc-orb.o0,#mcRoot .mc-orb.o2,#mcRoot .mc-orb.o4,#mcRoot .mc-orb.o6{left:calc(50% - 370px);width:150px;text-align:right;padding-left:0;padding-right:12px}
+    #mcRoot .mc-orb.o0::before,#mcRoot .mc-orb.o2::before,#mcRoot .mc-orb.o4::before,#mcRoot .mc-orb.o6::before{left:auto;right:0}
+    #mcRoot .mc-orb.o1,#mcRoot .mc-orb.o3,#mcRoot .mc-orb.o5,#mcRoot .mc-orb.o7{left:calc(50% + 218px);width:150px}
+    #mcRoot .mc-orb.o6,#mcRoot .mc-orb.o7{display:none}   /* seis puestos: la cuarta fila caería sobre los botones */
+    #mcRoot .mc-orb.o0,#mcRoot .mc-orb.o1{top:calc(50% - 138px)}
+    #mcRoot .mc-orb.o2,#mcRoot .mc-orb.o3{top:calc(50% - 76px)}
+    #mcRoot .mc-orb.o4,#mcRoot .mc-orb.o5{top:calc(50% - 14px)}
+    #mcRoot .mc-orb.o0,#mcRoot .mc-orb.o3{transform:translateZ(40px)}
+    #mcRoot .mc-orb.o1,#mcRoot .mc-orb.o2{transform:translateZ(-30px)}
     @keyframes mcOrbIn{0%{opacity:0;filter:blur(6px);margin-top:14px}100%{opacity:.9;filter:blur(0);margin-top:0}}
     @keyframes mcOrbFlota{0%{margin-left:0}100%{margin-left:6px}}
     #mcRoot .mc-orb:nth-child(even){animation-duration:.8s,9s}
-    /* la cola: lo que viene, en pequeño y detrás */
-    #mcRoot .mc-cola{position:absolute;right:26px;bottom:22px;z-index:1;display:flex;flex-direction:column;gap:8px;
-      transform-style:preserve-3d;pointer-events:auto}
-    #mcRoot .mc-colatk{position:relative;padding:8px 12px 8px 16px;cursor:pointer;color:var(--tinta2);
-      display:flex;flex-direction:column;gap:1px;transform-style:preserve-3d;
-      transition:transform .25s cubic-bezier(.22,1,.36,1),opacity .25s;touch-action:manipulation}
-    #mcRoot .mc-colatk::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:2px;
-      background:linear-gradient(180deg,transparent,rgba(45,227,200,.45),transparent)}
-    #mcRoot .mc-colatk.p0{transform:translateZ(-120px) scale(.92);opacity:.8}
-    #mcRoot .mc-colatk.p1{transform:translateZ(-240px) scale(.84);opacity:.5;filter:blur(.4px)}
-    #mcRoot .mc-colatk:active{transform:translateZ(0) scale(1);opacity:1;filter:none}
-    #mcRoot .mc-colac{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase}
-    #mcRoot .mc-colam{font-size:17px;font-weight:800;color:var(--tinta)}
-    #mcRoot .mc-colas{font-size:8.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--tinta3)}
     @media (max-width:900px){
       #mcRoot .mc-orbita{display:none}
-      #mcRoot .mc-cola{right:10px;bottom:10px}
       #mcRoot .mc-glove{display:none}
     }
     @media (prefers-reduced-motion:reduce){#mcRoot .mc-glove,#mcRoot .mc-scan{display:none}}
 
     @media (max-width:900px){
+      /* en pantalla chica no hay órbita: tickets arriba y Yapes abajo, en fila deslizable */
+      #mcRoot .mc-esc{flex-direction:column;justify-content:flex-start;gap:8px;padding:6px}
+      #mcRoot .mc-anillo{position:static;width:100%;height:auto;display:flex;gap:10px;overflow-x:auto;padding:4px 2px;transform:none}
+      #mcRoot .mc-anillo.tk{order:0}#mcRoot .mc-anillo.yp{order:9}
+      #mcRoot .mc-anillo>*{position:static;transform:none!important;flex:none}
+      #mcRoot .mc-anillo .mc-vacio-orb{position:static;transform:none;margin:0;width:auto}
+      #mcRoot .mc-espera,#mcRoot .mc-cobro,#mcRoot .mc-mix,#mcRoot .mc-hecho{order:1;flex:1;justify-content:center}
       #mcRoot .mc-app{padding:12px 14px 8px}
       #mcRoot .mc-cuerpo{grid-template-columns:1fr;grid-template-rows:auto 1fr;gap:12px}
-      #mcRoot .mc-riel{transform:none;animation:none}
-      #mcRoot .mc-rb{flex-direction:row;overflow-x:auto;gap:26px;padding-bottom:10px}
-      #mcRoot .mc-tk{min-width:148px}
       #mcRoot .mc-mix{grid-template-columns:1fr;gap:18px}
       #mcRoot .mc-te{width:64px;height:64px;font-size:22px}
       #mcRoot .mc-bts{gap:14px}
@@ -6788,31 +6765,28 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         </div></div>
 
         <div class="mc-cuerpo">
-          <div class="mc-w mc-wriel"><div class="mc-riel">
-            <div class="mc-rh"><span>🧾 Por cobrar</span><span class="mc-num">{{ mcMoney(mcTotalPend) }}</span></div>
-            <div class="mc-rb">
-              <div v-if="!mcPendientes.length" class="mc-vacio">
-                Sin tickets pendientes.<br>Cuando un vendedor emita uno,<br>aterriza acá solo.
-              </div>
-              <div v-for="v in mcPendientes" :key="v.id"
-                   class="mc-tk" :class="{ calza: mcCalza(v), nuevo: v.isNew }"
-                   :data-tk="v.id" @pointerdown="mcDragIni($event, v)">
-                <div class="mc-tkc">{{ v.correlativo }} · {{ mcTipoCorto(v.tipo) }}</div>
-                <div class="mc-tkm mc-num">{{ mcMoney(v.total) }}</div>
-                <div class="mc-tkt">{{ mcHora(v) }} · {{ v.raw_data?.auth?.vendedor || '—' }}</div>
-              </div>
-            </div>
-          </div></div>
-
-          <div class="mc-w mc-wesc"><div class="mc-esc" :class="{viva: mcEstado !== 'espera'}" data-mc-esc>
+          <div class="mc-w mc-wesc"><div class="mc-esc" :class="{viva: mcEstado !== 'espera', abierto: mcEstado !== 'espera'}" data-mc-esc ref="mcEscEl">
             <i class="mc-scan" ref="mcScan"></i>
-            <!-- la COLA: lo que viene, en pequeño y detrás. Un toque lo trae al frente. -->
-            <div v-if="mcSiguientes.length && (mcEstado === 'espera' || mcEstado === 'cobro')" class="mc-cola">
-              <div v-for="(q,i) in mcSiguientes" :key="q.id" class="mc-colatk" :class="'p'+i"
-                   @pointerdown.stop="mcTomar(q)">
-                <span class="mc-colac">{{ q.correlativo }}</span>
-                <span class="mc-colam mc-num">{{ mcMoney(q.total) }}</span>
-                <span class="mc-colas">{{ i === 0 ? 'siguiente' : 'después' }}</span>
+            <!-- ANILLO INTERIOR · los tickets, sentido horario. Pendientes encendidos, cobrados apagados. -->
+            <div class="mc-anillo tk">
+              <div v-for="o in mcOrbTk" :key="'t'+o.v.id"
+                   class="mc-tk" :class="{ calza: o.pend && mcCalza(o.v), nuevo: o.pend && o.v.isNew, pend: o.pend, hist: !o.pend, sig: o.sig, enmano: cajeroTicketActual && cajeroTicketActual.id === o.v.id }"
+                   :data-tk="o.v.id" :data-idv="o.v.id_venta_gas || o.v.id" :style="o.st"
+                   @pointerdown="o.pend ? mcDragIni($event, o.v) : null">
+                <div class="mc-tkc">{{ o.v.correlativo }}<i v-if="o.sig" class="mc-sig">siguiente</i></div>
+                <div class="mc-tkm mc-num">{{ o.pend ? mcMoney(o.v.total) : '✓ ' + mcMoney(o.v.total) }}</div>
+                <div class="mc-tkt">{{ mcHora(o.v) }} · {{ o.v.raw_data?.auth?.vendedor || '—' }}</div>
+              </div>
+              <div v-if="!mcOrbTk.length" class="mc-vacio mc-vacio-orb">Sin tickets todavía · cuando un vendedor emita uno, aparece en órbita</div>
+            </div>
+            <!-- ANILLO EXTERIOR · los Yapes, sentido antihorario. Libres encendidos, atados apagados. -->
+            <div class="mc-anillo yp">
+              <div v-for="o in mcOrbYp" :key="'y'+o.y.id" class="mc-yp"
+                   :class="{ calza: mcYapeCalza(o.y), usado: o.y.estado === 'MATCHEADO', amb: o.y.estado === 'AMBIGUO' }"
+                   :data-yp="o.y.id" :style="o.st" @pointerdown.stop="mcTocarYape(o.y)">
+                <div class="mc-ypm mc-num">{{ o.y.ilegible ? '—' : mcMoney(o.y.monto) }}</div>
+                <div class="mc-ypn">{{ mcPrimerNombre(o.y.pagador) || 'sin nombre' }}</div>
+                <div class="mc-yph mc-num">{{ o.y.hora }}<template v-if="o.y.estado === 'MATCHEADO'"> · atado</template></div>
               </div>
             </div>
             <!-- 1 · esperando -->
@@ -6895,20 +6869,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           </template>
         </div>
 
-        <div class="mc-w mc-wrio"><div class="mc-rio">
-          <div class="mc-rioh">Yapes</div>
-          <div class="mc-riob">
-            <div v-if="!mcYapes.length" class="mc-vacio" style="padding:8px 14px">
-              Los Yapes que entren aparecen acá y se cantan en voz alta.
-            </div>
-            <div v-for="y in mcYapes" :key="y.id" class="mc-yp"
-                 :class="{ calza: mcYapeCalza(y), usado: y.estado === 'MATCHEADO' }" :data-yp="y.id">
-              <div class="mc-ypm mc-num">{{ y.ilegible ? '—' : mcMoney(y.monto) }}</div>
-              <div class="mc-ypn">{{ y.pagador || 'sin nombre' }}</div>
-              <div class="mc-yph mc-num">{{ y.hora }}</div>
-            </div>
-          </div>
-        </div></div>
 
       </div>
     </div>
@@ -14549,6 +14509,71 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const mcYapeCalza = y => y.estado === 'NUEVO' && !y.ilegible &&
             mcPendientes.value.some(v => Math.round((parseFloat(v.total)||0)*10) === Math.round((parseFloat(y.monto)||0)*10));
         const mcYapeDelTicket = computed(() => cajeroTicketActual.value ? mcYapeLibrePara(cajeroTicketActual.value.total) : null);
+        /* ── LAS ÓRBITAS ──────────────────────────────────────────────────────
+           Dos elipses centradas en el escenario. Cada elemento recibe su ángulo según cuántos
+           haya (360/n): el espacio se reparte solo. Los tickets arrancan arriba y giran en
+           sentido horario; los Yapes arrancan abajo y giran al revés, así nunca se cruzan en el
+           mismo punto. Las medidas salen del tamaño real del escenario (ResizeObserver). Con un
+           ticket en mano los anillos se abren para dejar sitio a la órbita de productos.
+           ──────────────────────────────────────────────────────────────────── */
+        const mcEscEl = ref(null);
+        const mcEscSize = ref({ w: 1100, h: 640 });
+        let _mcRO = null;
+        watch(mcEscEl, el => {
+            try { if (_mcRO) { _mcRO.disconnect(); _mcRO = null; } } catch(_) {}
+            if (!el || typeof ResizeObserver === 'undefined') return;
+            _mcRO = new ResizeObserver(() => { mcEscSize.value = { w: el.clientWidth || 1100, h: el.clientHeight || 640 }; });
+            _mcRO.observe(el);
+            mcEscSize.value = { w: el.clientWidth || 1100, h: el.clientHeight || 640 };
+        });
+        const _mcPos = (i, n, ring, sentido, abierto) => {
+            const { w, h } = mcEscSize.value;
+            // radios en proporción al escenario, con techo/piso para tablets chicas
+            const rx = ring === 'tk' ? Math.min(w * .36, 470) + (abierto ? 30 : 0) : Math.min(w * .465, 600) + (abierto ? 22 : 0);
+            const ry = ring === 'tk' ? Math.min(h * .36, 250) + (abierto ? 20 : 0) : Math.min(h * .44, 305) + (abierto ? 12 : 0);
+            const paso = n > 0 ? 360 / n : 0;
+            // Los dos anillos arrancan desfasados MEDIO paso: ningún satélite queda clavado justo
+            // arriba (pegado a la barra) ni justo abajo (sobre la franja). Tickets giran horario
+            // desde arriba; Yapes antihorario desde abajo, y con anillos distintos nunca coinciden.
+            const base = ring === 'tk' ? -90 + paso / 2 : 90 + paso / 2;
+            const ang = (base + sentido * i * paso) * Math.PI / 180;
+            const x = Math.round(rx * Math.cos(ang)), y = Math.round(ry * Math.sin(ang));
+            // profundidad: los de abajo (más cerca del observador) un poco más grandes
+            const z = Math.round(40 * Math.sin(ang));
+            return { st: { transform: 'translate3d(calc(-50% + ' + x + 'px), calc(-50% + ' + y + 'px), ' + z + 'px)' }, ang };
+        };
+        // los últimos 15 tickets: pendientes primero (encendidos), y cobrados de hoy para completar (apagados)
+        const mcOrbTk = computed(() => {
+            const abierto = mcEstado.value !== 'espera';
+            const pend = mcPendientes.value.slice(0, 15);
+            const hist = (ventasZona.value || [])
+                .filter(v => v.cobrado && !v.anulada)
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                .slice(0, Math.max(0, 15 - pend.length));
+            const todos = pend.map(v => ({ v, pend: true })).concat(hist.map(v => ({ v, pend: false })));
+            const n = todos.length;
+            // "lo que viene": el primer pendiente que no está en mano lleva la etiqueta SIGUIENTE
+            const cur = cajeroTicketActual.value && cajeroTicketActual.value.id;
+            const sig = pend.find(v => v.id !== cur);
+            return todos.map((o, i) => Object.assign(o, _mcPos(i, n, 'tk', +1, abierto), { sig: !!(sig && o.v.id === sig.id) }));
+        });
+        // los últimos 15 Yapes, atados o no
+        const mcOrbYp = computed(() => {
+            const abierto = mcEstado.value !== 'espera';
+            const ys = mcYapes.value.slice(0, 15);
+            const n = ys.length;
+            return ys.map((y, i) => Object.assign({ y }, _mcPos(i, n, 'yp', -1, abierto)));
+        });
+        // tocar un Yape no ata nada (eso es del sistema): solo ilumina el hilo hacia su ticket
+        const mcTocarYape = (y) => {
+            try {
+                const ye = document.querySelector('#mcRoot .mc-yp[data-yp="' + y.id + '"]');
+                let te = y.idVenta ? document.querySelector('#mcRoot .mc-tk[data-idv="' + y.idVenta + '"]') : null;
+                if (!te && y.estado === 'NUEVO') te = document.querySelector('#mcRoot .mc-tk.calza');
+                if (ye && te) { mcHazEntre(ye, te); mcSon('tick'); }
+                else if (ye) { mcSon('tecla'); }
+            } catch(_) {}
+        };
         // la cola: los dos que vienen después del actual (o los dos primeros, si no hay actual)
         const mcSiguientes = computed(() => {
             const cur = cajeroTicketActual.value && cajeroTicketActual.value.id;
@@ -14782,7 +14807,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk,
                                'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ p: { zona: config.value.zonaId || '', idCaja: idCajaActual.value || '', min: 90 } })
+                    body: JSON.stringify({ p: { zona: config.value.zonaId || '', idCaja: idCajaActual.value || '', min: 720 } })
                 }, 12000);
                 const d = await r.json().catch(() => null);
                 if (d && d.ok && d.data) {
@@ -16504,7 +16529,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
            ticket cuando calzan: es el momento en que se ve el pago encontrar su venta.
            Si la tablet no llega a los frames, la lluvia se apaga sola.
            ══════════════════════════════════════════════════════════════════════ */
-        let _mcWake = null, _mcCols = [], _mcW = 0, _mcH = 0, _mcRayos = [], _mcLluviaOff = false;
+        let _mcWake = null, _mcCols = [], _mcW = 0, _mcH = 0, _mcRayos = [], _mcLluviaOff = false, _mcSin = [], _mcSinT = 0;
         function mcArrancarEfectos() {
             const cv = document.getElementById('mcLluvia'), hz = document.getElementById('mcHaz');
             if (!cv || !hz) return;
@@ -16551,6 +16576,41 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     });
                 }
                 hx.clearRect(0,0,_mcW,_mcH);
+                // ── LA SINAPSIS: los vínculos que el sistema ya cuadró (Yape ↔ ticket) se dibujan
+                //    como hilos de luz curvos entre los dos anillos, con pulsos que viajan del Yape al
+                //    ticket. Las posiciones se releen cada ~250 ms (no cada frame). ──
+                if (!_mcLluviaOff) {
+                    const ahora = performance.now();
+                    if (ahora - _mcSinT > 250) {
+                        _mcSinT = ahora; _mcSin = [];
+                        try {
+                            document.querySelectorAll('#mcRoot .mc-yp.usado').forEach(ye => {
+                                const idv = (mcYapes.value.find(y => String(y.id) === ye.getAttribute('data-yp')) || {}).idVenta;
+                                if (!idv) return;
+                                const te = document.querySelector('#mcRoot .mc-tk[data-idv="' + idv + '"]');
+                                if (!te) return;
+                                const ra = ye.getBoundingClientRect(), rb = te.getBoundingClientRect();
+                                _mcSin.push({ x1: ra.left+ra.width/2, y1: ra.top+ra.height/2, x2: rb.left+rb.width/2, y2: rb.top+rb.height/2, f: (Number(ye.getAttribute('data-yp')) % 7) * .37 });
+                            });
+                        } catch(_) {}
+                    }
+                    const fase = (ahora / 1400) % 1;
+                    _mcSin.forEach(sn => {
+                        // curva hacia el centro del escenario: el hilo pasa por dentro, no por fuera
+                        const cxm = _mcW / 2, cym = _mcH / 2;
+                        const mx = (sn.x1 + sn.x2) / 2 + (cxm - (sn.x1 + sn.x2) / 2) * .35;
+                        const my = (sn.y1 + sn.y2) / 2 + (cym - (sn.y1 + sn.y2) / 2) * .35;
+                        hx.beginPath(); hx.moveTo(sn.x1, sn.y1); hx.quadraticCurveTo(mx, my, sn.x2, sn.y2);
+                        hx.strokeStyle = 'rgba(176,123,255,.28)'; hx.lineWidth = 1.2; hx.stroke();
+                        // dos pulsos por hilo, desfasados
+                        for (let k = 0; k < 2; k++) {
+                            const t = (fase + sn.f + k * .5) % 1, u = 1 - t;
+                            const px = u*u*sn.x1 + 2*u*t*mx + t*t*sn.x2, py = u*u*sn.y1 + 2*u*t*my + t*t*sn.y2;
+                            hx.beginPath(); hx.arc(px, py, 2.6, 0, 7); hx.fillStyle = 'rgba(233,213,255,.95)';
+                            hx.shadowColor = '#b07bff'; hx.shadowBlur = 14; hx.fill(); hx.shadowBlur = 0;
+                        }
+                    });
+                }
                 _mcRayos = _mcRayos.filter(r => r.t < 1);
                 _mcRayos.forEach(r => {
                     r.t += .022;
@@ -16673,7 +16733,16 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         }
         addEventListener('pointermove', e => { if (!modoCajero.value) return; _mcDragMove(e); _mcFlingMove(e); if (!_mcDragV && !_mcFling && _mcGOn) _mcGloveOn(e.clientX, e.clientY); });
         addEventListener('pointerup',   e => { if (!modoCajero.value) return; _mcDragEnd(e); _mcFlingEnd(e); });
-        addEventListener('pointercancel', e => { if (!modoCajero.value) return; _mcDragEnd(e); _mcFlingEnd(e); });
+        addEventListener('pointercancel', () => {
+            if (!modoCajero.value) return;
+            // el navegador se quedó con el gesto (desplazamiento, zoom): se limpia sin tomar nada.
+            // Antes se trataba como "soltó" y un arrastre de un milímetro tomaba el ticket.
+            _mcDragV = null; _mcDragOn = false; _mcGloveOff();
+            const d = mcDrag.value; if (d) d.classList.remove('on');
+            if (_mcDragEl) { _mcDragEl.classList.remove('arrastrando'); _mcDragEl = null; }
+            const esc = document.querySelector('#mcRoot [data-mc-esc]'); if (esc) esc.classList.remove('imantado');
+            if (_mcFling && _mcFling.el) { _mcFling.el.style.transform = ''; } _mcFling = null;
+        });
         function mcHazEntre(a, b) {
             try {
                 const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
@@ -26193,6 +26262,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           mcMoney, mcDigitos, mcPrimerNombre, mcTipoCorto, mcHora, mcCalza, mcYapeCalza,
           mcTomar, mcCobrar, mcAbrirMixto, mcTecla, mcToggleCamara,
           mcSiguientes, mcLineas, mcCant, mcCorto, mcDragIni, mcFlingIni, mcScan, mcGlove, mcDrag,
+          mcOrbTk, mcOrbYp, mcTocarYape, mcEscEl,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),
