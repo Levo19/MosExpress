@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.315';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.316';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -14812,7 +14812,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             const t = mcResolverTicket(q);
             cajeroBusqueda.value = '';
             nextTick(mcSoltarFoco);
-            if (!t) { mcSon('error'); agregarToast('No encontrado', q.slice(0, 40));
+            if (!t) { mcSon('error');
+                      // se muestra la clave que se dedujo Y el texto crudo: si el lector manda algo
+                      // distinto de lo esperado, acá se ve sin adivinar
+                      agregarToast('No encontrado · busqué ' + mcClaveDeEscaneo(q), 'llegó: ' + q.slice(0, 90), 'warning', 9000);
                       try { const u = new SpeechSynthesisUtterance('no lo encuentro'); u.lang='es-PE';
                             if (voiceEnabled.value) speechSynthesis.speak(u); } catch(_){}
                       return; }
