@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.316';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.317';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -6737,7 +6737,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
          El camino del dinero es el MISMO de siempre (abrirCobroPendiente +
          procesarCobroPendiente): acá solo cambia la puesta en escena.
          ══════════════════════════════════════════════════════════════════ -->
-    <div v-if="modoCajero" id="mcRoot">
+    <div v-if="modoCajero" id="mcRoot" tabindex="-1" ref="mcRootEl" style="outline:none">
       <canvas id="mcLluvia"></canvas>
       <div class="mc-reja" ref="mcReja"></div>
       <canvas id="mcHaz"></canvas>
@@ -14732,8 +14732,19 @@ button:not(:disabled):not([aria-disabled="true"]):active,
            quedó con foco (el buscador del POS, por ejemplo), se le quita.
            ──────────────────────────────────────────────────────────────────── */
         let _mcBuf = '', _mcBufT0 = 0, _mcBufTimer = null;
+        // El foco va al PROPIO escenario (#mcRoot, tabindex=-1). Es un div, no un input: recibe el
+        // teclado del lector pero no levanta teclado en pantalla. Dejar el foco "en la nada" (blur a
+        // todo) parecía lo mismo y no lo es: en Android, sin ningún elemento enfocado, Chrome no
+        // entrega los keydown de un teclado Bluetooth a la página — el lector chillaba y la estación
+        // no recibía nada.
+        const mcRootEl = ref(null);
         function mcSoltarFoco() {
-            try { const ae = document.activeElement; if (ae && ae !== document.body && ae.blur && !(ae.closest && ae.closest('#mcRoot .mc-te'))) ae.blur(); } catch(_) {}
+            try {
+                const ae = document.activeElement;
+                if (ae && ae.closest && ae.closest('#mcRoot .mc-te')) return;   // tecla del mixto: no interrumpir
+                const r = mcRootEl.value || document.getElementById('mcRoot');
+                if (r && ae !== r) { r.focus({ preventScroll: true }); }
+            } catch(_) {}
         }
         // Lee la tecla de forma robusta: en Android algunos lectores Bluetooth/USB mandan e.key =
         // 'Unidentified' y solo e.keyCode / e.code traen la letra. El del salvapantallas (que sí
@@ -14787,7 +14798,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         document.addEventListener('focusin', (e) => {
             if (!modoCajero.value) return;
             const t = e.target;
-            if (t && t.matches && t.matches('input,textarea') && !(t.closest && t.closest('#mcRoot'))) { try { t.blur(); } catch(_) {} }
+            if (t && t.matches && t.matches('input,textarea') && !(t.closest && t.closest('#mcRoot'))) { try { t.blur(); mcSoltarFoco(); } catch(_) {} }
         }, true);
 
         // Resuelve un escaneo a un ticket, sin tocar nada. Se usa desde la estación y también
@@ -16556,6 +16567,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             // el escenario queda entero para el cobro.
             nextTick(() => {
                 mcSoltarFoco();
+                // y se refuerza un par de veces: el navegador puede devolver el foco al POS tras el
+                // fullscreen o el cambio de orientación
+                setTimeout(mcSoltarFoco, 400); setTimeout(mcSoltarFoco, 1500);
                 mcArrancarEfectos();
                 mcCargarRio();
                 if (_mcTimerRio) clearInterval(_mcTimerRio);
@@ -16854,7 +16868,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         // puede haber sido un escaneo que el navegador no cuenta. Así que al primer toque
         // dentro de la estación se reintenta — una sola vez, sin molestar.
         addEventListener('pointerdown', () => {
-            if (modoCajero.value && !document.fullscreenElement) mcPantallaCompleta();
+            if (!modoCajero.value) return;
+            if (!document.fullscreenElement) mcPantallaCompleta();
+            setTimeout(mcSoltarFoco, 50);   // cualquier toque devuelve el teclado al escenario
         });
 
         // --- POLLING DE ZONA EN SEGUNDO PLANO ---
@@ -26333,7 +26349,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           mcMoney, mcDigitos, mcPrimerNombre, mcTipoCorto, mcHora, mcCalza, mcYapeCalza,
           mcTomar, mcCobrar, mcAbrirMixto, mcTecla, mcToggleCamara,
           mcSiguientes, mcLineas, mcCant, mcCorto, mcDragIni, mcFlingIni, mcScan, mcGlove, mcDrag,
-          mcOrbTk, mcOrbYp, mcTocarYape, mcEscEl,
+          mcOrbTk, mcOrbYp, mcTocarYape, mcEscEl, mcRootEl,
           modalCobro, ventaCobrar, pagoCobroPendiente, vueltoCobro, procesandoCobro, abrirCobroPendiente, procesarCobroPendiente,
           // [Lote1-C · fix A6] referencias usadas por el template que FALTABAN en el return:
           // resetearCajero (botón "← Otro" muerto), horaActual (reloj del header vacío),

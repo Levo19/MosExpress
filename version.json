@@ -1,1 +1,1 @@
-{"version": "2.8.316", "build": "2.8.316 Modo Cajero: cuando un escaneo no encuentra ticket, el aviso muestra la clave que dedujo y el texto crudo que llego del lector, para diagnosticar sin adivinar."}
+{"version": "2.8.317", "build": "2.8.317 Modo Cajero: el escenario toma el foco (sin levantar teclado). En Android, sin ningun elemento enfocado, Chrome no entrega las teclas del lector Bluetooth a la pagina: el lector chillaba y la estacion no recibia nada."}
