@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.314';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.315';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -14735,24 +14735,46 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         function mcSoltarFoco() {
             try { const ae = document.activeElement; if (ae && ae !== document.body && ae.blur && !(ae.closest && ae.closest('#mcRoot .mc-te'))) ae.blur(); } catch(_) {}
         }
+        // Lee la tecla de forma robusta: en Android algunos lectores Bluetooth/USB mandan e.key =
+        // 'Unidentified' y solo e.keyCode / e.code traen la letra. El del salvapantallas (que sí
+        // funciona en la tablet) mira e.key; acá se cubren los tres caminos.
+        function _mcTeclaDe(e) {
+            if (e.code === 'Minus' || e.code === 'NumpadSubtract') return '-';
+            let k = e.key;
+            if (!k || k === 'Unidentified' || k === 'Dead') {
+                const c = String(e.code || '');
+                if (/^Key[A-Z]$/.test(c)) k = c.slice(3);
+                else if (/^(Digit|Numpad)[0-9]$/.test(c)) k = c.slice(-1);
+                else if (c === 'Space') k = ' ';
+                else if (c === 'Slash' || c === 'NumpadDivide') k = '/';
+                else if (c === 'Period' || c === 'NumpadDecimal') k = '.';
+                else if (c === 'Backslash' || c === 'IntlBackslash') k = '|';
+                else if (e.keyCode >= 48 && e.keyCode <= 90) k = String.fromCharCode(e.keyCode);
+            }
+            return k;
+        }
         function _mcTeclado(e) {
             if (!modoCajero.value) return;
-            // si el cajero está en el teclado del MIXTO tocando botones, no hay teclado físico de por medio
-            const ch = (e.code === 'Minus' || e.code === 'NumpadSubtract') ? '-' : e.key;
+            const ch = _mcTeclaDe(e);
             const now = Date.now();
-            if (/^[0-9A-Za-z\-|./ ]$/.test(ch)) {
+            if (typeof ch === 'string' && ch.length === 1 && /^[0-9A-Za-z\-|./ ]$/.test(ch)) {
                 if (!_mcBuf) _mcBufT0 = now;
                 _mcBuf += ch;
                 if (_mcBufTimer) clearTimeout(_mcBufTimer);
-                _mcBufTimer = setTimeout(() => { _mcBuf = ''; }, 400);   // >400 ms entre teclas = humano
+                // MISMO criterio que el captor del salvapantallas, que sí lee en la tablet: el único
+                // corte es el silencio de 400 ms entre teclas. La regla de "≤35 ms por tecla" que
+                // había acá tiraba a la basura el escaneo real — en Android el lector entrega las
+                // teclas más lento que un USB en PC, y la estación no reaccionaba "como si no lo
+                // detectara".
+                _mcBufTimer = setTimeout(() => { _mcBuf = ''; }, 400);
                 e.preventDefault(); e.stopPropagation();                   // que NO llegue a ningún input
                 return;
             }
-            if (e.key === 'Enter' && _mcBuf.length >= 4) {
-                const cod = _mcBuf, dur = now - _mcBufT0;
+            if ((e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter' || e.keyCode === 13) && _mcBuf.length >= 4) {
+                const cod = _mcBuf;
                 _mcBuf = ''; if (_mcBufTimer) { clearTimeout(_mcBufTimer); _mcBufTimer = null; }
                 e.preventDefault(); e.stopPropagation();
-                if (dur > cod.length * 35 + 150) return;                   // demasiado lento: no es el lector
+                mcSon('tecla');                                            // se oye que entró
                 cajeroBusqueda.value = cod;
                 buscarTicketCajero();
                 return;

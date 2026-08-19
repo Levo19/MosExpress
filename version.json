@@ -1,1 +1,1 @@
-{"version": "2.8.314", "build": "2.8.314 Modo Cajero: el lector entra directo a la estacion, sin teclado. La estacion escucha el teclado en la ventana (ningun campo con foco), el POS ya no roba el foco mientras esta abierta, y el codigo nunca cae en el buscador de venta."}
+{"version": "2.8.315", "build": "2.8.315 Modo Cajero: el lector de la tablet ya se reconoce. El captor exigia teclas a 35 ms y el lector Android las entrega mas lento; ahora usa el mismo criterio que el salvapantallas (silencio de 400 ms) y lee la tecla aunque venga como Unidentified."}
