@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.321';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.322';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -14730,6 +14730,19 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 speechSynthesis.speak(u); _ttsUltimo = Date.now();
             } catch (_) {}
         }
+        // El cierre del ciclo, hablado: el cliente oye con qué se cobró y que terminó.
+        const mcDecirCobrado = (metodo) => {
+            try {
+                if (!voiceEnabled.value || !window.speechSynthesis) return;
+                const como = metodo === 'EFECTIVO' ? 'en efectivo' : metodo === 'VIRTUAL' ? 'virtual' : metodo === 'MIXTO' ? 'mixto' : String(metodo || '').toLowerCase();
+                const u = new SpeechSynthesisUtterance('Cobrado ' + como + ', muchas gracias por su compra');
+                u.lang = 'es-PE'; u.rate = 0.98; u.pitch = 1.05;
+                try { const voz = _seleccionarVoz(); if (voz) u.voice = voz; } catch (_) {}
+                const decir = () => { try { speechSynthesis.speak(u); _ttsUltimo = Date.now(); } catch (_) {} };
+                if (speechSynthesis.speaking || speechSynthesis.pending) { speechSynthesis.cancel(); setTimeout(decir, 60); }
+                else setTimeout(decir, 120);   // tras el sonido de caja
+            } catch (_) {}
+        };
         const mcTomar = (venta) => {
             if (!venta) return;
             mcSon('blip'); mcPulso('#ffd166');
@@ -14994,6 +15007,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 ? ' · 💜 el Yape de ' + mcPrimerNombre(yp.pagador) + ' calza · el sistema lo cuadra solo' : '');
 
             mcSon('caja'); mcPulso('#3ddc84');
+            // cierra el ciclo en voz alta: "Cobrado en efectivo, muchas gracias por su compra"
+            mcDecirCobrado(metodo);
             try { navigator.vibrate && navigator.vibrate([18,40,18]); } catch(_){}
             try { const sh=document.createElement('div'); sh.className='mc-shock';
                   document.getElementById('mcRoot').appendChild(sh); setTimeout(()=>sh.remove(), 850); } catch(_){}
