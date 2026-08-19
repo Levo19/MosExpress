@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.318';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.319';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -14706,10 +14706,27 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 let txt = 'Son ' + numALetras(soles) + (soles === 1 ? ' sol' : ' soles');
                 if (cent > 0) txt += ' con ' + numALetras(cent);
                 const u = new SpeechSynthesisUtterance(txt); u.lang = 'es-PE'; u.rate = 0.95; u.pitch = 1.05;
-                if (speechSynthesis.speaking) speechSynthesis.cancel();
-                speechSynthesis.speak(u);
+                try { const voz = _seleccionarVoz(); if (voz) u.voice = voz; } catch (_) {}
+                // cancel()+speak() pegados en Android retrasa o traga la frase: si hablaba, un respiro
+                const decir = () => { try { speechSynthesis.speak(u); _ttsUltimo = Date.now(); } catch (_) {} };
+                if (speechSynthesis.speaking || speechSynthesis.pending) { speechSynthesis.cancel(); setTimeout(decir, 60); }
+                else decir();
             } catch (_) { try { leerMontoEnVoz(monto); } catch (__) {} }
         };
+        // La voz NO se enfría en la estación: cada 8 s un utterance mudo (volume 0) mantiene el
+        // motor despierto si no habló en los últimos 7 s. Igual truco que el POS (v2.8.245), donde
+        // "la primera vez demora y después es instantáneo".
+        let _mcTimerWarm = null;
+        function _mcVozCaliente() {
+            try {
+                if (!voiceEnabled.value || !('speechSynthesis' in window)) return;
+                if (speechSynthesis.speaking || speechSynthesis.pending) return;
+                if (Date.now() - _ttsUltimo < 7000) return;
+                const u = new SpeechSynthesisUtterance(' '); u.lang = 'es-PE'; u.volume = 0; u.rate = 2;
+                const voz = _seleccionarVoz(); if (voz) u.voice = voz;
+                speechSynthesis.speak(u); _ttsUltimo = Date.now();
+            } catch (_) {}
+        }
         const mcTomar = (venta) => {
             if (!venta) return;
             mcSon('blip'); mcPulso('#ffd166');
@@ -14796,18 +14813,28 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         let _mcSumTimer = null;
         function mcSumideroFoco() { /* readonly se quita al tomar foco: sin teclado (inputmode=none), pero el IME sí entrega texto */
             try { const el = mcSumidero.value; if (el) { el.readOnly = false; } } catch(_) {} }
+        let _mcSumDrenHasta = 0;   // tras entregar, lo que siga llegando del mismo escaneo se descarta
         function mcSumideroEntrega() {
             const el = mcSumidero.value; if (!el) return;
+            if (_mcSumTimer) { clearTimeout(_mcSumTimer); _mcSumTimer = null; }
             const v = String(el.value || '').trim();
             el.value = ''; mcSumideroTxt.value = v;
-            if (v.length >= 4) { mcSon('tecla'); cajeroBusqueda.value = v; buscarTicketCajero(); }
+            if (v.length >= 4) { _mcSumDrenHasta = Date.now() + 900; mcSon('tecla'); cajeroBusqueda.value = v; buscarTicketCajero(); }
         }
+        // El QR de un CPE es "RUC | 01 | SERIE | NÚMERO | igv | total | fecha | ...": en cuanto
+        // llegó el separador que sigue al número ya se sabe qué ticket es. No se espera el resto.
+        const _MC_QR_LISTO = /(?:^|\|)\s*[A-Za-z]{1,4}\d{1,2}\s*\|\s*\d{1,8}\s*\|/;
         function mcSumideroInput() {
             const el = mcSumidero.value; if (!el) return;
-            mcSumideroTxt.value = String(el.value || '');
-            _mcOjoAnota({ key: String(el.value || '').slice(-1), code: 'input', keyCode: 0 }, 'input');
+            const v = String(el.value || '');
+            // cola del escaneo ya entregado: se descarta, y mientras siga llegando se sigue drenando
+            // (cada carácter renueva 400 ms); recién con silencio vuelve a escuchar
+            if (Date.now() < _mcSumDrenHasta) { el.value = ''; _mcSumDrenHasta = Date.now() + 400; return; }
+            mcSumideroTxt.value = v;
+            _mcOjoAnota({ key: v.slice(-1), code: 'input', keyCode: 0 }, 'input');
             if (_mcSumTimer) clearTimeout(_mcSumTimer);
-            _mcSumTimer = setTimeout(mcSumideroEntrega, 400);   // si el lector no manda Enter, 400 ms de silencio entregan
+            if (_MC_QR_LISTO.test(v)) { mcSumideroEntrega(); return; }         // QR: serie y número completos → ya
+            _mcSumTimer = setTimeout(mcSumideroEntrega, 180);   // si el lector no manda Enter, 180 ms de silencio entregan
         }
         function mcSumideroEnter() { if (_mcSumTimer) { clearTimeout(_mcSumTimer); _mcSumTimer = null; } mcSumideroEntrega(); }
 
@@ -16645,6 +16672,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 try { yapeArrancar(); } catch (_) {}
                 if (_mcTimerVoz) clearInterval(_mcTimerVoz);
                 _mcTimerVoz = setInterval(() => { try { _yapeRevisar(); } catch (_) {} }, 6000);
+                if (_mcTimerWarm) clearInterval(_mcTimerWarm);
+                _mcVozCaliente(); _mcTimerWarm = setInterval(_mcVozCaliente, 8000);
                 try { _yapeRevisar(); } catch (_) {}
                 if (_mcTimerRel) clearInterval(_mcTimerRel);
                 mcReloj.value = new Date().toTimeString().slice(0,5);
@@ -16664,6 +16693,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             mcEstado.value = 'espera';
             if (_mcTimerRio) { clearInterval(_mcTimerRio); _mcTimerRio = null; }
             if (_mcTimerVoz) { clearInterval(_mcTimerVoz); _mcTimerVoz = null; }
+            if (_mcTimerWarm) { clearInterval(_mcTimerWarm); _mcTimerWarm = null; }
             if (_mcTimerRel) { clearInterval(_mcTimerRel); _mcTimerRel = null; }
             if (_mcRaf) { cancelAnimationFrame(_mcRaf); _mcRaf = null; }
             try { _mcWake && _mcWake.release(); _mcWake = null; } catch(e) {}
