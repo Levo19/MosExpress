@@ -1,1 +1,1 @@
-{"version": "2.8.302", "build": "2.8.302 Modo Cajero rehecho: la estacion de cobro. Se escanea el QR de boletas y facturas (antes solo notas de venta), el rio muestra los Yapes que van entrando y marca cual calza con cual ticket, MIXTO se reparte con teclado tactil y el vuelto ya no estorba."}
+{"version": "2.8.303", "build": "2.8.303 Modo Cajero: la barra de arriba pedia el nombre de la estacion como si fuera un texto, pero la estacion es un objeto. La pantalla salia en blanco y sin salida."}
