@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.328';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.329';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -258,12 +258,9 @@
   </script>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%A7%BE%3C/text%3E%3C/svg%3E">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: { extend: { colors: { posPrimary: '#10b981', posSecondary: '#3b82f6', posBg: '#111827', posCard: '#1f2937' } } }
-    }
-  </script>
+  <!-- [perf] Tailwind ya NO viene del CDN de runtime (cdn.tailwindcss.com compilaba en el navegador + dejaba un
+       MutationObserver escaneando el DOM toda la sesión → CPU en la tablet). Ahora es un build ESTÁTICO css/tw.css
+       (link al FINAL del <head>). Los colores custom (posPrimary/Secondary/Bg/Card) viven en tailwind.config.js. -->
   <script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js"></script>
   <script>
     // [FIX pantalla-blanca móvil] Vue es CRÍTICO: si unpkg no cargó (red móvil/DNS/CDN caído), la app hace
@@ -2823,6 +2820,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
   // Era inalcanzable (if(false) literal, sin callers del nombre Historical). El flujo
   // de verificación lo maneja DeviceAuth.init() arriba. Verificado por grep.
   </script>
+  <!-- [perf] Tailwind HORNEADO estático (reemplaza a cdn.tailwindcss.com, que compilaba en runtime en la tablet +
+       MutationObserver permanente). Va ÚLTIMO en el <head> para ganar a los <style> inline como hacía el CDN.
+       Regenerar con: npx -y tailwindcss@3.4.17 -i src/tw.input.css -o css/tw.css --minify (config: tailwind.config.js).
+       ME no tiene @apply/@layer ni clases dinámicas → el scan de index.html cubre todas las clases. -->
+  <link rel="stylesheet" href="css/tw.css?v=2.8.329">
 </head>
 <!-- [RETHEME OSCURO · BUG B] Se quitó el `:class="{'dark-mode': false}"` que colgaba
      aquí: Vue monta en #app, así que ese binding NUNCA se evaluaba (quedaba como
