@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.327';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.328';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -5366,12 +5366,12 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                      <button @click="limpiarFiltroDup()" title="Ver todo el catálogo"
                              class="shrink-0 w-11 h-11 -my-1 flex items-center justify-center rounded-xl bg-white/15 active:bg-white/30 text-white font-black text-lg active:scale-95 transition">✕</button>
                   </div>
-                  <main class="flex-1 overflow-y-auto p-3 scrollbar-hide min-h-0 pb-nav">
+                  <main class="flex-1 overflow-y-auto p-3 scrollbar-hide min-h-0 pb-nav" @scroll.passive="onGridScroll">
                      <div class="grid gap-3" :class="uiState.splitScreen && !uiState.isMobile ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'">
                          <div v-if="!dbCargada" class="col-span-full py-10 text-center"><svg class="animate-spin w-8 h-8 mx-auto text-emerald-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                          
-                         <!-- Productos Component -->
-                         <div v-for="prod in productosFiltrados" :key="prod.idUnico" @click="cardTapPOS($event, prod)"
+                         <!-- Productos Component · [perf] productosVisibles = ventana acotada de productosFiltrados (crece al scrollear) -->
+                         <div v-for="prod in productosVisibles" :key="prod.idUnico" @click="cardTapPOS($event, prod)"
                               @contextmenu.prevent="abrirAnaliticaPos(prod)"
                               @touchstart.passive="anaPosPressStart(prod)" @touchend="anaPosPressCancel" @touchmove.passive="anaPosPressCancel" @touchcancel="anaPosPressCancel"
                               :class="['bg-gray-50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer pos-card transition-all active:scale-95 flex flex-col relative', prod.idUnico === pulsingProductId ? 'product-pulse' : '', prod.promoStr ? 'has-promo' : '', anaPosPressingId === prod.idUnico ? 'pos-pressing' : '', dupSufijos[prod.idUnico] ? 'dup-card' : '']">
@@ -9843,6 +9843,21 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         const scannerInput = ref(null);
         const productosCatalogo = ref([]);
         const productosFiltrados = ref([]);
+        // [perf grilla] Render ACOTADO: se dibujan solo N tarjetas y crecen al scrollear → evita montar miles de nodos
+        // DOM de golpe (jank en tablet). La BÚSQUEDA y el ESCANEO siguen usando productosFiltrados COMPLETO, así que
+        // TODO el catálogo es alcanzable; solo se limita lo que se PINTA. gridLimite se reinicia al cambiar el filtro.
+        const _GRID_PASO = 80;
+        const gridLimite = ref(_GRID_PASO);
+        const productosVisibles = computed(() => {
+            const arr = productosFiltrados.value || [];
+            return gridLimite.value >= arr.length ? arr : arr.slice(0, gridLimite.value);
+        });
+        const onGridScroll = (e) => {
+            const el = e && e.target; if (!el) return;
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 400 && gridLimite.value < (productosFiltrados.value || []).length) {
+                gridLimite.value += _GRID_PASO;
+            }
+        };
         const carrito = ref([]);
         
         // --- MÓDULO ETIQUETAS (membretes de cambio de precio) ---
@@ -22031,9 +22046,11 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             dupSufijos.value = {};
             bBuscador.value = '';
             productosFiltrados.value = productosCatalogo.value;
+            gridLimite.value = _GRID_PASO;   // [perf grilla] volver al primer bloque al limpiar el filtro
         };
 
         const filtrarCatalogo = () => {
+           gridLimite.value = _GRID_PASO;   // [perf grilla] nuevo filtro → volver a mostrar el primer bloque
            // Cualquier búsqueda manual manda sobre el filtro de desambiguación.
            if (dupBanner.value) { dupBanner.value = null; dupSufijos.value = {}; }
            const raw = bBuscador.value.trim();
@@ -26607,7 +26624,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           // [FIX pantalla blanca] alias SIN guion bajo: Vue 3 NO expone al template las claves con "_" →
           // usar _extEsExtension en el template daba ReferenceError → throw en el render → pantalla blanca.
           extEsExtension: _extEsExtension,
-          bBuscador, productosFiltrados, carrito, granTotal, combosBanner, scannerInput,
+          bBuscador, productosFiltrados, productosVisibles, onGridScroll, carrito, granTotal, combosBanner, scannerInput,
           procesando, pago, modalPago, vuelto, errorDocumento, procesarPago, cpeReglas, cpeReglasConv,
           bancModal, bancVolver, bancElegirA, bancElegirB,
           iniciarTurno, cambiarModulo, toggleCamara,
