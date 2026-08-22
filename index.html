@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.324';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.325';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -11970,7 +11970,10 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                          promoStr: pStr, imagen: (base.Foto || `https://placehold.co/150x150/e5e7eb/52525b?text=${term.toUpperCase().substring(0,3)}`),
                          cat: (base.Categoria && (base.Categoria.subcategoria || base.Categoria.categoria)) || '',
                          stock: stockVal,
-                         segmentosPrecio: _segsProd   // [tramos] usado por el add directo del granel
+                         segmentosPrecio: _segsProd,   // [tramos] usado por el add directo del granel
+                         // [perf búsqueda] texto de búsqueda YA normalizado (una vez al mapear, no en cada tecla):
+                         // el filtro solo hace .includes() contra esto → cero regex/NFD en el camino caliente del teclado.
+                         searchBlob: _normTxt(base.Nombre || 'Sin Nombre') + ' ' + _normTxt(presBase.Empaque)
                      });
                  } catch(e) { console.warn("Error mapeando item", base.SKU_Base, e); }
             });
@@ -13574,7 +13577,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         let _firstInputTime = 0;
         let _lastWasFastInput = false;
         const onScanInput = () => {
-            filtrarCatalogo();
+            filtrarCatalogoDebounced();
             scanningPending.value = false;
             const now = Date.now();
             const len = (bBuscador.value || '').length;
@@ -15044,7 +15047,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk,
                                'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ p: { zona: config.value.zona || '', idCaja: idCajaActual.value || '', min: 720 } })
+                    body: JSON.stringify({ p: { zona: config.value.zona || '', idCaja: idCajaActual.value || '', min: 120 } })
                 }, 12000);
                 const d = await r.json().catch(() => null);
                 if (d && d.ok && d.data) {
@@ -16728,7 +16731,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 mcArrancarEfectos();
                 mcCargarRio();
                 if (_mcTimerRio) clearInterval(_mcTimerRio);
-                _mcTimerRio = setInterval(mcCargarRio, 9000);
+                // [perf] respaldo cada 30s (antes 9s): el realtime 'yapes' (12553) ya refresca al instante cuando
+                // entra/cambia un Yape; este poll solo cubre eventos perdidos/reconexión. Menos re-descarga+re-render.
+                _mcTimerRio = setInterval(mcCargarRio, 30000);
                 // la VOZ de los Yapes: la estación la arranca ella misma y la revisa a su ritmo.
                 // Dependía del poll de ventas de zona (que se pausa con la pantalla oculta y no
                 // corre si la caja no tiene estación asignada): el Yape llegaba, se veía en el
@@ -22006,13 +22011,23 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                productosFiltrados.value = productosCatalogo.value.filter(p => p.codBarras.includes(raw));
                return;
            }
-           // Búsqueda inteligente: cada palabra debe aparecer en nombre o empaque
+           // Búsqueda inteligente: cada palabra debe aparecer en nombre o empaque.
+           // [perf] usa p.searchBlob (pre-normalizado al mapear); fallback al cálculo viejo si faltara (catálogo viejo en caché).
            const palabras = _normTxt(raw).split(/\s+/).filter(p => p.length > 0);
-           const nombre_norm = (p) => _normTxt(p.nombreCorto) + ' ' + _normTxt(p.empaque);
            productosFiltrados.value = productosCatalogo.value.filter(p => {
-               const base = nombre_norm(p);
+               const base = p.searchBlob || (_normTxt(p.nombreCorto) + ' ' + _normTxt(p.empaque));
                return palabras.every(pal => base.includes(pal));
            });
+        };
+
+        // [perf] Debounce SOLO del filtro/re-render: al teclear rápido no re-filtra en cada letra, espera ~170ms de
+        // quietud. La detección scanner-vs-humano y el idle-timer de onScanInput siguen corriendo por tecla (baratos);
+        // y el escaneo real (Enter → procesarEscaneoOBusqueda) es instantáneo, ajeno a esto. Ante duda humana, 170ms es
+        // imperceptible; el resultado es idéntico al de filtrar en cada tecla, solo sin el jank intermedio.
+        let _filtrarTimer = null;
+        const filtrarCatalogoDebounced = () => {
+            if (_filtrarTimer) clearTimeout(_filtrarTimer);
+            _filtrarTimer = setTimeout(() => { _filtrarTimer = null; filtrarCatalogo(); }, 170);
         };
 
         const toggleCamara = () => {
