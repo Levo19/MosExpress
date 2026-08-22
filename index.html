@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.326';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.327';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -305,9 +305,11 @@
       }, 3500);
     });
   </script>
-  <!-- Firebase compat para Push Notifications -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+  <!-- Firebase compat para Push Notifications. [perf] defer: NO bloquea el primer render (200KB). Seguro porque
+       firebase solo se usa en _pushInit, que corre DESPUÉS del login (segundos post-boot) y ya trae guarda
+       `if (!window.firebase) return`; con defer, ambos SDK cargan apenas termina el parse, mucho antes del login. -->
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <!-- [v2.7+] Sistema centralizado de membretes/adhesivos (CDN MOS).
        ?v= bump fuerza refresh cuando cambia el módulo. -->
   <script src="https://levo19.github.io/MOS/assets/membrete/membrete-modal.js?v=2.8.295"></script>
@@ -11920,13 +11922,24 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 return true;
             };
 
+            // [perf remapeo O(B+P)] Antes el forEach hacía PRESENTACIONES.filter() por CADA base (O(B×P) ≈ millones de
+            // ops → freeze 200-600ms en cada re-mapeo, p.ej. al cambiar un precio en MOS) y recomputaba las promos
+            // vigentes por base. Ahora: 1 índice Map de presentaciones por SKU_Base + promos vigentes calculadas UNA vez.
+            // Resultado idéntico, sin el congelamiento. (Helpers hoisteados para reusarlos en el índice y en el loop.)
+            const _normSku = v => String(v === null || v === undefined ? '' : v).trim();
+            const _pf = v => parseFloat(String(v === null || v === undefined ? '' : v).replace(',', '.')) || 1;
+            const _presPorSku = new Map();
+            db.value.PRESENTACIONES.forEach(p => {
+                const k = _normSku(p.SKU_Base);
+                let arr = _presPorSku.get(k); if (!arr) { arr = []; _presPorSku.set(k, arr); }
+                arr.push(p);
+            });
+            const promosAct = (db.value.PROMOCIONES || []).filter(pr => _promoVigente(pr));
+
             db.value.PRODUCTO_BASE.forEach(base => {
                  try {
-                     const _normSku = v => String(v === null || v === undefined ? '' : v).trim();
                      const skuNorm = _normSku(base.SKU_Base);
-                     const _pf = v => parseFloat(String(v === null || v === undefined ? '' : v).replace(',', '.')) || 1;
-                     const pres = db.value.PRESENTACIONES
-                         .filter(p => _normSku(p.SKU_Base) === skuNorm)
+                     const pres = (_presPorSku.get(skuNorm) || [])
                          .map(p => ({ ...p, Factor: _pf(p.Factor) }))   // normaliza coma/punto a número
                          .sort((a, b) => a.Factor - b.Factor);
                      if(pres.length === 0) return;
@@ -11935,7 +11948,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                      // Promo individual (GRUPO/PORCENTAJE) o COMBO — solo si vigente
                      const skuActual = String(base.SKU_Base);
                      let pStr = '';
-                     const promosAct = (db.value.PROMOCIONES || []).filter(pr => _promoVigente(pr));
+                     // [perf] promosAct ya está calculado UNA vez arriba (hoisted), no por cada base.
                      // Promo directa (1 SKU, GRUPO o PORCENTAJE)
                      const promo = promosAct.find(pr => pr.SKU_Base === skuActual && pr.Tipo_Promo !== 'COMBO');
                      if (promo) {
