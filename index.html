@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.325';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.326';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -10844,7 +10844,24 @@ button:not(:disabled):not([aria-disabled="true"]):active,
             }
         }
         
+        // [perf carrito] El watch profundo hacía aplicarPromosCarrito()+JSON.stringify en CADA mutación → tipear el
+        // peso de un granel dígito a dígito (peor con el carrito lleno) se sentía pegajoso. Ahora lo PESADO (recalcular
+        // combos + persistir) SOLO se agrupa mientras se tipea un peso; se FUERZA al soltar el peso (gramosBlur) y antes
+        // de cobrar (procesarPago) → el precio/tramo y el total a cobrar SIEMPRE quedan exactos. El precio de la línea y
+        // el granTotal (computed que suma subtotales) YA se ven en vivo vía calcularImportes en gramosLive. El 90% del
+        // uso (agregar, +1/-1, quitar) corre inmediato como siempre → combos, sumas y feedback INTACTOS. Cero riesgo.
+        let _carritoHeavyTimer = null;
+        const _tipeandoPeso = () => carrito.value.some(it => it && it._gramosStr != null);
+        const _carritoHeavy = () => {
+           if (typeof aplicarPromosCarrito === 'function') { try { aplicarPromosCarrito(); } catch(_){} }
+           try { localStorage.setItem('mosexpress_carrito', JSON.stringify(carrito.value)); } catch(e) {}
+        };
+        const flushCarrito = () => {
+           if (_carritoHeavyTimer) { clearTimeout(_carritoHeavyTimer); _carritoHeavyTimer = null; }
+           _carritoHeavy();
+        };
         watch(carrito, (newVal) => {
+           // UI state SIEMPRE inmediato (responsivo)
            if(newVal.length > 0) {
               uiState.value.splitScreen = true;
               if(uiState.value.isMobile) uiState.value.mobileView = 'cart';
@@ -10852,12 +10869,14 @@ button:not(:disabled):not([aria-disabled="true"]):active,
               uiState.value.splitScreen = false;
               uiState.value.mobileView = 'catalog';
            }
-           // Recalcular combos al cambiar el carrito
-           if (typeof aplicarPromosCarrito === 'function') {
-              try { aplicarPromosCarrito(); } catch(_){}
+           // [perf] mientras se TIPEA un peso de granel: agrupar lo pesado (se fuerza al soltar el peso / al cobrar).
+           if (_tipeandoPeso()) {
+              if (_carritoHeavyTimer) clearTimeout(_carritoHeavyTimer);
+              _carritoHeavyTimer = setTimeout(() => { _carritoHeavyTimer = null; _carritoHeavy(); }, 300);
+              return;
            }
-           // Persistir carrito para sobrevivir refreshes accidentales
-           try { localStorage.setItem('mosexpress_carrito', JSON.stringify(newVal)); } catch(e) {}
+           // Resto (agregar / +1 / -1 / quitar): combos + persistencia INMEDIATO, como siempre.
+           _carritoHeavy();
            // Si el carrito quedó vacío y había un refresco de catálogo diferido por venta en curso,
            // intentarlo ahora (money-safe: el carrito ya no tiene items y no se toca el POS).
            try {
@@ -22493,6 +22512,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
           const val = item._gramosStr != null ? item._gramosStr : Math.round(item.cantidad * 1000);
           item._gramosStr = null;
           setCantidadGramos(index, val);
+          flushCarrito();   // [perf] peso confirmado → recalcular combos + persistir YA (total exacto para cobrar)
           // [spec] al confirmar (enter / click-afuera) → foco INMEDIATO al buscador de código de barras
           // (no esperar al auto-foco de 1.5s). Si el cajero tocó otro producto, su handler re-enfoca después.
           nextTick(() => { try { if (scannerInput.value) scannerInput.value.focus({ preventScroll: true }); } catch(_){} });
@@ -23448,6 +23468,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
            finally { _pagoLock = false; }
         };
         const _procesarPagoImpl = async () => {
+           flushCarrito();   // [perf/dinero] garantiza combos+subtotales al día ANTES de leer el total/vuelto (por si se cobra con un peso a medio tipear)
            if (!carrito.value.length) return agregarToast('Carrito vacío', 'Agrega productos antes de cobrar.');
            // [FIX 500x B1] antes era return silencioso (el cajero confirmaba y no pasaba nada) → dar feedback.
            if (vuelto.value < 0) { try { playBeepError(); } catch(_){} return agregarToast('Falta efectivo', 'El monto recibido no cubre el total.', 'warning'); }
