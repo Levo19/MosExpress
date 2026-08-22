@@ -46,10 +46,16 @@ Assets compartidos servidos desde el repo MOS (levo19.github.io/MOS/assets/):
    sobre bloques con llaves). Un regex `[\s\S]*?` ya tumbó la app una vez.
 2. **Validar tras editar**: extraer los 12 scripts inline y `node --check` cada uno;
    verificar que el template no use claves fuera del return del setup (pantalla blanca).
-3. **Ritual de versión en CADA deploy** (los 3 son obligatorios o hay bucle de update):
+3. **Ritual de versión en CADA deploy** (obligatorios o hay bucle de update):
    - `sw.js` → `const VERSION`
    - `version.json` → `version`
    - `index.html` → `var V` (línea ~10)
+   - **[2.8.330] `js/app.js?v=` en `index.html` Y en `sw.js` ASSETS** — el código de la app vive ahora en
+     `js/app.js` (externalizado del index para cachearlo aparte). Al cambiar app.js, bumpear su `?v=` en LOS DOS
+     lugares (deben coincidir; el SW lo precachea con `cache:'no-store'`). Si no coinciden → puede servir app.js viejo.
+   - **[2.8.329] `css/tw.css`**: Tailwind es un build ESTÁTICO (ya NO cdn.tailwindcss.com). Si cambian clases de
+     Tailwind, regenerar: `npx -y tailwindcss@3.4.17 -i src/tw.input.css -o css/tw.css --minify` y bumpear su `?v=`
+     en `index.html` + `sw.js` ASSETS. ME no tiene @apply/@layer ni clases dinámicas → el scan de index.html cubre todo.
 4. **Dinero**: todo cálculo usa `_money()` (redondeo al asignar/acumular, no solo al
    mostrar). El formatter de tickets es `_moneyFmt` (devuelve string) — no confundir.
 5. **Diálogos nativos prohibidos** (prompt/confirm/alert) → usar los modales del sistema.
