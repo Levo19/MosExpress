@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.331';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.332';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -2832,7 +2832,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
        MutationObserver permanente). Va ÚLTIMO en el <head> para ganar a los <style> inline como hacía el CDN.
        Regenerar con: npx -y tailwindcss@3.4.17 -i src/tw.input.css -o css/tw.css --minify (config: tailwind.config.js).
        ME no tiene @apply/@layer ni clases dinámicas → el scan de index.html cubre todas las clases. -->
-  <link rel="stylesheet" href="css/tw.css?v=2.8.329">
+  <link rel="stylesheet" href="css/tw.css?v=2.8.332">
 </head>
 <!-- [RETHEME OSCURO · BUG B] Se quitó el `:class="{'dark-mode': false}"` que colgaba
      aquí: Vue monta en #app, así que ese binding NUNCA se evaluaba (quedaba como
