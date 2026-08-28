@@ -10696,6 +10696,27 @@
                             try { _playMensajeNuevo(); } catch(_) {}
                             return;
                         }
+                        // [962] Despacho de almacén saliendo hacia esta zona → voz + beep + aviso.
+                        //   El targeting server-side (me.cajas abiertas de la zona) ya scopeó a esta zona;
+                        //   el _znk es un seguro extra (no suprime si no se puede determinar la zona).
+                        if (payload.data?.tipo === 'wh_despacho_saliendo') {
+                            const miZona  = _znk(config.value?.zona || '');
+                            const zonaMsg = _znk(payload.data.zona || '');
+                            if (!zonaMsg || !miZona || zonaMsg === miZona) {
+                                agregarToast(t || '📦 Carga en camino',
+                                    b || 'Tu carga está saliendo del almacén. Prepárate para recibirla.', 'info', 9000);
+                                try { playBeepOK(); } catch(_) {}
+                                try { speakES('Atención. Tu carga está saliendo del almacén. Prepárate para recibirla y contarla.'); } catch(_) {}
+                            }
+                            try {
+                                const reg = await navigator.serviceWorker.ready;
+                                reg.showNotification(t || '📦 Carga en camino', {
+                                    body: b, icon: 'https://levo19.github.io/MosExpress/icons/icon-192.png',
+                                    vibrate: [200, 100, 200, 100, 200], tag: 'wh-despacho'
+                                });
+                            } catch(_) {}
+                            return;
+                        }
                         agregarToast(t, b, 'info');
                         try {
                             const reg = await navigator.serviceWorker.ready;

@@ -1,1 +1,1 @@
-{"version":"2.8.334","build":"Recibir guía WH: reabrir/editar una recepción ya ingresada. Cuando la guía ya tiene recepción cerrada, en vez del banner pasivo se muestra un prompt accionable (Editar/Agregar · Cancelar). Editar pide clave admin (rol>=2) → recepcion_wh_reabrir server-side, precarga lo ya escaneado y deja seguir contando; al finalizar se manda el set COMPLETO y el backend recalcula el delta. Si la recepción quedó ABIERTA de antes, se retoma directo sin pedir clave. Sin prompt/confirm/alert. Front puro (js/app.js + index.html)."}
+{"version":"2.8.335"}
