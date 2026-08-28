@@ -15221,7 +15221,14 @@
                    else txt += "Comprobante en proceso de envio a SUNAT\n";
                    if (emp.email) txt += "Consulte: " + _n(emp.email) + "\n";
                } else {
-                   txt += "Gracias por su compra\n(Nota de venta - no es comprobante\nde pago electronico)\n";
+                   // [pie legal] El ticket es una NOTA DE VENTA sin valor tributario. Deja explicito que el
+                   // comprobante (boleta/factura) se pide AL MOMENTO DEL PAGO y que no se emite por ventas de
+                   // dias anteriores → protege al negocio ante reclamos tardios. ASCII (el ESC/POS no lleva tildes).
+                   txt += "Gracias por su compra\n";
+                   _wrap('- - - - - - - - - -', W).forEach(l => txt += l + "\n");
+                   _wrap('Este documento es un TICKET DE VENTA, sin valor tributario.', W).forEach(l => txt += l + "\n");
+                   _wrap('Si requiere Boleta o Factura electronica, solicitela AL MOMENTO DEL PAGO.', W).forEach(l => txt += l + "\n");
+                   _wrap('No se emiten comprobantes por ventas de dias anteriores.', W).forEach(l => txt += l + "\n");
                }
                txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";          // feed + corte
                // [v2.8.245] HUECO CERRADO: antes, si la solicitud NUNCA llegaba a PrintNode
