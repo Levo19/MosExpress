@@ -12094,12 +12094,18 @@
                         // [v2.5.39] Sonido fuerte distintivo + vibración larga
                         try { playSonidoCobroAsignado(); } catch(_){}
                         try { if (navigator.vibrate) navigator.vibrate([200, 80, 200, 80, 200, 80, 300]); } catch(_){}
+                        // [#6 doble-print] SOLO el equipo PRINCIPAL imprime el cobro; la EXTENSIÓN (espejo de la
+                        //   misma caja) también poll-ea el cobro → si también imprimía, salía DOBLE ticket (en las
+                        //   dos impresoras). La extensión sigue viendo el aviso/toast, pero no imprime.
+                        const _esExtCobro = !!(config.value && config.value.esExtension) || (() => { try { return !!JSON.parse(localStorage.getItem('mosexpress_es_extension') || 'null'); } catch (_) { return false; } })();
                         for (const cobro of nuevos) {
-                            // Imprimir ticket físico de aviso (cabecera: cliente, vencimiento, monto…)
-                            _imprimirAvisoCobroAsignado(cobro);
-                            // [fix cobro directo] + el TICKET COMPLETO en formato unificado (el detalle que
-                            // el aviso perdió al pasar la lectura de cobros a la RPC directa sin itemsOriginal).
-                            _imprimirTicketCopiaCobro(cobro);
+                            if (!_esExtCobro) {
+                                // Imprimir ticket físico de aviso (cabecera: cliente, vencimiento, monto…)
+                                _imprimirAvisoCobroAsignado(cobro);
+                                // [fix cobro directo] + el TICKET COMPLETO en formato unificado (el detalle que
+                                // el aviso perdió al pasar la lectura de cobros a la RPC directa sin itemsOriginal).
+                                _imprimirTicketCopiaCobro(cobro);
+                            }
                             // Toast por cada uno
                             agregarToast('🔔 Nuevo cobro asignado',
                                 (cobro.cliente || 'cliente') + ' · S/ ' + parseFloat(cobro.monto).toFixed(2),
