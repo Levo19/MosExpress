@@ -17956,7 +17956,12 @@
                     } })
                 }, 12000);
                 const d = await r.json().catch(() => null);
-                if (d && d.status === 'success') {
+                if (d && d.status === 'success' && (d.nSaltados | 0) > 0) {
+                    // [GUARDIÁN] el producto está en una guía abierta → NO se contó (el ajuste se bloqueó).
+                    item.estado = 'error';
+                    const _g = (d.saltados && d.saltados[0] && d.saltados[0].guia) || '';
+                    agregarToast('No se pudo auditar', 'Este producto está en una guía abierta' + (_g ? ' (' + _g + ')' : '') + '. Ciérrala primero y vuelve a contar.', 'error');
+                } else if (d && d.status === 'success') {
                     item.estado = 'guardado';
                     // Actualizar stock local con la cantidad final
                     const cantFinal = contado;
