@@ -15225,10 +15225,7 @@
                    // comprobante (boleta/factura) se pide AL MOMENTO DEL PAGO y que no se emite por ventas de
                    // dias anteriores → protege al negocio ante reclamos tardios. ASCII (el ESC/POS no lleva tildes).
                    txt += "Gracias por su compra\n";
-                   _wrap('- - - - - - - - - -', W).forEach(l => txt += l + "\n");
-                   _wrap('Este documento es un TICKET DE VENTA, sin valor tributario.', W).forEach(l => txt += l + "\n");
-                   _wrap('Si requiere Boleta o Factura electronica, solicitela AL MOMENTO DEL PAGO.', W).forEach(l => txt += l + "\n");
-                   _wrap('No se emiten comprobantes por ventas de dias anteriores.', W).forEach(l => txt += l + "\n");
+                   _wrap('Ticket sin valor tributario. Convierta a comprobante al momento de pagar.', W).forEach(l => txt += l + "\n");
                }
                txt += "\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02";          // feed + corte
                // [v2.8.245] HUECO CERRADO: antes, si la solicitud NUNCA llegaba a PrintNode
