@@ -17073,6 +17073,15 @@
             // Loguea ampliamente para que el usuario pueda ver dónde está el fallo
             // si la tabla DEVOLUCIONES_ZONA no aparece en WH.
             if (subtipoSnap === 'SALIDA_DEVOLUCION_WH') {
+                // [#devolucion parte 1] Auto-imprimir el ticket de la devolución en la estación de la zona
+                //   (inverso del despacho, que auto-imprime en la caja). Antes había que darle "Imprimir" a mano.
+                //   Pequeño delay para que la guía + detalle ya estén persistidos antes de leerlos para el ticket.
+                try {
+                    const _guiaDev = { id_guia: idGuiaSnap, tipo: 'SALIDA_DEVOLUCION_WH',
+                        fecha: new Date().toISOString(), zona: zonaSnap, zona_destino: null,
+                        vendedor: config.value.vendedor };
+                    setTimeout(() => { try { imprimirGuia(_guiaDev); } catch(_){} }, 900);
+                } catch(_){}
                 try {
                     const bodyDev = {
                         action: 'wh_crearDevolucionZona',
