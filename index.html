@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.333';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.334';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -2834,7 +2834,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
        MutationObserver permanente). Va ÚLTIMO en el <head> para ganar a los <style> inline como hacía el CDN.
        Regenerar con: npx -y tailwindcss@3.4.17 -i src/tw.input.css -o css/tw.css --minify (config: tailwind.config.js).
        ME no tiene @apply/@layer ni clases dinámicas → el scan de index.html cubre todas las clases. -->
-  <link rel="stylesheet" href="css/tw.css?v=2.8.332">
+  <link rel="stylesheet" href="css/tw.css?v=2.8.334">
 </head>
 <!-- [RETHEME OSCURO · BUG B] Se quitó el `:class="{'dark-mode': false}"` que colgaba
      aquí: Vue monta en #app, así que ese binding NUNCA se evaluaba (quedaba como
@@ -8525,7 +8525,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
         <div v-if="rwPaso === 'escaneo'" class="flex-1 flex flex-col overflow-hidden">
             <div class="p-3 bg-gray-800 border-b border-gray-700 shrink-0 space-y-2">
                 <div v-if="rwGuia && rwGuia.verificada" class="bg-amber-900/40 border border-amber-600/50 rounded-lg px-3 py-2 text-[11px] text-amber-200 font-bold">
-                    ⚠ Esta guía ya fue recibida antes. Si "Cerrar ingreso" no se reenviará (idempotente).
+                    ✏️ Editando una recepción ya registrada. Ajusta las cantidades o agrega productos; al finalizar se recalcula la diferencia.
                 </div>
                 <!-- [v2.8.278] conteo retomado de un borrador de HOY -->
                 <div v-if="guiaDraftAviso && guiaDraftAviso.tipo === 'RECIBIR'" class="gd-aviso rounded-lg px-3 py-2 flex items-center gap-2.5" data-gd-aviso-rw>
@@ -8599,6 +8599,21 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                 </div>
             </div>
             <button @click="cerrarRecibirWH" class="w-full py-4 rounded-2xl font-black text-base uppercase tracking-wider bg-emerald-500 text-white active:scale-95">Listo ✓</button>
+        </div>
+
+        <!-- PROMPT ACCIONABLE: la recepción ya está cerrada → ofrecer editar/agregar (pide clave admin) -->
+        <div v-if="rwReabrirPrompt" class="absolute inset-0 z-[10] bg-black/70 flex items-center justify-center p-5">
+            <div class="w-full max-w-sm bg-gray-800 border border-amber-600/50 rounded-2xl p-5 space-y-4">
+                <div class="text-center space-y-2">
+                    <p class="text-4xl">⚠️</p>
+                    <p class="text-white font-black text-base leading-tight">Este código ya tiene guía de ingreso</p>
+                    <p class="text-amber-200/90 text-xs font-bold">¿Deseas editar o agregar productos? Se pedirá la clave de un administrador.</p>
+                </div>
+                <div class="space-y-2">
+                    <button @click="rwReabrirRecepcion" class="w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-wider bg-amber-500 text-white active:scale-95">Editar / Agregar</button>
+                    <button @click="rwReabrirCancelar" class="w-full py-3 rounded-xl font-black text-sm uppercase tracking-wider bg-gray-700 text-gray-200 active:scale-95">Cancelar</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -8694,6 +8709,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
 
   </div>
 
-  <script src="js/app.js?v=2.8.330"></script>
+  <script src="js/app.js?v=2.8.334"></script>
 </body>
 </html>

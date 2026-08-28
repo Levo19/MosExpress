@@ -1684,6 +1684,7 @@
         const rwGuia = ref(null);          // cabecera+detalle precargado de recibir_guia_wh
         const rwEscaneadosArr = ref([]);   // [{codBarra, descripcion, cantidad}]
         const rwResultado = ref(null);     // verificación devuelta por recibir_guia_wh_cerrar
+        const rwReabrirPrompt = ref(false);// prompt accionable: recepción ya cerrada → ¿editar/agregar?
         const rwBusq = ref('');
         const rwCargando = ref(false);
         const rwCamara = ref(false);
@@ -16610,14 +16611,80 @@
                 if (!d || !d.ok) { playBeepError(); agregarToast('Guía no encontrada', (d && d.error) || 'No se pudo leer la guía'); return; }
                 rwGuia.value = d.data;
                 rwEscaneadosArr.value = [];
+                rwReabrirPrompt.value = false;
+                // ── Recepción ya existente: el flujo depende de su estado ──────────────────
+                // `verificacion` es la fila cerrada (con su propio detalle escaneado). Si ya
+                // existe, NO saltamos ciego a 'escaneo': o la retomamos (ABIERTA) o pedimos
+                // permiso para editarla (cerrada).
+                const ver = d.data.verificacion || null;
+                if (d.data.verificada && ver) {
+                    if (ver.estado === 'ABIERTA') {
+                        // (punto 4) Quedó reabierta de antes → retomar directo, sin volver a pedir clave.
+                        _rwPrecargarEscaneados(ver.detalle);
+                        rwPaso.value = 'escaneo';
+                        playBeepOK();
+                        agregarToast('Retomando edición', 'Continúa escaneando lo que faltó.', 'info');
+                        return;
+                    }
+                    // Recepción cerrada → prompt accionable (editar/agregar vs cancelar); nos
+                    // quedamos en el paso 'guia' detrás del modal.
+                    rwReabrirPrompt.value = true;
+                    playBeepOK();
+                    return;
+                }
+                // Flujo normal: guía nueva, sin recepción previa.
                 rwPaso.value = 'escaneo';
                 playBeepOK();
-                if (d.data.verificada) agregarToast('Ya recibida', 'Esta guía ya fue contada antes (idempotente).', 'warning');
             } catch (e) {
                 playBeepError();
                 agregarToast('Error', 'No se pudo leer la guía: ' + (e.message || e));
             } finally { rwCargando.value = false; }
         };
+
+        // Precarga rwEscaneadosArr desde el detalle de una recepción existente: una fila por cada
+        // línea con escaneado>0, en la MISMA forma {codBarra, descripcion, cantidad} que produce
+        // rwEscanearItem — así el render del PASO B y el re-cierre no distinguen el origen.
+        const _rwPrecargarEscaneados = (detalle) => {
+            const arr = [];
+            (detalle || []).forEach(l => {
+                const cant = Number(l.escaneado) || 0;
+                if (cant > 0) arr.push({ codBarra: String(l.codBarra), descripcion: l.descripcion || String(l.codBarra), cantidad: cant });
+            });
+            rwEscaneadosArr.value = arr;
+        };
+
+        // [Editar/Agregar] del prompt: pide clave admin (rol>=2) y reabre la recepción server-side.
+        // Al autorizar, precarga lo ya escaneado y deja al operario en el PASO B para seguir sumando.
+        // El re-cierre (rwCerrarIngreso) manda el set COMPLETO → el backend aplica solo el delta.
+        const rwReabrirRecepcion = () => {
+            rwReabrirPrompt.value = false;
+            const idGuia = (rwGuia.value && rwGuia.value.idGuiaWH) || rwIdGuia.value || '';
+            pedirPin(async (resultado) => {
+                if (!resultado || !resultado.autorizado) return;   // clave mala: pedirPin ya avisó, seguimos en 'guia'
+                rwCargando.value = true;
+                try {
+                    const r = await _rwRpc('recepcion_wh_reabrir', {
+                        idGuiaWH: idGuia,
+                        claveAdmin: resultado.clave,
+                        usuario: resultado.validadoPor || config.value.vendedor || ''
+                    });
+                    if (!r || !r.ok) { playBeepError(); agregarToast('No autorizado', (r && r.error) || 'Clave incorrecta o sin permiso', 'warning'); return; }
+                    // Precarga desde el detalle del reabrir; si no vino, cae al de la verificación.
+                    const det = (r.data && r.data.detalle) ||
+                                (rwGuia.value && rwGuia.value.verificacion && rwGuia.value.verificacion.detalle) || [];
+                    _rwPrecargarEscaneados(det);
+                    rwPaso.value = 'escaneo';
+                    playBeepOK();
+                    agregarToast('Guía reabierta', 'Continúa escaneando lo que faltó.', 'success');
+                } catch (e) {
+                    playBeepError();
+                    agregarToast('Error', 'No se pudo reabrir: ' + (e.message || e));
+                } finally { rwCargando.value = false; }
+            }, { accion: 'REABRIR_RECEPCION', refDocumento: String(idGuia) });
+        };
+
+        // [Cancelar] del prompt: cierra el modal y deja la guía sin tocar (seguimos en el paso 'guia').
+        const rwReabrirCancelar = () => { rwReabrirPrompt.value = false; };
 
         // Resuelve un código escaneado a {codBarra, descripcion} usando el detalle de la guía y, si no está,
         // el catálogo local. El operario cuenta a ciegas: NO mostramos la cantidad esperada.
@@ -18066,6 +18133,7 @@
           abrirGuiasBorrador,
           // [BUILD 1] Recibir guía de almacén (WH→ME por escaneo)
           modoRecibirWH, rwPaso, rwIdGuia, rwGuia, rwEscaneadosArr, rwResultado, rwBusq, rwCargando, rwCamara, rwTotalEscaneado,
+          rwReabrirPrompt, rwReabrirRecepcion, rwReabrirCancelar,
           abrirRecibirWH, cerrarRecibirWH, rwToggleCamara, rwCargarGuia, rwEscanearItem, rwCerrarIngreso,
           // [v2.7.6] Devolución al almacén (two-party witness)
           devEstadosZona, setDevEstado, capturarFotoDev, puedeConfirmarDevolucion,
