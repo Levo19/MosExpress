@@ -1,1 +1,1 @@
-{"version":"2.8.340"}
+{"version":"2.8.341","build":"FIX turno.html (Ticket-Z) no cargaba desde ME: mint-mos rechaza devices no-MOS, y ME pre-minteaba el token del reporte con mint-mos+mosexpress_deviceId -> ok:false -> turno.html sin token -> 'error al cargar Supabase' (recurrente en zona2; desde MOS si abria). Ahora ME reusa su propio token (_mintTokenSB -> mint-me, role authenticated, que datos_turno acepta), lo awaitea y guarda en localStorage ANTES de navegar. Sin tocar la logica del cierre."}

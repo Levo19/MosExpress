@@ -9407,27 +9407,27 @@
                  // extension_debe_cerrar (accesos CERRADA) y se recarga solo.
                  try { if (!_extEsExtension.value) _extRpc('extension_cerrar_cascada', { nombre: String(config.value.vendedor || ''), zona: String(config.value.zona || '') }); } catch (e) {}
 
-                 // [FIX turno.html cold-start] Pre-calentar el Edge y dejar un token minteado para el
-                 // reporte del turno (mismo origen levo19.github.io → localStorage compartido). turno.html
-                 // lo lee y SALTA su propio mint, y datos_turno queda caliente → sin el warning "Sin
-                 // conexión con Supabase" del primer load. Fire-and-forget: no bloquea la navegación.
+                 // [FIX turno.html desde ME · 2026-08] turno.html es una página MOS que se autenticaba con
+                 // mint-MOS, pero mint-mos RECHAZA (ok:false) los devices no registrados en MOS → desde ME
+                 // (device mosExpress) el pre-mint fallaba y turno.html NUNCA cargaba ("error al cargar
+                 // Supabase"; los reintentos morían igual porque volvían a mint-mos con el mismo device).
+                 // Desde MOS sí abría (device MOS válido). Fix: reusar el token que ME YA usa para todas sus
+                 // RPC me.* (_mintTokenSB → Edge mint-me, role authenticated; me.datos_turno no tiene gate de
+                 // app-claim y lo acepta) y AWAITEARLO + guardarlo ANTES de navegar (mata el race del pre-mint
+                 // fire-and-forget). turno.html lo lee de localStorage (mismo origen) y salta su propio mint.
                  try {
-                   const _devId = localStorage.getItem('mosexpress_deviceId') || 'turno-viewer';
-                   fetch(`${SUPABASE_URL}/functions/v1/mint-mos`, {
-                     method: 'POST', headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-                     body: JSON.stringify({ deviceId: _devId })
-                   }).then(r => r.json()).then(md => {
-                     if (md && md.ok && md.token) {
-                       try { localStorage.setItem('mos_turno_token', JSON.stringify({ token: md.token, ts: Date.now() })); } catch(_){}
-                       try {
-                         fetch(`${SUPABASE_URL}/rest/v1/rpc/datos_turno`, {
-                           method: 'POST',
-                           headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + md.token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-                           body: JSON.stringify({ p_id_caja: _idCaja })
-                         }).catch(()=>{});
-                       } catch(_){}
-                     }
-                   }).catch(()=>{});
+                   const _ttk = await _mintTokenSB().catch(() => null);
+                   if (_ttk) {
+                     try { localStorage.setItem('mos_turno_token', JSON.stringify({ token: _ttk, ts: Date.now() })); } catch(_){}
+                     // Calienta datos_turno con el MISMO token (Content-Profile me). Fire-and-forget.
+                     try {
+                       fetch(`${SUPABASE_URL}/rest/v1/rpc/datos_turno`, {
+                         method: 'POST',
+                         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _ttk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                         body: JSON.stringify({ p_id_caja: _idCaja })
+                       }).catch(()=>{});
+                     } catch(_){}
+                   }
                  } catch(_){}
 
                  // Navegar la ventana ya reservada al reporte del turno.
