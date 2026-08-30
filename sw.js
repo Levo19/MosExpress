@@ -70,7 +70,7 @@ self.addEventListener('notificationclick', event => {
 //           y allowlist CAJA_NO_ABIERTA sin GAS · H4 sync-loop GAS sin reintento infinito · H7 editar_cliente
 //           bloquea CPE por TIPO · MED10 RECHAZADO canónico · MED13 cola NV persiste fantasma · MED14 estadoCajas
 //           col8 prefijo · MED16 serie NV desde Supabase · LOW19b auth.idEstacion). 2 directrices verificadas.
-const VERSION = '2.8.342';
+const VERSION = '2.8.343';
 const CACHE   = 'mosexpress-v' + VERSION;
 // [egress] Cache dedicado de imágenes de Supabase Storage. Nombre ESTABLE (no cuelga de VERSION) → las fotos
 //   sobreviven a los updates de la app y NO se re-descargan en cada deploy/sesión. Las URLs vienen versionadas
@@ -79,7 +79,7 @@ const IMG_CACHE = 'mosexpress-img-v1';
 const ASSETS  = [
   './',
   './index.html',
-  './js/app.js?v=2.8.342',
+  './js/app.js?v=2.8.343',
   './css/tw.css?v=2.8.334',
   './radio.html',
   './academy.html',

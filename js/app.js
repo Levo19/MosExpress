@@ -17939,6 +17939,32 @@
 
         // Guarda UN ítem individual en GAS (llamado on blur).
         // No re-guarda si ya fue guardado — el @input del input resetea a 'pendiente' si el usuario edita.
+        // [anti scan-bleed] ¿el valor tecleado en el casillero de conteo es en realidad un código de barras
+        //   escaneado? (entero de 7+ dígitos y >100000 — un conteo de zona nunca lo es). Backstop del server 1002.
+        const _auditPareceScan = (v) => {
+            const s = String(v ?? '').trim();
+            return /^\d{7,}$/.test(s) && Number(s) > 100000;
+        };
+        // reencamina un código que se coló en el casillero: limpia el casillero (queda pendiente) y lo cuenta
+        //   como el escaneo del producto que el operario quiso registrar.
+        const _auditRerouteScan = (item, code) => {
+            if (item) { item.cantReal = null; item.estado = 'pendiente'; item.ceroConfirmado = false; }
+            try { playBeepError(); } catch (e) {}
+            agregarToast('Código escaneado', 'Eso es un código de barras, no una cantidad — lo cuento como producto.', 'warning');
+            auditEscanear(String(code));
+        };
+        // @input del casillero: marca pendiente + rearma guard de 0, y atrapa lectores SIN tecla Enter
+        //   (si el valor crece hasta forma de código de barras y no cambia en 140ms → reencaminar).
+        const _auditQtyInput = (item) => {
+            item.estado = 'pendiente';
+            if (parseFloat(item.cantReal) !== 0) item.ceroConfirmado = false;
+            clearTimeout(item._scanT);
+            if (_auditPareceScan(item.cantReal)) {
+                const v = String(item.cantReal).trim();
+                item._scanT = setTimeout(() => { if (String(item.cantReal ?? '').trim() === v) _auditRerouteScan(item, v); }, 140);
+            }
+        };
+
         const autoGuardarItem = async (item) => {
             if (item.estado === 'guardando' || item.estado === 'guardado') return;
             // [fix 🟡#5] NO clavar 0 silencioso. Si el casillero está vacío/NaN, no se guarda nada
@@ -17955,6 +17981,10 @@
                 return;
             }
             const contado = parseFloat(raw);
+            // [anti scan-bleed] Un lector USB con foco en el casillero teclea el código de barras del
+            //   SIGUIENTE producto aquí (13 dígitos) → cantReal quedaría como un código gigante. Un conteo real
+            //   JAMÁS es un entero de 7+ dígitos >100000. Si lo parece: NO guardar; reencaminar como escaneo.
+            if (_auditPareceScan(raw)) { _auditRerouteScan(item, String(raw).trim()); return; }
             if (contado === 0 && !item.ceroConfirmado) {
                 item.estado = 'pendiente';
                 item.ceroConfirmado = true;
@@ -18184,7 +18214,7 @@
           devEstadosZona, setDevEstado, capturarFotoDev, puedeConfirmarDevolucion,
           auditZona, auditItems, auditBusq, auditPendiente,
           camaraAuditAbierta, toggleCamaraAudit, auditEscanear,
-          auditInputRefs, autoGuardarItem, auditCardClass, auditInputClass,
+          auditInputRefs, autoGuardarItem, _auditQtyInput, auditCardClass, auditInputClass,
           stockMap,
           abrirAuditoria, cerrarAuditoria,
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,
