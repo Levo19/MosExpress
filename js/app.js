@@ -18214,7 +18214,7 @@
           devEstadosZona, setDevEstado, capturarFotoDev, puedeConfirmarDevolucion,
           auditZona, auditItems, auditBusq, auditPendiente,
           camaraAuditAbierta, toggleCamaraAudit, auditEscanear,
-          auditInputRefs, autoGuardarItem, _auditQtyInput, auditCardClass, auditInputClass,
+          auditInputRefs, autoGuardarItem, auditQtyInput: _auditQtyInput, auditCardClass, auditInputClass,
           stockMap,
           abrirAuditoria, cerrarAuditoria,
           cajeroActivoEnZona, trasladosPendientes, verificarCajeroActivo,

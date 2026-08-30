@@ -8690,7 +8690,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     <input v-model.number="item.cantReal"
                            type="number" min="0" step="1" placeholder="contar"
                            :ref="el => { if(el) auditInputRefs[idx] = el }"
-                           @input="_auditQtyInput(item)"
+                           @input="auditQtyInput(item)"
                            @blur="autoGuardarItem(item)"
                            @keyup.enter="$event.target.blur()"
                            class="w-14 font-black text-xl text-center rounded-lg border-2 outline-none py-0.5 bg-transparent focus:ring-2 ring-white/20"
