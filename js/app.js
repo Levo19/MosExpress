@@ -12436,11 +12436,23 @@
                 const _txt = ((nuevoExtra.value.concepto || '') + ' ' + (nuevoExtra.value.obs || '')).toLowerCase();
                 const _mencionaCierre = _txt.indexOf('cierre') >= 0;
                 if (_esEgreso && !_esVirtual) {
-                    let _efe = 0;
-                    (cobradosEnSesion.value || []).forEach(c => { _efe += c.efectivo || 0; });
-                    const _ing = (extrasMovimientos.value || []).reduce((a, e) => a + (e.tipo === 'INGRESO' ? (parseFloat(e.monto) || 0) : 0), 0);
-                    const _egr = (extrasMovimientos.value || []).reduce((a, e) => a + (e.tipo === 'EGRESO' ? (parseFloat(e.monto) || 0) : 0), 0);
-                    const _saldoLuego = _money((parseFloat(montoAperturaMemoria.value) || 0) + _efe + _ing - _egr - m);
+                    // [fix falsa alarma] Proyectar con el arqueo REAL del server (me.datos_turno =
+                    // lo mismo que calcula me.cerrar_caja). cobradosEnSesion solo tiene POR_COBRAR
+                    // cobrados en este dispositivo — NO incluye las ventas EFECTIVO directas → la
+                    // guardia proyectaba negativo con la caja sana. Fallback local solo sin red.
+                    let _saldoLuego = null;
+                    try {
+                        const _dt = await _datosTurnoDirecto(idCajaActual.value);
+                        const _t = _dt && _dt.totales;
+                        if (_t && _t.montoFinalEfe != null) _saldoLuego = _money(parseFloat(_t.montoFinalEfe) - m);
+                    } catch (eDt) { console.warn('[extra] datos_turno falló, proyecto con local:', eDt && eDt.message); }
+                    if (_saldoLuego === null) {
+                        let _efe = 0;
+                        (cobradosEnSesion.value || []).forEach(c => { _efe += c.efectivo || 0; });
+                        const _ing = (extrasMovimientos.value || []).reduce((a, e) => a + (e.tipo === 'INGRESO' ? (parseFloat(e.monto) || 0) : 0), 0);
+                        const _egr = (extrasMovimientos.value || []).reduce((a, e) => a + (e.tipo === 'EGRESO' ? (parseFloat(e.monto) || 0) : 0), 0);
+                        _saldoLuego = _money((parseFloat(montoAperturaMemoria.value) || 0) + _efe + _ing - _egr - m);
+                    }
                     if (_mencionaCierre || _saldoLuego < 0) {
                         const _aviso = _mencionaCierre
                             ? ('El cierre YA descuenta el dinero que entregas. Si además lo registras como egreso, se resta DOS veces.'
