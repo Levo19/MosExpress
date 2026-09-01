@@ -453,6 +453,25 @@
             mostrarPanelFantasmas.value = false;
         };
         // Sincronizar el ref cuando el .catch escribe en localStorage
+        // [2.8.348 · SQL 1008] Reportar el evento al servidor (fire-and-forget) para que el MASTER
+        // reciba push en MOS y lo vea en el flotante central. Idempotente server-side por localId+device.
+        const _fantasmaReportarServer = async (entry, estado, correlativo) => {
+            try {
+                if (!entry || !entry.id) return;
+                const tk = await _mintTokenSB(); if (!tk) return;
+                fetch(`${SUPABASE_URL}/rest/v1/rpc/fantasma_reportar`, {
+                    method: 'POST', keepalive: true,
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {
+                        localId: String(entry.id), deviceId: deviceId.value || localStorage.getItem('mosexpress_deviceId') || '',
+                        vendedor: entry.vendedor || '', zona: entry.zona || '', total: String(entry.total || 0),
+                        metodo: entry.metodo || '', motivo: entry.motivo || '', mensaje: entry.mensaje || '',
+                        impreso: !!entry.impreso, estado: estado || 'PENDIENTE', correlativo: correlativo || '',
+                        cajaOriginal: (entry.raw && entry.raw.pos_config && entry.raw.pos_config.cajaId) || ''
+                    }})
+                }).catch(() => {});
+            } catch(_) { /* jamás rompe el flujo de venta */ }
+        };
         const _refrescarVentasFantasma = () => {
             try { ventasFantasma.value = JSON.parse(localStorage.getItem('mosexpress_ventas_fantasma') || '[]'); } catch(_){}
         };
@@ -4072,6 +4091,7 @@
                                        const hR = ventasHoy.value.findIndex(v => v.id === venta.id);
                                        if (hR > -1) { ventasHoy.value[hR].syncStatus = 'synced'; ventasHoy.value[hR].correlativo = rr.correlativo; lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
                                        agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr.correlativo + (venta.cpe ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
+                                       try { _fantasmaReportarServer({ id: venta.id, vendedor: venta.raw_data?.header?.vendedor || config.value.vendedor, zona: config.value.zona, total: parseFloat(venta.raw_data?.header?.total) || 0, metodo: venta.raw_data?.header?.metodo || '', motivo: 'RESCATE_OK', mensaje: '', impreso: true, raw: venta.raw_data }, 'RESCATADO', rr.correlativo); } catch(_){}
                                        exitos++; exito = true;
                                    }
                                } catch(eR) {
@@ -4108,6 +4128,7 @@
                                    lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fant.slice(0, 50)));
                                    _refrescarVentasFantasma();
                                    ventasFantasma.value = _fant.slice(0, 50);
+                                   try { _fantasmaReportarServer(_fant[0], 'PENDIENTE'); } catch(_){}   // [2.8.348] push+listado MASTER
                                } catch(_){}
                                try { playBeepError?.(); } catch(_){}
                                agregarToast('⚠ Venta NO registrada',
@@ -4166,6 +4187,7 @@
                                        const hR2 = ventasHoy.value.findIndex(v => v.id === venta.id);
                                        if (hR2 > -1) { ventasHoy.value[hR2].syncStatus = 'synced'; ventasHoy.value[hR2].correlativo = rr2.correlativo; lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
                                        agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr2.correlativo + (_esCPE ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
+                                       try { _fantasmaReportarServer({ id: venta.id, vendedor: venta.raw_data?.header?.vendedor || config.value.vendedor, zona: config.value.zona, total: parseFloat(venta.raw_data?.header?.total) || 0, metodo: venta.raw_data?.header?.metodo || '', motivo: 'RESCATE_OK', mensaje: '', impreso: true, raw: venta.raw_data }, 'RESCATADO', rr2.correlativo); } catch(_){}
                                        exitos++; exito = true;
                                    }
                                } catch(eR2) {
@@ -4196,6 +4218,7 @@
                                    lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fant.slice(0, 50)));
                                    _refrescarVentasFantasma();
                                    ventasFantasma.value = _fant.slice(0, 50);
+                                   try { _fantasmaReportarServer(_fant[0], 'PENDIENTE'); } catch(_){}   // [2.8.348] push+listado MASTER
                                } catch(_){}
                                lsSet('pending_sales', JSON.stringify(pendingSales.value));
                                lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
@@ -4282,6 +4305,7 @@
                                lsSet('mosexpress_ventas_fantasma', JSON.stringify(_fg.slice(0, 50)));
                                _refrescarVentasFantasma();
                                ventasFantasma.value = _fg.slice(0, 50);
+                               try { _fantasmaReportarServer(_fg[0], 'PENDIENTE'); } catch(_){}   // [2.8.348] push+listado MASTER
                            } catch(_){}
                            try { playBeepError?.(); } catch(_){}
                            agregarToast('⚠ Venta NO registrada',
@@ -15719,6 +15743,7 @@
                            lsSet('mosexpress_ventas_fantasma', JSON.stringify(fantasmas.slice(0, 50)));
                            _refrescarVentasFantasma();
                            ventasFantasma.value = fantasmas.slice(0, 50);  // sync ref → banner aparece
+                           try { _fantasmaReportarServer(fantasmas[0], 'PENDIENTE'); } catch(_){}   // [2.8.348] push+listado MASTER
                        } catch(_){}
                        return;
                    }
