@@ -4057,7 +4057,35 @@
                            exitos++; exito = true;
                        } catch (eD) {
                            const mD = String(eD && eD.message || '');
-                           if (/CAJA_NO_ABIERTA/.test(mD) || /crear_venta_directa:\s/.test(mD) || /crear_cpe_directo:\s/.test(mD)) {
+                           // [2.8.347 · SQL 1007] caja original CERRADA en el replay → RESCATE server-side:
+                           // el ticket (YA COBRADO, impreso) entra POR_COBRAR a la caja ABIERTA de la zona.
+                           // Sin caja abierta → SE QUEDA EN COLA (jamás se archiva un ticket cobrado por caja cerrada).
+                           if (/CAJA_NO_ABIERTA/.test(mD) && !venta._rescateFallido) {
+                               let _rescOk = false;
+                               try {
+                                   const rr = venta.cpe ? await _crearCPEDirecto(venta.raw_data, venta.id, { rescate: true })
+                                                        : await _crearVentaDirecta(venta.raw_data, venta.id, { rescate: true });
+                                   _rescOk = !!(rr && rr.correlativo);
+                                   if (_rescOk) {
+                                       pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                                       lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                                       const hR = ventasHoy.value.findIndex(v => v.id === venta.id);
+                                       if (hR > -1) { ventasHoy.value[hR].syncStatus = 'synced'; ventasHoy.value[hR].correlativo = rr.correlativo; lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
+                                       agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr.correlativo + (venta.cpe ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
+                                       exitos++; exito = true;
+                                   }
+                               } catch(eR) {
+                                   const mR = String(eR && eR.message || '');
+                                   // error distinto a caja-cerrada (validación real) → próxima vuelta cae al archivo de fantasmas
+                                   if (!/CAJA_NO_ABIERTA/.test(mR)) { venta._rescateFallido = true; lsSet('pending_sales', JSON.stringify(pendingSales.value)); }
+                               }
+                               if (!_rescOk && !venta._rescateFallido) {
+                                   agregarToast('⏳ Ticket en espera', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' cobrado con la caja cerrada — se registrará POR_COBRAR al abrir una caja en la zona.', 'warning', 7000);
+                                   exito = true;   // sale del while; QUEDA en pendingSales para el próximo drenaje
+                               } else if (!_rescOk) {
+                                   exito = true;   // validación real: la próxima pasada lo archiva como fantasma con su motivo
+                               }
+                           } else if (/CAJA_NO_ABIERTA/.test(mD) || /crear_venta_directa:\s/.test(mD) || /crear_cpe_directo:\s/.test(mD)) {
                                // negocio determinístico (caja cerrada / validación) → no reintentar; sacar + avisar.
                                pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
                                const hF = ventasHoy.value.findIndex(v => v.id === venta.id);
@@ -4124,7 +4152,33 @@
                            exitos++; exito = true;
                        } catch (eX) {
                            const mX = String(eX && eX.message || '');
-                           if (/CAJA_NO_ABIERTA/.test(mX) || /crear_venta_directa:\s/.test(mX) || /crear_cpe_directo:\s/.test(mX)) {
+                           // [2.8.347 · SQL 1007] mismo RESCATE que la rama direct: ticket cobrado + caja cerrada
+                           // → derivar a la caja ABIERTA de la zona; sin caja abierta → retener en cola.
+                           if (/CAJA_NO_ABIERTA/.test(mX) && !venta._rescateFallido) {
+                               let _rescOk2 = false;
+                               try {
+                                   const rr2 = _esCPE ? await _crearCPEDirecto(venta.raw_data, venta.id, { rescate: true })
+                                                      : await _crearVentaDirecta(venta.raw_data, venta.id, { rescate: true });
+                                   _rescOk2 = !!(rr2 && rr2.correlativo);
+                                   if (_rescOk2) {
+                                       pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
+                                       lsSet('pending_sales', JSON.stringify(pendingSales.value));
+                                       const hR2 = ventasHoy.value.findIndex(v => v.id === venta.id);
+                                       if (hR2 > -1) { ventasHoy.value[hR2].syncStatus = 'synced'; ventasHoy.value[hR2].correlativo = rr2.correlativo; lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
+                                       agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr2.correlativo + (_esCPE ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
+                                       exitos++; exito = true;
+                                   }
+                               } catch(eR2) {
+                                   const mR2 = String(eR2 && eR2.message || '');
+                                   if (!/CAJA_NO_ABIERTA/.test(mR2)) { venta._rescateFallido = true; lsSet('pending_sales', JSON.stringify(pendingSales.value)); }
+                               }
+                               if (!_rescOk2 && !venta._rescateFallido) {
+                                   agregarToast('⏳ Ticket en espera', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' cobrado con la caja cerrada — se registrará POR_COBRAR al abrir una caja en la zona.', 'warning', 7000);
+                                   exito = true;   // QUEDA en pendingSales para el próximo drenaje
+                               } else if (!_rescOk2) {
+                                   exito = true;   // validación real: la próxima pasada lo archiva como fantasma
+                               }
+                           } else if (/CAJA_NO_ABIERTA/.test(mX) || /crear_venta_directa:\s/.test(mX) || /crear_cpe_directo:\s/.test(mX)) {
                                // negocio determinístico (caja cerrada / validación / rechazo CPE) → no reintentar; fantasma.
                                pendingSales.value = pendingSales.value.filter(v => v.id !== venta.id);
                                const hF = ventasHoy.value.findIndex(v => v.id === venta.id);
@@ -8873,6 +8927,18 @@
         const iniciarTurno = async () => {
             // [FIX 500x C3] guard de reentrada: doble-tap/reload durante el await abría DOS cajas ABIERTAS.
             if (procesandoCaja.value) return;
+            // [2.8.347 · incidente 01-sep] NO abrir turno/caja con una actualización obligatoria pendiente:
+            // la actualización a mitad de turno fue lo que disparó la pérdida de sesión. _preCheckVersion
+            // bloquea, muestra el overlay y recarga con la versión nueva; el cajero abre caja ya actualizado.
+            try {
+                if (typeof window._preCheckVersion === 'function') {
+                    const _verOk = await window._preCheckVersion();
+                    if (!_verOk) {
+                        try { agregarToast('⬆ Actualización pendiente', 'La app se está actualizando. En unos segundos vuelve a intentar abrir el turno.', 'warning', 6000); } catch(_){}
+                        return;
+                    }
+                }
+            } catch(_) { /* fail-open: sin red para el check, el turno abre normal */ }
             // [fix pantalla-blanca · CAUSA DE ORIGEN] NO abrir turno sin una estación (impresora) válida. Antes,
             // una extensión cuya zona no matcheaba ZONAS_CONFIG llegaba acá con estacion=null y se persistía
             // config.completado=true + estacion=null → sesión a medio formar que derivaba en pantalla blanca.
@@ -12536,7 +12602,12 @@
         // el server prende/apaga a TODOS desde un lugar (kill-switch instantáneo vía pg), y localStorage sigue
         // como override por-dispositivo (piloto). Fail-safe: si get_flags falla, quedan los últimos buenos (o
         // vacío → manda localStorage → default OFF = seguro, cae a GAS).
+        // [2.8.347 · incidente 01-sep] Los flags del server se PERSISTEN: antes _serverFlags nacía {} en cada
+        // boot y hasta que get_flags respondiera TODOS los flags leían OFF → una venta en esa ventana caía al
+        // path legacy (sin escritura directa) y podía terminar fantasma. Ahora el boot arranca con los últimos
+        // flags buenos (localStorage) y get_flags solo los refresca.
         let _serverFlags = {};
+        try { const _sfCache = JSON.parse(localStorage.getItem('mosexpress_server_flags') || 'null'); if (_sfCache && typeof _sfCache === 'object') _serverFlags = _sfCache; } catch(_) {}
         const _cargarFlags = async () => {
             try {
                 const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_flags`, {
@@ -12544,7 +12615,7 @@
                     headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Profile':'me', 'Content-Type':'application/json' },
                     body: '{}'
                 });
-                if (res.ok) { const d = await res.json(); if (d && typeof d === 'object') _serverFlags = d; }
+                if (res.ok) { const d = await res.json(); if (d && typeof d === 'object') { _serverFlags = d; try { lsSet('mosexpress_server_flags', JSON.stringify(d)); } catch(_) {} } }
             } catch(_) { /* fail-safe: conservar los últimos flags buenos */ }
         };
         _cargarFlags();                          // al arranque
@@ -12670,7 +12741,7 @@
             return d;
         };
         // Crea la venta NV DIRECTO en Supabase (RPC crear_venta_directa). Devuelve {status,id_venta,correlativo,dedup}.
-        const _crearVentaDirecta = async (ventaBase, localId) => {
+        const _crearVentaDirecta = async (ventaBase, localId, opts) => {
             const token = await _mintTokenSB();
             const h = ventaBase.header || {};
             const est = config.value.estacion || {};
@@ -12687,6 +12758,9 @@
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
                 id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '',
                 obs: h.obs || '',
+                // [2.8.347 · SQL 1007] RESCATE: el replay de la cola con la caja original CERRADA pide al
+                // server derivar el ticket (ya cobrado) como POR_COBRAR a la caja ABIERTA de la zona.
+                ...((opts && opts.rescate) ? { rescate: '1', zona: (ventaBase.auth && ventaBase.auth.zona) || config.value.zona || '' } : {}),
                 items: (ventaBase.items || []).map(it => ({ sku: it.sku, nombre: it.nombre, cantidad: it.cantidad,
                     precio: it.precio, subtotal: it.subtotal, cod_barras: it.codBarras || it.cod_barras || '',
                     valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv, unidad_medida: it.unidad_de_medida || it.unidad_medida,
@@ -12741,7 +12815,7 @@
         // — SQL 270); (2) Edge `emitir-cpe` emite a NubeFact con el TOKEN EN SECRET (no en tabla); (3) me.set_cpe_nf
         // patchea el resultado NF. Si la emisión falla/queda PENDIENTE → la reconciliación re-emite; igual imprime
         // con el correlativo. Idempotente: ref_local (crear) + correlativo (NubeFact dedup) → reintento no duplica.
-        const _crearCPEDirecto = async (ventaBase, localId) => {
+        const _crearCPEDirecto = async (ventaBase, localId, opts) => {
             const token = await _mintTokenSB();
             const h = ventaBase.header || {};
             const posc = ventaBase.pos_config || ventaBase.pos || {};
@@ -12757,6 +12831,9 @@
                 cliente_doc: cli.doc || '', cliente_nombre: cli.nombre || '', tipo_doc_cliente: cli.tipo || 0,
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
                 id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '', obs: h.obs || '',
+                // [2.8.347 · SQL 1007] RESCATE: replay con caja original CERRADA → el server deriva el CPE
+                // (ya cobrado, debe emitirse) a la caja ABIERTA de la zona, conservando la forma de pago.
+                ...((opts && opts.rescate) ? { rescate: '1', zona: (ventaBase.auth && ventaBase.auth.zona) || config.value.zona || '' } : {}),
                 items: (ventaBase.items || []).map(it => ({ sku: it.sku, nombre: it.nombre, cantidad: it.cantidad,
                     precio: it.precio, subtotal: it.subtotal, cod_barras: it.codBarras || it.cod_barras || '',
                     cod_sunat: it.cod_sunat || '', valor_unitario: it.valor_unitario, tipo_igv: it.tipo_igv,
