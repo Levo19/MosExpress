@@ -6772,6 +6772,7 @@
         // (red móvil, mint fallido), el siguiente pulso del interval REINTENTA como
         // login en vez de recibir un debeCerrar injusto a los 30s de loguearse.
         let _wizLoginPendiente = false;
+        let _wizAutocuraIntentada = false;   // [2.8.345] one-shot: reintento como login ante SIN_FILA_DIA con caja abierta
         const _wizRegistrarPresencia = async (esLogin) => {
             if (offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             const cw = config.value;
@@ -6818,11 +6819,28 @@
                     }})
                 }, 8000);
                 const _j = await _r.json().catch(() => null);
-                // login confirmado por el server → dejar de insistir con esLogin
-                if (_login && _r.ok && _j && _j.ok === true) _wizLoginPendiente = false;
+                // login confirmado por el server → dejar de insistir con esLogin.
+                // [2.8.345 · incidente 01-sep] SQL 1006 devuelve hookOk: si el hook de accesos falló en silencio
+                // (hookOk=false) la fila del día NO existe → seguir insistiendo como login en el próximo pulso.
+                // Backend viejo (sin hookOk) → comportamiento anterior.
+                if (_login && _r.ok && _j && _j.ok === true && _j.hookOk !== false) _wizLoginPendiente = false;
+                if (_login && _j && _j.hookOk === false) console.warn('[presencia] login sin fila del día (hook):', _j.hookError || '');
                 // [v2.8.191 P3] el backend ordena cerrar (11pm / otro equipo / día
                 // nuevo) → cerrar acá mismo. Backend viejo: sin debeCerrar → no-op.
-                if (_j && _j.debeCerrar === true) _meCerrarSesionForzada('backend');
+                if (_j && _j.debeCerrar === true) {
+                    // [2.8.345 · incidente 01-sep] AUTOCURA local: SIN_FILA_DIA con una caja REAL abierta en este
+                    // equipo (cajero) = la fila del día se perdió/no se creó, NO una sesión cerrada. Reintentar UNA
+                    // vez como login (recrea la fila) antes de tirar la sesión. Si vuelve a ordenar cerrar → cerrar.
+                    const _cajaReal = !!cajaAbierta.value && !!idCajaActual.value && !String(idCajaActual.value).startsWith('CAJA-LOCAL-');
+                    if (_j.motivo === 'SIN_FILA_DIA' && cw.esCajero && _cajaReal && !_wizAutocuraIntentada) {
+                        _wizAutocuraIntentada = true;
+                        _wizLoginPendiente = true;
+                        console.warn('[presencia] SIN_FILA_DIA con caja abierta → reintento como login (autocura)');
+                        setTimeout(() => { try { _wizRegistrarPresencia(true); } catch(_){} }, 1500);
+                        return;
+                    }
+                    _meCerrarSesionForzada('backend');
+                }
             } catch (e) { /* fire-and-forget: si fue login, _wizLoginPendiente reintenta */ }
         };
         // [fix #3 · extras unificados] Cargar TODOS los extras de la CAJA desde el backend (me.movimientos_extra_caja,
@@ -8776,7 +8794,9 @@
                 }, 12000);
                 const d = await r.json().catch(() => null);
                 if (!d || d.status !== 'success' || !d.autorizado) {
-                    pinRetomaError.value = (d && d.mensaje) || 'Clave incorrecta';
+                    // [2.8.345 · incidente 01-sep] un status:'error' del server (caja no encontrada, app, etc.) NO es
+                    // "Clave incorrecta": mostrar el mensaje/error REAL para no culpar a la clave del admin.
+                    pinRetomaError.value = (d && (d.mensaje || d.error)) || (r.ok ? 'Clave incorrecta' : ('Error del servidor (' + r.status + ')'));
                     retomandoCaja.value = false;
                     return;
                 }
