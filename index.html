@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.345';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.346';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -5799,6 +5799,8 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                     <div class="text-[11px] text-slate-400 mt-1">
                         {{ new Date(f.ts).toLocaleString('es-PE') }} · {{ f.vendedor }} · {{ f.zona }} · {{ f.metodo }}
                     </div>
+                    <!-- [2.8.346] motivo REAL del servidor (antes solo el chip genérico → imposible saber por qué rebotó) -->
+                    <div v-if="f.mensaje" class="text-[10px] text-rose-200/90 mt-1 font-mono break-words">Servidor: {{ f.mensaje }}</div>
                     <div v-if="f.impreso" class="text-[10px] text-amber-300 mt-1 font-bold">🖨 Ticket físico impreso — verifica con el cliente</div>
                 </div>
             </div>
