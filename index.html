@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.349';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.350';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -7807,9 +7807,9 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Virtual</label>
                         <input v-model.number="cobroAsigMixtoVi" type="number" step="0.01" min="0" class="w-full p-3 border-2 border-cyan-300 rounded-xl font-bold text-lg">
                     </div>
-                    <p v-if="cobroAsigMixtoEf + cobroAsigMixtoVi !== parseFloat(cobroAsignadoActivo.monto)"
+                    <p v-if="(Number(cobroAsigMixtoEf)||0) + (Number(cobroAsigMixtoVi)||0) !== parseFloat(cobroAsignadoActivo?.monto||0)"
                        class="col-span-2 text-xs text-red-600 font-bold text-center">
-                        ⚠ Suma {{ (cobroAsigMixtoEf + cobroAsigMixtoVi).toFixed(2) }} ≠ Total {{ parseFloat(cobroAsignadoActivo.monto).toFixed(2) }}
+                        ⚠ Suma {{ ((Number(cobroAsigMixtoEf)||0) + (Number(cobroAsigMixtoVi)||0)).toFixed(2) }} ≠ Total {{ parseFloat(cobroAsignadoActivo?.monto||0).toFixed(2) }}
                     </p>
                 </div>
 
