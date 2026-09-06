@@ -1515,6 +1515,9 @@
         const guiaTipo = ref('SALIDA');
         const guiaZonaDestino = ref('');
         const guiaItems = ref([]);
+        // [fix scanner BT] anti-rebote de GUÍAS (mismo motivo que en venta): ignora el mismo código < 250ms.
+        let _gbLastCod = '';
+        let _gbLastTs = 0;
         const guiaFreshCb = ref(null); // [v2.8.30] cod_barras recién agregado → dispara slide-in (se limpia al instante)
         const guiaBusq = ref('');
         const guiaObs = ref('');
@@ -5021,6 +5024,12 @@
         let _scanIdleTimer = null;
         let _firstInputTime = 0;
         let _lastWasFastInput = false;
+        // [fix scanner BT] anti-rebote de VENTA: un lector Bluetooth puede reenviar la misma ráfaga
+        // (o mandar Enter doble) → el mismo código se procesaba 2-4 veces y la cantidad se disparaba.
+        // Ignoramos el MISMO código si llega < 250 ms tras el anterior (un re-escaneo intencional del
+        // mismo producto toma ≥300 ms: mover/re-apuntar/gatillar, así que no lo bloquea).
+        let _ventaLastCod = '';
+        let _ventaLastTs = 0;
         const onScanInput = () => {
             filtrarCatalogoDebounced();
             scanningPending.value = false;
@@ -5033,8 +5042,10 @@
                 _firstInputTime = now;
             } else if (len >= 4) {
                 const elapsed = now - _firstInputTime;
-                // Promedio ≤ 25ms por char => imposible humano => scanner / pegado
-                if (elapsed < (len * 25)) _lastWasFastInput = true;
+                // [fix scanner BT] Promedio ≤ 45ms/char => scanner/pegado. Antes 25ms era demasiado estricto:
+                // un lector BLUETOOTH entrega los caracteres más lento/con jitter → quedaba como "tipeo
+                // manual" y se habilitaba el match parcial por NOMBRE (agregaba productos equivocados).
+                if (elapsed < (len * 45)) _lastWasFastInput = true;
             }
             if (_scanIdleTimer) clearTimeout(_scanIdleTimer);
             if (len > 0) {
@@ -5460,7 +5471,7 @@
                 _hwGuiaBuffer = '';
                 if (_hwGuiaTimer) { clearTimeout(_hwGuiaTimer); _hwGuiaTimer = null; }
                 // Ráfaga scanner-paced (≈≤30ms/char) y foco fuera del input correcto → ruteo por contexto.
-                if (elapsed < (cod.length * 35)) {
+                if (elapsed < (cod.length * 55)) {
                     e.preventDefault();
                     // [v2.8.31] Si el foco estaba en el SCANNER DE VENTA, los dígitos ya entraron a
                     // bBuscador (v-model) y el @keyup.enter de ese input dispararía procesarEscaneoOBusqueda
@@ -13910,12 +13921,17 @@
         const agregarItemDesdePopover = () => { agregarCarritoObj(popover.value.data); popover.value.visible = false; bBuscador.value = ''; filtrarCatalogo(); };
 
         const procesarEscaneoOBusqueda = () => {
-          // Determinar origen: scanner (físico/cámara/pegado) vs tipeo manual.
-          // Solo el scanner activa modo estricto (sin búsqueda parcial por nombre).
-          // Tipear "250gr" o "coca cola" siempre permite match parcial.
-          const isFromScanner = _lastWasFastInput;
           let code = bBuscador.value.trim().toUpperCase();
           if (!code) return;
+          // [fix scanner BT] Anti-rebote: el MISMO código < 250 ms tras el anterior = reenvío del lector
+          // Bluetooth → ignorar para no sumar 2-4 veces la misma unidad.
+          const _nowSc = Date.now();
+          if (code === _ventaLastCod && (_nowSc - _ventaLastTs) < 250) { bBuscador.value = ''; return; }
+          _ventaLastCod = code; _ventaLastTs = _nowSc;
+          // Determinar origen: scanner (físico/cámara/pegado) vs tipeo manual. Solo el scanner activa modo
+          // estricto (sin búsqueda parcial por nombre). Un barcode de 8+ dígitos SIEMPRE es exacto, aunque
+          // el timing BT no lo haya marcado como scanner (evita que un tramo del código matchee otro NOMBRE).
+          const isFromScanner = _lastWasFastInput || /^[0-9]{8,}$/.test(code);
           // [fix layout ES-LatAm · 1000x] un lector HID con teclado Español escribe "'" donde el
           // código tiene "-" (WH-9S7XBPX → WH'9S7XBPX). Normalizamos "'"(recto/curvo/agudo)→"-" SOLO
           // para el match por CÓDIGO (determinista, sin depender del heurístico scanner/manual). La
@@ -16941,6 +16957,10 @@
             // [fix layout ES-LatAm] scanner, match exacto de código → "'"→"-" (no búsqueda por nombre).
             const q = guiaBusq.value.trim().replace(/['’‘]/g, '-');
             if (!q) return;
+            // [fix scanner BT] anti-rebote: mismo código < 250ms = reenvío del lector → ignorar (no doble +1).
+            const _nowGb = Date.now();
+            if (q === _gbLastCod && (_nowGb - _gbLastTs) < 250) { guiaBusq.value = ''; return; }
+            _gbLastCod = q; _gbLastTs = _nowGb;
 
             let pres = db.value.PRESENTACIONES?.find(p => String(p.Cod_Barras) === q);
 
@@ -16975,26 +16995,25 @@
 
             const idx = guiaItems.value.findIndex(i => i.cod_barras === q);
             if (idx >= 0) {
-                if (esGranel) {
-                    focusGranelInput();
-                    playBeepOK();
-                } else {
-                    guiaItems.value[idx].cantidad++;
-                    // [v2.8.30] +1 al mismo producto → bip doble + glow/count-up/"+1" flotante (réplica WH)
-                    playBeepDouble();
-                    _sensorialGuiaAutoSum(q);
-                }
+                // [fix scanner] Escanear SIEMPRE suma +1 (también granel). Ya NO se mueve el foco al campo de
+                // cantidad: eso hacía que, al escanear el SIGUIENTE producto, sus dígitos cayeran en la
+                // cantidad del anterior. La cantidad se edita SOLO tocando el número.
+                guiaItems.value[idx].cantidad++;
+                // [v2.8.30] +1 al mismo producto → bip doble + glow/count-up/"+1" flotante (réplica WH)
+                playBeepDouble();
+                _sensorialGuiaAutoSum(q);
             } else {
                 const stockActual = stockMap.value[q + '_' + guiaZona.value] ?? null;
                 guiaItems.value.push({ cod_barras: q, nombre, cantidad: 1, stockActual, unidadMedida });
-                if (esGranel) focusGranelInput();
                 // producto NUEVO en la lista → bip simple + slide-in (clase g-slide-in vía guiaFreshCb)
                 guiaFreshCb.value = q;
                 setTimeout(() => { if (guiaFreshCb.value === q) guiaFreshCb.value = null; }, 400);
                 playBeepOK();
             }
-            _tocarActividadGuia(); // reinicia el reloj de inactividad de 5 min
+            _tocarActividadGuia(); // reinicia el reloj de inactividad
             guiaBusq.value = '';
+            // [fix scanner] el foco vuelve SIEMPRE al buscador de código VISIBLE, listo para el siguiente producto.
+            nextTick(() => { try { const els = document.querySelectorAll('[data-ctx-input="guiaBusq"]'); for (const el of els) { if (el.offsetParent !== null) { el.focus(); break; } } } catch (_) {} });
         };
 
         // [v2.8.39] Borrar item de la guía en curso con UNDO de 4s (whoosh + haptic, réplica WH).

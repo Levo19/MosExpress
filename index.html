@@ -7,7 +7,7 @@
   <script>
     // ── Banner de versión en consola + chequeo de actualización (igual que MOS) ──
     (function () {
-      var V = '2.8.348';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
+      var V = '2.8.349';   // ⚠ bumpear junto con sw.js + version.json (ESTE es el que compara el auto-update)
       try { window.__ME_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
       var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
       console.log('%c ME (MosExpress) cargado · v' + V + ' ', 'background:#10b981;color:#000;' + s);
@@ -8117,7 +8117,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         <span class="text-[11px] font-black uppercase tracking-wider text-amber-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}<span v-if="guiaDraftSello" class="gd-sello ml-2" data-gd-sello>☁ guardado</span></span>
                         <span class="text-[11px] font-black text-gray-400">{{ guiaTotalUnidades }} unid.</span>
                     </div>
-                    <div v-for="(item, idx) in guiaItems" :key="idx"
+                    <div v-for="(item, idx) in guiaItems" :key="item.cod_barras"
                          :data-guia-row="item.cod_barras"
                          class="bg-gray-800 rounded-xl px-3 py-2.5 transition-all relative"
                          :class="[guiaSubtipo === 'SALIDA_DEVOLUCION_WH' && item.estadoDev && item.estadoDev !== 'BUEN_ESTADO' ? 'ring-2 ring-rose-500/40 bg-gradient-to-br from-gray-800 to-rose-950/30' : '', item.cod_barras === guiaFreshCb ? 'g-slide-in' : '', guiaDraftFresh.includes(item.cod_barras) ? 'g-draft-in' : '', item.draftAlerta ? 'ring-1 ring-rose-500/50' : '']">
@@ -8256,7 +8256,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                         <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400">{{ guiaItems.length }} {{ guiaItems.length === 1 ? 'producto' : 'productos' }}<span v-if="guiaDraftSello" class="gd-sello ml-2" data-gd-sello>☁ guardado</span></span>
                         <span class="text-[11px] font-black text-gray-400">{{ guiaTotalUnidades }} unid.</span>
                     </div>
-                    <div v-for="(item, idx) in guiaItems" :key="idx" :data-guia-row="item.cod_barras"
+                    <div v-for="(item, idx) in guiaItems" :key="item.cod_barras" :data-guia-row="item.cod_barras"
                          class="flex items-center gap-3 bg-gray-800 rounded-xl px-3 py-2.5 relative transition-all"
                          :class="[item.cod_barras === guiaFreshCb ? 'g-slide-in' : '', guiaDraftFresh.includes(item.cod_barras) ? 'g-draft-in' : '', item.draftAlerta ? 'ring-1 ring-rose-500/50' : '']">
                         <div class="flex-1 min-w-0">
@@ -8711,6 +8711,6 @@ button:not(:disabled):not([aria-disabled="true"]):active,
 
   </div>
 
-  <script src="js/app.js?v=2.8.348"></script>
+  <script src="js/app.js?v=2.8.349"></script>
 </body>
 </html>
