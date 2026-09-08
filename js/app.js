@@ -2956,7 +2956,17 @@
               const cajaActiva = localStorage.getItem('mosexpress_caja_activa');
               if(cajaActiva) {
                  const cr = JSON.parse(cajaActiva);
-                 if(new Date(cr.fecha).toDateString() === new Date().toDateString()) {
+                 // [fix expulsión · dinero] "¿es de HOY?" ROBUSTO. Antes: new Date(cr.fecha).toDateString()===hoy,
+                 //   con la fecha en la ZONA LOCAL de la tablet. Si cr.fecha venía vacío/mal formado (p.ej. del
+                 //   snapshot de recuperación tras una recarga a mitad de turno) → new Date() = Invalid Date →
+                 //   nunca igualaba a hoy → se daba por "caja de AYER" y se OLVIDABA una caja ABIERTA de hoy
+                 //   (expulsión al wizard + caja huérfana). Ahora: día en TZ Lima; si la fecha NO es parseable,
+                 //   se asume HOY (no se descarta) y _verificarCajaServidor (verdad del server) confirma/limpia.
+                 const _crD = cr.fecha ? new Date(cr.fecha) : null;
+                 const _crDiaLima = (_crD && !isNaN(_crD.getTime()))
+                     ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(_crD) : null;
+                 const _cajaEsDeHoy = (_crDiaLima == null) || (_crDiaLima === _meDiaLima());
+                 if(_cajaEsDeHoy) {
                      cajaAbierta.value = true;
                      idCajaActual.value = cr.idCaja;
                      montoAperturaMemoria.value = cr.monto;
@@ -7805,9 +7815,43 @@
 
 
         // ── Fast-track: continuar turno de hoy ──
-        const wizFastTrack = () => {
+        const wizFastTrack = async () => {
             const u = wizUltimoTurno.value;
             if (!u) return;
+            // [fix continuar-turno · dinero] Si el último turno era de CAJERO y ESTE dispositivo YA tiene una
+            //   caja ABIERTA (de hoy), NO abrir un turno nuevo: eso chocaba con el guard "ya hay un cajero
+            //   activo en la zona" = tu PROPIA caja huérfana → te bloqueabas a ti mismo. Se rutea a la RETOMA
+            //   (clave admin, me.confirmar_retoma_caja) que RESUME tu caja con todos sus tickets. Si la
+            //   verificación falla o no hay caja tuya → sigue el login normal (sin regresión).
+            try {
+                if (u.esCajero) {
+                    const _did = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
+                    if (_did && navigator.onLine) {
+                        const _tk = await _mintTokenSB();
+                        if (_tk) {
+                            const _r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/retomar_caja_device`, {
+                                method: 'POST',
+                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ p: { deviceId: _did } })
+                            }, 8000);
+                            const _d = await _r.json().catch(() => null);
+                            if (_r.ok && _d && _d.status === 'success' && _d.encontrada && _d.idCaja) {
+                                const _fa = _d.fechaApertura ? new Date(_d.fechaApertura) : null;
+                                const _faLima = (_fa && !isNaN(_fa.getTime())) ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(_fa) : null;
+                                if (!_faLima || _faLima === _meDiaLima()) {
+                                    cajaDetectadaBackend.value = {
+                                        idCaja: _d.idCaja, vendedor: _d.vendedor, zona: _d.zona,
+                                        monto: _d.monto, estacion: _d.estacion, fechaApertura: _d.fechaApertura
+                                    };
+                                    try { wizBeep('success'); } catch(_){}
+                                    abrirModalPinRetomaCaja();   // pide la clave admin y RESUME tu caja (no login nuevo)
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch(_) { /* sin red / RPC falló → seguir con el login normal (sin regresión) */ }
             wizBeep('success');
             configWizard.value.vendedor   = u.nombre;
             // [v2.7.47 FIX] Propagar rol + idPersonal
