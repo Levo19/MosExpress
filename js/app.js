@@ -542,6 +542,44 @@
             } catch(e) {}
         };
 
+        // ── [Mensajes de voz 1026] admin (MOS) → este equipo LO LEE en voz alta (TTS). ──────────────
+        //   Habla aunque el toggle de voz de cobros esté off (es un aviso del admin). Autoplay: solo suena si
+        //   hubo un toque previo; el cajero usa la pantalla en turno, así que el audio ya está desbloqueado.
+        const _vozSpeakMsg = (texto) => {
+            try {
+                if (!('speechSynthesis' in window)) return;
+                speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(String(texto || ''));
+                u.lang = 'es-PE'; u.rate = 1.02; u.pitch = 1.0; u.volume = 1.0;
+                const voz = _seleccionarVoz();
+                if (voz) u.voice = voz;
+                speechSynthesis.speak(u);
+            } catch (_) {}
+        };
+        let _vozMEBusy = false;
+        const _vozPollMsg = async () => {
+            if (_vozMEBusy || document.visibilityState !== 'visible') return;
+            const dev = localStorage.getItem('mosexpress_deviceId') || deviceId.value || '';
+            if (!dev) return;
+            _vozMEBusy = true;
+            try {
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const hh = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'mos', 'Content-Type': 'application/json' };
+                const res = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/voz_pendientes`, { method: 'POST', headers: hh, body: JSON.stringify({ p: { deviceId: dev } }) }, 8000);
+                const d = await res.json().catch(() => null);
+                const msgs = (d && d.ok && Array.isArray(d.data)) ? d.data : [];
+                if (msgs.length) {
+                    for (const m of msgs) {
+                        _vozSpeakMsg(m.texto);
+                        try { agregarToast('🔊 Mensaje de voz', String(m.texto || ''), 'info', 9000); } catch (_) {}
+                    }
+                    try { await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/voz_marcar_leido`, { method: 'POST', headers: hh, body: JSON.stringify({ p: { deviceId: dev, ids: msgs.map(m => m.id) } }) }, 8000); } catch (_) {}
+                }
+            } catch (_) {}
+            finally { _vozMEBusy = false; }
+        };
+
         // Formatea un monto a frase natural en español:
         // 2.00 → "2 soles" · 2.50 → "2 con 50 soles" · 12.05 → "12 con 5 soles"
         const _precioVoz = (n) => {
@@ -2310,6 +2348,9 @@
           window.addEventListener('online', updateOnlineStatus);
           window.addEventListener('offline', updateOnlineStatus);
           handleResize();
+
+          // [Mensajes de voz 1026] poll liviano (20s, solo visible) → lee en voz alta los mensajes del admin.
+          try { setTimeout(_vozPollMsg, 7000); setInterval(() => { if (document.visibilityState === 'visible') _vozPollMsg(); }, 20000); } catch(_){}
 
           // [v2.7+] Inicializar sistema centralizado de membretes/adhesivos.
           // ME llama endpoints WH a través de bridges en MOS (wh_*).
