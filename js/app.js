@@ -2348,6 +2348,8 @@
           window.addEventListener('online', updateOnlineStatus);
           window.addEventListener('offline', updateOnlineStatus);
           handleResize();
+          // [1029] padrón de DNIs de personal WH → sin conexión se bloquea su crédito (no se puede verificar)
+          setTimeout(() => { try { _credPersPrecargar(); } catch (_) {} }, 8000);
 
           // [Mensajes de voz 1026] poll liviano (20s, solo visible) → lee en voz alta los mensajes del admin.
           try { setTimeout(_vozPollMsg, 7000); setInterval(() => { if (document.visibilityState === 'visible') _vozPollMsg(); }, 20000); } catch(_){}
@@ -11391,6 +11393,50 @@
             }, { accion: 'VENTA_CREDITO_DIRECTO', refDocumento: 'venta-pendiente' });
         };
 
+        // [1029 R1/R3] Crédito a personal fijo de WH: solo el día que tiene sesión de WH y si ese día aún no se
+        // liquidó. El servidor es la autoridad (crear_venta_directa lo vuelve a validar); esto evita vender y
+        // que luego rebote. Offline: si el DNI ya se sabe que es de personal (cache), se bloquea (no se puede
+        // verificar); si no es personal conocido, sigue (el servidor valida al sincronizar).
+        const _CRED_PERS_LS = 'mosexpress_docs_personal_wh';
+        const _credPersDocs = () => { try { return JSON.parse(localStorage.getItem(_CRED_PERS_LS) || '[]') || []; } catch (_) { return []; } };
+        const _credPersPrecargar = async () => {
+            try {
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/credito_personal_docs`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: {} })
+                }, 6000);
+                const d = await r.json().catch(() => null);
+                if (r.ok && d && d.ok === true && Array.isArray(d.docs)) localStorage.setItem(_CRED_PERS_LS, JSON.stringify(d.docs));
+            } catch (_) { /* sin red: queda el padrón anterior */ }
+        };
+        const _credPersVerificar = async (doc) => {
+            doc = String(doc || '').trim();
+            if (!doc) return { ok: true };
+            try {
+                const tk = await _mintTokenSB();
+                if (!tk) throw new Error('sin token');
+                const r = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/credito_personal_verificar`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { doc } })
+                }, 6000);
+                const d = await r.json().catch(() => null);
+                if (!r.ok || !d) throw new Error('sin respuesta');
+                if (d.personal === true) {
+                    try { const s = new Set(_credPersDocs()); s.add(doc); localStorage.setItem(_CRED_PERS_LS, JSON.stringify([...s])); } catch (_) {}
+                }
+                return d;
+            } catch (_) {
+                if (_credPersDocs().includes(doc)) {
+                    return { ok: false, error: 'SIN_CONEXION', mensaje: 'Este DNI es de personal de WH y sin conexión no se puede verificar su crédito. Cobra normal o espera a tener internet.' };
+                }
+                return { ok: true };
+            }
+        };
+
         // --- CAJERO: Marcar ticket como CRÉDITO (requiere PIN admin) ---
         const abrirModalCredito = (venta) => {
             // [Opción A · cero-caída] PIN al confirmar (no al abrir) → clave disponible para re-verificar.
@@ -12896,7 +12942,7 @@
             }, 6000);
             if (!res.ok) throw new Error('crear_venta_directa HTTP ' + res.status);
             const d = await res.json();
-            if (!d || d.status !== 'success') throw new Error('crear_venta_directa: ' + ((d && d.error) || 'fallo'));
+            if (!d || d.status !== 'success') throw new Error('crear_venta_directa: ' + ((d && d.error) || 'fallo') + ((d && d.mensaje) ? ' — ' + d.mensaje : ''));   // [1029] + mensaje legible
             return d;
         };
         // Espeja la venta a Sheets (cierre/SUNAT cuadran). Fire-and-forget; reconciliarDirectasSheets es el backstop.
@@ -12966,7 +13012,7 @@
             }, 8000);
             if (!resC.ok) throw new Error('crear_cpe_directo HTTP ' + resC.status);
             const cr = await resC.json();
-            if (!cr || cr.status !== 'success') throw new Error('crear_cpe_directo: ' + ((cr && cr.error) || 'fallo'));
+            if (!cr || cr.status !== 'success') throw new Error('crear_cpe_directo: ' + ((cr && cr.error) || 'fallo') + ((cr && cr.mensaje) ? ' — ' + cr.mensaje : ''));   // [1029] + mensaje legible
             const correlativo = cr.correlativo;
             // dedup: ya estaba EMITIDO/RECHAZADO (reintento) → no re-emitir, devolver tal cual.
             if (cr.dedup && cr.nf_estado && cr.nf_estado !== 'PENDIENTE') {
@@ -15183,6 +15229,18 @@
                && granTotal.value >= (mediosCobro.value.limite || 2000)) {
                abrirBancModal();
                return;
+           }
+
+           // [1029 R1/R3] venta a CRÉDITO a un DNI de personal fijo de WH → debe tener sesión WH hoy y día no liquidado
+           if (pago.value.ventaCreditoDirecto && pago.value.adminAuth && String(pago.value.docCliente || '').trim()) {
+               procesando.value = true;
+               const _chk = await _credPersVerificar(pago.value.docCliente);
+               procesando.value = false;
+               if (_chk && _chk.ok === false) {
+                   try { playBeepError?.(); } catch(_){}
+                   agregarToast('⛔ Sin crédito', _chk.mensaje || _chk.error || 'No se puede dar crédito a este trabajador hoy.', 'error');
+                   return;
+               }
            }
 
            procesando.value = true;
