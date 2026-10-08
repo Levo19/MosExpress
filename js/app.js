@@ -8634,10 +8634,11 @@
         //    volver a la pestaña) disparan un refresco INMEDIATO vía _refrescarZonaPronto;
         //  · una sola llamada en vuelo: si llega otro pedido mientras corre una, se repite UNA vez al terminar
         //    (así el refresco posterior a una acción nunca queda con datos anteriores a la acción).
-        let _vzBusy = false, _vzRepetir = false, _vzTimer = null;
+        let _vzBusy = false, _vzRepetir = false, _vzTimer = null, _vzDesde = 0;
         const actualizarVentasZonaSilencioso = async () => {
-            if (_vzBusy) { _vzRepetir = true; return; }
-            _vzBusy = true;
+            // [QA 2.8.354] watchdog: si una llamada quedó colgada >30s (p.ej. res.json() sin timeout), no bloquear la lista para siempre
+            if (_vzBusy && (Date.now() - _vzDesde) < 30000) { _vzRepetir = true; return; }
+            _vzBusy = true; _vzDesde = Date.now();
             try { await _actualizarVentasZonaImpl(); }
             finally {
                 _vzBusy = false;
