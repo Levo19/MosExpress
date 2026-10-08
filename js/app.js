@@ -472,6 +472,46 @@
                 }).catch(() => {});
             } catch(_) { /* jamás rompe el flujo de venta */ }
         };
+        // [2.8.355 · SQL 1037] RED DE SEGURIDAD de la cola offline.
+        //  (a) Cada 60 s, si hay tickets sin subir, el equipo reporta su cola (cantidad, monto, el más antiguo) a
+        //      me.cola_reportar; el cron me-cola-vigilar avisa al MASTER si un equipo con cola deja de reportar
+        //      (se apagó / sin red) o lleva >30 min atascado. Al vaciarse reporta 0 una vez (limpia la alerta).
+        //  (b) Cerrar/recargar la app con tickets sin subir pide confirmación (la PC del 07-oct se apagó con 5).
+        let _colaUltN = -1;
+        const _colaReportar = async () => {
+            try {
+                const lista = pendingSales.value || [];
+                const n = lista.length;
+                if (n === 0 && _colaUltN === 0) return;
+                const tk = await _mintTokenSB(); if (!tk) return;
+                let monto = 0, ant = '';
+                lista.forEach(v => {
+                    const h = (v && v.raw_data && v.raw_data.header) || {};
+                    monto += parseFloat(h.total) || 0;
+                    if (h.fecha_local && (!ant || h.fecha_local < ant)) ant = h.fecha_local;
+                });
+                const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/cola_reportar`, {
+                    method: 'POST', keepalive: true,
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { deviceId: deviceId.value || '', vendedor: config.value.vendedor || '', zona: config.value.zona || '',
+                                                pendientes: n, monto: Math.round(monto * 100) / 100, masAntiguo: ant } })
+                });
+                if (r.ok) _colaUltN = n;
+            } catch (_) { /* sin red: se reintenta en 60 s */ }
+        };
+        try { setInterval(() => { if ((pendingSales.value || []).length > 0 || _colaUltN > 0) _colaReportar(); }, 60000); } catch(_){}
+        try {
+            window.addEventListener('beforeunload', (ev) => {
+                // Solo si la cola está ATASCADA (sin red o >2 min): un reload programático con red no debe trabarse
+                // (la cola vive en localStorage y sobrevive al reload; el riesgo real es apagar la PC sin red).
+                // [QA 2.8.355] solo SIN RED: con red la cola sube sola y los reloads programáticos (cambio de día,
+                // retoma, equipo principal cerró) no deben quedar trabados por el diálogo.
+                const lista = pendingSales.value || [];
+                if (!lista.length) return;
+                const sinRed = (typeof offlineMode !== 'undefined' && offlineMode.value) || navigator.onLine === false;
+                if (sinRed) { ev.preventDefault(); ev.returnValue = ''; return ''; }
+            });
+        } catch(_){}
         const _refrescarVentasFantasma = () => {
             try { ventasFantasma.value = JSON.parse(localStorage.getItem('mosexpress_ventas_fantasma') || '[]'); } catch(_){}
         };
@@ -4147,8 +4187,9 @@
                                        lsSet('pending_sales', JSON.stringify(pendingSales.value));
                                        const hR = ventasHoy.value.findIndex(v => v.id === venta.id);
                                        if (hR > -1) { ventasHoy.value[hR].syncStatus = 'synced'; ventasHoy.value[hR].correlativo = rr.correlativo; lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
-                                       agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr.correlativo + (venta.cpe ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
-                                       try { _fantasmaReportarServer({ id: venta.id, vendedor: venta.raw_data?.header?.vendedor || config.value.vendedor, zona: config.value.zona, total: parseFloat(venta.raw_data?.header?.total) || 0, metodo: venta.raw_data?.header?.metodo || '', motivo: 'RESCATE_OK', mensaje: '', impreso: true, raw: venta.raw_data }, 'RESCATADO', rr.correlativo); } catch(_){}
+                                       if (rr.tardio) agregarToast('⏰ Ticket de un día anterior', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' se registró en su caja y día original (' + rr.correlativo + '). El dueño fue avisado.', 'warning', 9000);   // [1037]
+                                       else agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr.correlativo + (venta.cpe ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
+                                       try { _fantasmaReportarServer({ id: venta.id, vendedor: venta.raw_data?.header?.vendedor || config.value.vendedor, zona: config.value.zona, total: parseFloat(venta.raw_data?.header?.total) || 0, metodo: venta.raw_data?.header?.metodo || '', motivo: rr.tardio ? 'TARDIO_DIA_ANTERIOR' : 'RESCATE_OK', mensaje: '', impreso: true, raw: venta.raw_data }, 'RESCATADO', rr.correlativo); } catch(_){}
                                        exitos++; exito = true;
                                    }
                                } catch(eR) {
@@ -4244,8 +4285,9 @@
                                        lsSet('pending_sales', JSON.stringify(pendingSales.value));
                                        const hR2 = ventasHoy.value.findIndex(v => v.id === venta.id);
                                        if (hR2 > -1) { ventasHoy.value[hR2].syncStatus = 'synced'; ventasHoy.value[hR2].correlativo = rr2.correlativo; lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value)); }
-                                       agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr2.correlativo + (_esCPE ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
-                                       try { _fantasmaReportarServer({ id: venta.id, vendedor: venta.raw_data?.header?.vendedor || config.value.vendedor, zona: config.value.zona, total: parseFloat(venta.raw_data?.header?.total) || 0, metodo: venta.raw_data?.header?.metodo || '', motivo: 'RESCATE_OK', mensaje: '', impreso: true, raw: venta.raw_data }, 'RESCATADO', rr2.correlativo); } catch(_){}
+                                       if (rr2.tardio) agregarToast('⏰ Ticket de un día anterior', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' se registró en su caja y día original (' + rr2.correlativo + '). El dueño fue avisado.', 'warning', 9000);   // [1037]
+                                       else agregarToast('🛟 Ticket rescatado', 'S/ ' + (venta.raw_data?.header?.total || '?') + ' entró a la caja abierta (' + rr2.correlativo + (_esCPE ? ')' : ') como POR_COBRAR — el cajero lo marca al cobrar') + '.', 'warning', 9000);
+                                       try { _fantasmaReportarServer({ id: venta.id, vendedor: venta.raw_data?.header?.vendedor || config.value.vendedor, zona: config.value.zona, total: parseFloat(venta.raw_data?.header?.total) || 0, metodo: venta.raw_data?.header?.metodo || '', motivo: rr2.tardio ? 'TARDIO_DIA_ANTERIOR' : 'RESCATE_OK', mensaje: '', impreso: true, raw: venta.raw_data }, 'RESCATADO', rr2.correlativo); } catch(_){}
                                        exitos++; exito = true;
                                    }
                                } catch(eR2) {
@@ -12955,7 +12997,7 @@
                 tipo_doc_cliente: (h.cliente && h.cliente.tipo) || 0,
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
                 id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '',
-                obs: h.obs || '',
+                obs: h.obs || '', fecha_local: h.fecha_local || '',   // [1037]
                 // [2.8.347 · SQL 1007] RESCATE: el replay de la cola con la caja original CERRADA pide al
                 // server derivar el ticket (ya cobrado) como POR_COBRAR a la caja ABIERTA de la zona.
                 ...((opts && opts.rescate) ? { rescate: '1', zona: (ventaBase.auth && ventaBase.auth.zona) || config.value.zona || '' } : {}),
@@ -13028,7 +13070,7 @@
                 estacion: (ventaBase.auth && (ventaBase.auth.idEstacion || ventaBase.auth.estacion)) || est.idEstacion || '',  // [LOW19b] preferir ID para resolver serie por estación
                 cliente_doc: cli.doc || '', cliente_nombre: cli.nombre || '', tipo_doc_cliente: cli.tipo || 0,
                 total: h.total, forma_pago: h.metodo || 'EFECTIVO',
-                id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '', obs: h.obs || '',
+                id_caja: posc.cajaId || '', dispositivo_id: deviceId.value || '', obs: h.obs || '', fecha_local: h.fecha_local || '',   // [1037]
                 // [2.8.347 · SQL 1007] RESCATE: replay con caja original CERRADA → el server deriva el CPE
                 // (ya cobrado, debe emitirse) a la caja ABIERTA de la zona, conservando la forma de pago.
                 ...((opts && opts.rescate) ? { rescate: '1', zona: (ventaBase.auth && ventaBase.auth.zona) || config.value.zona || '' } : {}),
@@ -15409,6 +15451,9 @@
                       tipo:      tipoDocCliente,      // 0/1/4/6 para NubeFact
                       direccion: direccionClienteVenta // requerido en FACTURA
                   },
+                  // [2.8.355 · SQL 1037] hora REAL de emisión: viaja con la cola offline → un ticket que llega tarde
+                  // queda con su hora/día verdadero (antes el server sellaba la hora de LLEGADA).
+                  fecha_local: new Date().toISOString(),
                   // [v2.5.58] Pre-reserva: si hay correlativo en mano de NV,
                   // GAS lo usa en lugar de generar uno nuevo → impresión instant
                   idReserva: (tipoDocVenta === 'NOTA_DE_VENTA' && _correlativoEnMano.value && _correlativoEnMano.value.idReserva)
