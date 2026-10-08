@@ -4118,6 +4118,7 @@
                            if (hIdxD > -1) {
                                const tkD = ventasHoy.value[hIdxD];
                                tkD.syncStatus = 'synced'; tkD.raw_data.status = 'synced'; _flashSync(tkD);
+                               try { _refrescarZonaPronto(500); } catch (_) {}   // [carga DB] venta creada → la lista de caja se actualiza ya
                                tkD.correlativo = rd.correlativo; tkD.id_venta_gas = rd.id_venta || tkD.id_venta_gas;
                                if (venta.cpe) {
                                    if (rd.nfEstado)                       tkD.nfEstado   = rd.nfEstado;
@@ -4216,6 +4217,7 @@
                            if (hIdx > -1) {
                                const tk = ventasHoy.value[hIdx];
                                tk.syncStatus = 'synced'; tk.raw_data.status = 'synced'; _flashSync(tk);
+                               try { _refrescarZonaPronto(500); } catch (_) {}   // [carga DB] venta creada → la lista de caja se actualiza ya
                                tk.correlativo = rd.correlativo; tk.id_venta_gas = rd.id_venta || tk.id_venta_gas;
                                if (_esCPE && rd.nfEstado) {
                                    tk.nfEstado = rd.nfEstado;
@@ -7625,7 +7627,10 @@
             //   solicitante ahora es EXPLÍCITO: solo por el botón "📲 Este es mi 2º equipo" (wizExtTocar → _extPedir
             //   con args). Un login normal SOLO se registra como principal y escucha pedidos entrantes (tick).
             _extRegistrarPrincipal();
-            if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(_extPrincipalTick, 2000);   // [fix QR-demora] 5s→2s: el principal ve el pedido y muestra el QR más rápido
+            if (_extPollPpal) clearInterval(_extPollPpal); _extPollPpal = setInterval(() => { if (!document.hidden) _extPrincipalTick(); }, 12000);
+            // [carga DB 2026-10] 2s→12s y pausado en background (extension_pendientes: 83k llamadas/33h). Solo detecta que un 2º equipo
+            // pidió vincularse a este (caso raro): peor caso ~12s hasta ver el aviso. Al volver a primer plano se consulta al instante.
+            if (!window.__extVisHook) { window.__extVisHook = true; document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && _extPollPpal) { try { _extPrincipalTick(); } catch (_) {} } }); }
         };
         const _extDetener = () => {
             if (_extPollReq) { clearInterval(_extPollReq); _extPollReq = null; }
@@ -8623,7 +8628,27 @@
         const flashNuevosTickets = ref(false);
 
         // [856] el aviso de Yapes vive del mismo pulso que la lista de ventas
+        // [carga DB 2026-10] datos_turno era el 47% del tiempo de la base (poller cada 3s por caja). Ahora:
+        //  · el poller refresca la lista cada 5º tick (~15s);
+        //  · las acciones del propio cajero (venta sincronizada, cobro/anulación/crédito/forma de pago confirmados,
+        //    volver a la pestaña) disparan un refresco INMEDIATO vía _refrescarZonaPronto;
+        //  · una sola llamada en vuelo: si llega otro pedido mientras corre una, se repite UNA vez al terminar
+        //    (así el refresco posterior a una acción nunca queda con datos anteriores a la acción).
+        let _vzBusy = false, _vzRepetir = false, _vzTimer = null;
         const actualizarVentasZonaSilencioso = async () => {
+            if (_vzBusy) { _vzRepetir = true; return; }
+            _vzBusy = true;
+            try { await _actualizarVentasZonaImpl(); }
+            finally {
+                _vzBusy = false;
+                if (_vzRepetir) { _vzRepetir = false; setTimeout(() => { try { actualizarVentasZonaSilencioso(); } catch (_) {} }, 150); }
+            }
+        };
+        const _refrescarZonaPronto = (ms) => {
+            if (_vzTimer) clearTimeout(_vzTimer);
+            _vzTimer = setTimeout(() => { _vzTimer = null; try { actualizarVentasZonaSilencioso(); } catch (_) {} }, ms == null ? 400 : ms);
+        };
+        const _actualizarVentasZonaImpl = async () => {
             try { yapeArrancar(); } catch (_) {}
             if (!config.value.estacion || offlineMode.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
             // [FIX vista POR CAJA 2026-07-03] Poller de la vista: fuente = me.datos_turno(id_caja) (solo TU caja
@@ -8735,6 +8760,7 @@
         let _pollingCajeroCount = 0;
         const iniciarPollingZona = () => {
             if (pollingTimer.value || API_URL === 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') return;
+            _refrescarZonaPronto(1500);   // [carga DB] primer refresco rápido (el intervalo ahora tarda ~15s)
             pollingTimer.value = setInterval(async () => {
                 _pollingCajeroCount++;
                 // [money-safe] La cola de mutaciones de DINERO se reintenta SIEMPRE, aún con la pestaña oculta:
@@ -8742,7 +8768,9 @@
                 // (render de ventas + checks de cajero/traslados) se pausa en background.
                 if (_pollingCajeroCount % 10 === 0) { try { _reintentarMutacionesDinero(); } catch(_){} }   // [Lote1-C]
                 if (document.hidden) return;   // [perf sesión larga] no re-renderizar ventas (cada 3s) con la pestaña oculta; refresca al volver
-                actualizarVentasZonaSilencioso();
+                // [carga DB 2026-10] la lista de ventas se refresca cada 5º tick (~15s), no cada 3s (datos_turno = 47% de la
+                // base). Las acciones del cajero refrescan al instante (_refrescarZonaPronto) y al volver a la pestaña.
+                if (_pollingCajeroCount % 5 === 0) actualizarVentasZonaSilencioso();
                 if (_pollingCajeroCount % 10 === 0) {
                     verificarCajeroActivo();
                     verificarTrasladosEntrantes();
@@ -11657,7 +11685,10 @@
         const yapeArrancar = () => {
             if (_yapeTimer) return;
             _yapeRevisar();
-            _yapeTimer = setInterval(_yapeRevisar, 8000);
+            // [carga DB 2026-10] 8s→10s (45.9k llamadas/33h). Propósito: anunciar por voz los Yapes recibidos; el servidor
+            // devuelve los pendientes, así que un Yape se anuncia a lo sumo ~10s (+ latencia) después de llegar. Sin pausa en
+            // background a propósito: el cajero oye el anuncio aunque la pestaña esté oculta.
+            _yapeTimer = setInterval(_yapeRevisar, 10000);
         };
         const yapeDetener = () => { if (_yapeTimer) { clearInterval(_yapeTimer); _yapeTimer = null; } };
 
@@ -13399,6 +13430,7 @@
                     if (d && d.status === 'success') {
                         const idx = ventasZona.value.findIndex(v => v.id === ventaLocalId);
                         if (idx !== -1) ventasZona.value[idx]._mutPend = 0;   // poll adopta server
+                        _refrescarZonaPronto(500);   // [carga DB] el poll ya es lento (~15s): converge ya con el server
                     } else {
                         try { playBeepError?.(); } catch(_){}
                         agregarToast('⚠ NO se registró en el servidor',
@@ -13442,6 +13474,7 @@
                         const idx = ventasZona.value.findIndex(v => v.id === item.ventaLocalId);
                         if (idx !== -1) ventasZona.value[idx]._mutPend = 0;
                     }
+                    try { _refrescarZonaPronto(500); } catch (_) {}
                     if (!(d && d.status === 'success')) {
                         agregarToast('⚠ Operación pendiente rechazada',
                             (d && (d.mensaje || d.error)) || 'Revisa el ticket en la lista', 'warning');
