@@ -1136,7 +1136,9 @@
         const modalAdminCobrar   = ref(false);    // cobrar crédito → caja receptora
         const adminCobrarEstado  = ref({ metodo: 'EFECTIVO', cajaSel: '', cajas: [], montoEf: 0, montoVi: 0, obs: '' });
         const modalAdminConv     = ref(false);    // convertir NV → CPE
-        const adminConvEstado    = ref({ tipo: 'BOLETA', doc: '', nombre: '', direccion: '', serie: '', clienteOK: false });
+        const adminConvEstado    = ref({ tipo: 'BOLETA', doc: '', nombre: '', direccion: '', serie: '', clienteOK: false,
+                                         // [2.8.356 · SQL 1047] cobro al convertir una NV POR_COBRAR
+                                         cobro: { pendiente: false, credito: false, modo: '', metodo: 'EFECTIVO', montoVirtual: '' } });
         const modalAdminBaja     = ref(false);    // baja CPE
         const adminBajaEstado    = ref({ motivo: '', motivoTxt: '' });
         const modalAdminEditCli  = ref(false);    // editar cliente
@@ -2012,8 +2014,46 @@
         const cpeReglasConv = computed(() => {
             const e = adminConvEstado.value || {};
             const t = ticketParaAdmin.value || {};
-            return _cpeReglas(e.tipo, (t.total || 0), e.doc, false, e.nombre, e.direccion, (t.raw_data && t.raw_data.header && t.raw_data.header.metodo) || '');
+            // [2.8.356] si se cobra al convertir, la regla de bancarización mira el método ELEGIDO (no el POR_COBRAR de la NV)
+            const _c = e.cobro || {};
+            const _met = (_c.pendiente && _c.modo === 'cobrar') ? _c.metodo : ((t.raw_data && t.raw_data.header && t.raw_data.header.metodo) || '');
+            return _cpeReglas(e.tipo, (t.total || 0), e.doc, false, e.nombre, e.direccion, _met);
         });
+        // [2.8.356 · SQL 1047] Cobro al convertir una NV POR_COBRAR. Opciones: cobrar ahora (EFECTIVO/VIRTUAL/MIXTO)
+        // o convertir sin cobrar (el CPE queda POR_COBRAR y se ANULA al cerrar caja si nadie lo cobra). El RPC
+        // revalida todo (montos al céntimo); esto solo arma el payload y bloquea el botón si falta decidir.
+        const adminConvCobro = computed(() => {
+            const c = (adminConvEstado.value && adminConvEstado.value.cobro) || {};
+            const total = _money((ticketParaAdmin.value && ticketParaAdmin.value.total) || 0);
+            const r = { pendiente: !!c.pendiente, credito: !!c.credito, modo: c.modo || '', metodo: c.metodo || 'EFECTIVO',
+                        total, efectivo: 0, virtual: 0, error: '', bloquea: false, payload: null, texto: '' };
+            if (!r.pendiente) return r;
+            if (!r.modo) { r.bloquea = true; r.error = 'Elige: cobrar ahora o convertir sin cobrar'; return r; }
+            if (r.modo !== 'cobrar') return r;
+            if (r.metodo === 'EFECTIVO') { r.efectivo = total; }
+            else if (r.metodo === 'VIRTUAL') { r.virtual = total; }
+            else {
+                const vRaw = String(c.montoVirtual == null ? '' : c.montoVirtual).trim().replace(',', '.');
+                const vNum = parseFloat(vRaw);
+                const vir = _money(vNum);
+                if (vRaw === '' || isNaN(vNum) || vir <= 0 || vir >= total) {
+                    r.bloquea = true; r.error = 'En MIXTO el virtual debe ser mayor a 0 y menor que S/ ' + total.toFixed(2);
+                    return r;
+                }
+                r.virtual = vir; r.efectivo = _money(total - vir);
+            }
+            r.payload = { forma_pago: r.metodo, efectivo: r.efectivo, virtual: r.virtual };
+            r.texto = r.metodo === 'MIXTO'
+                ? ('MIXTO · efectivo S/ ' + r.efectivo.toFixed(2) + ' + virtual S/ ' + r.virtual.toFixed(2))
+                : (r.metodo + ' · S/ ' + total.toFixed(2));
+            return r;
+        });
+        const adminConvCobroSet = (campo, valor) => {
+            if (!adminConvEstado.value.cobro) adminConvEstado.value.cobro = { pendiente: false, credito: false, modo: '', metodo: 'EFECTIVO', montoVirtual: '' };
+            const c = adminConvEstado.value.cobro;
+            c[campo] = valor;
+            if (campo === 'metodo' && valor !== 'MIXTO') c.montoVirtual = '';
+        };
         // [Tema1] buscador de frecuentes para el modal Convertir NV→CPE (aislado; NO toca el estado de venta).
         const _frecuentesMatch = (q) => {
             q = String(q || '').trim().toLowerCase();
@@ -2815,6 +2855,58 @@
                 document.body.appendChild(backdrop);
                 requestAnimationFrame(() => backdrop.classList.add('is-open'));
                 setTimeout(() => { try { backdrop.querySelector('[data-ok]')?.focus(); } catch(_){} }, 220);
+            });
+        };
+        // [2.8.356 · SQL 1047] Aviso al CERRAR caja: comprobantes (BOLETA/FACTURA) que siguen POR_COBRAR en la caja.
+        // Si se cierra así, me.cerrar_caja los ANULA y la reconciliación los da de baja en SUNAT. Resuelve:
+        //   { accion: 'cobrar', idVenta } → el cajero cobra ese comprobante (flujo de cobro existente)
+        //   { accion: 'seguir' }          → cerrar igual (se anulan)
+        //   null                          → cancelar el cierre
+        const _meModalCpePorCobrar = (lista) => {
+            return new Promise((resolve) => {
+                const total = _money((lista || []).reduce((a, x) => a + (+x.total || 0), 0));
+                const filas = (lista || []).map((x, i) => `
+                  <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.08)">
+                    <div style="flex:1;min-width:0">
+                      <div style="font-weight:900">${_meEsc(x.correlativo || x.idVenta)} <span style="font-weight:700;opacity:.7">· ${_meEsc(x.tipo === 'FACTURA' ? 'Factura' : 'Boleta')}</span></div>
+                      <div style="font-size:12px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_meEsc(x.cliente || 'Cliente varios')}${x.enviando ? ' · cobro enviándose…' : ''}</div>
+                    </div>
+                    <div style="font-weight:900;white-space:nowrap">S/ ${(+x.total || 0).toFixed(2)}</div>
+                    <button class="me-modal-generic-btn me-modal-generic-btn-primary" data-cobrar="${i}" ${x.enviando ? 'disabled' : ''} style="padding:6px 12px">Cobrar</button>
+                  </div>`).join('');
+                const backdrop = document.createElement('div');
+                backdrop.className = 'me-modal-generic-backdrop';
+                backdrop.innerHTML = `
+                  <div class="me-modal-generic me-modal-generic-danger" role="dialog" aria-modal="true">
+                    <div class="me-modal-generic-head">
+                      <span class="me-modal-generic-ico">⚠</span>
+                      <strong>Comprobantes por cobrar</strong>
+                      <button class="me-modal-generic-close" data-cancel>✕</button>
+                    </div>
+                    <div class="me-modal-generic-body">
+                      <p>Hay ${lista.length} comprobante${lista.length === 1 ? '' : 's'} (boleta/factura) <b>POR COBRAR</b> en esta caja · S/ ${total.toFixed(2)}.</p>
+                      <p>Si cierras así, se <b>ANULAN</b> y se dan de baja en SUNAT. Cóbralos ahora o cierra igual.</p>
+                      <div style="max-height:40vh;overflow-y:auto;margin-top:6px">${filas}</div>
+                    </div>
+                    <div class="me-modal-generic-foot">
+                      <button class="me-modal-generic-btn me-modal-generic-btn-ghost" data-cancel>Cancelar</button>
+                      <button class="me-modal-generic-btn me-modal-generic-btn-danger" data-seguir>Cerrar igual (se anulan)</button>
+                    </div>
+                  </div>`;
+                const cerrar = (v) => {
+                    backdrop.classList.remove('is-open');
+                    setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+                    resolve(v);
+                };
+                backdrop.addEventListener('click', (ev) => {
+                    const t = ev.target;
+                    const bc = t.closest && t.closest('[data-cobrar]');
+                    if (bc) { if (bc.disabled) return; const x = lista[+bc.getAttribute('data-cobrar')]; if (x) cerrar({ accion: 'cobrar', idVenta: x.idVenta }); return; }
+                    if (t === backdrop || (t.closest && t.closest('[data-cancel]'))) cerrar(null);
+                    else if (t.closest && t.closest('[data-seguir]')) cerrar({ accion: 'seguir' });
+                });
+                document.body.appendChild(backdrop);
+                requestAnimationFrame(() => backdrop.classList.add('is-open'));
             });
         };
         const _meModalAlert = (msg, opts) => {
@@ -9499,9 +9591,10 @@
              // cobradosEnSesion no incluía las ventas EFECTIVO directas (mostraba 0). Fallback local sin red.
              let tEfectivo = 0, tVirtual = 0, tExtrasIngreso = 0, tExtrasEgreso = 0,
                  tExtrasIngresoVirtual = 0, tExtrasEgresoVirtual = 0, montoFinal = 0, tVirtualFinal = 0;
-             let _dtT = null, _dtYape = null;
+             let _dtT = null, _dtYape = null, _dtTks = null;
              try { const _dt = await _datosTurnoDirecto(_idCaja); _dtT = (_dt && _dt.totales) ? _dt.totales : null;
-                   _dtYape = (_dt && _dt.yapes) ? _dt.yapes : null; }   // [856] verificación por Yape
+                   _dtYape = (_dt && _dt.yapes) ? _dt.yapes : null;   // [856] verificación por Yape
+                   _dtTks = (_dt && Array.isArray(_dt.tickets)) ? _dt.tickets : null; }   // [2.8.356] CPE por cobrar
              catch(e) { console.warn('[cierre] datos_turno falló, uso local:', e && e.message); }
              if (_dtT) {
                  tEfectivo             = parseFloat(_dtT.efectivo)             || 0;
@@ -9546,11 +9639,52 @@
              const ultimoCobro = cobradosEnSesion.value.length ? cobradosEnSesion.value[cobradosEnSesion.value.length - 1].correlativo : '-';
              const horaApertura = sessionStartTime.value ? new Date(sessionStartTime.value).toLocaleString() : '-';
 
+             // [2.8.356 · SQL 1047] CPE (BOLETA/FACTURA) que siguen POR_COBRAR en ESTA caja: al cerrar se ANULAN y se dan
+             // de baja en SUNAT. Antes pasaba en silencio. Fuente: tickets de me.datos_turno(id_caja) (la misma consulta
+             // de arriba, sin llamadas extra); sin red, la lista local de la caja.
+             let _cpePend = [];
+             try {
+                 const _esCpe = (t) => { const x = String(t || '').toUpperCase(); return x === 'BOLETA' || x === 'FACTURA'; };
+                 const _locPorId = (id) => ventasZona.value.find(v => v.id_venta_gas === id || v.id === id);
+                 if (_dtTks) {
+                     _cpePend = _dtTks
+                         .filter(t => _esCpe(t.tipoDoc) && String(t.metodo || '').toUpperCase() === 'POR_COBRAR')
+                         .map(t => { const loc = _locPorId(t.idVenta);
+                             return { idVenta: t.idVenta, correlativo: t.correlativo || '', tipo: String(t.tipoDoc || '').toUpperCase(),
+                                      total: _money(t.total), cliente: t.clienteNom || '', vendedor: t.vendedor || '',
+                                      // cobro local en vuelo (optimista, aún no confirmado por el server)
+                                      enviando: !!(loc && loc.cobrado && loc._mutPend && (Date.now() - loc._mutPend) < 20000) }; });
+                 } else {
+                     _cpePend = ventasZona.value
+                         .filter(v => !v.anulada && !v.cobrado && !v.credito && _esCpe(v.tipo)
+                                   && String(v.cobradoMetodo || v.raw_data?.header?.metodo || '').toUpperCase() === 'POR_COBRAR')
+                         .map(v => ({ idVenta: v.id_venta_gas || v.id, correlativo: v.correlativo || '', tipo: String(v.tipo || '').toUpperCase(),
+                                      total: _money(v.total), cliente: v.cliente_nombre || '', vendedor: v.raw_data?.auth?.vendedor || '', enviando: false }));
+                 }
+             } catch (_) { _cpePend = []; }
+             if (_cpePend.length) {
+                 const _rp = await _meModalCpePorCobrar(_cpePend);
+                 if (!_rp) return;
+                 if (_rp.accion === 'cobrar') {
+                     const _x = _cpePend.find(x => x.idVenta === _rp.idVenta);
+                     const _loc = ventasZona.value.find(v => v.id_venta_gas === _rp.idVenta || v.id === _rp.idVenta);
+                     // reusa el flujo de cobro existente (modal de cobro → COBRAR_VENTA → me.cobrar_venta_directo)
+                     abrirCobroPendiente(_loc || { id: _x.idVenta, id_venta_gas: _x.idVenta, correlativo: _x.correlativo, tipo: _x.tipo,
+                         total: _x.total, cliente_nombre: _x.cliente,
+                         raw_data: { auth: { vendedor: _x.vendedor }, header: { metodo: 'POR_COBRAR', tipoDoc: _x.tipo }, items: [] } });
+                     agregarToast('Cobra y vuelve a cerrar', (_x.correlativo || '') + ' · luego toca Cerrar caja otra vez.', 'info', 5000);
+                     return;
+                 }
+             }
+             const _avisoCpe = _cpePend.length
+                 ? `\n\n⚠ ${_cpePend.length} comprobante${_cpePend.length === 1 ? '' : 's'} POR COBRAR (S/ ${_money(_cpePend.reduce((a, x) => a + x.total, 0)).toFixed(2)}) se ANULA${_cpePend.length === 1 ? '' : 'N'} y se da${_cpePend.length === 1 ? '' : 'n'} de baja en SUNAT.`
+                 : '';
+
              const resumen = `CAJERO: ${config.value.vendedor}\nApertura: ${horaApertura}\nCierre: ${new Date().toLocaleString()}\nEfectivo: S/ ${tEfectivo.toFixed(2)}\nVirtual: S/ ${tVirtualFinal.toFixed(2)}\nExtras ingreso: S/ ${tExtrasIngreso.toFixed(2)}\nExtras egreso: S/ ${tExtrasEgreso.toFixed(2)}\nLos POR_COBRAR de tu caja se anulan al cerrar.` + _yapeResumenCierre(_dtYape);
              if(!await _meModalConfirm(`¿Cerrar Turno?\n\n${resumen}`, { titulo: 'Cerrar turno', okText: 'Cerrar turno' })) return;
 
 
-             if(!await _meModalConfirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\n\nSolo se cierra TU caja (${_idCaja.slice(-6)}). Los tickets POR_COBRAR de tu caja se anulan; los de otra zona NO se tocan.\n\nSe abrirá el reporte del turno.`, { warning: true, titulo: 'Confirmar cierre', okText: 'Cerrar caja' })) return;
+             if(!await _meModalConfirm(`¿Confirmar cierre?\n\nSE DEBE RECIBIR: S/ ${montoFinal.toFixed(2)}\nVirtual total  : S/ ${tVirtualFinal.toFixed(2)}\n\nSolo se cierra TU caja (${_idCaja.slice(-6)}). Los tickets POR_COBRAR de tu caja se anulan; los de otra zona NO se tocan.${_avisoCpe}\n\nSe abrirá el reporte del turno.`, { warning: true, titulo: 'Confirmar cierre', okText: 'Cerrar caja' })) return;
 
              // Abrir ventana ANTES del primer await — único momento en que el browser
              // la acepta sin popup-blocker (sigue en contexto del gesto del usuario)
@@ -11963,12 +12097,18 @@
             // ≤ 700, conservamos el cliente de la NV (VARIOS ok). La serie ya NO se teclea: la deriva la RPC
             // por la zona de emisión de la NV (y el confirm la deriva de la estación como respaldo).
             const _mayor700 = (Number(venta.total) || 0) > 700;
+            // [2.8.356 · SQL 1047] estado de pago de la NV: POR_COBRAR → hay que decidir (cobrar ahora / sin cobrar);
+            // CREDITO → solo aviso (un crédito es legítimo y NO se anula al cerrar la caja).
+            const _mNV = String(venta.cobradoMetodo || venta.raw_data?.header?.metodo || '').toUpperCase();
+            const _esPorCobrar = !venta.cobrado && !venta.credito && _mNV === 'POR_COBRAR';
+            const _esCredito = !_esPorCobrar && (!!venta.credito || _mNV === 'CREDITO');
             adminConvEstado.value = {
                 tipo: 'BOLETA',
                 doc: _mayor700 ? '' : (venta.cliente_doc || ''),
                 nombre: _mayor700 ? '' : (venta.cliente_nombre || ''),
                 direccion: '',
-                clienteOK: false
+                clienteOK: false,
+                cobro: { pendiente: _esPorCobrar, credito: _esCredito, modo: '', metodo: 'EFECTIVO', montoVirtual: '' }
             };
             // [v2.8.234] mini-POS compartido: el cliente de la NV entra como CHIP con ×
             // (≤ S/700; si supera 700 se obliga a identificar uno con el buscador).
@@ -12024,7 +12164,25 @@
                 agregarToast('⛔ RUC inválido', 'FACTURA requiere un RUC real (11 dígitos que empiezan en 10/15/16/17/20). Un CE o pasaporte no puede recibir factura.', 'warning', 6000);
                 return;
             }
-            if (!await _meModalConfirm(`¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
+            // [2.8.356 · SQL 1047] NV POR_COBRAR: el cajero decide antes (cobrar ahora / sin cobrar) y el aviso lo dice claro.
+            const _cob = adminConvCobro.value;
+            if (_cob.pendiente && _cob.bloquea) { agregarToast('Falta decidir el cobro', _cob.error, 'warning', 5000); return; }
+            const _cobroP = (_cob.pendiente && _cob.modo === 'cobrar') ? _cob.payload : null;
+            let _msgConf, _optConf;
+            if (_cob.pendiente && _cob.modo === 'sin') {
+                _msgConf = `¿Emitir ${e.tipo} en SUNAT SIN COBRAR?\n\nEl comprobante quedará POR COBRAR (S/ ${_cob.total.toFixed(2)}).\n\nSi al cerrar la caja no se cobra, este comprobante se ANULA y se da de baja en SUNAT.\n\nLa NV original quedará anulada.`;
+                _optConf = { danger: true, titulo: 'Emitir sin cobrar', okText: 'Emitir sin cobrar' };
+            } else if (_cobroP) {
+                _msgConf = `¿Emitir ${e.tipo} en SUNAT y cobrar ahora?\n\nCobro: ${_cob.texto}\nEntra a la caja del ticket.\n\nLa NV original quedará anulada.`;
+                _optConf = { warning: true, titulo: 'Emitir y cobrar', okText: 'Emitir y cobrar' };
+            } else if (_cob.credito) {
+                _msgConf = `¿Emitir ${e.tipo} en SUNAT?\n\nEl comprobante queda como CRÉDITO: no se anula al cerrar la caja; se cobra con "Cobrar deuda".\n\nLa NV original quedará anulada.`;
+                _optConf = { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' };
+            } else {
+                _msgConf = `¿Emitir ${e.tipo} en SUNAT?\n\nLa NV original quedará anulada.`;
+                _optConf = { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' };
+            }
+            if (!await _meModalConfirm(_msgConf, _optConf)) return;
             // [Opción A · cero-caída] PIN al confirmar → la clave (_res.clave) se re-verifica en convertir_nv_cpe.
             _pinAdminThen('CONVERTIR_NV_A_CPE', venta.correlativo || venta.id, async (_res) => {
             adminProcesando.value = true;
@@ -12045,12 +12203,13 @@
                             idVentaNV: venta.id_venta_gas, tipoDocNuevo: e.tipo,
                             clienteDoc: e.doc.trim(), clienteNombre: e.nombre.trim(), clienteDireccion: e.direccion.trim(),
                             tipoDocCliente: (adminCli.value.sel && adminCli.value.ce) ? adminCli.value.ceTipo : '',
-                            usuario: config.value.vendedor, rol: 'CAJERO', claveAdmin: _res.clave
+                            usuario: config.value.vendedor, rol: 'CAJERO', claveAdmin: _res.clave,
+                            ...(_cobroP ? { cobro: _cobroP } : {})   // [2.8.356 · SQL 1047] opcional; sin él = comportamiento previo
                         } })
                     }, 25000).catch(() => null);
                     const _dd = _rr ? await _rr.json().catch(() => null) : null;
                     if (!_dd) return { status: 'error', mensaje: 'Sin conexión · reintenta (si la NV quedó convertida, el reintento recupera el MISMO comprobante)' };
-                    if (_dd.ok !== true) return { status: 'error', mensaje: String(_dd.error || 'no convertido') };
+                    if (_dd.ok !== true) return { status: 'error', mensaje: String(_dd.mensaje || _dd.error || 'no convertido') };
                     // Emitir a NubeFact por el Edge (token en secret) + patch NF — igual que el POS.
                     let _nfC = { nf_estado: 'PENDIENTE', nf_hash: '', nf_enlace: '', nf_qr: '' };
                     try {
@@ -12073,14 +12232,25 @@
                     } catch (_) {}
                     if (_nfC.nf_estado === 'RECHAZADO')
                         return { status: 'error', mensaje: '⛔ SUNAT rechazó el comprobante: ' + (_nfC.sunat_desc || 'revisa los datos del cliente') };
+                    // [2.8.356] lo que REALMENTE quedó: un server sin 1047 ignora p.cobro → el CPE nace POR_COBRAR.
+                    const _fpCpe = String(_dd.formaPago || (_dd.ventaBase && _dd.ventaBase.header && _dd.ventaBase.header.metodo) || '').toUpperCase();
                     return { status: 'success', correlativo: _dd.correlativoNuevo, via: 'directo',
-                             conQR: !!_nfC.nf_qr, nfEstado: _nfC.nf_estado };
+                             conQR: !!_nfC.nf_qr, nfEstado: _nfC.nf_estado,
+                             porCobrar: _fpCpe === 'POR_COBRAR', formaPago: _fpCpe };
                 })();
                 if (j?.status !== 'success') throw new Error(j?.mensaje || 'Error en backend');
                 modalAdminConv.value = false;
                 ticketParaAdmin.value = null;
                 // [v2.8.235] feedback honesto: con QR = ya firmado por NubeFact; sin QR = en cola (recon lo cierra)
                 agregarToast('✓ ' + e.tipo + ' emitida', `Nuevo: ${j?.correlativo || ''}` + (j?.conQR ? ' · con QR SUNAT' : ' · en cola de SUNAT (se confirma solo)'), 'success', 5000);
+                // [2.8.356 · SQL 1047] aviso honesto del estado de pago del comprobante nuevo
+                if (j?.porCobrar) {
+                    agregarToast(_cobroP ? '⚠ El cobro NO se registró' : '⚠ Comprobante POR COBRAR',
+                        (_cobroP ? 'El servidor no aplicó el cobro. ' : '') + `${j?.correlativo || ''} quedó POR COBRAR: cóbralo antes de cerrar la caja o se ANULA y se da de baja en SUNAT.`,
+                        'warning', 12000);
+                } else if (_cobroP) {
+                    agregarToast('💵 Cobrado', `${j?.correlativo || ''} · ${_cob.texto}`, 'success', 5000);
+                }
                 // Refrescar lista en background
                 if (config.value.esCajero) cargarVentasZona();
             } catch(err) {
@@ -18606,6 +18776,7 @@
           adminPuedeCobrar, adminPuedeConvertir, adminPuedeBajaCPE, adminPuedeEditarCliente,
           modalAdminCobrar, adminCobrarEstado, adminAbrirCobrarCredito, adminConfirmarCobrar,
           modalAdminConv, adminConvEstado, adminAbrirConvertir, adminConvSetTipo, adminBuscarCliente, adminConfirmarConvertir, convSugerencias, convElegirCliente,
+          adminConvCobro, adminConvCobroSet,   // [2.8.356 · SQL 1047]
           modalAdminBaja, adminBajaEstado, adminAbrirBajaCPE, adminConfirmarBaja,
           modalAdminEditCli, adminEditCliEstado, adminAbrirEditarCliente, adminConfirmarEditarCliente,
           adminCli, adminCliSugs, adminCliSugsConv, adminCliLimpiar, adminCliSetOrigen, adminCliElegir, adminCliConfirmManual, adminCliConfirmCE,
