@@ -2857,6 +2857,154 @@
                 setTimeout(() => { try { backdrop.querySelector('[data-ok]')?.focus(); } catch(_){} }, 220);
             });
         };
+        // [2.8.357 · SQL 1056] Motivo OBLIGATORIO al anular un ticket. Modal propio (sin prompt/confirm nativos):
+        // chips de motivos rápidos + texto libre; "Anular" deshabilitado hasta tener ≥5 caracteres (= regla del server).
+        // Resuelve el motivo (string) o null si cancela. Sin cierre por clic en el fondo (a prueba de misclick).
+        const _ME_MOTIVOS_ANULAR = ['Cliente desistió', 'Error de digitación', 'Producto equivocado', 'Cobro duplicado', 'Sin stock'];
+        const _meModalMotivoAnular = (venta, opts) => {
+            opts = opts || {};
+            return new Promise((resolve) => {
+                const backdrop = document.createElement('div');
+                backdrop.className = 'me-modal-generic-backdrop';
+                backdrop.setAttribute('data-me-motivo-anular', '1');
+                const chips = _ME_MOTIVOS_ANULAR.map(m => `<button type="button" data-chip="${_meEsc(m)}" style="min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e2e8f0;font-size:14px;font-weight:700;cursor:pointer">${_meEsc(m)}</button>`).join('');
+                backdrop.innerHTML = `
+                  <div class="me-modal-generic me-modal-generic-danger" role="dialog" aria-modal="true">
+                    <div class="me-modal-generic-head">
+                      <span class="me-modal-generic-ico">🚫</span>
+                      <strong>Anular ${_meEsc((venta && (venta.correlativo || venta.id)) || 'ticket')}</strong>
+                      <button class="me-modal-generic-close" data-cancel aria-label="Cerrar">✕</button>
+                    </div>
+                    <div class="me-modal-generic-body">
+                      <p>Indica el motivo de la anulación. Es obligatorio y queda registrado.</p>
+                      <div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0">${chips}</div>
+                      <textarea data-motivo rows="3" maxlength="200" placeholder="O escribe el motivo (mínimo 5 letras)" style="width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.25);color:#f1f5f9;font-size:16px;font-family:inherit;resize:none"></textarea>
+                      <p data-err style="color:#fca5a5;font-weight:800;margin-top:8px;display:${opts.error ? 'block' : 'none'}">${_meEsc(opts.error || '')}</p>
+                    </div>
+                    <div class="me-modal-generic-foot">
+                      <button class="me-modal-generic-btn me-modal-generic-btn-ghost" data-cancel style="min-height:48px;font-size:15px">Cancelar</button>
+                      <button class="me-modal-generic-btn me-modal-generic-btn-danger" data-ok disabled style="min-height:48px;font-size:15px;opacity:.4">Anular</button>
+                    </div>
+                  </div>`;
+                const ta = backdrop.querySelector('[data-motivo]');
+                const btn = backdrop.querySelector('[data-ok]');
+                const err = backdrop.querySelector('[data-err]');
+                const valido = () => ta.value.trim().length >= 5;
+                const refrescar = () => {
+                    const ok = valido();
+                    btn.disabled = !ok; btn.style.opacity = ok ? '1' : '.4';
+                    if (err && err.style.display !== 'none' && ok) err.style.display = 'none';
+                };
+                let cerrado = false;
+                const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); cerrar(null); } };
+                const cerrar = (v) => {
+                    if (cerrado) return; cerrado = true;
+                    document.removeEventListener('keydown', onKey, true);
+                    backdrop.classList.remove('is-open');
+                    setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+                    resolve(v);
+                };
+                ta.addEventListener('input', refrescar);
+                backdrop.addEventListener('click', (ev) => {
+                    const t = ev.target;
+                    const chip = t.closest && t.closest('[data-chip]');
+                    if (chip) { try { haptic(12); } catch(_){} ta.value = chip.getAttribute('data-chip'); refrescar(); return; }
+                    if (t.closest && t.closest('[data-cancel]')) { cerrar(null); return; }   // el fondo NO cierra
+                    if (t.closest && t.closest('[data-ok]') && valido()) { try { haptic([20, 40, 20]); } catch(_){} cerrar(ta.value.trim()); }
+                });
+                document.addEventListener('keydown', onKey, true);
+                document.body.appendChild(backdrop);
+                refrescar();
+                requestAnimationFrame(() => backdrop.classList.add('is-open'));
+                setTimeout(() => { try { ta.focus(); } catch(_){} }, 220);
+            });
+        };
+
+        // [2.8.357 · SQL 1056] AVISO del captor de Yape (me.captor_estado). NO bloqueante: banner superior.
+        // Al abrir caja y cada 20 min (y al volver a primer plano). Espera si hay cobro/modal/venta en curso.
+        // "Entendido" oculta 20 min; "No mostrar hoy" guarda zona+día en localStorage. RPC ausente/falla → silencio.
+        const _CAPTOR_CADA_MS = 20 * 60 * 1000;
+        let _captorOcultoHasta = 0, _captorUltimoChequeo = 0, _captorTimerEspera = null, _captorBusy = false;
+        const _captorZona = () => String((config.value && config.value.zona) || '');
+        const _captorDia = () => { const d = new Date(), p = x => String(x).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
+        const _captorKey = (z) => 'me_captor_aviso_oculto_' + z;
+        const _captorOcultoHoy = (z) => { try { return localStorage.getItem(_captorKey(z)) === _captorDia(); } catch(_) { return false; } };
+        const _captorQuitarBanner = () => { try { const b = document.getElementById('me-captor-banner'); if (b) b.remove(); } catch(_){} };
+        const _captorOcupado = () => {
+            try {
+                if (modalCobro.value || modalPago.value || modalPin.value || modalCredito.value || modalMoneda.value ||
+                    modalExtra.value || modalCobrarAsignado.value || modalRechazarAsignado.value ||
+                    (carrito.value && carrito.value.length)) return true;
+                if (document.querySelector('.me-modal-generic-backdrop.is-open')) return true;
+            } catch(_) {}
+            return false;
+        };
+        const _captorMostrar = (zona, mensaje) => {
+            _captorQuitarBanner();
+            const b = document.createElement('div');
+            b.id = 'me-captor-banner';
+            b.setAttribute('role', 'status');
+            b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:1400;display:flex;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 0;pointer-events:none;font-family:system-ui,-apple-system,sans-serif';
+            b.innerHTML = `
+              <div style="pointer-events:auto;width:100%;max-width:640px;background:#78350f;color:#fef3c7;border:2px solid #f59e0b;border-radius:16px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.45)">
+                <div style="font-weight:900;font-size:15px">⚠ Captor de Yape</div>
+                <div style="font-size:14px;line-height:1.4;margin-top:4px">${_meEsc(mensaje || 'El captor de Yape no está activo.')}</div>
+                <div style="font-size:14px;line-height:1.4;margin-top:4px;font-weight:700">Los Yapes no se registran solos: verifica cada Yape a mano.</div>
+                <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                  <button type="button" data-ent style="flex:1;min-height:44px;border:none;border-radius:12px;background:#f59e0b;color:#1c1917;font-weight:900;font-size:14px;cursor:pointer">Entendido</button>
+                  <button type="button" data-hoy style="flex:1;min-height:44px;border:1px solid rgba(254,243,199,.4);border-radius:12px;background:transparent;color:#fef3c7;font-weight:800;font-size:14px;cursor:pointer">No mostrar hoy</button>
+                </div>
+              </div>`;
+            b.querySelector('[data-ent]').addEventListener('click', () => { try { haptic(15); } catch(_){} _captorOcultoHasta = Date.now() + _CAPTOR_CADA_MS; _captorQuitarBanner(); });
+            b.querySelector('[data-hoy]').addEventListener('click', () => {
+                try { haptic(15); } catch(_){}
+                try { localStorage.setItem(_captorKey(zona), _captorDia()); } catch(_){}
+                _captorQuitarBanner();
+            });
+            document.body.appendChild(b);
+        };
+        const _captorChequear = async () => {
+            try {
+                if (_captorBusy) return;
+                if (!config.value.completado || !config.value.esCajero || !cajaAbierta.value) return;
+                const zona = _captorZona();
+                if (!zona || String(idCajaActual.value || '').startsWith('CAJA-LOCAL-')) return;
+                if (offlineMode.value || navigator.onLine === false) return;
+                if (_captorOcultoHoy(zona) || Date.now() < _captorOcultoHasta) return;
+                if (_captorOcupado()) {   // nunca interrumpir una venta: reintenta en 30 s
+                    if (!_captorTimerEspera) _captorTimerEspera = setTimeout(() => { _captorTimerEspera = null; _captorChequear(); }, 30000);
+                    return;
+                }
+                _captorBusy = true;
+                _captorUltimoChequeo = Date.now();
+                const tk = await _mintTokenSB();
+                if (!tk) return;
+                const rr = await _meFetchTimeout(`${SUPABASE_URL}/rest/v1/rpc/captor_estado`, {
+                    method: 'POST',
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + tk, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p: { zona } })
+                }, 8000);
+                if (!rr.ok) return;   // RPC aún no existe / error → silencio
+                const d = await rr.json().catch(() => null);
+                if (!d || d.ok !== true) return;
+                if (d.nivel === 'AVISO') { if (!_captorOcupado()) _captorMostrar(zona, d.mensaje); }
+                else _captorQuitarBanner();
+            } catch(_) { /* silencio total: el aviso jamás rompe ME */ }
+            finally { _captorBusy = false; }
+        };
+        let _captorIntervalo = null;
+        watch(cajaAbierta, (v) => {
+            try {
+                if (_captorIntervalo) { clearInterval(_captorIntervalo); _captorIntervalo = null; }
+                if (v) {
+                    setTimeout(_captorChequear, 4000);
+                    _captorIntervalo = setInterval(_captorChequear, _CAPTOR_CADA_MS);
+                } else { _captorQuitarBanner(); }
+            } catch(_) {}
+        }, { immediate: true });
+        document.addEventListener('visibilitychange', () => {
+            try { if (document.visibilityState === 'visible' && cajaAbierta.value && Date.now() - _captorUltimoChequeo > 60000) _captorChequear(); } catch(_) {}
+        });
         // [2.8.356 · SQL 1047] Aviso al CERRAR caja: comprobantes (BOLETA/FACTURA) que siguen POR_COBRAR en la caja.
         // Si se cierra así, me.cerrar_caja los ANULA y la reconciliación los da de baja en SUNAT. Resuelve:
         //   { accion: 'cobrar', idVenta } → el cajero cobra ese comprobante (flujo de cobro existente)
@@ -13689,8 +13837,10 @@
                     }
                     try { _refrescarZonaPronto(500); } catch (_) {}
                     if (!(d && d.status === 'success')) {
+                        // [SQL 1056] anulación encolada sin motivo: ya se sacó de la cola (no hay bucle); el poll deja el ticket como estaba
+                        const _sinMotivo = String((d && (d.mensaje || d.error)) || '').startsWith('MOTIVO_REQUERIDO');
                         agregarToast('⚠ Operación pendiente rechazada',
-                            (d && (d.mensaje || d.error)) || 'Revisa el ticket en la lista', 'warning');
+                            _sinMotivo ? 'Una anulación guardada sin conexión no tenía motivo: anula el ticket de nuevo indicando el motivo' : ((d && (d.mensaje || d.error)) || 'Revisa el ticket en la lista'), 'warning');
                     }
                 })
                 .catch(() => { /* sigue sin red — próximo tick reintenta */ })
@@ -16235,10 +16385,14 @@
           setTimeout(() => { if(scannerInput.value) scannerInput.value.focus(); }, 100);
         };
 
-        const anularVenta = (venta) => {
-            pedirPin((_res) => _ejecutarAnulacion(venta, _res.clave), { accion: 'ANULACION', refDocumento: venta.correlativo || venta.id });
+        // [2.8.357 · SQL 1056] 1º motivo obligatorio (modal propio), 2º PIN admin, 3º anulación optimista con `motivo`.
+        const _esMotivoRequerido = (d) => !!d && (d.codigo === 'MOTIVO_REQUERIDO' || String(d.mensaje || d.error || '').startsWith('MOTIVO_REQUERIDO'));
+        const anularVenta = async (venta, errorPrevio) => {
+            const motivo = await _meModalMotivoAnular(venta, { error: errorPrevio || '' });
+            if (!motivo) return;
+            pedirPin((_res) => _ejecutarAnulacion(venta, _res.clave, motivo), { accion: 'ANULACION', refDocumento: venta.correlativo || venta.id });
         };
-        const _ejecutarAnulacion = (venta, _claveAdmin) => {
+        const _ejecutarAnulacion = (venta, _claveAdmin, motivo) => {
             // Cajero: ticket viene de ventasZona. Vendedor: ticket viene de ventasHoy.
             if (config.value.esCajero) {
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -16260,10 +16414,12 @@
             }
             agregarToast('Comprobante Anulado', venta.correlativo);
             // [Lote1-C · fix C1] VALIDANDO respuesta + cola si no hay red (antes fire-and-forget)
-            const payloadAnu = { tipoEvento: 'ANULACION', ventaId: venta.id_venta_gas || venta.id, correlativo: venta.correlativo, deviceId: deviceId.value };
+            const payloadAnu = { tipoEvento: 'ANULACION', ventaId: venta.id_venta_gas || venta.id, correlativo: venta.correlativo, deviceId: deviceId.value, motivo: motivo || '' };
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
                 _enviarMutacionDinero({ ...payloadAnu, claveAdmin: _claveAdmin || '' }, config.value.esCajero ? venta.id : null,
-                    () => {   // backend rechazó la anulación → restaurar visual
+                    (d) => {   // backend rechazó la anulación → restaurar visual
+                        // [SQL 1056] el server exige motivo: reabrir el modal mostrando el error
+                        try { if (_esMotivoRequerido(d)) setTimeout(() => anularVenta(venta, 'Motivo requerido: escribe al menos 5 letras.'), 300); } catch(_){}
                         if (config.value.esCajero) {
                             const i2 = ventasZona.value.findIndex(v => v.id === venta.id);
                             if (i2 !== -1) ventasZona.value[i2].anulada = false;
