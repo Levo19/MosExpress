@@ -12421,7 +12421,7 @@
         const adminConfirmarBaja = async () => {
             const venta = ticketParaAdmin.value;
             const motivo = (adminBajaEstado.value.motivo || adminBajaEstado.value.motivoTxt || '').trim();
-            if (!venta?.id_venta_gas || motivo.length < 3) return;
+            if (!venta?.id_venta_gas || motivo.length < 5) return;   // [SQL 1056] el server exige ≥5 en la anulación del pago
             if (!await _meModalConfirm(`¿Anular ${venta.tipo} ${venta.correlativo}?\n\nSe reversa el pago (sale de caja) y se comunica la baja a SUNAT — o se agenda automáticamente si el CPE aún no fue aceptado. Irreversible.`, { danger: true, titulo: 'Anular comprobante', okText: 'Anular' })) return;
             // [505] BAJA_CPE es MASTER-only — PIN al confirmar; la clave se re-verifica en el Edge (fiscal) y en
             // me.anular_venta_directo (pago). La MISMA clave sirve para ambos.
@@ -12431,7 +12431,15 @@
                 // 1) REVERSA DEL PAGO — SIEMPRE y AL MOMENTO. Reusa el anular existente: forma_pago='ANULADO'
                 //    (sale de caja) + reposición de stock + descuento de pickup, atómico/idempotente, offline-safe
                 //    (si no hay red, encola). Es lo que hace que la caja cuadre aunque el CPE siga pendiente.
-                _ejecutarAnulacion(venta, _res.clave);
+                // [SQL 1056] Se ESPERA el resultado del pago: si el server lo rechaza (MOTIVO_REQUERIDO u otro) o queda
+                // encolado sin red, NO se llama a SUNAT (baja con pago vivo y stock sin reponer = descuadre).
+                const _resPago = await _ejecutarAnulacion(venta, _res.clave, motivo, { esBaja: true });
+                if (_resPago !== 'ok') {
+                    modalAdminBaja.value = false;
+                    ticketParaAdmin.value = null;
+                    if (_resPago === 'red') agregarToast('📡 Anulación pendiente', 'Sin conexión: el pago se anulará al volver la señal y la baja SUNAT se comunicará sola. No repitas la acción.', 'warning', 8000);
+                    return;   // 'rechazo': _enviarMutacionDinero ya avisó y devolvió el ticket a su estado
+                }
                 // 2) LADO FISCAL con SUNAT (best-effort). La reconciliación es el respaldo: como forma_pago quedó
                 //    'ANULADO', comunicará la baja SOLA apenas SUNAT acepte, aunque este Edge falle o no haya red.
                 let fiscalMsg = 'La baja SUNAT se comunicará automáticamente.';
@@ -13636,6 +13644,7 @@
                         anulada: metodo === 'ANULADO' || t.estado === 'ANULADO',
                         credito: metodo === 'CREDITO',
                         obs: String(t.obs || ''),
+                        motivoAnul: String(t.motivoAnul || t.motivo_anulacion || ''),
                         asignadoA: String(t.asignadoA || ''),   // [848]
                         yape: t.yape || null,                   // [856]
                         id_venta_gas: t.idVenta,
@@ -13785,13 +13794,16 @@
             // tipoEvento sin ruta directa: no debería ocurrir. Propagar (antes caía a GAS, ya eliminado).
             throw new Error('tipoEvento sin ruta directa: ' + te);
         };
+        // Devuelve una promesa: 'ok' | 'rechazo' (el backend dijo no) | 'red' (encolada sin conexión). Los callers
+        // existentes la ignoran; la baja de CPE la usa para NO tocar SUNAT si el pago no quedó anulado.
         const _enviarMutacionDinero = (payload, ventaLocalId, onReject) => {
-            _postMutacionDinero(payload)
+            return _postMutacionDinero(payload)
                 .then(d => {
                     if (d && d.status === 'success') {
                         const idx = ventasZona.value.findIndex(v => v.id === ventaLocalId);
                         if (idx !== -1) ventasZona.value[idx]._mutPend = 0;   // poll adopta server
                         _refrescarZonaPronto(500);   // [carga DB] el poll ya es lento (~15s): converge ya con el server
+                        return 'ok';
                     } else {
                         try { playBeepError?.(); } catch(_){}
                         agregarToast('⚠ NO se registró en el servidor',
@@ -13800,6 +13812,7 @@
                         const idx = ventasZona.value.findIndex(v => v.id === ventaLocalId);
                         if (idx !== -1) ventasZona.value[idx]._mutPend = 0;   // server gana ya
                         setTimeout(() => { try { actualizarVentasZonaSilencioso(); } catch(_){} }, 600);
+                        return 'rechazo';
                     }
                 })
                 .catch(() => {
@@ -13812,6 +13825,7 @@
                     q.push({ payload: _safe, ventaLocalId, ts: Date.now() });
                     _mutQueueSave(q);
                     agregarToast('📡 Sin conexión', 'La operación se reintenta sola al volver la señal', 'warning');
+                    return 'red';
                 });
         };
         // Reintento de la cola (lo dispara el polling de zona cada ~30s)
@@ -16392,7 +16406,24 @@
             if (!motivo) return;
             pedirPin((_res) => _ejecutarAnulacion(venta, _res.clave, motivo), { accion: 'ANULACION', refDocumento: venta.correlativo || venta.id });
         };
-        const _ejecutarAnulacion = (venta, _claveAdmin, motivo) => {
+        // [SQL 1056] Motivo de anulación visible en la lista de tickets. El server aún no lo devuelve por ticket
+        // (queda en la auditoría): se recuerda en el dispositivo por idVenta (máx. 200) y se usa lo del server si llega.
+        const _MOTIVOS_ANUL_KEY = 'mosexpress_motivos_anul';
+        const _motivosAnulGet = () => { try { return JSON.parse(localStorage.getItem(_MOTIVOS_ANUL_KEY) || '{}') || {}; } catch(_) { return {}; } };
+        const motivoAnulDe = (v) => {
+            try { return String((v && v.motivoAnul) || _motivosAnulGet()[String((v && (v.id_venta_gas || v.id)) || '')] || ''); } catch(_) { return ''; }
+        };
+        const _motivoAnulGuardar = (id, motivo) => {
+            try {
+                if (!id || !motivo) return;
+                const m = _motivosAnulGet(); m[String(id)] = motivo;
+                const ks = Object.keys(m); if (ks.length > 200) ks.slice(0, ks.length - 200).forEach(k => delete m[k]);
+                lsSet(_MOTIVOS_ANUL_KEY, JSON.stringify(m));
+            } catch(_) {}
+        };
+        const _ejecutarAnulacion = (venta, _claveAdmin, motivo, opts) => {
+            opts = opts || {};
+            _motivoAnulGuardar(venta.id_venta_gas || venta.id, motivo);
             // Cajero: ticket viene de ventasZona. Vendedor: ticket viene de ventasHoy.
             if (config.value.esCajero) {
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -16416,10 +16447,10 @@
             // [Lote1-C · fix C1] VALIDANDO respuesta + cola si no hay red (antes fire-and-forget)
             const payloadAnu = { tipoEvento: 'ANULACION', ventaId: venta.id_venta_gas || venta.id, correlativo: venta.correlativo, deviceId: deviceId.value, motivo: motivo || '' };
             if (!offlineMode.value && API_URL !== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI') {
-                _enviarMutacionDinero({ ...payloadAnu, claveAdmin: _claveAdmin || '' }, config.value.esCajero ? venta.id : null,
+                return _enviarMutacionDinero({ ...payloadAnu, claveAdmin: _claveAdmin || '' }, config.value.esCajero ? venta.id : null,
                     (d) => {   // backend rechazó la anulación → restaurar visual
                         // [SQL 1056] el server exige motivo: reabrir el modal mostrando el error
-                        try { if (_esMotivoRequerido(d)) setTimeout(() => anularVenta(venta, 'Motivo requerido: escribe al menos 5 letras.'), 300); } catch(_){}
+                        try { if (!opts.esBaja && _esMotivoRequerido(d)) setTimeout(() => anularVenta(venta, 'Motivo requerido: escribe al menos 5 letras.'), 300); } catch(_){}
                         if (config.value.esCajero) {
                             const i2 = ventasZona.value.findIndex(v => v.id === venta.id);
                             if (i2 !== -1) ventasZona.value[i2].anulada = false;
@@ -16433,7 +16464,9 @@
                 const q = _mutQueueGet();
                 q.push({ payload: payloadAnu, ventaLocalId: config.value.esCajero ? venta.id : null, ts: Date.now() });
                 _mutQueueSave(q);
+                return Promise.resolve('red');
             }
+            return Promise.resolve('red');
         };
 
         const expandirTicket = async (venta) => {
@@ -18881,7 +18914,7 @@
           // [v2.5.44] KPI cards + tabs modernos
           conteoTodas, conteoNotas, conteoBoletas, conteoFacturas,
           darkMode, toggleDarkMode,
-          anularVenta,
+          anularVenta, motivoAnulDe,
           modoGuias, modoAuditoria, stockZonas, guiaZona,
           guiaTab, guiaFlujo, guiaSubtipo, guiaZonaDestino,
           guiaItems, guiaBusq, guiaObs, guiaObsModal, procesandoGuia,
