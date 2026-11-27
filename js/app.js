@@ -2964,8 +2964,8 @@
             document.body.appendChild(b);
         };
         const _captorChequear = async () => {
+            if (_captorBusy) return;   // [2.8.358] fuera del try: el finally de ESTA llamada no debe liberar el candado de otra en vuelo
             try {
-                if (_captorBusy) return;
                 if (!config.value.completado || !config.value.esCajero || !cajaAbierta.value) return;
                 const zona = _captorZona();
                 if (!zona || String(idCajaActual.value || '').startsWith('CAJA-LOCAL-')) return;
@@ -12438,7 +12438,7 @@
                     modalAdminBaja.value = false;
                     ticketParaAdmin.value = null;
                     if (_resPago === 'noencontrado') agregarToast('No se pudo anular', 'No se pudo anular el pago de este ticket desde este equipo; actualiza la lista e inténtalo otra vez. No se envió la baja a SUNAT.', 'error', 9000);
-                    if (_resPago === 'red') agregarToast('📡 Anulación pendiente', 'Sin conexión: el pago se anulará al volver la señal y la baja SUNAT se comunicará sola. No repitas la acción.', 'warning', 8000);
+                    if (_resPago === 'red') agregarToast('📡 Anulación pendiente', 'Sin conexión: no se anuló el pago ni se envió la baja. Repite la acción cuando vuelva la señal.', 'warning', 8000);
                     return;   // 'rechazo': _enviarMutacionDinero ya avisó y devolvió el ticket a su estado
                 }
                 // 2) LADO FISCAL con SUNAT (best-effort). La reconciliación es el respaldo: como forma_pago quedó
@@ -16426,7 +16426,7 @@
         };
         const _ejecutarAnulacion = (venta, _claveAdmin, motivo, opts) => {
             opts = opts || {};
-            _motivoAnulGuardar(venta.id_venta_gas || venta.id, motivo);
+            // [2.8.358] el motivo se guarda local solo cuando el server confirma ('ok'), no antes.
             // Cajero: ticket viene de ventasZona. Vendedor: ticket viene de ventasHoy.
             if (config.value.esCajero) {
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
@@ -16462,7 +16462,7 @@
                             if (i2 !== -1) { ventasHoy.value[i2].anulada = false; ventasHoy.value[i2].syncStatus = 'synced'; }
                             lsSet('mosexpress_ventas_hoy', JSON.stringify(ventasHoy.value));
                         }
-                    });
+                    }).then(r => { if (r === 'ok') _motivoAnulGuardar(venta.id_venta_gas || venta.id, motivo); return r; });
             } else if (venta.id_venta_gas || venta.id) {
                 const q = _mutQueueGet();
                 q.push({ payload: payloadAnu, ventaLocalId: config.value.esCajero ? venta.id : null, ts: Date.now() });
