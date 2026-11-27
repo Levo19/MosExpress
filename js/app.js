@@ -12437,6 +12437,7 @@
                 if (_resPago !== 'ok') {
                     modalAdminBaja.value = false;
                     ticketParaAdmin.value = null;
+                    if (_resPago === 'noencontrado') agregarToast('No se pudo anular', 'No se pudo anular el pago de este ticket desde este equipo; actualiza la lista e inténtalo otra vez. No se envió la baja a SUNAT.', 'error', 9000);
                     if (_resPago === 'red') agregarToast('📡 Anulación pendiente', 'Sin conexión: el pago se anulará al volver la señal y la baja SUNAT se comunicará sola. No repitas la acción.', 'warning', 8000);
                     return;   // 'rechazo': _enviarMutacionDinero ya avisó y devolvió el ticket a su estado
                 }
@@ -13645,6 +13646,8 @@
                         credito: metodo === 'CREDITO',
                         obs: String(t.obs || ''),
                         motivoAnul: String(t.motivoAnul || t.motivo_anulacion || ''),
+                        anuladoPor: String(t.anuladoPor || ''),
+                        anuladoTs: t.anuladoTs || null,
                         asignadoA: String(t.asignadoA || ''),   // [848]
                         yape: t.yape || null,                   // [856]
                         id_venta_gas: t.idVenta,
@@ -16427,7 +16430,7 @@
             // Cajero: ticket viene de ventasZona. Vendedor: ticket viene de ventasHoy.
             if (config.value.esCajero) {
                 const idx = ventasZona.value.findIndex(v => v.id === venta.id);
-                if (idx === -1) return;
+                if (idx === -1) return Promise.resolve('noencontrado');
                 ventasZona.value[idx].anulada = true;
                 ventasZona.value[idx].expanded = false;
                 // [Lote1-C · fix C1] in-flight: antes el poll de 3s podía REVERTIR el
@@ -16435,7 +16438,7 @@
                 ventasZona.value[idx]._mutPend = Date.now();
             } else {
                 const idx = ventasHoy.value.findIndex(v => v.id === venta.id);
-                if (idx === -1) return;
+                if (idx === -1) return Promise.resolve('noencontrado');
                 ventasHoy.value[idx].anulada = true;
                 ventasHoy.value[idx].syncStatus = 'anulado';
                 ventasHoy.value[idx].expanded = false;

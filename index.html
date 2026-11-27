@@ -5206,7 +5206,7 @@ button:not(:disabled):not([aria-disabled="true"]):active,
                                           :class="venta.anulada ? 'bg-red-100 text-red-600' : venta.syncStatus === 'pending' ? 'bg-amber-100 text-amber-600' : 'bg-sky-100 text-sky-600'">
                                       {{ venta.anulada ? 'ANULADO' : venta.syncStatus === 'pending' ? 'EN COLA' : 'EMITIDO' }}
                                     </span>
-                                    <span v-if="venta.anulada && motivoAnulDe(venta)" class="px-2 py-0.5 rounded-md font-bold text-[11px] bg-red-50 text-red-700 border border-red-200">Motivo: {{ motivoAnulDe(venta) }}</span>
+                                    <span v-if="venta.anulada && (motivoAnulDe(venta) || venta.anuladoPor)" data-motivo-anul class="px-2 py-0.5 rounded-md font-bold text-[11px] bg-red-50 text-red-700 border border-red-200"><template v-if="venta.anuladoPor">Anulado por {{ venta.anuladoPor }}</template><template v-if="venta.anuladoPor && motivoAnulDe(venta)"> · </template><template v-if="motivoAnulDe(venta)">{{ venta.anuladoPor ? '' : 'Motivo: ' }}{{ motivoAnulDe(venta) }}</template></span>
                                 </div>
                             </div>
                             <div class="flex items-center space-x-2 shrink-0 ml-3">
